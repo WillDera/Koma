@@ -226,6 +226,18 @@ class _ReaderScreenState extends State<ReaderScreen>
               : SystemUiOverlayStyle.dark,
           child: Scaffold(
             backgroundColor: themeProv.bgColor,
+            bottomNavigationBar: ReaderBottomBar(
+              visible: _showUI && !_toolbarVisible,
+              onChapters: () => _openChapters(context, provider),
+              onPrevious: provider.goToPreviousChapter,
+              onNext: provider.goToNextChapter,
+              canGoNext:
+                  provider.currentIndex < provider.chapters.length - 1,
+              canGoPrevious: provider.currentIndex > 0,
+              currentIndex: provider.currentIndex,
+              totalChapters: provider.chapters.length,
+              readingTimeRemaining: readingTime,
+            ),
             body: Stack(
               children: [
                 GestureDetector(
@@ -252,7 +264,7 @@ class _ReaderScreenState extends State<ReaderScreen>
                         _horizontalPadding(themeProv.pageWidth),
                         MediaQuery.of(context).padding.top + (_showUI ? 88 : 32),
                         _horizontalPadding(themeProv.pageWidth),
-                        MediaQuery.of(context).padding.bottom + (_showUI ? 96 : 64),
+                        MediaQuery.of(context).padding.bottom + 16,
                       ),
                       child: Center(
                         child: ConstrainedBox(
@@ -330,25 +342,6 @@ class _ReaderScreenState extends State<ReaderScreen>
                     onBack: () => Navigator.pop(context),
                     onSettings: () =>
                         ReaderSettingsSheet.show(context, themeProv),
-                  ),
-                ),
-
-                // Bottom bar
-                Positioned(
-                  bottom: 0,
-                  left: 0,
-                  right: 0,
-                  child: ReaderBottomBar(
-                    visible: _showUI && !_toolbarVisible,
-                    onChapters: () => _openChapters(context, provider),
-                    onPrevious: provider.goToPreviousChapter,
-                    onNext: provider.goToNextChapter,
-                    canGoNext:
-                        provider.currentIndex < provider.chapters.length - 1,
-                    canGoPrevious: provider.currentIndex > 0,
-                    currentIndex: provider.currentIndex,
-                    totalChapters: provider.chapters.length,
-                    readingTimeRemaining: readingTime,
                   ),
                 ),
 
