@@ -13,6 +13,7 @@ class ThemeProvider extends ChangeNotifier {
   static const _keyFontSize = 'font_size';
   static const _keyLineHeight = 'line_height';
   static const _keyAccentIndex = 'accent_index';
+  static const _keyCustomAccentHex = 'custom_accent_hex';
   static const _keyReadingFont = 'reading_font';
   static const _keyPageWidth = 'page_width';
   static const _keyTextAlign = 'text_align';
@@ -21,6 +22,7 @@ class ThemeProvider extends ChangeNotifier {
   static const _keyOneHandMode = 'one_hand_mode';
   static const _keyDefaultHighlight = 'default_highlight';
   static const _keyHandMode = 'hand_mode';
+  static const _keyBionicReading = 'bionic_reading';
 
   ThemeMode _themeMode = ThemeMode.system;
   bool _sepiaMode = false;
@@ -29,6 +31,7 @@ class ThemeProvider extends ChangeNotifier {
   double _fontSize = 17.0;
   double _lineHeight = 1.65;
   AccentPreset _accent = AccentPreset.indigo;
+  String? _customAccentHex; // when set, overrides _accent
   ReadingFont _readingFont = ReadingFont.literata;
   double _pageWidth = 680;
   TextAlign _textAlign = TextAlign.left;
@@ -37,6 +40,7 @@ class ThemeProvider extends ChangeNotifier {
   String _defaultHighlight = 'yellow';
   HandMode _handMode = HandMode.right;
   bool _oneHandMode = false;
+  bool _bionicReading = false;
 
   ThemeMode get themeMode => _themeMode;
   bool get sepiaMode => _sepiaMode;
@@ -45,6 +49,7 @@ class ThemeProvider extends ChangeNotifier {
   double get fontSize => _fontSize;
   double get lineHeight => _lineHeight;
   AccentPreset get accent => _accent;
+  String? get customAccentHex => _customAccentHex;
   ReadingFont get readingFont => _readingFont;
   double get pageWidth => _pageWidth;
   TextAlign get textAlign => _textAlign;
@@ -53,11 +58,20 @@ class ThemeProvider extends ChangeNotifier {
   String get defaultHighlight => _defaultHighlight;
   HandMode get handMode => _handMode;
   bool get oneHandMode => _oneHandMode;
+  bool get bionicReading => _bionicReading;
 
+  /// The accent color the live theme should use.
   Color get accentColor {
+    if (_customAccentHex != null && _customAccentHex!.isNotEmpty) {
+      return _resolveHex(_customAccentHex!) ?? _presetAccent(_accent);
+    }
+    return _presetAccent(_accent);
+  }
+
+  Color _presetAccent(AccentPreset preset) {
     if (_sepiaMode) return AppColors.sepiaAccent;
     final isDark = isDarkMode;
-    switch (_accent) {
+    switch (preset) {
       case AccentPreset.indigo:
         return isDark ? AppColors.accentIndigoDark : AppColors.accentIndigo;
       case AccentPreset.amber:
@@ -67,24 +81,33 @@ class ThemeProvider extends ChangeNotifier {
     }
   }
 
-  /// The current page background color, matching the active theme/sepia state.
+  static Color? _resolveHex(String hex) {
+    var v = hex.trim();
+    if (v.startsWith('#')) v = v.substring(1);
+    if (v.length == 6) v = 'FF$v';
+    if (v.length != 8) return null;
+    final i = int.tryParse(v, radix: 16);
+    if (i == null) return null;
+    return Color(i);
+  }
+
+  /// Current page background color, matching the active theme/sepia state.
   Color get bgColor {
     if (_sepiaMode) return AppColors.sepiaBg;
     return isDarkMode ? AppColors.darkBg : AppColors.lightBg;
   }
 
-  /// Returns the resolved Google Fonts family for the reader body, or null
-  /// to use the system serif.
-  String? get readingFontFamily {
-    switch (_readingFont) {
-      case ReadingFont.system:
-        return null;
-      case ReadingFont.literata:
-        return AppType.readingFont;
-      case ReadingFont.inter:
-        return AppType.uiFont;
-    }
-  }
+  /// The Google Fonts family for the reader body, or null to use the
+  /// system serif.
+  String? get readingFontFamily => _readingFont.googleFontFamily;
+
+  /// The font weight applied to the bolded prefix of each word in
+  /// bionic-reading mode.
+  FontWeight get bionicBoldWeight => FontWeight.w700;
+
+  /// Fraction of each word (counted from the start) that gets bolded
+  /// in bionic-reading mode.
+  double get bionicBoldFraction => 0.4;
 
   bool get isDarkMode => _themeMode == ThemeMode.dark ||
       (_themeMode == ThemeMode.system &&
@@ -94,9 +117,13 @@ class ThemeProvider extends ChangeNotifier {
   bool get isDark => isDarkMode;
   bool get isSepia => _sepiaMode;
 
-  ThemeData get lightTheme => AppTheme.lightTheme();
-  ThemeData get darkTheme => AppTheme.darkTheme();
-  ThemeData get sepiaTheme => AppTheme.sepiaTheme();
+  /// Live light theme.  Rebuilds the ThemeData with the user's
+  /// selected accent so the whole app picks up accent changes.
+  ThemeData get lightTheme => AppTheme.lightTheme(accent: accentColor);
+
+  ThemeData get darkTheme => AppTheme.darkTheme(accent: accentColor);
+
+  ThemeData get sepiaTheme => AppTheme.sepiaTheme(accent: accentColor);
 
   ThemeData get currentTheme {
     if (_sepiaMode) return sepiaTheme;
@@ -113,8 +140,8 @@ class ThemeProvider extends ChangeNotifier {
     _fontSize = prefs.getDouble(_keyFontSize) ?? 17.0;
     _lineHeight = prefs.getDouble(_keyLineHeight) ?? 1.65;
     _accent = AccentPreset.values[prefs.getInt(_keyAccentIndex) ?? 0];
-    _readingFont =
-        ReadingFont.values[prefs.getInt(_keyReadingFont) ?? 1];
+    _customAccentHex = prefs.getString(_keyCustomAccentHex);
+    _readingFont = ReadingFont.values[prefs.getInt(_keyReadingFont) ?? 1];
     _pageWidth = prefs.getDouble(_keyPageWidth) ?? 680;
     _textAlign = TextAlign.values[prefs.getInt(_keyTextAlign) ?? 0];
     _hyphenation = prefs.getBool(_keyHyphenation) ?? true;
@@ -122,6 +149,7 @@ class ThemeProvider extends ChangeNotifier {
     _defaultHighlight = prefs.getString(_keyDefaultHighlight) ?? 'yellow';
     _handMode = HandMode.values[prefs.getInt(_keyHandMode) ?? 1];
     _oneHandMode = prefs.getBool(_keyOneHandMode) ?? false;
+    _bionicReading = prefs.getBool(_keyBionicReading) ?? false;
     notifyListeners();
   }
 
@@ -171,9 +199,28 @@ class ThemeProvider extends ChangeNotifier {
 
   Future<void> setAccent(AccentPreset accent) async {
     _accent = accent;
+    _customAccentHex = null; // switching to a preset clears custom
     notifyListeners();
     final prefs = await SharedPreferences.getInstance();
     await prefs.setInt(_keyAccentIndex, accent.index);
+    await prefs.remove(_keyCustomAccentHex);
+  }
+
+  Future<void> setCustomAccentHex(String? hex) async {
+    if (hex == null || hex.trim().isEmpty) {
+      _customAccentHex = null;
+    } else {
+      final parsed = _resolveHex(hex);
+      if (parsed == null) return; // ignore invalid input
+      _customAccentHex = hex.trim();
+    }
+    notifyListeners();
+    final prefs = await SharedPreferences.getInstance();
+    if (_customAccentHex == null) {
+      await prefs.remove(_keyCustomAccentHex);
+    } else {
+      await prefs.setString(_keyCustomAccentHex, _customAccentHex!);
+    }
   }
 
   Future<void> setReadingFont(ReadingFont font) async {
@@ -232,6 +279,13 @@ class ThemeProvider extends ChangeNotifier {
     await prefs.setBool(_keyOneHandMode, value);
   }
 
+  Future<void> setBionicReading(bool value) async {
+    _bionicReading = value;
+    notifyListeners();
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_keyBionicReading, value);
+  }
+
   void toggleTheme() {
     setThemeMode(isDark ? ThemeMode.light : ThemeMode.dark);
   }
@@ -241,4 +295,18 @@ enum HandMode { left, right }
 
 enum AccentPreset { indigo, amber, forest }
 
-enum ReadingFont { system, literata, inter }
+/// Reading fonts the user can choose from.  Each entry knows the
+/// Google Fonts family to use and a label for the UI.
+enum ReadingFont {
+  system(label: 'System'),
+  literata(label: 'Literata', googleFontFamily: 'Literata'),
+  inter(label: 'Inter', googleFontFamily: 'Inter'),
+  lora(label: 'Lora', googleFontFamily: 'Lora'),
+  merriweather(label: 'Merriweather', googleFontFamily: 'Merriweather'),
+  sourceSerif(label: 'Source Serif 4', googleFontFamily: 'Source Serif 4'),
+  crimsonPro(label: 'Crimson Pro', googleFontFamily: 'Crimson Pro');
+
+  const ReadingFont({required this.label, this.googleFontFamily});
+  final String label;
+  final String? googleFontFamily;
+}

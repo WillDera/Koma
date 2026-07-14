@@ -10,10 +10,10 @@ import '../../theme/tokens/app_spacing.dart';
 import '../../widgets/animated_press.dart';
 import '../../widgets/dialog_sheet.dart';
 import '../../widgets/divider_hairline.dart';
-import '../../widgets/library_header.dart';
 import '../../widgets/one_hand_spacer.dart';
 import '../../widgets/segmented_control.dart';
 import '../../widgets/settings_section.dart';
+import '../../widgets/text_field.dart';
 import '../../widgets/toast.dart';
 
 class SettingsScreen extends StatefulWidget {
@@ -61,11 +61,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
         padding: const EdgeInsets.only(bottom: 100),
         children: [
           const OneHandSpacer(),
-          LibraryHeader(
+          _Heading(
             title: 'Settings',
-            titleSize: _oneHand ? 64 : 32,
+            oneHand: _oneHand,
             shrinkProgress: _oneHand ? _scrollProgress : 0.0,
-            subtitle: 'Version 2.0.1',
+            subtitle: 'Version 2.0.0',
           ),
           const SizedBox(height: 4),
           _AppearanceSection(themeProv: themeProv),
@@ -77,6 +77,62 @@ class _SettingsScreenState extends State<SettingsScreen> {
           const _PluginsSection(),
           const SizedBox(height: 24),
           const _AboutSection(),
+        ],
+      ),
+    );
+  }
+}
+
+/// Page heading that animates in one-hand mode.
+class _Heading extends StatelessWidget {
+  final String title;
+  final String? subtitle;
+  final bool oneHand;
+  final double shrinkProgress;
+
+  const _Heading({
+    required this.title,
+    this.subtitle,
+    required this.oneHand,
+    required this.shrinkProgress,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.colors;
+    final p = shrinkProgress.clamp(0.0, 1.0);
+    final fontSize = (oneHand ? 64.0 : 32.0) * (1.0 - 0.5 * p);
+    final opacity = (1.0 - p).clamp(0.0, 1.0);
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(24, 20, 24, 12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            title,
+            style: TextStyle(
+              color: c.textPrimary,
+              fontSize: fontSize,
+              fontWeight: FontWeight.w600,
+              letterSpacing: -0.5,
+              height: 1.1,
+            ),
+          ),
+          if (subtitle != null)
+            Opacity(
+              opacity: opacity,
+              child: Padding(
+                padding: const EdgeInsets.only(top: 2),
+                child: Text(
+                  subtitle!,
+                  style: TextStyle(
+                    color: c.textSecondary,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w400,
+                  ),
+                ),
+              ),
+            ),
         ],
       ),
     );
@@ -102,10 +158,9 @@ class _AppearanceSection extends StatelessWidget {
               Text(
                 'Theme',
                 style: TextStyle(
-                  color: c.textPrimary,
-                  fontSize: 14,
-                  fontWeight: FontWeight.w500,
-                ),
+                    color: c.textPrimary,
+                    fontSize: 14,
+                    fontWeight: FontWeight.w500),
               ),
               const SizedBox(height: 10),
               SegmentedControl<ThemeMode>(
@@ -118,11 +173,18 @@ class _AppearanceSection extends StatelessWidget {
                 onChanged: themeProv.setThemeMode,
               ),
               const SizedBox(height: 12),
-              _ToggleRow(
-                title: 'Sepia mode',
-                subtitle: 'Warm paper-like background',
-                value: themeProv.sepiaMode,
-                onChanged: themeProv.setSepiaMode,
+              Material(
+                type: MaterialType.transparency,
+                child: SwitchListTile(
+                  contentPadding: EdgeInsets.zero,
+                  title: const Text('Sepia mode'),
+                  subtitle: Text(
+                    'Warm paper-like background',
+                    style: TextStyle(color: c.textSecondary, fontSize: 12),
+                  ),
+                  value: themeProv.sepiaMode,
+                  onChanged: themeProv.setSepiaMode,
+                ),
               ),
             ],
           ),
@@ -139,18 +201,15 @@ class _AppearanceSection extends StatelessWidget {
               Text(
                 'Accent',
                 style: TextStyle(
-                  color: c.textPrimary,
-                  fontSize: 14,
-                  fontWeight: FontWeight.w500,
-                ),
+                    color: c.textPrimary,
+                    fontSize: 14,
+                    fontWeight: FontWeight.w500),
               ),
               const SizedBox(height: 4),
               Text(
                 'Used for highlights, selections, and the active state.',
-                style: TextStyle(
-                  color: c.textSecondary,
-                  fontSize: 12,
-                ),
+                style:
+                    TextStyle(color: c.textSecondary, fontSize: 12),
               ),
               const SizedBox(height: 12),
               Row(
@@ -164,16 +223,29 @@ class _AppearanceSection extends StatelessWidget {
                         AppColors.accentForestDark, 'Forest'),
                   ]) ...[
                     _AccentSwatch(
-                      preset: entry.$1,
                       light: entry.$2,
                       dark: entry.$3,
                       label: entry.$4,
-                      selected: themeProv.accent == entry.$1,
+                      selected: themeProv.customAccentHex == null &&
+                          themeProv.accent == entry.$1,
                       onTap: () => themeProv.setAccent(entry.$1),
                     ),
                     const SizedBox(width: 10),
                   ],
                 ],
+              ),
+              const SizedBox(height: 16),
+              Text(
+                'Custom hex',
+                style: TextStyle(
+                    color: c.textPrimary,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w500),
+              ),
+              const SizedBox(height: 6),
+              _CustomAccentInput(
+                current: themeProv.customAccentHex,
+                onSubmit: themeProv.setCustomAccentHex,
               ),
             ],
           ),
@@ -190,18 +262,15 @@ class _AppearanceSection extends StatelessWidget {
               Text(
                 'Handedness',
                 style: TextStyle(
-                  color: c.textPrimary,
-                  fontSize: 14,
-                  fontWeight: FontWeight.w500,
-                ),
+                    color: c.textPrimary,
+                    fontSize: 14,
+                    fontWeight: FontWeight.w500),
               ),
               const SizedBox(height: 4),
               Text(
                 'Floating buttons on your preferred side for one-thumb reach.',
-                style: TextStyle(
-                  color: c.textSecondary,
-                  fontSize: 12,
-                ),
+                style:
+                    TextStyle(color: c.textSecondary, fontSize: 12),
               ),
               const SizedBox(height: 10),
               SegmentedControl<HandMode>(
@@ -225,60 +294,14 @@ class _AppearanceSection extends StatelessWidget {
   }
 }
 
-// ─── One-hand mode ──────────────────────────────────────────────────────
-class _OneHandToggle extends StatelessWidget {
-  const _OneHandToggle();
-
-  @override
-  Widget build(BuildContext context) {
-    final themeProv = context.watch<ThemeProvider>();
-    final c = context.colors;
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 16, 16, 16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            'One-hand mode',
-            style: TextStyle(
-              color: c.textPrimary,
-              fontSize: 14,
-              fontWeight: FontWeight.w500,
-            ),
-          ),
-          const SizedBox(height: 4),
-          Text(
-            'Pushes content toward the bottom half of the screen for easier thumb reach. Headers become minimal.',
-            style: TextStyle(
-              color: c.textSecondary,
-              fontSize: 12,
-            ),
-          ),
-          const SizedBox(height: 10),
-          Material(
-            type: MaterialType.transparency,
-            child: SwitchListTile(
-              contentPadding: EdgeInsets.zero,
-              title: const Text('Enable one-hand layout'),
-              value: themeProv.oneHandMode,
-              onChanged: themeProv.setOneHandMode,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
 class _AccentSwatch extends StatelessWidget {
-  final AccentPreset preset;
   final Color light;
   final Color dark;
   final String label;
   final bool selected;
   final VoidCallback onTap;
+
   const _AccentSwatch({
-    required this.preset,
     required this.light,
     required this.dark,
     required this.label,
@@ -309,21 +332,20 @@ class _AccentSwatch extends StatelessWidget {
               ),
             ),
             child: selected
-                ? Icon(
-                    Icons.check,
+                ? Icon(Icons.check,
                     size: 20,
-                    color: Colors.white,
-                  )
+                    color: color.computeLuminance() > 0.5
+                        ? const Color(0xFF1A1815)
+                        : Colors.white)
                 : null,
           ),
           const SizedBox(height: 4),
           Text(
             label,
             style: TextStyle(
-              color: c.textSecondary,
-              fontSize: 11,
-              fontWeight: FontWeight.w500,
-            ),
+                color: c.textSecondary,
+                fontSize: 11,
+                fontWeight: FontWeight.w500),
           ),
         ],
       ),
@@ -331,47 +353,149 @@ class _AccentSwatch extends StatelessWidget {
   }
 }
 
-class _ToggleRow extends StatelessWidget {
-  final String title;
-  final String? subtitle;
-  final bool value;
-  final ValueChanged<bool> onChanged;
-  const _ToggleRow({
-    required this.title,
-    this.subtitle,
-    required this.value,
-    required this.onChanged,
-  });
+class _CustomAccentInput extends StatefulWidget {
+  final String? current;
+  final ValueChanged<String?> onSubmit;
+  const _CustomAccentInput({required this.current, required this.onSubmit});
+
+  @override
+  State<_CustomAccentInput> createState() => _CustomAccentInputState();
+}
+
+class _CustomAccentInputState extends State<_CustomAccentInput> {
+  late final TextEditingController _ctrl;
+
+  @override
+  void initState() {
+    super.initState();
+    _ctrl = TextEditingController(text: widget.current ?? '');
+  }
+
+  @override
+  void didUpdateWidget(covariant _CustomAccentInput old) {
+    super.didUpdateWidget(old);
+    final next = widget.current ?? '';
+    if (next != _ctrl.text) {
+      _ctrl.text = next;
+    }
+  }
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  void _apply() {
+    final v = _ctrl.text.trim();
+    if (v.isEmpty) {
+      widget.onSubmit(null);
+    } else {
+      widget.onSubmit(v);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final c = context.colors;
+    final parsed = _parseColor(_ctrl.text);
     return Row(
       children: [
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                title,
-                style: TextStyle(
-                  color: c.textPrimary,
-                  fontSize: 14,
-                  fontWeight: FontWeight.w500,
-                ),
-              ),
-              if (subtitle != null)
-                Text(
-                  subtitle!,
-                  style: TextStyle(
-                    color: c.textSecondary,
-                    fontSize: 12,
-                  ),
-                ),
-            ],
+        Container(
+          width: 32,
+          height: 32,
+          decoration: BoxDecoration(
+            color: parsed ?? c.surfaceMuted,
+            borderRadius: AppSpacing.brSm,
+            border: Border.all(color: c.border, width: 0.5),
           ),
         ),
-        Switch(value: value, onChanged: onChanged),
+        const SizedBox(width: 10),
+        Expanded(
+          child: StashTextField(
+            controller: _ctrl,
+            hint: '#RRGGBB',
+            leadingIcon: Icons.format_color_fill,
+            showClearButton: true,
+            onSubmitted: (_) => _apply(),
+            onChanged: (_) => setState(() {}),
+          ),
+        ),
+        const SizedBox(width: 8),
+        AnimatedPress(
+          onTap: _apply,
+          child: Container(
+            padding:
+                const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+            decoration: BoxDecoration(
+              color: parsed == null ? c.surfaceMuted : c.accent,
+              borderRadius: AppSpacing.brPill,
+            ),
+            child: Text(
+              'Apply',
+              style: TextStyle(
+                color: parsed == null
+                    ? c.textTertiary
+                    : c.onAccent,
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+        ),
       ],
+    );
+  }
+
+  Color? _parseColor(String hex) {
+    var v = hex.trim();
+    if (v.isEmpty) return null;
+    if (v.startsWith('#')) v = v.substring(1);
+    if (v.length == 6) v = 'FF$v';
+    if (v.length != 8) return null;
+    final i = int.tryParse(v, radix: 16);
+    if (i == null) return null;
+    return Color(i);
+  }
+}
+
+class _OneHandToggle extends StatelessWidget {
+  const _OneHandToggle();
+
+  @override
+  Widget build(BuildContext context) {
+    final themeProv = context.watch<ThemeProvider>();
+    final c = context.colors;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 16, 16, 16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'One-hand mode',
+            style: TextStyle(
+                color: c.textPrimary,
+                fontSize: 14,
+                fontWeight: FontWeight.w500),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            'Pushes content toward the bottom half of the screen for easier thumb reach. Headers grow larger and shrink as you scroll.',
+            style:
+                TextStyle(color: c.textSecondary, fontSize: 12),
+          ),
+          const SizedBox(height: 10),
+          Material(
+            type: MaterialType.transparency,
+            child: SwitchListTile(
+              contentPadding: EdgeInsets.zero,
+              title: const Text('Enable one-hand layout'),
+              value: themeProv.oneHandMode,
+              onChanged: themeProv.setOneHandMode,
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
@@ -389,7 +513,7 @@ class _TypographySection extends StatelessWidget {
         SettingsRow(
           icon: Icons.text_fields,
           title: 'Reading font',
-          subtitle: _fontName(p.readingFont),
+          subtitle: p.readingFont.label,
           trailing: const Icon(Icons.chevron_right, size: 18),
           onTap: () => _showFontPicker(context, p),
         ),
@@ -423,6 +547,17 @@ class _TypographySection extends StatelessWidget {
             ),
           ),
         ),
+        const HairlineDivider(indent: 16, endIndent: 16),
+        SettingsRow(
+          icon: Icons.bolt,
+          title: 'Bionic reading',
+          subtitle: 'Bold the first 40% of every word',
+          trailing: Switch(
+            value: p.bionicReading,
+            onChanged: p.setBionicReading,
+          ),
+        ),
+        const HairlineDivider(indent: 16, endIndent: 16),
         SettingsRow(
           icon: Icons.format_align_left,
           title: 'Text alignment',
@@ -431,27 +566,22 @@ class _TypographySection extends StatelessWidget {
           onTap: () => _showAlignPicker(context, p),
         ),
         SettingsRow(
-          icon: Icons.auto_awesome_motion,
-          title: 'Hyphenation',
-          subtitle: 'Break long words at line ends',
-          trailing: Switch(
-            value: p.hyphenation,
-            onChanged: p.setHyphenation,
+          icon: Icons.width_normal,
+          title: 'Page width',
+          subtitle: '${p.pageWidth.toInt()}px',
+          trailing: SizedBox(
+            width: 110,
+            child: Slider(
+              value: p.pageWidth,
+              min: 520,
+              max: 760,
+              divisions: 12,
+              onChanged: p.setPageWidth,
+            ),
           ),
         ),
       ],
     );
-  }
-
-  String _fontName(ReadingFont f) {
-    switch (f) {
-      case ReadingFont.literata:
-        return 'Literata';
-      case ReadingFont.inter:
-        return 'Inter';
-      case ReadingFont.system:
-        return 'System default';
-    }
   }
 
   String _alignName(TextAlign a) {
@@ -476,46 +606,158 @@ class _TypographySection extends StatelessWidget {
       context,
       title: 'Reading font',
       subtitle: 'Choose a face for long-form reading.',
-      initialChildSize: 0.45,
-      maxChildSize: 0.6,
-      child: Padding(
+      initialChildSize: 0.7,
+      maxChildSize: 0.95,
+      child: ListView(
         padding: const EdgeInsets.fromLTRB(20, 8, 20, 32),
-        child: SegmentedControl<ReadingFont>(
-          segments: const {
-            ReadingFont.literata: 'Literata',
-            ReadingFont.inter: 'Inter',
-            ReadingFont.system: 'System',
-          },
-          value: p.readingFont,
-          onChanged: (v) {
-            p.setReadingFont(v);
-            Navigator.pop(context);
-          },
-        ),
+        children: [
+          for (final f in ReadingFont.values) ...[
+            AnimatedPress(
+              onTap: () {
+                p.setReadingFont(f);
+                Navigator.pop(context);
+              },
+              child: Container(
+                margin: const EdgeInsets.only(bottom: 8),
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: p.readingFont == f
+                      ? context.colors.accentMuted
+                      : context.colors.surface,
+                  borderRadius: AppSpacing.brLg,
+                  border: Border.all(
+                    color: p.readingFont == f
+                        ? context.colors.accent
+                        : context.colors.border,
+                    width: p.readingFont == f ? 1.2 : 0.5,
+                  ),
+                ),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            f.label,
+                            style: TextStyle(
+                              color: context.colors.textPrimary,
+                              fontSize: 16,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                          if (f.googleFontFamily != null)
+                            Padding(
+                              padding: const EdgeInsets.only(top: 4),
+                              child: Text(
+                                'Aa — long-form sample text',
+                                style: TextStyle(
+                                  color: context.colors.textSecondary,
+                                  fontSize: 13,
+                                ),
+                              ),
+                            ),
+                        ],
+                      ),
+                    ),
+                    if (p.readingFont == f)
+                      Icon(Icons.check,
+                          color: context.colors.accent, size: 20),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ],
       ),
     );
   }
 
   void _showAlignPicker(BuildContext context, ThemeProvider p) {
+    final c = context.colors;
+    final options = const [
+      (TextAlign.left, 'Left', Icons.format_align_left),
+      (TextAlign.justify, 'Justify', Icons.format_align_justify),
+      (TextAlign.center, 'Center', Icons.format_align_center),
+    ];
     StashSheet.show<void>(
       context,
       title: 'Text alignment',
-      initialChildSize: 0.4,
-      maxChildSize: 0.5,
-      child: Padding(
+      subtitle: 'How chapter text is aligned.',
+      initialChildSize: 0.5,
+      maxChildSize: 0.7,
+      child: ListView(
         padding: const EdgeInsets.fromLTRB(20, 8, 20, 32),
-        child: SegmentedControl<TextAlign>(
-          segments: const {
-            TextAlign.left: 'Left',
-            TextAlign.justify: 'Justify',
-            TextAlign.center: 'Center',
-          },
-          value: p.textAlign,
-          onChanged: (v) {
-            p.setTextAlign(v);
-            Navigator.pop(context);
-          },
-        ),
+        children: [
+          for (final o in options) ...[
+            AnimatedPress(
+              onTap: () {
+                p.setTextAlign(o.$1);
+                Navigator.pop(context);
+              },
+              child: Container(
+                margin: const EdgeInsets.only(bottom: 8),
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: p.textAlign == o.$1
+                      ? c.accentMuted
+                      : c.surface,
+                  borderRadius: AppSpacing.brLg,
+                  border: Border.all(
+                    color: p.textAlign == o.$1
+                        ? c.accent
+                        : c.border,
+                    width: p.textAlign == o.$1 ? 1.2 : 0.5,
+                  ),
+                ),
+                child: Row(
+                  children: [
+                    Container(
+                      width: 40,
+                      height: 40,
+                      alignment: Alignment.center,
+                      decoration: BoxDecoration(
+                        color: c.surfaceMuted,
+                        borderRadius: AppSpacing.brSm,
+                      ),
+                      child: Icon(o.$3,
+                          size: 20, color: c.textPrimary),
+                    ),
+                    const SizedBox(width: 14),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            o.$2,
+                            style: TextStyle(
+                              color: c.textPrimary,
+                              fontSize: 16,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            'Sample preview paragraph for ${o.$2.toLowerCase()} alignment.',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              color: c.textSecondary,
+                              fontSize: 13,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    if (p.textAlign == o.$1)
+                      Icon(Icons.check,
+                          color: c.accent, size: 20),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ],
       ),
     );
   }
@@ -575,21 +817,18 @@ class _DataSectionState extends State<_DataSection> {
     try {
       final db = context.read<DatabaseService>();
       final svc = ExportService(db);
-      await svc.exportToJson();
+      final message = await svc.exportToJson();
       if (mounted) {
         StashToast.show(
           context,
-          message: 'Backup created',
-          icon: Icons.check,
+          message: message,
+          icon: message.startsWith('Backup') ? Icons.check : Icons.info_outline,
         );
       }
     } catch (e) {
       if (mounted) {
         StashToast.show(
-          context,
-          message: 'Export failed: $e',
-          icon: Icons.error_outline,
-        );
+            context, message: 'Export failed: $e', icon: Icons.error_outline);
       }
     } finally {
       if (mounted) setState(() => _exporting = false);
@@ -603,19 +842,12 @@ class _DataSectionState extends State<_DataSection> {
       final svc = ExportService(db);
       final result = await svc.importFromJson();
       if (mounted) {
-        StashToast.show(
-          context,
-          message: result,
-          icon: Icons.check,
-        );
+        StashToast.show(context, message: result, icon: Icons.check);
       }
     } catch (e) {
       if (mounted) {
         StashToast.show(
-          context,
-          message: 'Import failed: $e',
-          icon: Icons.error_outline,
-        );
+            context, message: 'Import failed: $e', icon: Icons.error_outline);
       }
     } finally {
       if (mounted) setState(() => _importing = false);
@@ -623,7 +855,7 @@ class _DataSectionState extends State<_DataSection> {
   }
 }
 
-// ─── Plugins (placeholder) ───────────────────────────────────────────────
+// ─── Plugins (placeholder) ──────────────────────────────────────────────
 class _PluginsSection extends StatelessWidget {
   const _PluginsSection();
 
@@ -667,7 +899,7 @@ class _PluginsSection extends StatelessWidget {
   }
 }
 
-// ─── About ───────────────────────────────────────────────────────────────
+// ─── About ──────────────────────────────────────────────────────────────
 class _AboutSection extends StatelessWidget {
   const _AboutSection();
 
@@ -679,7 +911,7 @@ class _AboutSection extends StatelessWidget {
         SettingsRow(
           icon: Icons.info_outline,
           title: 'StashReader',
-          subtitle: 'Version 2.0.1 · build 2.0.1+2',
+          subtitle: 'Version 2.0.0 · build 2.0.0+1',
         ),
         SettingsRow(
           icon: Icons.favorite_outline,

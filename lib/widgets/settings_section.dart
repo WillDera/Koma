@@ -164,10 +164,13 @@ class SettingsRow extends StatelessWidget {
     );
 
     if (onTap == null) return row;
-    return InkWell(
-      onTap: onTap,
-      borderRadius: AppSpacing.brLg,
-      child: row,
+    return Material(
+      type: MaterialType.transparency,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: AppSpacing.brLg,
+        child: row,
+      ),
     );
   }
 }

@@ -37,53 +37,76 @@ class AppTheme {
   static const Color sepiaAccent = AppColors.sepiaAccent;
 
   // ─── Public entry points ───────────────────────────────────────────────
-  static ThemeData lightTheme() => _buildTheme(
-        brightness: Brightness.light,
-        bg: AppColors.lightBg,
-        bgElevated: AppColors.lightBgElevated,
-        surface: AppColors.lightSurface,
-        surfaceMuted: AppColors.lightSurfaceMuted,
-        border: AppColors.lightBorder,
-        borderStrong: AppColors.lightBorderStrong,
-        textPrimary: AppColors.lightTextPrimary,
-        textSecondary: AppColors.lightTextSecondary,
-        textTertiary: AppColors.lightTextTertiary,
-        accent: AppColors.lightAccent,
-        accentMuted: AppColors.lightAccentMuted,
-        onAccent: AppColors.lightOnAccent,
-      );
+  static ThemeData lightTheme({Color? accent}) {
+    final a = accent ?? AppColors.lightAccent;
+    return _buildTheme(
+      brightness: Brightness.light,
+      bg: AppColors.lightBg,
+      bgElevated: AppColors.lightBgElevated,
+      surface: AppColors.lightSurface,
+      surfaceMuted: AppColors.lightSurfaceMuted,
+      border: AppColors.lightBorder,
+      borderStrong: AppColors.lightBorderStrong,
+      textPrimary: AppColors.lightTextPrimary,
+      textSecondary: AppColors.lightTextSecondary,
+      textTertiary: AppColors.lightTextTertiary,
+      accent: a,
+      accentMuted: _muted(a, AppColors.lightSurface),
+      onAccent: _onAccentFor(a),
+    );
+  }
 
-  static ThemeData darkTheme() => _buildTheme(
-        brightness: Brightness.dark,
-        bg: AppColors.darkBg,
-        bgElevated: AppColors.darkBgElevated,
-        surface: AppColors.darkSurface,
-        surfaceMuted: AppColors.darkSurfaceMuted,
-        border: AppColors.darkBorder,
-        borderStrong: AppColors.darkBorderStrong,
-        textPrimary: AppColors.darkTextPrimary,
-        textSecondary: AppColors.darkTextSecondary,
-        textTertiary: AppColors.darkTextTertiary,
-        accent: AppColors.darkAccent,
-        accentMuted: AppColors.darkAccentMuted,
-        onAccent: AppColors.darkOnAccent,
-      );
+  static ThemeData darkTheme({Color? accent}) {
+    final a = accent ?? AppColors.darkAccent;
+    return _buildTheme(
+      brightness: Brightness.dark,
+      bg: AppColors.darkBg,
+      bgElevated: AppColors.darkBgElevated,
+      surface: AppColors.darkSurface,
+      surfaceMuted: AppColors.darkSurfaceMuted,
+      border: AppColors.darkBorder,
+      borderStrong: AppColors.darkBorderStrong,
+      textPrimary: AppColors.darkTextPrimary,
+      textSecondary: AppColors.darkTextSecondary,
+      textTertiary: AppColors.darkTextTertiary,
+      accent: a,
+      accentMuted: _muted(a, AppColors.darkSurface),
+      onAccent: _onAccentFor(a),
+    );
+  }
 
-  static ThemeData sepiaTheme() => _buildTheme(
-        brightness: Brightness.light,
-        bg: AppColors.sepiaBg,
-        bgElevated: AppColors.sepiaBgElevated,
-        surface: AppColors.sepiaSurface,
-        surfaceMuted: AppColors.sepiaSurfaceMuted,
-        border: AppColors.sepiaBorder,
-        borderStrong: AppColors.sepiaBorderStrong,
-        textPrimary: AppColors.sepiaTextPrimary,
-        textSecondary: AppColors.sepiaTextSecondary,
-        textTertiary: AppColors.sepiaTextTertiary,
-        accent: AppColors.sepiaAccent,
-        accentMuted: AppColors.sepiaAccentMuted,
-        onAccent: AppColors.sepiaOnAccent,
-      );
+  static ThemeData sepiaTheme({Color? accent}) {
+    final a = accent ?? AppColors.sepiaAccent;
+    return _buildTheme(
+      brightness: Brightness.light,
+      bg: AppColors.sepiaBg,
+      bgElevated: AppColors.sepiaBgElevated,
+      surface: AppColors.sepiaSurface,
+      surfaceMuted: AppColors.sepiaSurfaceMuted,
+      border: AppColors.sepiaBorder,
+      borderStrong: AppColors.sepiaBorderStrong,
+      textPrimary: AppColors.sepiaTextPrimary,
+      textSecondary: AppColors.sepiaTextSecondary,
+      textTertiary: AppColors.sepiaTextTertiary,
+      accent: a,
+      accentMuted: _muted(a, AppColors.sepiaSurface),
+      onAccent: _onAccentFor(a),
+    );
+  }
+
+  /// A soft tinted surface derived from the accent — used for
+  /// selected states, chip backgrounds, and the active nav indicator.
+  static Color _muted(Color accent, Color surface) {
+    return Color.lerp(surface, accent, 0.14)!;
+  }
+
+  /// Text/icon color used ON TOP of the accent (e.g. inside the FAB
+  /// or a primary button). White for dark accents, near-black for
+  /// very light accents.
+  static Color _onAccentFor(Color accent) {
+    final luminance = accent.computeLuminance();
+    return luminance > 0.5 ? const Color(0xFF1A1815) : Colors.white;
+  }
 
   // ─── Builder ───────────────────────────────────────────────────────────
   static ThemeData _buildTheme({

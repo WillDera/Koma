@@ -3,7 +3,9 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:drift/drift.dart' hide isNull, isNotNull;
 import 'package:stashreader/core/database/database.dart';
 import 'package:stashreader/core/models/book.dart';
+import 'package:stashreader/core/models/chapter.dart';
 import 'package:stashreader/core/models/snippet.dart';
+import 'package:stashreader/core/services/database_service.dart';
 
 import 'helpers/test_database.dart';
 
@@ -289,18 +291,194 @@ void main() {
 
     test('empty export contains version and empty arrays', () {
       final export = {
-        'version': 1,
+        'version': 2,
         'exported_at': DateTime.now().toIso8601String(),
         'books': <Map<String, dynamic>>[],
+        'chapters': <Map<String, dynamic>>[],
         'snippets': <Map<String, dynamic>>[],
       };
 
       final jsonStr = jsonEncode(export);
       final parsed = jsonDecode(jsonStr) as Map<String, dynamic>;
 
-      expect(parsed['version'], 1);
+      expect(parsed['version'], 2);
       expect(parsed['books'], isEmpty);
+      expect(parsed['chapters'], isEmpty);
       expect(parsed['snippets'], isEmpty);
+    });
+  });
+
+  group('DatabaseService round-trip', () {
+    late DatabaseService svc;
+    setUp(() {
+      svc = DatabaseService(db);
+    });
+
+    test('export then import restores books, chapter progress, snippets',
+        () async {
+      // 1. Populate the source DB.
+      final bookId = await svc.insertBook(Book(
+        id: 0,
+        title: 'Lord of Mysteries',
+        author: 'Cuttlefish',
+        source: 'local',
+        progress: 0,
+        totalChapters: 5,
+      ));
+      final chapters = [
+        Chapter(
+            id: 0,
+            bookId: bookId,
+            title: 'Chapter 1',
+            content: 'Clown content',
+            index: 0,
+            scrollPosition: 12.5),
+        Chapter(
+            id: 0,
+            bookId: bookId,
+            title: 'Chapter 2',
+            content: 'More content',
+            index: 1,
+            scrollPosition: 200,
+            readAt: DateTime(2026, 1, 1)),
+        Chapter(
+            id: 0, bookId: bookId, title: 'Chapter 3', content: '...', index: 2),
+      ];
+      await svc.insertChapters(chapters);
+      await svc.createSnippet(
+        text: 'SUDDEN TURN OF EVENTS',
+        sourceTitle: 'Lord of Mysteries Volume 1: Clown',
+        bookId: bookId,
+        chapterId: chapters[0].id,
+        tags: const ['highlight'],
+      );
+
+      // 2. Export.
+      final jsonStr = await svc.exportToJson();
+      final parsed = jsonDecode(jsonStr) as Map<String, dynamic>;
+      expect(parsed['version'], 2);
+      expect((parsed['books'] as List).length, 1);
+      expect((parsed['chapters'] as List).length, 3);
+      expect((parsed['snippets'] as List).length, 1);
+      // Content NOT exported.
+      expect((parsed['chapters'] as List)[0]['content'], isNot('Clown content'));
+
+      // 3. Clear the DB and import.
+      await db.customUpdate('DELETE FROM snippets');
+      await db.customUpdate('DELETE FROM chapters');
+      await db.customUpdate('DELETE FROM books');
+
+      final result = await svc.importFromJson(jsonStr);
+      expect(result.booksImported, 1);
+      expect(result.chaptersImported, 3);
+      expect(result.snippetsImported, 1);
+      expect(result.toString(), contains('1 book'));
+      expect(result.toString(), contains('3 chapters restored'));
+      expect(result.toString(), contains('1 snippet'));
+
+      // 4. Verify state.
+      final books = await svc.getBooks();
+      expect(books.length, 1);
+      expect(books.first.title, 'Lord of Mysteries');
+      expect(books.first.author, 'Cuttlefish');
+
+      final restoredChapters = await svc.getChapters(books.first.id);
+      expect(restoredChapters.length, 3);
+      expect(restoredChapters[0].scrollPosition, 12.5);
+      expect(restoredChapters[1].scrollPosition, 200);
+      expect(restoredChapters[1].readAt, isNotNull);
+      expect(restoredChapters[2].scrollPosition, 0);
+      // Content restored to empty (it's a backup of progress, not bodies)
+      expect(restoredChapters[0].content, '');
+
+      final snippets = await svc.getSnippets();
+      expect(snippets.length, 1);
+      expect(snippets.first.text, 'SUDDEN TURN OF EVENTS');
+      expect(snippets.first.sourceTitle, 'Lord of Mysteries Volume 1: Clown');
+      // Snippet re-linked to the new book id (was 1, now still 1
+      // because the table was empty).
+      expect(snippets.first.bookId, books.first.id);
+      // chapterId dropped because the local chapter id differs.
+      expect(snippets.first.chapterId, isNull);
+      expect(snippets.first.tags, ['highlight']);
+    });
+
+    test('v1 backup (no chapters block) still imports', () async {
+      // 1. Populate source DB.
+      final bookId = await svc.insertBook(Book(
+        id: 0,
+        title: 'Pre-v2 Book',
+        author: 'Author',
+        source: 'local',
+      ));
+      await svc.createSnippet(
+        text: 'Pre-v2 snippet',
+        sourceTitle: 'Pre-v2 Book',
+        bookId: bookId,
+        tags: const ['old'],
+      );
+
+      // 2. Manually craft a v1 backup (no chapters block).
+      final v1Json = jsonEncode({
+        'version': 1,
+        'exported_at': DateTime.now().toIso8601String(),
+        'books': [
+          Book(
+                  id: 7,
+                  title: 'Pre-v2 Book',
+                  author: 'Author',
+                  source: 'local')
+              .toJson()
+        ],
+        'snippets': [
+          Snippet(
+                  id: 7,
+                  text: 'Pre-v2 snippet',
+                  sourceTitle: 'Pre-v2 Book',
+                  bookId: 7,
+                  tags: const ['old'])
+              .toJson()
+        ],
+      });
+
+      // 3. Wipe and import.
+      await db.customUpdate('DELETE FROM snippets');
+      await db.customUpdate('DELETE FROM chapters');
+      await db.customUpdate('DELETE FROM books');
+
+      final result = await svc.importFromJson(v1Json);
+      expect(result.version, 1);
+      expect(result.booksImported, 1);
+      expect(result.chaptersImported, 0);
+      expect(result.snippetsImported, 1);
+    });
+
+    test('import skips duplicate books by title+author', () async {
+      await svc.insertBook(Book(
+        id: 0,
+        title: 'Existing',
+        author: 'Author',
+        source: 'local',
+      ));
+      final json = jsonEncode({
+        'version': 2,
+        'exported_at': DateTime.now().toIso8601String(),
+        'books': [
+          Book(
+                  id: 99,
+                  title: 'Existing',
+                  author: 'Author',
+                  source: 'local')
+              .toJson()
+        ],
+        'chapters': <Map<String, dynamic>>[],
+        'snippets': <Map<String, dynamic>>[],
+      });
+      final result = await svc.importFromJson(json);
+      expect(result.booksImported, 0);
+      expect(result.booksSkipped, 1);
+      final allBooks = await svc.getBooks();
+      expect(allBooks.length, 1);
     });
   });
 }

@@ -8,7 +8,7 @@ class AppDatabase extends GeneratedDatabase {
   AppDatabase(QueryExecutor executor) : super(executor);
 
   @override
-  int get schemaVersion => 1;
+  int get schemaVersion => 2;
 
   @override
   Iterable<TableInfo> get allTables => const [];
@@ -21,9 +21,15 @@ class AppDatabase extends GeneratedDatabase {
       },
       beforeOpen: (details) async {
         await _createTables();
-        // Migration: add scroll_position column if missing (idempotent)
+        // v1 → v2 migrations (idempotent — each ALTER is wrapped in
+        // try/catch so re-running on a newer schema is a no-op).
         try {
-          await customStatement('ALTER TABLE books ADD COLUMN scroll_position REAL NOT NULL DEFAULT 0.0');
+          await customStatement(
+              'ALTER TABLE books ADD COLUMN scroll_position REAL NOT NULL DEFAULT 0.0');
+        } catch (_) {}
+        try {
+          await customStatement(
+              'ALTER TABLE chapters ADD COLUMN scroll_position REAL NOT NULL DEFAULT 0.0');
         } catch (_) {}
       },
     );

@@ -17,6 +17,7 @@ void main() async {
   await themeProvider.init();
 
   final libraryProvider = LibraryProvider(dbService);
+  await libraryProvider.init();
   final readerProvider = ReaderProvider(dbService, statsService);
   final snippetsProvider = SnippetsProvider(dbService, statsService);
 

@@ -8,6 +8,7 @@ import '../../theme/tokens/app_colors.dart';
 import '../../theme/tokens/app_motion.dart';
 import '../../theme/tokens/app_spacing.dart';
 import '../../theme/tokens/app_type.dart';
+import '../../widgets/bionic_text.dart';
 import '../../widgets/chapter_sheet.dart';
 import '../../widgets/empty_state.dart';
 import '../../widgets/highlight_color_picker.dart';
@@ -277,8 +278,11 @@ class _ReaderScreenState extends State<ReaderScreen>
                               const SizedBox(height: 28),
                               SelectableText.rich(
                                 TextSpan(
-                                  text: TextExtractor.extractFromHtml(chapter.content),
                                   style: _readingStyle(themeProv),
+                                  children: _buildReadingSpans(
+                                    themeProv,
+                                    TextExtractor.extractFromHtml(chapter.content),
+                                  ),
                                 ),
                                 textAlign: themeProv.textAlign,
                                 onSelectionChanged: (selection, cause) {
@@ -431,14 +435,29 @@ class _ReaderScreenState extends State<ReaderScreen>
 
   TextStyle _readingStyle(ThemeProvider themeProv) {
     final c = context.colors;
+    final family = themeProv.readingFontFamily;
     final base = AppType.reading(
       fontSize: themeProv.fontSize,
       lineHeight: themeProv.lineHeight,
       color: c.textPrimary,
-    );
-    return base.copyWith(
+    ).copyWith(
+      fontFamily: family,
       height: themeProv.lineHeight,
     );
+    return base;
+  }
+
+  List<TextSpan> _buildReadingSpans(ThemeProvider themeProv, String text) {
+    final style = _readingStyle(themeProv);
+    if (themeProv.bionicReading) {
+      return BionicText.spans(
+        text,
+        baseStyle: style,
+        bionicWeight: themeProv.bionicBoldWeight,
+        bionicFraction: themeProv.bionicBoldFraction,
+      );
+    }
+    return [TextSpan(text: text, style: style)];
   }
 
   double _horizontalPadding(double maxWidth) {

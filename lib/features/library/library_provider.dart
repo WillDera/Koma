@@ -1,8 +1,11 @@
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../../core/models/book.dart';
 import '../../core/services/database_service.dart';
 
 class LibraryProvider extends ChangeNotifier {
+  static const _keyIsGridView = 'library_is_grid_view';
+
   final DatabaseService _db;
   List<Book> _books = [];
   bool _loading = true;
@@ -15,9 +18,22 @@ class LibraryProvider extends ChangeNotifier {
 
   bool get isGridView => _isGridView;
 
+  /// Load persisted preferences (view mode). Must be called from
+  /// main() before the app builds so the first frame uses the
+  /// saved layout.
+  Future<void> init() async {
+    final prefs = await SharedPreferences.getInstance();
+    _isGridView = prefs.getBool(_keyIsGridView) ?? false;
+    notifyListeners();
+  }
+
   void toggleLayout() {
     _isGridView = !_isGridView;
     notifyListeners();
+    // Persist asynchronously; fire-and-forget.
+    SharedPreferences.getInstance().then(
+      (prefs) => prefs.setBool(_keyIsGridView, _isGridView),
+    );
   }
 
   List<Book> get books => _books;
