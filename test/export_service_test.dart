@@ -325,7 +325,7 @@ void main() {
         progress: 0,
         totalChapters: 5,
       ));
-      final chapters = [
+      await svc.insertChapters([
         Chapter(
             id: 0,
             bookId: bookId,
@@ -343,25 +343,27 @@ void main() {
             readAt: DateTime(2026, 1, 1)),
         Chapter(
             id: 0, bookId: bookId, title: 'Chapter 3', content: '...', index: 2),
-      ];
-      await svc.insertChapters(chapters);
+      ]);
+      // Get real chapter IDs from DB (constructor id=0 is placeholder).
+      final saved = await svc.getChapters(bookId);
       await svc.createSnippet(
         text: 'SUDDEN TURN OF EVENTS',
         sourceTitle: 'Lord of Mysteries Volume 1: Clown',
         bookId: bookId,
-        chapterId: chapters[0].id,
+        chapterId: saved[0].id,
         tags: const ['highlight'],
       );
 
       // 2. Export.
       final jsonStr = await svc.exportToJson();
       final parsed = jsonDecode(jsonStr) as Map<String, dynamic>;
-      expect(parsed['version'], 2);
+      expect(parsed['version'], 3);
       expect((parsed['books'] as List).length, 1);
       expect((parsed['chapters'] as List).length, 3);
       expect((parsed['snippets'] as List).length, 1);
-      // Content NOT exported.
-      expect((parsed['chapters'] as List)[0]['content'], isNot('Clown content'));
+      expect((parsed['tags'] as List).length, 1);
+      // Content IS exported in v3.
+      expect((parsed['chapters'] as List)[0]['content'], 'Clown content');
 
       // 3. Clear the DB and import.
       await db.customUpdate('DELETE FROM snippets');
@@ -384,22 +386,20 @@ void main() {
 
       final restoredChapters = await svc.getChapters(books.first.id);
       expect(restoredChapters.length, 3);
+      expect(restoredChapters[0].content, 'Clown content');
+      expect(restoredChapters[1].content, 'More content');
       expect(restoredChapters[0].scrollPosition, 12.5);
       expect(restoredChapters[1].scrollPosition, 200);
       expect(restoredChapters[1].readAt, isNotNull);
       expect(restoredChapters[2].scrollPosition, 0);
-      // Content restored to empty (it's a backup of progress, not bodies)
-      expect(restoredChapters[0].content, '');
 
       final snippets = await svc.getSnippets();
       expect(snippets.length, 1);
       expect(snippets.first.text, 'SUDDEN TURN OF EVENTS');
       expect(snippets.first.sourceTitle, 'Lord of Mysteries Volume 1: Clown');
-      // Snippet re-linked to the new book id (was 1, now still 1
-      // because the table was empty).
       expect(snippets.first.bookId, books.first.id);
-      // chapterId dropped because the local chapter id differs.
-      expect(snippets.first.chapterId, isNull);
+      expect(snippets.first.chapterId, isNotNull);
+      expect(snippets.first.chapterId, restoredChapters[0].id);
       expect(snippets.first.tags, ['highlight']);
     });
 

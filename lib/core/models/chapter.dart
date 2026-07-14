@@ -41,8 +41,7 @@ class Chapter {
         'id': id,
         'book_id': bookId,
         'title': title,
-        // 'content' deliberately omitted — chapter bodies are large
-        // and the local DB already has them.
+        'content': content,
         'index': index,
         'read_at': readAt?.toIso8601String(),
         'scroll_position': scrollPosition,
@@ -52,7 +51,7 @@ class Chapter {
         id: json['id'] as int,
         bookId: json['book_id'] as int,
         title: json['title'] as String,
-        content: '',
+        content: json['content'] as String? ?? '',
         index: json['index'] as int,
         readAt: json['read_at'] != null
             ? DateTime.parse(json['read_at'] as String)

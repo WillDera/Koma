@@ -16,9 +16,8 @@ class AppDatabase extends GeneratedDatabase {
   @override
   MigrationStrategy get migration {
     return MigrationStrategy(
-      onCreate: (Migrator m) async {
-        // Tables are created in beforeOpen, not here
-      },
+      onCreate: (Migrator m) async {},
+      onUpgrade: (Migrator m, int from, int to) async {},
       beforeOpen: (details) async {
         await _createTables();
         // v1 → v2 migrations (idempotent — each ALTER is wrapped in

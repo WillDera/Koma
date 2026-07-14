@@ -133,7 +133,7 @@ class DatabaseService {
 
   Future<int> insertChapter(Chapter chapter) async {
     return await _db.customInsert(
-      'INSERT INTO chapters (book_id, title, content, "index", read_at) VALUES (?, ?, ?, ?, ?)',
+      'INSERT INTO chapters (book_id, title, content, "index", read_at, scroll_position) VALUES (?, ?, ?, ?, ?, ?)',
       variables: [
         Variable.withInt(chapter.bookId),
         Variable.withString(chapter.title),
@@ -142,6 +142,7 @@ class DatabaseService {
         chapter.readAt != null
             ? Variable.withDateTime(chapter.readAt!)
             : Variable<DateTime>(null),
+        Variable.withReal(chapter.scrollPosition),
       ],
     );
   }
@@ -150,7 +151,7 @@ class DatabaseService {
     await _db.transaction(() async {
       for (final ch in chapters) {
         await _db.customInsert(
-          'INSERT INTO chapters (book_id, title, content, "index", read_at) VALUES (?, ?, ?, ?, ?)',
+          'INSERT INTO chapters (book_id, title, content, "index", read_at, scroll_position) VALUES (?, ?, ?, ?, ?, ?)',
           variables: [
             Variable.withInt(ch.bookId),
             Variable.withString(ch.title),
@@ -159,6 +160,7 @@ class DatabaseService {
             ch.readAt != null
                 ? Variable.withDateTime(ch.readAt!)
                 : Variable<DateTime>(null),
+            Variable.withReal(ch.scrollPosition),
           ],
         );
       }
@@ -415,41 +417,44 @@ class DatabaseService {
   Future<String> exportToJson() async {
     final books = await getBooks();
     final snippets = await getSnippets();
-    // Pull all chapters and join with their book_id, then strip the
-    // body (content) — that's local data, kept in the source DB.
     final chapterRows = await _db
         .customSelect(
-            'SELECT id, book_id, title, "index", read_at, scroll_position FROM chapters ORDER BY book_id, "index" ASC')
+            'SELECT id, book_id, title, content, "index", read_at, scroll_position FROM chapters ORDER BY book_id, "index" ASC')
         .get();
     final chapters = chapterRows
-        .map((r) => _chapterFromRow({
-              'id': r.data['id'],
-              'book_id': r.data['book_id'],
-              'title': r.data['title'],
-              'content': '',
-              'index': r.data['index'],
-              'read_at': r.data['read_at'],
-              'scroll_position': r.data['scroll_position'],
-            }))
+        .map((r) => _chapterFromRow(r.data))
         .map((ch) => ch.toJson())
         .toList();
 
+    final tagRows = await _db
+        .customSelect('SELECT name FROM tags ORDER BY name').get();
+    final tags = tagRows.map((r) => r.data['name'] as String).toList();
+
+    final statRows = await _db
+        .customSelect('SELECT * FROM reading_stats ORDER BY date').get();
+    final stats = statRows
+        .map((r) => _statFromRow(r.data).toJson())
+        .toList();
+
     final export = {
-      'version': 2,
+      'version': 3,
       'exported_at': DateTime.now().toIso8601String(),
       'books': books.map((b) => b.toJson()).toList(),
       'chapters': chapters,
       'snippets': snippets.map((s) => s.toJson()).toList(),
+      'tags': tags,
+      'reading_stats': stats,
     };
     return const JsonEncoder.withIndent('  ').convert(export);
   }
-
   Future<ImportResult> importFromJson(String jsonStr) async {
     final data = jsonDecode(jsonStr) as Map<String, dynamic>;
     final version = (data['version'] as int?) ?? 1;
-    final books = (data['books'] as List<dynamic>?) ?? [];
-    final chapters = (data['chapters'] as List<dynamic>?) ?? [];
-    final snippets = (data['snippets'] as List<dynamic>?) ?? [];
+    final booksJson = (data['books'] as List<dynamic>?) ?? [];
+    final chaptersJson = (data['chapters'] as List<dynamic>?) ?? [];
+    final snippetsJson = (data['snippets'] as List<dynamic>?) ?? [];
+    final tagsJson = (data['tags'] as List<dynamic>?) ?? [];
+    final statsJson = (data['reading_stats'] as List<dynamic>?) ?? [];
 
     int booksImported = 0;
     int booksSkipped = 0;
@@ -458,11 +463,13 @@ class DatabaseService {
     int snippetsImported = 0;
     int snippetsSkipped = 0;
 
+
     await _db.transaction(() async {
-      // 1. Books.  Build a map of old → new book ids so we can remap
-      // chapter and snippet references back to the user's local copy.
+      // 1. Books.  Build old → new book id map so we can remap
+      // chapter and snippet references.
       final oldToNewBookId = <int, int>{};
-      for (final b in books) {
+      final newlyImportedOldBookIds = <int>{};
+      for (final b in booksJson) {
         final book = Book.fromJson(b as Map<String, dynamic>);
         final existing = await _db
             .customSelect(
@@ -474,6 +481,7 @@ class DatabaseService {
         if (existing.isEmpty) {
           final newId = await insertBook(book);
           oldToNewBookId[book.id] = newId;
+          newlyImportedOldBookIds.add(book.id);
           booksImported++;
         } else {
           oldToNewBookId[book.id] = existing.first.data['id'] as int;
@@ -481,58 +489,73 @@ class DatabaseService {
         }
       }
 
-      // 2. Chapter progress.  v2 backups have a chapters block; v1
-      // backups don't.  Match each backup chapter to the local copy
-      // by (book_id → remapped, index).  Update the local chapter's
-      // scroll_position and read_at.
+      // 2. Chapters.  v3+ exports include full chapter content; v2
+      // exports have metadata only.  For newly imported books we
+      // insert chapters with content.  For existing books we restore
+      // scroll_position and read_at via index matching.
+      final oldToNewChapterId = <int, int>{};
       if (version >= 2) {
-        for (final c in chapters) {
+        for (final c in chaptersJson) {
           final map = c as Map<String, dynamic>;
           final oldBookId = map['book_id'] as int?;
-          final newBookId =
-              oldBookId == null ? null : oldToNewBookId[oldBookId];
+          final newBookId = oldBookId == null ? null : oldToNewBookId[oldBookId];
           if (newBookId == null) {
             chaptersSkipped++;
             continue;
           }
           final index = map['index'] as int? ?? 0;
           final local = await findChapterByIndex(newBookId, index);
-          if (local == null) {
-            // The local book doesn't have this chapter (the user's
-            // copy of the book has different chapters — different
-            // EPUB source, different translation, etc.).  Skip.
-            chaptersSkipped++;
-            continue;
-          }
-          final scroll = (map['scroll_position'] as num?)?.toDouble() ?? 0.0;
-          if (scroll > 0) {
-            await updateChapterScroll(local.id, scroll);
-          }
-          final readAtRaw = map['read_at'];
-          if (readAtRaw is String) {
-            final readAt = DateTime.tryParse(readAtRaw);
-            if (readAt != null) {
-              await _db.customUpdate(
-                'UPDATE chapters SET read_at=? WHERE id=?',
-                variables: [
-                  Variable.withDateTime(readAt),
-                  Variable.withInt(local.id),
-                ],
-              );
+
+          if (local != null) {
+            final scroll =
+                (map['scroll_position'] as num?)?.toDouble() ?? 0.0;
+            if (scroll > 0) {
+              await updateChapterScroll(local.id, scroll);
             }
+            final readAtRaw = map['read_at'];
+            if (readAtRaw is String) {
+              final readAt = DateTime.tryParse(readAtRaw);
+              if (readAt != null) {
+                await _db.customUpdate(
+                  'UPDATE chapters SET read_at=? WHERE id=?',
+                  variables: [
+                    Variable.withDateTime(readAt),
+                    Variable.withInt(local.id),
+                  ],
+                );
+              }
+            }
+            oldToNewChapterId[map['id'] as int] = local.id;
+            chaptersImported++;
+          } else if (newlyImportedOldBookIds.contains(oldBookId)) {
+            final chapter = Chapter.fromJson(map)
+                .copyWith(bookId: newBookId, id: 0);
+            final newChapterId = await insertChapter(chapter);
+            oldToNewChapterId[map['id'] as int] = newChapterId;
+            chaptersImported++;
+          } else {
+            chaptersSkipped++;
           }
-          chaptersImported++;
         }
       }
 
-      // 3. Snippets.  Remap bookId to the new id; drop chapterId
-      // (the target chapter ordering may differ from the backup).
-      for (final s in snippets) {
+      // 3. Tags.  Ensure all exported tags exist (v3+).
+      for (final tagName in tagsJson) {
+        await _ensureTag(tagName as String);
+      }
+
+      // 4. Snippets.  Remap bookId and chapterId.
+      for (final s in snippetsJson) {
         final snippet = Snippet.fromJson(s as Map<String, dynamic>);
         int? remappedBookId;
         if (snippet.bookId != null) {
           remappedBookId = oldToNewBookId[snippet.bookId];
         }
+        int? remappedChapterId;
+        if (snippet.chapterId != null) {
+          remappedChapterId = oldToNewChapterId[snippet.chapterId];
+        }
+
         try {
           await createSnippet(
             text: snippet.text,
@@ -541,12 +564,30 @@ class DatabaseService {
             sourceUrl: snippet.sourceUrl,
             color: snippet.color,
             bookId: remappedBookId,
-            chapterId: null,
+            chapterId: remappedChapterId,
             tags: snippet.tags,
           );
           snippetsImported++;
         } catch (_) {
           snippetsSkipped++;
+        }
+      }
+
+      // 5. Reading stats (v3+).
+      if (version >= 3) {
+        for (final s in statsJson) {
+          final stat = ReadingStat.fromJson(s as Map<String, dynamic>);
+          await _db.customInsert(
+            'INSERT OR REPLACE INTO reading_stats (date, reading_time_seconds, snippets_created, books_completed) '
+            'VALUES (?, ?, ?, ?)',
+            variables: [
+              Variable.withString(
+                  stat.date.toIso8601String().substring(0, 10)),
+              Variable.withInt(stat.readingTimeSeconds),
+              Variable.withInt(stat.snippetsCreated),
+              Variable.withInt(stat.booksCompleted),
+            ],
+          );
         }
       }
     });
@@ -582,7 +623,23 @@ class DatabaseService {
 
   Chapter _chapterFromRow(Map<String, dynamic> row) {
     final readAtRaw = row['read_at'];
-    final readAt = readAtRaw is String ? DateTime.tryParse(readAtRaw) : readAtRaw as DateTime?;
+    DateTime? readAt;
+    if (readAtRaw is int) {
+      readAt = DateTime.fromMillisecondsSinceEpoch(readAtRaw);
+    } else if (readAtRaw is double) {
+      readAt = DateTime.fromMillisecondsSinceEpoch(readAtRaw.toInt());
+    } else if (readAtRaw is String) {
+      readAt = DateTime.tryParse(readAtRaw);
+      if (readAt == null) {
+        final ms = int.tryParse(readAtRaw);
+        if (ms != null) {
+          readAt = DateTime.fromMillisecondsSinceEpoch(ms);
+        }
+      }
+    } else if (readAtRaw != null) {
+      final n = readAtRaw as num;
+      readAt = DateTime.fromMillisecondsSinceEpoch(n.toInt());
+    }
     return Chapter(
       id: row['id'] as int,
       bookId: row['book_id'] as int,
@@ -590,6 +647,7 @@ class DatabaseService {
       content: row['content'] as String,
       index: row['index'] as int,
       readAt: readAt,
+      scrollPosition: (row['scroll_position'] as num?)?.toDouble() ?? 0.0,
     );
   }
 
