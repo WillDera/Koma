@@ -34,6 +34,7 @@ class LibraryScreen extends StatefulWidget {
 class _LibraryScreenState extends State<LibraryScreen> {
   final ScrollController _scrollCtrl = ScrollController();
   double _scrollProgress = 0;
+  bool _importingFile = false;
 
   @override
   void initState() {
@@ -65,6 +66,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
   @override
   Widget build(BuildContext context) {
     final leftHanded = context.watch<ThemeProvider>().handMode == HandMode.left;
+    final navClearance = MediaQuery.paddingOf(context).bottom + 84;
     return Consumer<LibraryProvider>(
       builder: (context, provider, _) {
         return Stack(
@@ -76,7 +78,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
               Positioned(
                 left: leftHanded ? 20 : null,
                 right: leftHanded ? null : 20,
-                bottom: 12,
+                bottom: navClearance,
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
@@ -102,6 +104,43 @@ class _LibraryScreenState extends State<LibraryScreen> {
                   ],
                 ),
               ),
+            if (_importingFile)
+              Positioned.fill(
+                child: AbsorbPointer(
+                  child: ColoredBox(
+                    color: Colors.black38,
+                    child: Center(
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 20,
+                          vertical: 18,
+                        ),
+                        decoration: BoxDecoration(
+                          color: context.colors.surface,
+                          borderRadius: BorderRadius.circular(18),
+                        ),
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            CircularProgressIndicator(
+                              color: context.colors.accent,
+                            ),
+                            const SizedBox(height: 14),
+                            Text(
+                              'Preparing MOBI...',
+                              style: TextStyle(
+                                color: context.colors.textPrimary,
+                                fontSize: 14,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
           ],
         );
       },
@@ -114,7 +153,9 @@ class _LibraryScreenState extends State<LibraryScreen> {
     if (provider.loading && provider.books.isEmpty) return _loading(context);
     if (provider.error != null) return _error(context, provider);
     if (provider.books.isEmpty) return _empty(context);
-    return provider.isGridView ? _grid(context, provider) : _list(context, provider);
+    return provider.isGridView
+        ? _grid(context, provider)
+        : _list(context, provider);
   }
 
   // ── States ──────────────────────────────────────────────────────────
@@ -140,8 +181,9 @@ class _LibraryScreenState extends State<LibraryScreen> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: const [
               Skeleton(
-                  height: 200,
-                  borderRadius: BorderRadius.all(Radius.circular(14))),
+                height: 200,
+                borderRadius: BorderRadius.all(Radius.circular(14)),
+              ),
               SizedBox(height: 8),
               Skeleton(height: 12, width: 100),
             ],
@@ -207,18 +249,24 @@ class _LibraryScreenState extends State<LibraryScreen> {
               padding: const EdgeInsets.fromLTRB(20, 16, 20, 12),
               child: Row(
                 children: [
-                  Text('All books',
-                      style: TextStyle(
-                          color: context.colors.textPrimary,
-                          fontSize: 18,
-                          fontWeight: FontWeight.w600,
-                          letterSpacing: -0.2)),
+                  Text(
+                    'All books',
+                    style: TextStyle(
+                      color: context.colors.textPrimary,
+                      fontSize: 18,
+                      fontWeight: FontWeight.w600,
+                      letterSpacing: -0.2,
+                    ),
+                  ),
                   const Spacer(),
-                  Text('${provider.books.length}',
-                      style: TextStyle(
-                          color: context.colors.textTertiary,
-                          fontSize: 13,
-                          fontWeight: FontWeight.w500)),
+                  Text(
+                    '${provider.books.length}',
+                    style: TextStyle(
+                      color: context.colors.textTertiary,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
                 ],
               ),
             ),
@@ -287,8 +335,11 @@ class _LibraryScreenState extends State<LibraryScreen> {
 
   // ── Header ──────────────────────────────────────────────────────────
 
-  Widget _header(BuildContext context, LibraryProvider provider,
-      [bool oneHand = false]) {
+  Widget _header(
+    BuildContext context,
+    LibraryProvider provider, [
+    bool oneHand = false,
+  ]) {
     if (provider.selectionMode) {
       return LibraryHeader(
         title: '${provider.selectedIds.length} selected',
@@ -327,102 +378,153 @@ class _LibraryScreenState extends State<LibraryScreen> {
   // ── Dialogs / import ────────────────────────────────────────────────
 
   void _confirmDelete(BuildContext context, LibraryProvider provider) async {
-    final confirmed = await StashDialog.show<bool>(context,
-        title: 'Remove books?',
-        content:
-            'Delete ${provider.selectedIds.length} book${provider.selectedIds.length == 1 ? '' : 's'} and all their chapters?',
-        actions: [
-          TextButton(
-              onPressed: () => Navigator.pop(context, false),
-              child: Text('Cancel',
-                  style: TextStyle(color: context.colors.textSecondary))),
-          TextButton(
-              onPressed: () => Navigator.pop(context, true),
-              child: const Text('Delete',
-                  style: TextStyle(color: Color(0xFFC44C4C)))),
-        ]);
+    final confirmed = await StashDialog.show<bool>(
+      context,
+      title: 'Remove books?',
+      content:
+          'Delete ${provider.selectedIds.length} book${provider.selectedIds.length == 1 ? '' : 's'} and all their chapters?',
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context, false),
+          child: Text(
+            'Cancel',
+            style: TextStyle(color: context.colors.textSecondary),
+          ),
+        ),
+        TextButton(
+          onPressed: () => Navigator.pop(context, true),
+          child: const Text(
+            'Delete',
+            style: TextStyle(color: Color(0xFFC44C4C)),
+          ),
+        ),
+      ],
+    );
     if (confirmed == true) await provider.deleteSelected();
   }
 
   void _showImportOptions(BuildContext context) {
-    ImportSheet.show(context, options: [
-      ImportOption(
+    ImportSheet.show(
+      context,
+      options: [
+        ImportOption(
           icon: Icons.file_present_outlined,
           title: 'Import file',
           subtitle: 'EPUB, TXT, or Markdown',
-          onTap: () => _importFile(context)),
-      ImportOption(
+          onTap: () => _importFile(context),
+        ),
+        ImportOption(
           icon: Icons.link,
           title: 'Add URL',
           subtitle: 'Save a web article for offline',
-          onTap: () => _showAddUrlDialog(context)),
-      ImportOption(
+          onTap: () => _showAddUrlDialog(context),
+        ),
+        ImportOption(
           icon: Icons.edit_note,
           title: 'New snippet',
           subtitle: 'Capture a thought or quote',
-          onTap: () => _showAddNoteDialog(context)),
-    ]);
+          onTap: () => _showAddNoteDialog(context),
+        ),
+      ],
+    );
   }
 
   // ── File / web import ───────────────────────────────────────────────
 
+  bool _isMobiFile(String filePath) {
+    final ext = filePath.split('.').last.toLowerCase();
+    return const {'mobi', 'azw', 'azw3', 'kf8'}.contains(ext);
+  }
+
   Future<void> _importFile(BuildContext context) async {
     try {
       final result = await FilePicker.pickFiles(
-          type: FileType.custom,
-          allowedExtensions: [
-            'epub', 'fb2', 'txt', 'mobi', 'azw', 'azw3', 'kf8', 'md', 'html'
-          ],
-          allowMultiple: false);
+        type: FileType.custom,
+        allowedExtensions: [
+          'epub',
+          'fb2',
+          'txt',
+          'mobi',
+          'azw',
+          'azw3',
+          'kf8',
+          'md',
+          'html',
+        ],
+        allowMultiple: false,
+      );
       if (result == null || result.files.isEmpty) return;
       if (!context.mounted) return;
       final filePath = result.files.single.path!;
+      final showMobiLoader = _isMobiFile(filePath);
+      if (showMobiLoader && mounted) {
+        setState(() => _importingFile = true);
+      }
+      final db = context.read<DatabaseService>();
+      final provider = context.read<LibraryProvider>();
       final ebookSvc = EbookService();
       final parsed = await ebookSvc.parse(filePath);
       if (parsed == null) throw Exception('Unsupported format');
       if (!context.mounted) return;
-      final db = context.read<DatabaseService>();
-      final existing =
-          await db.findLocalBook(parsed.book.title, parsed.book.author);
+      final existing = await db.findLocalBook(
+        parsed.book.title,
+        parsed.book.author,
+      );
       if (existing != null) {
         if (context.mounted) {
-          StashToast.show(context,
-              message: '"${parsed.book.title}" is already in your library',
-              icon: Icons.info_outline);
+          StashToast.show(
+            context,
+            message: '"${parsed.book.title}" is already in your library',
+            icon: Icons.info_outline,
+          );
           _openReader(context, existing.id);
         }
         return;
       }
-      final provider = context.read<LibraryProvider>();
       final bookId = await provider.addBook(parsed.book);
       for (final ch in parsed.chapters) {
         await db.insertChapter(ch.copyWith(bookId: bookId));
       }
       if (context.mounted) {
-        StashToast.show(context,
-            message:
-                '"${parsed.book.title}" added (${parsed.chapters.length} chapters)',
-            icon: Icons.check);
+        StashToast.show(
+          context,
+          message:
+              '"${parsed.book.title}" added (${parsed.chapters.length} chapters)',
+          icon: Icons.check,
+        );
       }
     } catch (e) {
       if (context.mounted) {
-        StashToast.show(context, message: 'Import failed: $e', icon: Icons.error_outline);
+        StashToast.show(
+          context,
+          message: 'Import failed: $e',
+          icon: Icons.error_outline,
+        );
+      }
+    } finally {
+      if (mounted && _importingFile) {
+        setState(() => _importingFile = false);
       }
     }
   }
 
   void _showAddUrlDialog(BuildContext context) {
-    UrlImportDialog.show(context, onSubmit: (url) => _fetchWebContent(context, url));
+    UrlImportDialog.show(
+      context,
+      onSubmit: (url) => _fetchWebContent(context, url),
+    );
   }
 
   Future<void> _fetchWebContent(BuildContext context, String url) async {
     if (url.isEmpty) return;
     if (!context.mounted) return;
     try {
-      StashToast.show(context,
-          message: 'Fetching content…',
-          icon: Icons.cloud_download_outlined,
-          duration: const Duration(seconds: 3));
+      StashToast.show(
+        context,
+        message: 'Fetching content…',
+        icon: Icons.cloud_download_outlined,
+        duration: const Duration(seconds: 3),
+      );
       final scraper = WebScraperService();
       final result = await scraper.fetchContent(url);
       if (!context.mounted) return;
@@ -433,39 +535,58 @@ class _LibraryScreenState extends State<LibraryScreen> {
         if (context.mounted) {
           final provider = context.read<LibraryProvider>();
           final book = Book(
-              id: 0, title: cached.title, source: 'web', sourceUrl: url, totalChapters: 1);
+            id: 0,
+            title: cached.title,
+            source: 'web',
+            sourceUrl: url,
+            totalChapters: 1,
+          );
           final bookId = await provider.addBook(book);
           await db.insertChapter(cached.copyWith(bookId: bookId));
           if (context.mounted) {
-            StashToast.show(context, message: 'Loaded from cache', icon: Icons.check);
+            StashToast.show(
+              context,
+              message: 'Loaded from cache',
+              icon: Icons.check,
+            );
           }
         }
         return;
       }
       final provider = context.read<LibraryProvider>();
       final book = Book(
-          id: 0,
-          title: result.title,
-          author: result.author,
-          source: 'web',
-          sourceUrl: url,
-          totalChapters: 1);
+        id: 0,
+        title: result.title,
+        author: result.author,
+        source: 'web',
+        sourceUrl: url,
+        totalChapters: 1,
+      );
       final bookId = await provider.addBook(book);
-      await db.insertChapter(Chapter(
+      await db.insertChapter(
+        Chapter(
           id: 0,
           bookId: bookId,
           title: result.title,
           content: result.contentHtml,
-          index: 0));
+          index: 0,
+        ),
+      );
       await cache.cacheContent(url, result.title, result.contentHtml);
       if (context.mounted) {
-        StashToast.show(context,
-            message: '"${result.title}" added', icon: Icons.check);
+        StashToast.show(
+          context,
+          message: '"${result.title}" added',
+          icon: Icons.check,
+        );
       }
     } catch (e) {
       if (context.mounted) {
-        StashToast.show(context,
-            message: 'Failed to fetch: $e', icon: Icons.error_outline);
+        StashToast.show(
+          context,
+          message: 'Failed to fetch: $e',
+          icon: Icons.error_outline,
+        );
       }
     }
   }
@@ -473,56 +594,79 @@ class _LibraryScreenState extends State<LibraryScreen> {
   void _showAddNoteDialog(BuildContext context) {
     final titleCtrl = TextEditingController();
     final contentCtrl = TextEditingController();
-    StashDialog.show<void>(context,
-        title: 'New note',
-        contentWidget: Column(mainAxisSize: MainAxisSize.min, children: [
+    StashDialog.show<void>(
+      context,
+      title: 'New note',
+      contentWidget: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
           TextField(
-              controller: titleCtrl,
-              autofocus: true,
-              decoration: const InputDecoration(labelText: 'Title')),
+            controller: titleCtrl,
+            autofocus: true,
+            decoration: const InputDecoration(labelText: 'Title'),
+          ),
           const SizedBox(height: 12),
           TextField(
-              controller: contentCtrl,
-              maxLines: 5,
-              decoration: const InputDecoration(labelText: 'Content')),
-        ]),
-        actions: [
-          TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: Text('Cancel',
-                  style: TextStyle(color: context.colors.textSecondary))),
-          PremiumButton(
-              label: 'Save',
-              size: PremiumButtonSize.sm,
-              onPressed: () {
-                final t = titleCtrl.text.trim();
-                final c = contentCtrl.text.trim();
-                if (t.isEmpty || c.isEmpty) return;
-                Navigator.pop(context);
-                _createNote(context, t, c);
-              }),
-        ]);
+            controller: contentCtrl,
+            maxLines: 5,
+            decoration: const InputDecoration(labelText: 'Content'),
+          ),
+        ],
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: Text(
+            'Cancel',
+            style: TextStyle(color: context.colors.textSecondary),
+          ),
+        ),
+        PremiumButton(
+          label: 'Save',
+          size: PremiumButtonSize.sm,
+          onPressed: () {
+            final t = titleCtrl.text.trim();
+            final c = contentCtrl.text.trim();
+            if (t.isEmpty || c.isEmpty) return;
+            Navigator.pop(context);
+            _createNote(context, t, c);
+          },
+        ),
+      ],
+    );
   }
 
-  Future<void> _createNote(BuildContext context, String title, String content) async {
+  Future<void> _createNote(
+    BuildContext context,
+    String title,
+    String content,
+  ) async {
     if (title.isEmpty || content.isEmpty) return;
     if (!context.mounted) return;
     try {
-      await context
-          .read<SnippetsProvider>()
-          .createSnippet(text: content, sourceTitle: title, tags: ['note']);
+      await context.read<SnippetsProvider>().createSnippet(
+        text: content,
+        sourceTitle: title,
+        tags: ['note'],
+      );
       if (context.mounted) {
         StashToast.show(context, message: 'Note created', icon: Icons.check);
       }
     } catch (e) {
       if (context.mounted) {
-        StashToast.show(context, message: 'Failed: $e', icon: Icons.error_outline);
+        StashToast.show(
+          context,
+          message: 'Failed: $e',
+          icon: Icons.error_outline,
+        );
       }
     }
   }
 
   void _openReader(BuildContext context, int bookId) {
     Navigator.push(
-        context, MaterialPageRoute(builder: (_) => ReaderScreen(bookId: bookId)));
+      context,
+      MaterialPageRoute(builder: (_) => ReaderScreen(bookId: bookId)),
+    );
   }
 }
