@@ -1,12 +1,10 @@
-import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:file_picker/file_picker.dart';
-import 'package:path/path.dart' as p;
 import '../../core/models/book.dart';
 import '../../core/models/chapter.dart';
 import '../../core/services/database_service.dart';
-import '../../core/services/epub_service.dart';
+import '../../core/services/ebook_service.dart';
 import '../../core/services/web_scraper_service.dart';
 import '../../core/services/cache_service.dart';
 import '../../theme/app_theme.dart';
@@ -372,69 +370,43 @@ class _LibraryScreenState extends State<LibraryScreen> {
     try {
       final result = await FilePicker.pickFiles(
           type: FileType.custom,
-          allowedExtensions: ['epub', 'txt', 'md', 'html'],
+          allowedExtensions: [
+            'epub', 'fb2', 'txt', 'mobi', 'azw', 'azw3', 'kf8', 'md', 'html'
+          ],
           allowMultiple: false);
       if (result == null || result.files.isEmpty) return;
       if (!context.mounted) return;
-      final file = result.files.single;
-      final filePath = file.path!;
-      final ext = p.extension(filePath).toLowerCase();
-      if (ext == '.epub') {
-        await _importEpub(context, filePath);
-      } else {
-        final provider = context.read<LibraryProvider>();
-        final content = await File(filePath).readAsString();
-        final title = p.basenameWithoutExtension(filePath);
-        final book = Book(
-            id: 0, title: title, source: 'local', filePath: filePath, totalChapters: 1);
-        final bookId = await provider.addBook(book);
-        final db = context.read<DatabaseService>();
-        await db.insertChapter(
-            Chapter(id: 0, bookId: bookId, title: title, content: content, index: 0));
-        if (context.mounted) {
-          StashToast.show(context, message: '"$title" imported', icon: Icons.check);
-        }
-      }
-    } catch (e) {
-      if (context.mounted) {
-        StashToast.show(context, message: 'Import failed: $e', icon: Icons.error_outline);
-      }
-    }
-  }
-
-  Future<void> _importEpub(BuildContext context, String filePath) async {
-    try {
-      final epubService = EpubService();
-      final result = await epubService.parseEpub(filePath);
-      if (result == null) throw Exception('Failed to parse EPUB');
+      final filePath = result.files.single.path!;
+      final ebookSvc = EbookService();
+      final parsed = await ebookSvc.parse(filePath);
+      if (parsed == null) throw Exception('Unsupported format');
       if (!context.mounted) return;
       final db = context.read<DatabaseService>();
       final existing =
-          await db.findLocalBook(result.book.title, result.book.author);
+          await db.findLocalBook(parsed.book.title, parsed.book.author);
       if (existing != null) {
         if (context.mounted) {
           StashToast.show(context,
-              message: '"${result.book.title}" is already in your library',
+              message: '"${parsed.book.title}" is already in your library',
               icon: Icons.info_outline);
           _openReader(context, existing.id);
         }
         return;
       }
       final provider = context.read<LibraryProvider>();
-      final bookId = await provider.addBook(result.book);
-      for (final ch in result.chapters) {
+      final bookId = await provider.addBook(parsed.book);
+      for (final ch in parsed.chapters) {
         await db.insertChapter(ch.copyWith(bookId: bookId));
       }
       if (context.mounted) {
         StashToast.show(context,
             message:
-                '"${result.book.title}" added (${result.chapters.length} chapters)',
+                '"${parsed.book.title}" added (${parsed.chapters.length} chapters)',
             icon: Icons.check);
       }
     } catch (e) {
       if (context.mounted) {
-        StashToast.show(
-            context, message: 'EPUB import failed: $e', icon: Icons.error_outline);
+        StashToast.show(context, message: 'Import failed: $e', icon: Icons.error_outline);
       }
     }
   }

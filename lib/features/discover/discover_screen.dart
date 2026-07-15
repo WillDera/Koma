@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../core/services/source_service.dart';
 import '../../core/services/database_service.dart';
-import '../../core/services/epub_service.dart';
+import '../../core/services/ebook_service.dart';
 import '../library/library_provider.dart';
 import '../../theme/app_theme.dart';
 import '../../theme/theme_provider.dart';
@@ -53,7 +53,7 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
 
   SourceService _svc() => SourceService(
         context.read<DatabaseService>(),
-        EpubService(),
+        EbookService(),
       );
 
   Future<void> _search() async {
@@ -149,10 +149,11 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
       return;
     }
 
+    final ext = result.extension ?? 'epub';
     if (result.tag == 'libgen') {
       await _pickMirrorAndDownload(context, result);
     } else {
-      await _downloadDirect(result.downloadUrl!, result.title);
+      await _downloadDirect(result.downloadUrl!, result.title, ext);
     }
   }
 
@@ -163,8 +164,8 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
     if (!mounted) return;
     if (links.isEmpty) {
       if (result.downloadUrl != null && result.downloadUrl!.isNotEmpty) {
-        // Try direct download as fallback
-        await _downloadDirect(result.downloadUrl!, result.title);
+        final ext = result.extension ?? 'epub';
+        await _downloadDirect(result.downloadUrl!, result.title, ext);
       }
       return;
     }
@@ -222,12 +223,12 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
       ),
     );
     if (chosen == null || chosen.isEmpty) return;
-    await _downloadDirect(chosen, result.title);
+    await _downloadDirect(chosen, result.title, result.extension ?? 'epub');
   }
 
-  Future<void> _downloadDirect(String url, String title) async {
+  Future<void> _downloadDirect(String url, String title, String ext) async {
     StashToast.show(context, message: 'Downloading…', icon: Icons.download);
-    final ok = await _svc().downloadFromLink(url, title, 'epub');
+    final ok = await _svc().downloadFromLink(url, title, ext);
     if (!mounted) return;
     if (ok) {
       context.read<LibraryProvider>().loadBooks();

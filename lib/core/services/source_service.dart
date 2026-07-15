@@ -6,7 +6,7 @@ import 'package:html/parser.dart' as html_parser;
 import 'package:path_provider/path_provider.dart';
 import '../models/source.dart';
 import 'database_service.dart';
-import 'epub_service.dart';
+import 'ebook_service.dart';
 
 class SourceSearchResult {
   final String title;
@@ -38,9 +38,9 @@ class SourceSearchResult {
 
 class SourceService {
   final DatabaseService _db;
-  final EpubService _epub;
+  final EbookService _ebook;
 
-  SourceService(this._db, this._epub);
+  SourceService(this._db, this._ebook);
 
   http_io.IOClient _client() {
     return http_io.IOClient(HttpClient());
@@ -218,7 +218,7 @@ class SourceService {
       await file.create(recursive: true);
       await file.writeAsBytes(response.bodyBytes);
 
-      final result = await _epub.parseEpub(file.path);
+      final result = await _ebook.parse(file.path);
       if (result == null) return false;
 
       final bookId = await _db.insertBook(result.book);
