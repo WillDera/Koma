@@ -11,7 +11,7 @@ import '../../core/services/web_scraper_service.dart';
 import '../../core/services/cache_service.dart';
 import '../../theme/app_theme.dart';
 import '../../theme/theme_provider.dart';
-import '../../widgets/continue_reading_shelf.dart';
+
 import '../../widgets/dialog_sheet.dart';
 import '../../widgets/empty_state.dart';
 import '../../widgets/icon_button_round.dart';
@@ -194,8 +194,6 @@ class _LibraryScreenState extends State<LibraryScreen> {
   // ── Normal content (scrolling includes spacer → header → grid/list) ──
 
   Widget _grid(BuildContext context, LibraryProvider provider) {
-    final continueBooks =
-        provider.books.where((b) => b.progress > 0 && b.progress < 1).toList();
     return RefreshIndicator(
       color: context.colors.accent,
       backgroundColor: context.colors.surface,
@@ -207,13 +205,6 @@ class _LibraryScreenState extends State<LibraryScreen> {
           // spacer + header scroll with the grid
           const SliverToBoxAdapter(child: OneHandSpacer()),
           SliverToBoxAdapter(child: _header(context, provider)),
-          if (continueBooks.isNotEmpty)
-            SliverToBoxAdapter(
-              child: ContinueReadingShelf(
-                books: continueBooks,
-                onTap: (b) => _openReader(context, b.id),
-              ),
-            ),
           SliverPadding(
             padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
             sliver: SliverToBoxAdapter(
@@ -334,12 +325,8 @@ class _LibraryScreenState extends State<LibraryScreen> {
     }
     String? subtitle;
     final count = provider.books.length;
-    final reading =
-        provider.books.where((b) => b.progress > 0 && b.progress < 1).length;
     if (count > 0) {
-      subtitle = reading == 0
-          ? '$count book${count == 1 ? '' : 's'}'
-          : '$reading reading · $count total';
+      subtitle = '$count book${count == 1 ? '' : 's'}';
     }
     return LibraryHeader(
       title: 'Library',

@@ -29,6 +29,23 @@ class DatabaseService {
     return rows.map((r) => _bookFromRow(r.data)).toList();
   }
 
+  Future<List<Book>> getInProgressBooks() async {
+    final rows = await _db.customSelect(
+      'SELECT * FROM books WHERE progress > 0 AND progress < 1 ORDER BY updated_at DESC',
+    ).get();
+    return rows.map((r) => _bookFromRow(r.data)).toList();
+  }
+
+  Future<void> clearProgress(int bookId) async {
+    await _db.customUpdate(
+      'UPDATE books SET progress=0, current_chapter_index=0, scroll_position=0, updated_at=? WHERE id=?',
+      variables: [
+        Variable.withDateTime(DateTime.now()),
+        Variable.withInt(bookId),
+      ],
+    );
+  }
+
   Future<Book?> getBook(int id) async {
     final rows = await _db
         .customSelect('SELECT * FROM books WHERE id = ?',

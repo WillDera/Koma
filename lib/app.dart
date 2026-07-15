@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'features/history/history_screen.dart';
 import 'features/library/library_screen.dart';
 import 'features/search/search_screen.dart';
 import 'features/settings/settings_screen.dart';
@@ -39,6 +40,7 @@ class _MainShellState extends State<MainShell> {
 
   final List<Widget> _screens = const [
     LibraryScreen(),
+    HistoryScreen(),
     SnippetsScreen(),
     SearchScreen(),
     SettingsScreen(),
@@ -49,6 +51,11 @@ class _MainShellState extends State<MainShell> {
       icon: Icons.menu_book_outlined,
       activeIcon: Icons.menu_book,
       label: 'Library',
+    ),
+    NavItem(
+      icon: Icons.history,
+      activeIcon: Icons.history,
+      label: 'History',
     ),
     NavItem(
       icon: Icons.bookmark_outline,
