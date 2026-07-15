@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:typed_data';
 import 'package:http/http.dart' as http;
 import 'package:http/io_client.dart' as http_io;
 import 'package:html/parser.dart' as html_parser;
@@ -200,32 +201,55 @@ class SourceService {
   }
 
   Future<bool> downloadFromLink(
-      String url, String title, String ext) async {
+      String url, String title, String ext,
+      {void Function(double progress)? onProgress}) async {
     try {
-      final response = await http
-          .get(Uri.parse(url), headers: {
-            'User-Agent':
-                'Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 StashReader/1.0'
-          })
-          .timeout(const Duration(minutes: 2));
+      final client = http.Client();
+      try {
+        final request = http.Request('GET', Uri.parse(url));
+        request.headers['User-Agent'] =
+            'Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 StashReader/1.0';
+        final response = await client.send(request);
 
-      if (response.statusCode != 200) return false;
+        if (response.statusCode != 200) return false;
 
-      final dir = await getApplicationDocumentsDirectory();
-      final filePath =
-          '${dir.path}/downloads/${DateTime.now().millisecondsSinceEpoch}.$ext';
-      final file = File(filePath);
-      await file.create(recursive: true);
-      await file.writeAsBytes(response.bodyBytes);
+        final total = response.contentLength;
+        var received = 0;
+        final chunks = <List<int>>[];
+        await for (final chunk in response.stream) {
+          chunks.add(chunk);
+          received += chunk.length;
+          if (total != null && total > 0) {
+            onProgress?.call(received / total);
+          }
+        }
+        onProgress?.call(1.0);
 
-      final result = await _ebook.parse(file.path);
-      if (result == null) return false;
+        final bytes = Uint8List(received);
+        var offset = 0;
+        for (final chunk in chunks) {
+          bytes.setRange(offset, offset + chunk.length, chunk);
+          offset += chunk.length;
+        }
 
-      final bookId = await _db.insertBook(result.book);
-      for (final ch in result.chapters) {
-        await _db.insertChapter(ch.copyWith(bookId: bookId));
+        final dir = await getApplicationDocumentsDirectory();
+        final filePath =
+            '${dir.path}/downloads/${DateTime.now().millisecondsSinceEpoch}.$ext';
+        final file = File(filePath);
+        await file.create(recursive: true);
+        await file.writeAsBytes(bytes);
+
+        final result = await _ebook.parse(file.path);
+        if (result == null) return false;
+
+        final bookId = await _db.insertBook(result.book);
+        for (final ch in result.chapters) {
+          await _db.insertChapter(ch.copyWith(bookId: bookId));
+        }
+        return true;
+      } finally {
+        client.close();
       }
-      return true;
     } catch (_) {
       return false;
     }

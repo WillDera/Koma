@@ -1304,7 +1304,7 @@ class _AboutSection extends StatelessWidget {
         SettingsRow(
           icon: Icons.info_outline,
           title: 'StashReader',
-          subtitle: 'Version 2.4.0 · build 2.4.0+20',
+          subtitle: 'Version 2.4.1 · build 2.4.1+21',
         ),
         SettingsRow(
           icon: Icons.favorite_outline,

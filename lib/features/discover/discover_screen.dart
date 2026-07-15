@@ -28,6 +28,7 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
   bool _loaded = false;
   bool _gridView = false;
   double _scrollProgress = 0;
+  final Map<String, double> _downloading = {};
   bool get _oneHand => context.watch<ThemeProvider>().oneHandMode;
 
   @override
@@ -227,9 +228,13 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
   }
 
   Future<void> _downloadDirect(String url, String title, String ext) async {
-    StashToast.show(context, message: 'Downloading…', icon: Icons.download);
-    final ok = await _svc().downloadFromLink(url, title, ext);
+    setState(() => _downloading[title] = 0.0);
+    final ok = await _svc().downloadFromLink(url, title, ext,
+        onProgress: (p) {
+      if (mounted) setState(() => _downloading[title] = p);
+    });
     if (!mounted) return;
+    setState(() => _downloading.remove(title));
     if (ok) {
       context.read<LibraryProvider>().loadBooks();
       StashToast.show(context,
@@ -353,12 +358,14 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
                   itemCount: _results.length,
                   itemBuilder: (_, i) => _GridResultCard(
                       result: _results[i],
+                      downloadProgress: _downloading[_results[i].title],
                       onTap: () => _showResultOptions(context, _results[i])),
                 ),
               )
             else
               ..._results.map((r) => _ResultCard(
                   result: r,
+                  downloadProgress: _downloading[r.title],
                   onTap: () => _showResultOptions(context, r))),
           ],
         ],
@@ -370,7 +377,9 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
 class _ResultCard extends StatelessWidget {
   final SourceSearchResult result;
   final VoidCallback onTap;
-  const _ResultCard({required this.result, required this.onTap});
+  final double? downloadProgress;
+  const _ResultCard(
+      {required this.result, required this.onTap, this.downloadProgress});
 
   @override
   Widget build(BuildContext context) {
@@ -378,72 +387,92 @@ class _ResultCard extends StatelessWidget {
     return Padding(
       padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
       child: AnimatedPress(
-        onTap: onTap,
+        onTap: downloadProgress != null ? null : onTap,
         child: Container(
-          padding: const EdgeInsets.all(12),
+          clipBehavior: Clip.antiAlias,
           decoration: BoxDecoration(
             color: c.surface,
             borderRadius: AppSpacing.brLg,
             border: Border.all(color: c.border, width: 0.5),
           ),
-          child: Row(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
             children: [
-              ClipRRect(
-                borderRadius: BorderRadius.circular(6),
-                child: result.poster != null
-                    ? Image.network(
-                        result.poster!,
-                        width: 48,
-                        height: 64,
-                        fit: BoxFit.cover,
-                        errorBuilder: (_, _, _) => _posterPlaceholder(c),
-                      )
-                    : _posterPlaceholder(c),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+              Padding(
+                padding: const EdgeInsets.all(12),
+                child: Row(
                   children: [
-                    Text(result.title,
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                            color: c.textPrimary,
-                            fontSize: 15,
-                            fontWeight: FontWeight.w600)),
-                    if (result.author != null) ...[
-                      const SizedBox(height: 2),
-                      Text(result.author!,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(
-                              color: c.textSecondary, fontSize: 13)),
-                    ],
-                    const SizedBox(height: 4),
-                    Row(
-                      children: [
-                        if (result.extension != null)
-                          _extensionBadge(c, result.extension!),
-                        if (result.extension != null) const SizedBox(width: 6),
-                        Text(result.sourceName,
-                            style: TextStyle(
-                                color: c.accent,
-                                fontSize: 11,
-                                fontWeight: FontWeight.w500)),
-                        if (result.size != null) ...[
-                          const SizedBox(width: 8),
-                          Text(result.size!,
-                              style: TextStyle(
-                                  color: c.textTertiary, fontSize: 11)),
-                        ],
-                      ],
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(6),
+                      child: result.poster != null
+                          ? Image.network(
+                              result.poster!,
+                              width: 48,
+                              height: 64,
+                              fit: BoxFit.cover,
+                              errorBuilder: (_, _, _) => _posterPlaceholder(c),
+                            )
+                          : _posterPlaceholder(c),
                     ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(result.title,
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                  color: c.textPrimary,
+                                  fontSize: 15,
+                                  fontWeight: FontWeight.w600)),
+                          if (result.author != null) ...[
+                            const SizedBox(height: 2),
+                            Text(result.author!,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                    color: c.textSecondary, fontSize: 13)),
+                          ],
+                          const SizedBox(height: 4),
+                          Row(
+                            children: [
+                              if (result.extension != null)
+                                _extensionBadge(c, result.extension!),
+                              if (result.extension != null)
+                                const SizedBox(width: 6),
+                              Text(result.sourceName,
+                                  style: TextStyle(
+                                      color: c.accent,
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.w500)),
+                              if (result.size != null) ...[
+                                const SizedBox(width: 8),
+                                Text(result.size!,
+                                    style: TextStyle(
+                                        color: c.textTertiary, fontSize: 11)),
+                              ],
+                            ],
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(width: 4),
+                    Icon(Icons.chevron_right,
+                        size: 16, color: c.textTertiary),
                   ],
                 ),
               ),
-              const SizedBox(width: 4),
-              Icon(Icons.chevron_right, size: 16, color: c.textTertiary),
+              if (downloadProgress != null)
+                ClipRRect(
+                  borderRadius: const BorderRadius.vertical(
+                      bottom: Radius.circular(18)),
+                  child: LinearProgressIndicator(
+                    value: downloadProgress,
+                    minHeight: 3,
+                    backgroundColor: c.surfaceMuted,
+                  ),
+                ),
             ],
           ),
         ),
@@ -477,13 +506,15 @@ class _ResultCard extends StatelessWidget {
 class _GridResultCard extends StatelessWidget {
   final SourceSearchResult result;
   final VoidCallback onTap;
-  const _GridResultCard({required this.result, required this.onTap});
+  final double? downloadProgress;
+  const _GridResultCard(
+      {required this.result, required this.onTap, this.downloadProgress});
 
   @override
   Widget build(BuildContext context) {
     final c = context.colors;
     return AnimatedPress(
-      onTap: onTap,
+      onTap: downloadProgress != null ? null : onTap,
       child: Container(
         decoration: BoxDecoration(
           color: c.surface,
@@ -554,6 +585,12 @@ class _GridResultCard extends StatelessWidget {
                 ],
               ),
             ),
+            if (downloadProgress != null)
+              LinearProgressIndicator(
+                value: downloadProgress,
+                minHeight: 3,
+                backgroundColor: c.surfaceMuted,
+              ),
           ],
         ),
       ),
