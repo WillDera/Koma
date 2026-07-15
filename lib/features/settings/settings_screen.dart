@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import '../../core/services/export_service.dart';
 import '../../core/services/database_service.dart';
 import '../../core/services/stats_service.dart';
+import '../extensions/extensions_screen.dart';
 import '../../core/services/source_service.dart';
 import '../../core/models/source.dart';
 import '../library/library_provider.dart';
@@ -64,18 +65,18 @@ class _SettingsScreenState extends State<SettingsScreen> {
       child: ListView(
         controller: _scrollCtrl,
         physics: const AlwaysScrollableScrollPhysics(),
-        padding: const EdgeInsets.only(bottom: 100),
-        children: [
-          const OneHandSpacer(),
-          _Heading(
-            title: 'Settings',
-            oneHand: _oneHand,
-            shrinkProgress: _oneHand ? _scrollProgress : 0.0,
-            subtitle: 'Version 2.4.3',
-          ),
-          const SizedBox(height: 4),
-          _AppearanceSection(themeProv: themeProv),
-          const SizedBox(height: 24),
+padding: const EdgeInsets.only(bottom: 100),
+         children: [
+           OneHandSpacer(),
+           _Heading(
+             title: 'Settings',
+             oneHand: _oneHand,
+             shrinkProgress: _oneHand ? _scrollProgress : 0.0,
+subtitle: 'Version 2.5.1',
+            ),
+           const SizedBox(height: 4),
+           _AppearanceSection(themeProv: themeProv),
+           const SizedBox(height: 24),
           const _TypographySection(),
           const SizedBox(height: 24),
           const _DataSection(),
@@ -1248,7 +1249,7 @@ class _StatsSectionState extends State<_StatsSection> {
   }
 }
 
-// ─── Plugins (placeholder) ──────────────────────────────────────────────
+// ─── Plugins ───────────────────────────────────────────────────────────
 class _PluginsSection extends StatelessWidget {
   const _PluginsSection();
 
@@ -1258,28 +1259,20 @@ class _PluginsSection extends StatelessWidget {
     return SettingsSection(
       title: 'Plugins',
       footer:
-          'Plugins extend StashReader with new sources, parsers, and exporters. The plugin system is being prepared — a small set of official plugins will land in a future release.',
+          'Plugins extend StashReader with new sources via Keiyoushi/Mihon extension APKs. Add a repo, fetch its index, and install the ones you want.',
       children: [
         SettingsRow(
           icon: Icons.extension_outlined,
           title: 'Manage plugins',
-          subtitle: 'Browse and enable extensions',
-          trailing: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-            decoration: BoxDecoration(
-              color: c.accentMuted,
-              borderRadius: AppSpacing.brPill,
-            ),
-            child: Text(
-              'Coming soon',
-              style: TextStyle(
-                color: c.accent,
-                fontSize: 10,
-                fontWeight: FontWeight.w600,
-                letterSpacing: 0.4,
+          subtitle: 'Browse, install, and remove extensions',
+          trailing: const Icon(Icons.chevron_right, size: 18),
+          onTap: () {
+            Navigator.of(context).push(
+              MaterialPageRoute(
+                builder: (_) => const ExtensionsScreen(),
               ),
-            ),
-          ),
+            );
+          },
         ),
         SettingsRow(
           icon: Icons.code,
@@ -1301,11 +1294,11 @@ class _AboutSection extends StatelessWidget {
     return SettingsSection(
       title: 'About',
       children: [
-        SettingsRow(
-          icon: Icons.info_outline,
-          title: 'StashReader',
-          subtitle: 'Version 2.4.3 · build 2.4.3+23',
-        ),
+SettingsRow(
+         icon: Icons.info_outline,
+         title: 'StashReader',
+         subtitle: 'Version 2.5.1 · build 2.5.1+24',
+       ),
         SettingsRow(
           icon: Icons.favorite_outline,
           title: 'A reader and a thinking tool',

@@ -3,6 +3,8 @@ import 'package:drift/drift.dart' hide Column;
 import '../database/database.dart';
 import '../models/book.dart';
 import '../models/chapter.dart';
+import '../models/extension_repo.dart';
+import '../models/extension_source.dart';
 import '../models/snippet.dart';
 import '../models/reading_stat.dart';
 import '../models/source.dart';
@@ -772,6 +774,71 @@ class DatabaseService {
       readingTimeSeconds: row['reading_time_seconds'] as int? ?? 0,
       snippetsCreated: row['snippets_created'] as int? ?? 0,
       booksCompleted: row['books_completed'] as int? ?? 0,
+    );
+  }
+
+  // -- Extension repos ---------------------------------------------------
+
+  Future<List<ExtensionRepo>> getExtensionRepos() async {
+    final rows = await _db
+        .customSelect('SELECT * FROM extension_repos ORDER BY created_at ASC')
+        .get();
+    return rows.map((r) => ExtensionRepo.fromJson(r.data)).toList();
+  }
+
+  Future<int> insertExtensionRepo(ExtensionRepo repo) async {
+    return _db.customInsert(
+      'INSERT INTO extension_repos (name, url, enabled, created_at) '
+      'VALUES (?, ?, ?, ?)',
+      variables: [
+        Variable.withString(repo.name),
+        Variable.withString(repo.url),
+        Variable.withInt(repo.enabled ? 1 : 0),
+        Variable.withString(repo.createdAt.toIso8601String()),
+      ],
+    );
+  }
+
+  Future<void> deleteExtensionRepo(int id) async {
+    await _db.customUpdate(
+      'DELETE FROM extension_repos WHERE id=?',
+      variables: [Variable.withInt(id)],
+    );
+  }
+
+  // -- Extension sources (installed extensions) -------------------------
+
+  Future<List<ExtensionSource>> getInstalledExtensions() async {
+    final rows = await _db
+        .customSelect('SELECT * FROM extension_sources ORDER BY name ASC')
+        .get();
+    return rows.map((r) => ExtensionSource.fromJson(r.data)).toList();
+  }
+
+  Future<void> insertExtensionSource(ExtensionSource src) async {
+    await _db.customInsert(
+      'INSERT OR REPLACE INTO extension_sources '
+      '(id, name, version, lang, apk_path, class_name, icon_url, is_installed, created_at, updated_at) '
+      'VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+      variables: [
+        Variable.withString(src.id),
+        Variable.withString(src.name),
+        Variable.withString(src.version),
+        Variable.withString(src.lang),
+        Variable.withString(src.apkPath),
+        Variable.withString(src.className),
+        Variable.withString(src.iconUrl ?? ''),
+        Variable.withInt(src.isInstalled ? 1 : 0),
+        Variable.withString(src.createdAt.toIso8601String()),
+        Variable.withString(DateTime.now().toIso8601String()),
+      ],
+    );
+  }
+
+  Future<void> deleteExtensionSource(String id) async {
+    await _db.customUpdate(
+      'DELETE FROM extension_sources WHERE id=?',
+      variables: [Variable.withString(id)],
     );
   }
 }

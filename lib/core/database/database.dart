@@ -8,7 +8,7 @@ class AppDatabase extends GeneratedDatabase {
   AppDatabase(QueryExecutor executor) : super(executor);
 
   @override
-  int get schemaVersion => 2;
+  int get schemaVersion => 3;
 
   @override
   Iterable<TableInfo> get allTables => const [];
@@ -102,6 +102,38 @@ class AppDatabase extends GeneratedDatabase {
       )
     ''');
     await customStatement('''
+      CREATE TABLE IF NOT EXISTS manga (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL,
+        url TEXT NOT NULL,
+        image_url TEXT,
+        author TEXT,
+        artist TEXT,
+        description TEXT,
+        status INTEGER NOT NULL DEFAULT 0,
+        genre TEXT NOT NULL DEFAULT '',
+        source_id TEXT NOT NULL,
+        in_library INTEGER NOT NULL DEFAULT 0,
+        reading_status INTEGER NOT NULL DEFAULT 0,
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+      )
+    ''');
+    await customStatement('''
+      CREATE TABLE IF NOT EXISTS manga_chapters (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        manga_id INTEGER NOT NULL REFERENCES manga(id) ON DELETE CASCADE,
+        name TEXT NOT NULL,
+        url TEXT NOT NULL,
+        scanlator TEXT,
+        date_upload INTEGER NOT NULL DEFAULT 0,
+        "index" INTEGER NOT NULL,
+        is_read INTEGER NOT NULL DEFAULT 0,
+        last_page_read INTEGER NOT NULL DEFAULT 0,
+        scroll_position REAL NOT NULL DEFAULT 0.0
+      )
+    ''');
+    await customStatement('''
       CREATE TABLE IF NOT EXISTS snippets (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         content TEXT NOT NULL,
@@ -113,6 +145,29 @@ class AppDatabase extends GeneratedDatabase {
         chapter_id INTEGER REFERENCES chapters(id) ON DELETE SET NULL,
         created_at TEXT NOT NULL DEFAULT (datetime('now')),
         updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+      )
+    ''');
+    await customStatement('''
+      CREATE TABLE IF NOT EXISTS extension_sources (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        version TEXT NOT NULL,
+        lang TEXT NOT NULL,
+        apk_path TEXT NOT NULL,
+        class_name TEXT NOT NULL,
+        icon_url TEXT,
+        is_installed INTEGER NOT NULL DEFAULT 1,
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+      )
+    ''');
+    await customStatement('''
+      CREATE TABLE IF NOT EXISTS extension_repos (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL,
+        url TEXT NOT NULL UNIQUE,
+        enabled INTEGER NOT NULL DEFAULT 1,
+        created_at TEXT NOT NULL DEFAULT (datetime('now'))
       )
     ''');
     await customStatement('''
