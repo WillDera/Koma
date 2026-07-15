@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'features/discover/discover_screen.dart';
 import 'features/history/history_screen.dart';
 import 'features/library/library_screen.dart';
 import 'features/search/search_screen.dart';
@@ -38,10 +39,11 @@ class MainShell extends StatefulWidget {
 class _MainShellState extends State<MainShell> {
   int _currentIndex = 0;
 
-  final List<Widget> _screens = const [
+  final List<Widget> _screens = [
     LibraryScreen(),
     HistoryScreen(),
     SnippetsScreen(),
+    DiscoverScreen(),
     SearchScreen(),
     SettingsScreen(),
   ];
@@ -61,6 +63,11 @@ class _MainShellState extends State<MainShell> {
       icon: Icons.bookmark_outline,
       activeIcon: Icons.bookmark,
       label: 'Snippets',
+    ),
+    NavItem(
+      icon: Icons.explore_outlined,
+      activeIcon: Icons.explore,
+      label: 'Discover',
     ),
     NavItem(
       icon: Icons.search,

@@ -136,15 +136,41 @@ class _ReaderSettingsSheetState extends State<ReaderSettingsSheet> {
         const SizedBox(height: 28),
         _SectionLabel('Typography'),
         const SizedBox(height: 12),
-        _LabelRow('Font', '${p.fontSize.toInt()}px · ${p.lineHeight.toStringAsFixed(1)}'),
-        SegmentedControl<ReadingFont>(
-          segments: const {
-            ReadingFont.literata: 'Literata',
-            ReadingFont.inter: 'Inter',
-            ReadingFont.system: 'System',
-          },
-          value: p.readingFont,
-          onChanged: (v) => p.setReadingFont(v),
+        AnimatedPress(
+          onTap: () => _showFontPicker(context, p),
+          child: Container(
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+            decoration: BoxDecoration(
+              color: c.surface,
+              borderRadius: AppSpacing.brLg,
+              border: Border.all(color: c.border, width: 0.5),
+            ),
+            child: Row(
+              children: [
+                Icon(Icons.text_fields, size: 18, color: c.textSecondary),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    'Font family',
+                    style: TextStyle(
+                      color: c.textPrimary,
+                      fontSize: 14,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ),
+                Text(
+                  p.readingFont.label,
+                  style: TextStyle(
+                    color: c.textTertiary,
+                    fontSize: 13,
+                  ),
+                ),
+                const SizedBox(width: 4),
+                Icon(Icons.chevron_right, size: 16, color: c.textTertiary),
+              ],
+            ),
+          ),
         ),
         const SizedBox(height: 16),
         _LabelRow('Size', '${p.fontSize.toInt()}'),
@@ -175,23 +201,176 @@ class _ReaderSettingsSheetState extends State<ReaderSettingsSheet> {
           onChanged: (v) => p.setPageWidth(v),
         ),
         const SizedBox(height: 12),
-        SegmentedControl<TextAlign>(
-          segments: const {
-            TextAlign.left: 'Left',
-            TextAlign.justify: 'Justify',
-            TextAlign.center: 'Center',
-          },
-          value: p.textAlign,
-          onChanged: (v) => p.setTextAlign(v),
+        AnimatedPress(
+          onTap: () => _showAlignPicker(context, p),
+          child: Container(
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+            decoration: BoxDecoration(
+              color: c.surface,
+              borderRadius: AppSpacing.brLg,
+              border: Border.all(color: c.border, width: 0.5),
+            ),
+            child: Row(
+              children: [
+                Icon(Icons.format_align_left, size: 18, color: c.textSecondary),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    'Alignment',
+                    style: TextStyle(
+                      color: c.textPrimary,
+                      fontSize: 14,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ),
+                Text(
+                  p.textAlign == TextAlign.left
+                      ? 'Left'
+                      : p.textAlign == TextAlign.justify
+                          ? 'Justify'
+                          : 'Center',
+                  style: TextStyle(
+                    color: c.textTertiary,
+                    fontSize: 13,
+                  ),
+                ),
+                const SizedBox(width: 4),
+                Icon(Icons.chevron_right, size: 16, color: c.textTertiary),
+              ],
+            ),
+          ),
         ),
         const SizedBox(height: 16),
         _ToggleRow(
-          title: 'Hyphenation',
-          subtitle: 'Break long words at line ends',
-          value: p.hyphenation,
-          onChanged: (v) => p.setHyphenation(v),
+          title: 'Bionic reading',
+          subtitle: 'Bold first half of each word',
+          value: p.bionicReading,
+          onChanged: (v) => p.setBionicReading(v),
         ),
       ],
+    );
+  }
+
+  void _showFontPicker(BuildContext context, ThemeProvider p) {
+    showDialog(
+      context: context,
+      builder: (ctx) {
+        final c = ctx.colors;
+        return AlertDialog(
+          backgroundColor: c.surface,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(18),
+            side: BorderSide(color: c.border, width: 0.5),
+          ),
+          content: SizedBox(
+            width: double.maxFinite,
+            child: ListView(
+              shrinkWrap: true,
+              children: [
+                for (final font in ReadingFont.values)
+                  _PickerOption(
+                    label: font.label,
+                    selected: p.readingFont == font,
+                    onTap: () {
+                      p.setReadingFont(font);
+                      Navigator.of(ctx).pop();
+                    },
+                  ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  void _showAlignPicker(BuildContext context, ThemeProvider p) {
+    showDialog(
+      context: context,
+      builder: (ctx) {
+        final c = ctx.colors;
+        return AlertDialog(
+          backgroundColor: c.surface,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(18),
+            side: BorderSide(color: c.border, width: 0.5),
+          ),
+          content: SizedBox(
+            width: double.maxFinite,
+            child: ListView(
+              shrinkWrap: true,
+              children: [
+                _PickerOption(
+                  label: 'Left',
+                  selected: p.textAlign == TextAlign.left,
+                  onTap: () {
+                    p.setTextAlign(TextAlign.left);
+                    Navigator.of(ctx).pop();
+                  },
+                ),
+                _PickerOption(
+                  label: 'Justify',
+                  selected: p.textAlign == TextAlign.justify,
+                  onTap: () {
+                    p.setTextAlign(TextAlign.justify);
+                    Navigator.of(ctx).pop();
+                  },
+                ),
+                _PickerOption(
+                  label: 'Center',
+                  selected: p.textAlign == TextAlign.center,
+                  onTap: () {
+                    p.setTextAlign(TextAlign.center);
+                    Navigator.of(ctx).pop();
+                  },
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
+
+class _PickerOption extends StatelessWidget {
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+  const _PickerOption({
+    required this.label,
+    required this.selected,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.colors;
+    return Material(
+      type: MaterialType.transparency,
+      child: InkWell(
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 4),
+          child: Row(
+            children: [
+              Expanded(
+                child: Text(
+                  label,
+                  style: TextStyle(
+                    color: selected ? c.accent : c.textPrimary,
+                    fontSize: 16,
+                    fontWeight: selected ? FontWeight.w600 : FontWeight.w400,
+                  ),
+                ),
+              ),
+              if (selected)
+                Icon(Icons.check, size: 20, color: c.accent),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }
@@ -295,3 +474,5 @@ class _ToggleRow extends StatelessWidget {
     );
   }
 }
+
+

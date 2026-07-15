@@ -5,6 +5,7 @@ import '../models/book.dart';
 import '../models/chapter.dart';
 import '../models/snippet.dart';
 import '../models/reading_stat.dart';
+import '../models/source.dart';
 
 class DatabaseService {
   final AppDatabase _db;
@@ -67,10 +68,22 @@ class DatabaseService {
     return _bookFromRow(rows.first.data);
   }
 
+  String _extractExtension(String? filePath, String source) {
+    if (source == 'web') return 'web';
+    if (source == 'manual') return 'note';
+    if (filePath == null || filePath.isEmpty) return '';
+    final dot = filePath.lastIndexOf('.');
+    if (dot < 0) return '';
+    return filePath.substring(dot).toLowerCase();
+  }
+
   Future<int> insertBook(Book book) async {
+    final ext = book.fileExtension.isNotEmpty
+        ? book.fileExtension
+        : _extractExtension(book.filePath, book.source);
     final id = await _db.customInsert(
-      'INSERT INTO books (title, author, cover_path, source, source_url, file_path, progress, current_chapter_index, total_chapters, scroll_position) '
-      'VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+      'INSERT INTO books (title, author, cover_path, source, source_url, file_path, progress, current_chapter_index, total_chapters, scroll_position, genre, file_extension) '
+      'VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
       variables: [
         Variable.withString(book.title),
         Variable.withString(book.author ?? ''),
@@ -82,6 +95,8 @@ class DatabaseService {
         Variable.withInt(book.currentChapterIndex),
         Variable.withInt(book.totalChapters),
         Variable.withReal(book.scrollPosition),
+        Variable.withString(book.genre),
+        Variable.withString(ext),
       ],
     );
     return id;
@@ -126,6 +141,29 @@ class DatabaseService {
       'DELETE FROM books WHERE id=?',
       variables: [Variable.withInt(id)],
     );
+  }
+
+  // -- Stats --
+
+  Future<Map<String, int>> getGenreCounts() async {
+    final rows = await _db.customSelect(
+      'SELECT genre, COUNT(*) as cnt FROM books WHERE genre != \'\' GROUP BY genre ORDER BY cnt DESC',
+    ).get();
+    return {for (final r in rows) r.data['genre'] as String: r.data['cnt'] as int};
+  }
+
+  Future<Map<String, int>> getExtensionCounts() async {
+    final rows = await _db.customSelect(
+      'SELECT file_extension, COUNT(*) as cnt FROM books WHERE file_extension != \'\' GROUP BY file_extension ORDER BY cnt DESC',
+    ).get();
+    return {for (final r in rows) r.data['file_extension'] as String: r.data['cnt'] as int};
+  }
+
+  Future<int> getCompletedBooksCount() async {
+    final row = await _db.customSelect(
+      'SELECT COUNT(*) as cnt FROM books WHERE progress >= 1.0',
+    ).get();
+    return row.first.data['cnt'] as int;
   }
 
   // -- Chapters --
@@ -635,6 +673,8 @@ class DatabaseService {
       currentChapterIndex: row['current_chapter_index'] as int? ?? 0,
       totalChapters: row['total_chapters'] as int? ?? 0,
       scrollPosition: (row['scroll_position'] as num?)?.toDouble() ?? 0.0,
+      genre: row['genre'] as String? ?? '',
+      fileExtension: row['file_extension'] as String? ?? '',
     );
   }
 
@@ -681,6 +721,46 @@ class DatabaseService {
       chapterId: row['chapter_id'] as int?,
       tags: preloadedTags ?? [],
     );
+  }
+
+  // -- Sources --
+
+  Future<List<Source>> getSources() async {
+    final rows =
+        await _db.customSelect('SELECT * FROM sources ORDER BY name').get();
+    return rows.map((r) => Source.fromJson(r.data)).toList();
+  }
+
+  Future<int> insertSource(Source source) async {
+    return await _db.customInsert(
+      'INSERT INTO sources (name, tag, base_url, enabled, language) VALUES (?, ?, ?, ?, ?)',
+      variables: [
+        Variable.withString(source.name),
+        Variable.withString(source.tag),
+        Variable.withString(source.baseUrl),
+        Variable.withInt(source.enabled ? 1 : 0),
+        Variable.withString(source.language ?? ''),
+      ],
+    );
+  }
+
+  Future<void> updateSource(Source source) async {
+    await _db.customUpdate(
+      'UPDATE sources SET name=?, tag=?, base_url=?, enabled=?, language=? WHERE id=?',
+      variables: [
+        Variable.withString(source.name),
+        Variable.withString(source.tag),
+        Variable.withString(source.baseUrl),
+        Variable.withInt(source.enabled ? 1 : 0),
+        Variable.withString(source.language ?? ''),
+        Variable.withInt(source.id),
+      ],
+    );
+  }
+
+  Future<void> deleteSource(int id) async {
+    await _db.customUpdate('DELETE FROM sources WHERE id=?',
+        variables: [Variable.withInt(id)]);
   }
 
   ReadingStat _statFromRow(Map<String, dynamic> row) {

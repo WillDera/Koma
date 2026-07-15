@@ -85,36 +85,47 @@ class _SnippetsScreenState extends State<SnippetsScreen> {
     // scroll together, matching the Settings layout.
     if (p.loading && p.snippets.isEmpty) return _loading();
     if (p.error != null) {
-      return Column(
+      return ListView(
+        controller: _scrollCtrl,
+        padding: EdgeInsets.zero,
         children: [
-          const LibraryHeader(title: 'Snippets', titleSize: 32),
-          Expanded(
-            child: EmptyState(
-              icon: Icons.error_outline,
-              title: 'Could not load snippets',
-              subtitle: p.error!,
-              primaryActionLabel: 'Try again',
-              onPrimaryAction: () => p.loadSnippets(),
-            ),
+          const OneHandSpacer(),
+          LibraryHeader(
+            title: 'Snippets',
+            titleSize: _oneHand ? 64 : 32,
+            shrinkProgress: _oneHand ? _scrollProgress : 0.0,
+          ),
+          const SizedBox(height: 60),
+          EmptyState(
+            icon: Icons.error_outline,
+            title: 'Could not load snippets',
+            subtitle: p.error!,
+            primaryActionLabel: 'Try again',
+            onPrimaryAction: () => p.loadSnippets(),
           ),
         ],
       );
     }
     final items = p.snippets;
     if (items.isEmpty && p.filterTag == null) {
-      return Column(
+      return ListView(
+        controller: _scrollCtrl,
+        padding: EdgeInsets.zero,
         children: [
-          const LibraryHeader(title: 'Snippets', titleSize: 32),
-          Expanded(
-            child: EmptyState(
-              icon: Icons.format_quote_outlined,
-              title: 'No snippets yet',
-              subtitle:
-                  'Highlight text while reading, or tap + to create one.',
-              primaryActionLabel: 'New snippet',
-              primaryActionIcon: Icons.add,
-              onPrimaryAction: () => _createSnippet(context),
-            ),
+          const OneHandSpacer(),
+          LibraryHeader(
+            title: 'Snippets',
+            titleSize: _oneHand ? 64 : 32,
+            shrinkProgress: _oneHand ? _scrollProgress : 0.0,
+          ),
+          const SizedBox(height: 60),
+          EmptyState(
+            icon: Icons.format_quote_outlined,
+            title: 'No snippets yet',
+            subtitle: 'Highlight text while reading, or tap + to create one.',
+            primaryActionLabel: 'New snippet',
+            primaryActionIcon: Icons.add,
+            onPrimaryAction: () => _createSnippet(context),
           ),
         ],
       );
@@ -184,20 +195,26 @@ class _SnippetsScreenState extends State<SnippetsScreen> {
       onSave: (s) async {
         try {
           await context.read<SnippetsProvider>().createSnippet(
-                text: s.text,
-                note: s.note,
-                sourceTitle: s.sourceTitle,
-                color: s.color,
-                tags: s.tags,
-              );
+            text: s.text,
+            note: s.note,
+            sourceTitle: s.sourceTitle,
+            color: s.color,
+            tags: s.tags,
+          );
           if (context.mounted) {
             StashToast.show(
-                context, message: 'Snippet saved', icon: Icons.check);
+              context,
+              message: 'Snippet saved',
+              icon: Icons.check,
+            );
           }
         } catch (e) {
           if (context.mounted) {
             StashToast.show(
-                context, message: 'Failed: $e', icon: Icons.error_outline);
+              context,
+              message: 'Failed: $e',
+              icon: Icons.error_outline,
+            );
           }
         }
       },
@@ -211,13 +228,21 @@ class _SnippetsScreenState extends State<SnippetsScreen> {
       onSave: (s) async {
         await p.updateSnippet(s);
         if (context.mounted) {
-          StashToast.show(context, message: 'Snippet updated', icon: Icons.check);
+          StashToast.show(
+            context,
+            message: 'Snippet updated',
+            icon: Icons.check,
+          );
         }
       },
       onDelete: (id) async {
         await p.deleteSnippet(id);
         if (context.mounted) {
-          StashToast.show(context, message: 'Snippet deleted', icon: Icons.check);
+          StashToast.show(
+            context,
+            message: 'Snippet deleted',
+            icon: Icons.check,
+          );
         }
       },
     );

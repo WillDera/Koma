@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import '../../core/models/book.dart';
 import '../../core/services/database_service.dart';
 import '../../theme/app_theme.dart';
+import '../../theme/theme_provider.dart';
 import '../../widgets/animated_press.dart';
 import '../../widgets/book_cover.dart';
 import '../../widgets/dialog_sheet.dart';
@@ -20,14 +21,35 @@ class HistoryScreen extends StatefulWidget {
 }
 
 class _HistoryScreenState extends State<HistoryScreen> {
+  final ScrollController _scrollCtrl = ScrollController();
+  double _scrollProgress = 0;
   List<Book> _books = [];
   bool _loading = true;
 
   @override
   void initState() {
     super.initState();
+    _scrollCtrl.addListener(_onScroll);
     _load();
   }
+
+  void _onScroll() {
+    if (!_scrollCtrl.hasClients) return;
+    final max = _scrollCtrl.position.maxScrollExtent;
+    final p = max <= 0 ? 0.0 : (_scrollCtrl.offset / max).clamp(0.0, 1.0);
+    if ((p - _scrollProgress).abs() > 0.01) {
+      setState(() => _scrollProgress = p);
+    }
+  }
+
+  @override
+  void dispose() {
+    _scrollCtrl.removeListener(_onScroll);
+    _scrollCtrl.dispose();
+    super.dispose();
+  }
+
+  bool get _oneHand => context.watch<ThemeProvider>().oneHandMode;
 
   Future<void> _load() async {
     setState(() => _loading = true);
@@ -66,14 +88,18 @@ class _HistoryScreenState extends State<HistoryScreen> {
     if (_loading) {
       return const Center(child: CircularProgressIndicator());
     }
+    final ts = _oneHand ? 64.0 : 32.0;
+    final sp = _oneHand ? _scrollProgress : 0.0;
     if (_books.isEmpty) {
       return SafeArea(
         bottom: false,
         child: ListView(
+          controller: _scrollCtrl,
+          physics: const AlwaysScrollableScrollPhysics(),
           padding: EdgeInsets.zero,
           children: [
             const OneHandSpacer(),
-            const LibraryHeader(title: 'History'),
+            LibraryHeader(title: 'History', titleSize: ts, shrinkProgress: sp),
             const SizedBox(height: 80),
             const EmptyState(
               icon: Icons.history,
@@ -88,6 +114,8 @@ class _HistoryScreenState extends State<HistoryScreen> {
     return SafeArea(
       bottom: false,
       child: ListView.separated(
+        controller: _scrollCtrl,
+        physics: const AlwaysScrollableScrollPhysics(),
         padding: const EdgeInsets.only(bottom: 100),
         itemCount: count + 1,
         separatorBuilder: (_, i) =>
@@ -97,7 +125,12 @@ class _HistoryScreenState extends State<HistoryScreen> {
             return Column(
               children: [
                 const OneHandSpacer(),
-                LibraryHeader(title: 'History', subtitle: '$count in progress'),
+                LibraryHeader(
+                  title: 'History',
+                  subtitle: '$count in progress',
+                  titleSize: ts,
+                  shrinkProgress: sp,
+                ),
                 const SizedBox(height: 8),
               ],
             );

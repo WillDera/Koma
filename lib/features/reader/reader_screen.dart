@@ -428,16 +428,12 @@ class _ReaderScreenState extends State<ReaderScreen>
 
   TextStyle _readingStyle(ThemeProvider themeProv) {
     final c = context.colors;
-    final family = themeProv.readingFontFamily;
-    final base = AppType.reading(
+    return AppType.fontStyle(
+      fontFamily: themeProv.readingFontFamily,
       fontSize: themeProv.fontSize,
       lineHeight: themeProv.lineHeight,
       color: c.textPrimary,
-    ).copyWith(
-      fontFamily: family,
-      height: themeProv.lineHeight,
     );
-    return base;
   }
 
   List<TextSpan> _buildReadingSpans(ThemeProvider themeProv, String text) {

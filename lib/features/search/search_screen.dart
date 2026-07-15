@@ -123,6 +123,7 @@ class _SearchScreenState extends State<SearchScreen> {
       bottom: false,
       child: ListView(
         controller: _scrollCtrl,
+        physics: const AlwaysScrollableScrollPhysics(),
         padding: EdgeInsets.zero,
         children: [
           const OneHandSpacer(),
@@ -190,6 +191,8 @@ class _SearchScreenState extends State<SearchScreen> {
     }
     return ListView(
       padding: const EdgeInsets.fromLTRB(20, 8, 20, 32),
+      shrinkWrap: true,
+      physics: const NeverScrollableScrollPhysics(),
       children: [
         Row(
           children: [

@@ -30,6 +30,41 @@ class AppDatabase extends GeneratedDatabase {
           await customStatement(
               'ALTER TABLE chapters ADD COLUMN scroll_position REAL NOT NULL DEFAULT 0.0');
         } catch (_) {}
+        // v2 → v3: genre + file_extension on books.
+        try {
+          await customStatement(
+              'ALTER TABLE books ADD COLUMN genre TEXT NOT NULL DEFAULT \'\'');
+        } catch (_) {}
+        try {
+          await customStatement(
+              'ALTER TABLE books ADD COLUMN file_extension TEXT NOT NULL DEFAULT \'\'');
+        } catch (_) {}
+        // Backfill file_extension for existing books from file_path.
+        try {
+          await customStatement(
+            "UPDATE books SET file_extension = '.epub' WHERE file_extension = '' AND file_path LIKE '%.epub'"
+          );
+        } catch (_) {}
+        try {
+          await customStatement(
+            "UPDATE books SET file_extension = '.pdf' WHERE file_extension = '' AND file_path LIKE '%.pdf'"
+          );
+        } catch (_) {}
+        try {
+          await customStatement(
+            "UPDATE books SET file_extension = '.html' WHERE file_extension = '' AND file_path LIKE '%.html'"
+          );
+        } catch (_) {}
+        try {
+          await customStatement(
+            "UPDATE books SET file_extension = 'web' WHERE file_extension = '' AND source = 'web'"
+          );
+        } catch (_) {}
+        try {
+          await customStatement(
+            "UPDATE books SET file_extension = 'note' WHERE file_extension = '' AND source = 'manual'"
+          );
+        } catch (_) {}
       },
     );
   }
@@ -50,6 +85,8 @@ class AppDatabase extends GeneratedDatabase {
         current_chapter_index INTEGER NOT NULL DEFAULT 0,
         total_chapters INTEGER NOT NULL DEFAULT 0,
         scroll_position REAL NOT NULL DEFAULT 0.0,
+        genre TEXT NOT NULL DEFAULT '',
+        file_extension TEXT NOT NULL DEFAULT '',
         created_at TEXT NOT NULL DEFAULT (datetime('now')),
         updated_at TEXT NOT NULL DEFAULT (datetime('now'))
       )
@@ -108,6 +145,21 @@ class AppDatabase extends GeneratedDatabase {
         title TEXT NOT NULL,
         content TEXT NOT NULL,
         cached_at TEXT NOT NULL DEFAULT (datetime('now'))
+      )
+    ''');
+    // Drop old sources table schema; recreate with tag + base_url.
+    try {
+      await customStatement('DROP TABLE IF EXISTS sources');
+    } catch (_) {}
+    await customStatement('''
+      CREATE TABLE IF NOT EXISTS sources (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL,
+        tag TEXT NOT NULL,
+        base_url TEXT NOT NULL,
+        enabled INTEGER NOT NULL DEFAULT 1,
+        language TEXT,
+        created_at TEXT NOT NULL DEFAULT (datetime('now'))
       )
     ''');
   }

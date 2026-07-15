@@ -50,4 +50,27 @@ class StatsService {
     }
     return total;
   }
+
+  /// Returns [minutesPerDay] for the last 7 days (index 0 = oldest)
+  /// and the current streak (consecutive days with reading time > 0).
+  Future<({List<int> minutesPerDay, int currentStreak})> getWeeklyStreak() async {
+    final now = DateTime.now();
+    final sevenDaysAgo = now.subtract(const Duration(days: 6));
+    final start = DateTime(sevenDaysAgo.year, sevenDaysAgo.month, sevenDaysAgo.day);
+    final stats = await _db.getStatsRange(
+      start,
+      DateTime(now.year, now.month, now.day, 23, 59, 59),
+    );
+    final byDate = {for (final s in stats) s.date: s.readingTimeSeconds};
+    final minutesPerDay = <int>[];
+    int streak = 0;
+    for (int i = 6; i >= 0; i--) {
+      final day = now.subtract(Duration(days: i));
+      final dayStart = DateTime(day.year, day.month, day.day);
+      final seconds = byDate[dayStart] ?? 0;
+      minutesPerDay.add(seconds ~/ 60);
+      if (seconds > 0) { streak++; } else { streak = 0; }
+    }
+    return (minutesPerDay: minutesPerDay, currentStreak: streak);
+  }
 }

@@ -12,6 +12,8 @@ class Book {
   final double scrollPosition;
   final DateTime createdAt;
   final DateTime updatedAt;
+  final String genre;
+  final String fileExtension;
 
   Book({
     required this.id,
@@ -27,6 +29,8 @@ class Book {
     this.scrollPosition = 0.0,
     DateTime? createdAt,
     DateTime? updatedAt,
+    this.genre = '',
+    this.fileExtension = '',
   })  : createdAt = createdAt ?? DateTime.now(),
         updatedAt = updatedAt ?? DateTime.now();
 
@@ -44,6 +48,8 @@ class Book {
     double? scrollPosition,
     DateTime? createdAt,
     DateTime? updatedAt,
+    String? genre,
+    String? fileExtension,
   }) {
     return Book(
       id: id ?? this.id,
@@ -59,6 +65,8 @@ class Book {
       scrollPosition: scrollPosition ?? this.scrollPosition,
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
+      genre: genre ?? this.genre,
+      fileExtension: fileExtension ?? this.fileExtension,
     );
   }
 
@@ -76,6 +84,8 @@ class Book {
         'scroll_position': scrollPosition,
         'created_at': createdAt.toIso8601String(),
         'updated_at': updatedAt.toIso8601String(),
+        'genre': genre,
+        'file_extension': fileExtension,
       };
 
   factory Book.fromJson(Map<String, dynamic> json) => Book(
@@ -96,5 +106,7 @@ class Book {
         updatedAt: json['updated_at'] != null
             ? DateTime.parse(json['updated_at'] as String)
             : DateTime.now(),
+        genre: json['genre'] as String? ?? '',
+        fileExtension: json['file_extension'] as String? ?? '',
       );
 }

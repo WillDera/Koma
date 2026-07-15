@@ -21,7 +21,6 @@ import '../../widgets/library_header.dart';
 import '../../widgets/loading_skeleton.dart';
 import '../../widgets/one_hand_spacer.dart';
 import '../../widgets/premium_button.dart';
-import '../../widgets/reading_streak_card.dart';
 import '../../widgets/toast.dart';
 import '../reader/reader_screen.dart';
 import '../snippets/snippets_provider.dart';
@@ -205,15 +204,6 @@ class _LibraryScreenState extends State<LibraryScreen> {
           // spacer + header scroll with the grid
           const SliverToBoxAdapter(child: OneHandSpacer()),
           SliverToBoxAdapter(child: _header(context, provider)),
-          SliverPadding(
-            padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
-            sliver: SliverToBoxAdapter(
-              child: ReadingStreakCard(
-                minutesPerDay: List.filled(7, 0),
-                currentStreak: 0,
-              ),
-            ),
-          ),
           SliverToBoxAdapter(
             child: Padding(
               padding: const EdgeInsets.fromLTRB(20, 16, 20, 12),

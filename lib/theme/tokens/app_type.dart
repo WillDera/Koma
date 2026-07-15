@@ -108,6 +108,34 @@ class AppType {
     );
   }
 
+  /// Reading body for a specific font family (from ThemeProvider.readingFont).
+  /// Returns the system default font if [fontFamily] is null.
+  static TextStyle fontStyle({
+    String? fontFamily,
+    double fontSize = 17,
+    double lineHeight = 1.65,
+    Color? color,
+  }) {
+    if (fontFamily == null) {
+      return TextStyle(
+        fontSize: fontSize,
+        height: lineHeight,
+        color: color,
+        fontWeight: FontWeight.w400,
+        letterSpacing: 0.05,
+      );
+    }
+    // Use GoogleFonts.getFont which loads & caches any supported font.
+    return GoogleFonts.getFont(
+      fontFamily,
+      fontSize: fontSize,
+      height: lineHeight,
+      color: color,
+      fontWeight: FontWeight.w400,
+      letterSpacing: 0.05,
+    );
+  }
+
   /// Monospaced — metadata, dates, file paths.
   static TextStyle mono({double fontSize = 12, Color? color}) {
     return GoogleFonts.jetBrainsMono(
