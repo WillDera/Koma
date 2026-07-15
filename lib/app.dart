@@ -90,6 +90,7 @@ class _MainShellState extends State<MainShell> {
   Widget build(BuildContext context) {
     final themeProv = context.watch<ThemeProvider>();
     return Scaffold(
+      extendBody: true,
       backgroundColor: themeProv.bgColor,
       body: Stack(
         children: [

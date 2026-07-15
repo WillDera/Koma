@@ -55,6 +55,7 @@ class _SnippetsScreenState extends State<SnippetsScreen> {
   @override
   Widget build(BuildContext context) {
     final leftHanded = context.watch<ThemeProvider>().handMode == HandMode.left;
+    final navClearance = MediaQuery.paddingOf(context).bottom + 84;
     return Stack(
       children: [
         SafeArea(
@@ -66,7 +67,7 @@ class _SnippetsScreenState extends State<SnippetsScreen> {
         Positioned(
           left: leftHanded ? 20 : null,
           right: leftHanded ? null : 20,
-          bottom: 12,
+          bottom: navClearance,
           child: IconButtonRound(
             icon: Icons.add,
             size: 52,

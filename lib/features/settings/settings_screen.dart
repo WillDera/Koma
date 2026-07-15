@@ -71,7 +71,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
             title: 'Settings',
             oneHand: _oneHand,
             shrinkProgress: _oneHand ? _scrollProgress : 0.0,
-            subtitle: 'Version 2.2.3',
+            subtitle: 'Version 2.4.3',
           ),
           const SizedBox(height: 4),
           _AppearanceSection(themeProv: themeProv),
@@ -1304,7 +1304,7 @@ class _AboutSection extends StatelessWidget {
         SettingsRow(
           icon: Icons.info_outline,
           title: 'StashReader',
-          subtitle: 'Version 2.4.1 · build 2.4.1+21',
+          subtitle: 'Version 2.4.3 · build 2.4.3+23',
         ),
         SettingsRow(
           icon: Icons.favorite_outline,
