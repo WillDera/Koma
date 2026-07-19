@@ -221,7 +221,7 @@ class KeiyoushiMethodChannel(
                     }
                     Log.d(TAG, "getPageList: sourceId=$sourceId")
                     bg({ engine.getPageList(sourceId, url) }, result) { pages ->
-                        result.success(pages.map { it.toMap() })
+                        result.success(pages)
                     }
                 }
                 "searchAllInstalled" -> {

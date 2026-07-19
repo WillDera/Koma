@@ -26,18 +26,13 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
   final _ctrl = TextEditingController();
   final _scrollCtrl = ScrollController();
   List<SourceSearchResult> _results = [];
+  List<Map<String, dynamic>> _mangaResults = [];
   bool _searching = false;
   bool _loaded = false;
   bool _gridView = false;
   double _scrollProgress = 0;
   final Map<String, double> _downloading = {};
   bool get _oneHand => context.watch<ThemeProvider>().oneHandMode;
-
-  // Manga search
-  final _mangaCtrl = TextEditingController();
-  List<Map<String, dynamic>> _mangaResults = [];
-  bool _mangaSearching = false;
-  bool _mangaSearched = false;
   final _mangaService = KeiyoushiService();
 
   @override
@@ -49,7 +44,6 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
   @override
   void dispose() {
     _ctrl.dispose();
-    _mangaCtrl.dispose();
     _scrollCtrl.removeListener(_onScroll);
     _scrollCtrl.dispose();
     super.dispose();
@@ -75,10 +69,14 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
       _loaded = true;
     });
     try {
-      final results = await _svc().search(q);
+      final results = await Future.wait([
+        _svc().search(q),
+        _mangaService.searchAllInstalled(query: q),
+      ]);
       if (!mounted) return;
       setState(() {
-        _results = results;
+        _results = results[0] as List<SourceSearchResult>;
+        _mangaResults = results[1] as List<Map<String, dynamic>>;
         _searching = false;
       });
     } catch (_) {
@@ -237,26 +235,6 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
     await _downloadDirect(chosen, result.title, result.extension ?? 'epub');
   }
 
-  Future<void> _searchManga() async {
-    final q = _mangaCtrl.text.trim();
-    if (q.isEmpty) return;
-    setState(() {
-      _mangaSearching = true;
-      _mangaSearched = true;
-    });
-    try {
-      final results = await _mangaService.searchAllInstalled(query: q);
-      if (!mounted) return;
-      setState(() {
-        _mangaResults = results;
-        _mangaSearching = false;
-      });
-    } catch (_) {
-      if (!mounted) return;
-      setState(() => _mangaSearching = false);
-    }
-  }
-
   Future<void> _downloadDirect(String url, String title, String ext) async {
     setState(() => _downloading[title] = 0.0);
     final ok = await _svc().downloadFromLink(url, title, ext,
@@ -341,7 +319,7 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
             ),
           ),
           const SizedBox(height: 16),
-          if (_results.isEmpty)
+          if (_results.isEmpty && _mangaResults.isEmpty)
             Padding(
               padding: const EdgeInsets.symmetric(vertical: 40, horizontal: 20),
               child: Center(
@@ -354,164 +332,108 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
               ),
             )
           else ...[
-            Padding(
-              padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
-              child: Row(
-                children: [
-                  Text('${_results.length} results',
-                      style:
-                          TextStyle(color: c.textTertiary, fontSize: 13)),
-                  const Spacer(),
-                  GestureDetector(
-                    onTap: () => setState(() => _gridView = !_gridView),
-                    child: Icon(
-                        _gridView ? Icons.view_list : Icons.grid_view,
-                        size: 20,
-                        color: c.textSecondary),
-                  ),
-                ],
-              ),
-            ),
-            if (_gridView)
+            if (_results.isNotEmpty) ...[
               Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 20),
-                child: GridView.builder(
+                padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
+                child: Row(
+                  children: [
+                    Text('${_results.length} books',
+                        style:
+                            TextStyle(color: c.textTertiary, fontSize: 13)),
+                    const Spacer(),
+                    GestureDetector(
+                      onTap: () => setState(() => _gridView = !_gridView),
+                      child: Icon(
+                          _gridView ? Icons.view_list : Icons.grid_view,
+                          size: 20,
+                          color: c.textSecondary),
+                    ),
+                  ],
+                ),
+              ),
+              if (_gridView)
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 20),
+                  child: GridView.builder(
+                    shrinkWrap: true,
+                    physics: const NeverScrollableScrollPhysics(),
+                    gridDelegate:
+                        const SliverGridDelegateWithFixedCrossAxisCount(
+                      crossAxisCount: 2,
+                      mainAxisSpacing: 8,
+                      crossAxisSpacing: 8,
+                      childAspectRatio: 0.65,
+                    ),
+                    itemCount: _results.length,
+                    itemBuilder: (_, i) => _GridResultCard(
+                        result: _results[i],
+                        downloadProgress: _downloading[_results[i].title],
+                        onTap: () => _showResultOptions(context, _results[i])),
+                  ),
+                )
+              else
+                ..._results.map((r) => _ResultCard(
+                    result: r,
+                    downloadProgress: _downloading[r.title],
+                    onTap: () => _showResultOptions(context, r))),
+            ],
+            if (_mangaResults.isNotEmpty) ...[
+              const SizedBox(height: 20),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
+                child: Text(
+                  'Manga from extensions',
+                  style: TextStyle(
+                    color: c.textPrimary,
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ),
+              for (final srcResult in _mangaResults) ...[
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(20, 8, 20, 4),
+                  child: Text(
+                    srcResult['sourceName'] as String? ?? '',
+                    style: TextStyle(
+                      color: c.accent,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+                GridView.builder(
                   shrinkWrap: true,
                   physics: const NeverScrollableScrollPhysics(),
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
                   gridDelegate:
                       const SliverGridDelegateWithFixedCrossAxisCount(
-                    crossAxisCount: 2,
+                    crossAxisCount: 3,
                     mainAxisSpacing: 8,
                     crossAxisSpacing: 8,
                     childAspectRatio: 0.65,
                   ),
-                  itemCount: _results.length,
-                  itemBuilder: (_, i) => _GridResultCard(
-                      result: _results[i],
-                      downloadProgress: _downloading[_results[i].title],
-                      onTap: () => _showResultOptions(context, _results[i])),
-                ),
-              )
-            else
-              ..._results.map((r) => _ResultCard(
-                  result: r,
-                  downloadProgress: _downloading[r.title],
-                  onTap: () => _showResultOptions(context, r))),
-          ],
-          // ── Manga section ──────────────────────────────────────────
-          const SizedBox(height: 24),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(20, 0, 20, 4),
-            child: Text(
-              'Manga',
-              style: TextStyle(
-                color: c.textPrimary,
-                fontSize: 18,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-          ),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(20, 0, 20, 12),
-            child: TextField(
-              controller: _mangaCtrl,
-              decoration: InputDecoration(
-                hintText: 'Search extensions for manga…',
-                suffixIcon: _mangaCtrl.text.isNotEmpty
-                    ? IconButton(
-                        icon: const Icon(Icons.clear, size: 18),
-                        onPressed: () {
-                          _mangaCtrl.clear();
-                          setState(() => _mangaResults = []);
-                        },
-                      )
-                    : null,
-              ),
-              onSubmitted: (_) => _searchManga(),
-            ),
-          ),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 20),
-            child: SizedBox(
-              width: double.infinity,
-              child: AnimatedPress(
-                onTap: _mangaSearching ? null : _searchManga,
-                child: Container(
-                  padding: const EdgeInsets.symmetric(vertical: 12),
-                  decoration: BoxDecoration(
-                    color: c.accent,
-                    borderRadius: AppSpacing.brLg,
-                  ),
-                  child: Center(
-                    child: _mangaSearching
-                        ? SizedBox(
-                            width: 18,
-                            height: 18,
-                            child: CircularProgressIndicator(
-                                strokeWidth: 2, color: c.onAccent))
-                        : Text('Search',
-                            style: TextStyle(
-                                color: c.onAccent,
-                                fontWeight: FontWeight.w600)),
-                  ),
-                ),
-              ),
-            ),
-          ),
-          const SizedBox(height: 16),
-          if (_mangaResults.isEmpty && _mangaSearched)
-            Padding(
-              padding: const EdgeInsets.symmetric(vertical: 24, horizontal: 20),
-              child: Center(
-                child: Text(
-                  'No manga found',
-                  style: TextStyle(color: c.textTertiary, fontSize: 14),
-                ),
-              ),
-            )
-          else
-            for (final srcResult in _mangaResults) ...[
-              Padding(
-                padding: const EdgeInsets.fromLTRB(20, 12, 20, 4),
-                child: Text(
-                  srcResult['sourceName'] as String? ?? '',
-                  style: TextStyle(
-                    color: c.accent,
-                    fontSize: 13,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ),
-              GridView.builder(
-                shrinkWrap: true,
-                physics: const NeverScrollableScrollPhysics(),
-                padding: const EdgeInsets.symmetric(horizontal: 16),
-                gridDelegate:
-                    const SliverGridDelegateWithFixedCrossAxisCount(
-                  crossAxisCount: 3,
-                  mainAxisSpacing: 8,
-                  crossAxisSpacing: 8,
-                  childAspectRatio: 0.65,
-                ),
-                itemCount: (srcResult['mangas'] as List?)?.length ?? 0,
-                itemBuilder: (_, i) {
-                  final m = (srcResult['mangas'] as List)[i] as Map<String, dynamic>;
-                  return _MangaCard(
-                    manga: m,
-                    onTap: () => Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) => MangaDetailScreen(
-                          sourceId: srcResult['sourceId'] as String? ?? '',
-                          url: m['url'] as String? ?? '',
-                          title: m['title'] as String? ?? '',
+                  itemCount: (srcResult['mangas'] as List?)?.length ?? 0,
+                  itemBuilder: (_, i) {
+                    final m = (srcResult['mangas'] as List)[i] as Map<String, dynamic>;
+                    return _MangaCard(
+                      manga: m,
+                      onTap: () => Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => MangaDetailScreen(
+                            sourceId: srcResult['sourceId'] as String? ?? '',
+                            url: m['url'] as String? ?? '',
+                            title: m['title'] as String? ?? '',
+                          ),
                         ),
                       ),
-                    ),
-                  );
-                },
-              ),
+                    );
+                  },
+                ),
+              ],
             ],
+          ],
         ],
       ),
     );
