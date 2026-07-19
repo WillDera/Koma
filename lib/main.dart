@@ -10,6 +10,7 @@ import 'core/services/stats_service.dart';
 import 'features/library/library_provider.dart';
 import 'features/reader/reader_provider.dart';
 import 'features/snippets/snippets_provider.dart';
+import 'package:flutter_native_splash/flutter_native_splash.dart';
 import 'theme/theme_provider.dart';
 
 void main() async {
@@ -32,6 +33,9 @@ void main() async {
   final extensionManager = ExtensionManager(dbService, keiyoushiService);
   unawaited(extensionManager.reloadAll());
 
+  WidgetsBinding widgetsBinding = WidgetsFlutterBinding.ensureInitialized();
+  FlutterNativeSplash.preserve(widgetsBinding: widgetsBinding);
+
   runApp(
     MultiProvider(
       providers: [
@@ -47,4 +51,7 @@ void main() async {
       child: const StashReaderApp(),
     ),
   );
+
+  // whenever your initialization is completed, remove the splash screen:
+  FlutterNativeSplash.remove();
 }

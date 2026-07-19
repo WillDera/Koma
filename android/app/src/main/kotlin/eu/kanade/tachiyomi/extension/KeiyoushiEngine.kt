@@ -1,44 +1,73 @@
 package eu.kanade.tachiyomi.extension
 
+import android.app.Application
 import android.content.Context
+import android.util.Log
+import eu.kanade.tachiyomi.network.NetworkHelper
+import eu.kanade.tachiyomi.source.CatalogueSource
 import eu.kanade.tachiyomi.source.Source
+import eu.kanade.tachiyomi.source.model.FilterList
 import eu.kanade.tachiyomi.source.model.MangasPage
 import eu.kanade.tachiyomi.source.model.Page
 import eu.kanade.tachiyomi.source.model.SChapter
 import eu.kanade.tachiyomi.source.model.SManga
+import eu.kanade.tachiyomi.source.model.SMangaUpdate
+import eu.kanade.tachiyomi.source.model.toMap
 import eu.kanade.tachiyomi.source.online.HttpSource
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.runBlocking
+import kotlinx.serialization.json.Json
+import okhttp3.OkHttpClient
+import uy.kohesive.injekt.Injekt
+import uy.kohesive.injekt.api.InjektModule
+import uy.kohesive.injekt.api.InjektRegistrar
+import uy.kohesive.injekt.api.addSingleton
+import uy.kohesive.injekt.api.addSingletonFactory
+import uy.kohesive.injekt.api.get
 import java.util.concurrent.ConcurrentHashMap
 
-/**
- * In-memory registry of loaded Keiyoushi extension sources.
- *
- * Responsibilities:
- *  - Own the [ExtensionLoader] (the DexClassLoader pipeline).
- *  - Map `sourceId → Source` so MethodChannel handlers can look up
- *    a loaded source by its stable id and dispatch calls.
- *  - Map `apkPath → sourceId(s)` so we can unload cleanly when the
- *    Dart side removes an extension APK.
- */
 class KeiyoushiEngine(
     private val context: Context,
     private val loader: ExtensionLoader = ExtensionLoader(context),
 ) {
+    companion object {
+        private const val TAG = "KeiyoushiEngine"
+        private var initialized = false
+    }
+
+    init {
+        if (!initialized) {
+            initialized = true
+            val app = context.applicationContext as Application
+            Injekt.importModule(object : InjektModule {
+                override fun InjektRegistrar.registerInjectables() {
+                    addSingleton(app)
+                    addSingletonFactory {
+                        OkHttpClient.Builder()
+                            .connectTimeout(30, java.util.concurrent.TimeUnit.SECONDS)
+                            .readTimeout(30, java.util.concurrent.TimeUnit.SECONDS)
+                            .build()
+                    }
+                    addSingletonFactory {
+                        Json { ignoreUnknownKeys = true; explicitNulls = false; isLenient = true }
+                    }
+                    addSingletonFactory {
+                        NetworkHelper(Injekt.get<OkHttpClient>())
+                    }
+                }
+            })
+        }
+    }
 
     private val sourceById: MutableMap<String, Source> = ConcurrentHashMap()
-    // A single APK can ship multiple Source classes; track all of them.
     private val idsByApkPath: MutableMap<String, MutableSet<String>> = ConcurrentHashMap()
 
-    /** Short description of every loaded source, for the UI. */
     fun listLoaded(): List<Map<String, Any?>> =
         sourceById.values.map { it.toDescriptor() }
 
-    /**
-     * Load a [Source] from an APK on disk and register it.
-     *
-     * Returns the source descriptor so the Dart side can persist it
-     * (id, name, lang, apkPath, className) in the database.
-     */
     fun loadExtension(apkPath: String, className: String): Map<String, Any?> {
+        Log.d(TAG, "loadExtension: apkPath=$apkPath className=$className")
         val source = loader.loadFromApk(apkPath, className)
         val id = source.id.toString()
         sourceById[id] = source
@@ -48,55 +77,107 @@ class KeiyoushiEngine(
 
     fun unloadExtension(sourceId: String) {
         val source = sourceById.remove(sourceId) ?: return
-        // Find which APK owned this source and remove it from the index.
         val apkPath = idsByApkPath.entries.firstOrNull { it.value.contains(sourceId) }?.key
         if (apkPath != null) {
             idsByApkPath[apkPath]?.remove(sourceId)
-            // If no sources remain from this APK, unload the classloader.
             if (idsByApkPath[apkPath]?.isEmpty() == true) {
                 idsByApkPath.remove(apkPath)
                 loader.unloadApk(apkPath)
             }
         }
-        // The Source is now unreferenced; the classloader drop will GC
-        // its classes on the next pass.
         source.toString()
     }
 
-    // -- Source operations (call into loaded HttpSource) ------------------
+    // -- Source operations via coroutine bridge ---------------------------
 
     fun getPopularManga(sourceId: String, page: Int): MangasPage =
-        requireHttpSource(sourceId).getPopularManga(page)
+        runBlocking { requireHttpSource(sourceId).getPopularManga(page) }
+
+    fun getLatestUpdates(sourceId: String, page: Int): MangasPage =
+        runBlocking { requireHttpSource(sourceId).getLatestUpdates(page) }
 
     fun searchManga(sourceId: String, query: String, page: Int): MangasPage =
-        requireHttpSource(sourceId).searchManga(page, query)
+        runBlocking {
+            try {
+                requireHttpSource(sourceId).getSearchManga(page, query, FilterList())
+            } catch (_: AbstractMethodError) {
+                MangasPage(emptyList(), false)
+            }
+        }
 
     fun getMangaDetails(sourceId: String, url: String): SManga {
         val src = requireHttpSource(sourceId)
-        val sm = src.getMangaDetails(url)
-        // Some extensions forget to mark the SManga as initialized; the
-        // Dart side relies on this flag to skip persisting partial data.
-        if (!sm.initialized) sm.initialized = true
-        return sm
+        val manga = SManga.create().apply { this.url = url }
+        val result = runBlocking {
+            src.getMangaUpdate(manga, emptyList(), fetchDetails = true, fetchChapters = false)
+        }
+        val details = result.manga
+        if (!details.initialized) details.initialized = true
+        return details
     }
 
-    fun getChapterList(sourceId: String, url: String): List<SChapter> =
-        requireHttpSource(sourceId).getChapterList(url)
+    fun getChapterList(sourceId: String, url: String): List<SChapter> {
+        val src = requireHttpSource(sourceId)
+        val manga = SManga.create().apply { this.url = url }
+        val result = runBlocking {
+            src.getMangaUpdate(manga, emptyList(), fetchDetails = false, fetchChapters = true)
+        }
+        return result.chapters
+    }
 
-    fun getPageList(sourceId: String, url: String): List<Page> =
-        requireHttpSource(sourceId).getPageList(url)
+    fun getPageList(sourceId: String, url: String): List<Page> {
+        val src = requireHttpSource(sourceId)
+        val chapter = SChapter.create().apply { this.url = url }
+        return runBlocking { src.getPageList(chapter) }
+    }
+
+    /**
+     * Search ALL loaded sources for [query]. Returns one entry per source
+     * that returned results. Runs searches in parallel.
+     */
+    fun searchAllInstalled(query: String, page: Int): List<Map<String, Any?>> =
+        runBlocking {
+            val sources = sourceById.values.filterIsInstance<CatalogueSource>()
+            if (sources.isEmpty()) return@runBlocking emptyList()
+
+            coroutineScope {
+                val deferred = sources.map { source ->
+                    async {
+                        try {
+                            val mp = source.getSearchManga(page, query, FilterList())
+                            source.id.toString() to mp
+                        } catch (_: AbstractMethodError) {
+                            null
+                        } catch (_: Exception) {
+                            null
+                        }
+                    }
+                }
+                deferred.map { it.await() }
+                    .filterNotNull()
+                    .map { (id, mp) ->
+                        val src = sourceById[id] ?: return@map null
+                        mapOf(
+                            "sourceId" to id,
+                            "sourceName" to src.name,
+                            "mangas" to mp.mangas.map(SManga::toMap),
+                            "hasNextPage" to mp.hasNextPage,
+                        )
+                    }
+                    .filterNotNull()
+            }
+        }
 
     // -- Internals --------------------------------------------------------
 
     private fun requireSource(sourceId: String): Source =
-        sourceById[sourceId]
-            ?: throw IllegalStateException("Source not loaded: $sourceId")
+        sourceById[sourceId] ?: throw IllegalStateException("Source not loaded: $sourceId")
 
     private fun requireHttpSource(sourceId: String): HttpSource {
         val src = requireSource(sourceId)
         if (src !is HttpSource) {
             throw IllegalStateException(
-                "Source $sourceId is not an HttpSource (got ${src.javaClass.name})"
+                "Source $sourceId is not an HttpSource (got ${src.javaClass.name})",
             )
         }
         return src

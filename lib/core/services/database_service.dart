@@ -5,6 +5,8 @@ import '../models/book.dart';
 import '../models/chapter.dart';
 import '../models/extension_repo.dart';
 import '../models/extension_source.dart';
+import '../models/manga.dart';
+import '../models/manga_chapter.dart';
 import '../models/snippet.dart';
 import '../models/reading_stat.dart';
 import '../models/source.dart';
@@ -774,6 +776,128 @@ class DatabaseService {
       readingTimeSeconds: row['reading_time_seconds'] as int? ?? 0,
       snippetsCreated: row['snippets_created'] as int? ?? 0,
       booksCompleted: row['books_completed'] as int? ?? 0,
+    );
+  }
+
+  // -- Manga (extension library) ----------------------------------------
+
+  Future<List<Manga>> getMangasInLibrary() async {
+    final rows = await _db
+        .customSelect('SELECT * FROM manga WHERE in_library = 1 ORDER BY updated_at DESC')
+        .get();
+    return rows.map((r) => Manga.fromJson(r.data)).toList();
+  }
+
+  Future<List<Manga>> getAllMangas() async {
+    final rows = await _db
+        .customSelect('SELECT * FROM manga ORDER BY updated_at DESC')
+        .get();
+    return rows.map((r) => Manga.fromJson(r.data)).toList();
+  }
+
+  Future<Manga?> getMangaByKey(String sourceId, String url) async {
+    final rows = await _db
+        .customSelect('SELECT * FROM manga WHERE source_id = ? AND url = ? LIMIT 1',
+            variables: [Variable.withString(sourceId), Variable.withString(url)])
+        .get();
+    if (rows.isEmpty) return null;
+    return Manga.fromJson(rows.first.data);
+  }
+
+  Future<int> insertManga(Manga manga) async {
+    final existing = await getMangaByKey(manga.sourceId, manga.url);
+    if (existing != null) return existing.id;
+    return _db.customInsert(
+      'INSERT INTO manga (name, url, image_url, author, artist, description, status, genre, source_id, in_library, reading_status, created_at, updated_at) '
+      'VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+      variables: [
+        Variable.withString(manga.name),
+        Variable.withString(manga.url),
+        Variable.withString(manga.imageUrl ?? ''),
+        Variable.withString(manga.author ?? ''),
+        Variable.withString(manga.artist ?? ''),
+        Variable.withString(manga.description ?? ''),
+        Variable.withInt(manga.status),
+        Variable.withString(manga.genres.join(', ')),
+        Variable.withString(manga.sourceId),
+        Variable.withInt(manga.inLibrary ? 1 : 0),
+        Variable.withInt(manga.readingStatus),
+        Variable.withString(manga.createdAt.toIso8601String()),
+        Variable.withString(manga.updatedAt.toIso8601String()),
+      ],
+    );
+  }
+
+  Future<void> updateManga(Manga manga) async {
+    await _db.customUpdate(
+      'UPDATE manga SET name=?, image_url=?, author=?, artist=?, description=?, status=?, genre=?, in_library=?, reading_status=?, updated_at=? WHERE id=?',
+      variables: [
+        Variable.withString(manga.name),
+        Variable.withString(manga.imageUrl ?? ''),
+        Variable.withString(manga.author ?? ''),
+        Variable.withString(manga.artist ?? ''),
+        Variable.withString(manga.description ?? ''),
+        Variable.withInt(manga.status),
+        Variable.withString(manga.genres.join(', ')),
+        Variable.withInt(manga.inLibrary ? 1 : 0),
+        Variable.withInt(manga.readingStatus),
+        Variable.withString(DateTime.now().toIso8601String()),
+        Variable.withInt(manga.id),
+      ],
+    );
+  }
+
+  Future<void> setMangaInLibrary(int mangaId, bool inLibrary) async {
+    await _db.customUpdate(
+      'UPDATE manga SET in_library=?, updated_at=? WHERE id=?',
+      variables: [
+        Variable.withInt(inLibrary ? 1 : 0),
+        Variable.withString(DateTime.now().toIso8601String()),
+        Variable.withInt(mangaId),
+      ],
+    );
+  }
+
+  // -- Manga chapters ----------------------------------------------------
+
+  Future<List<MangaChapter>> getMangaChapters(int mangaId) async {
+    final rows = await _db
+        .customSelect('SELECT * FROM manga_chapters WHERE manga_id = ? ORDER BY "index" ASC',
+            variables: [Variable.withInt(mangaId)])
+        .get();
+    return rows.map((r) => MangaChapter.fromJson(r.data)).toList();
+  }
+
+  Future<void> insertMangaChapters(int mangaId, List<MangaChapter> chapters) async {
+    await _db.transaction(() async {
+      for (final ch in chapters) {
+        await _db.customInsert(
+          'INSERT OR IGNORE INTO manga_chapters (manga_id, name, url, scanlator, date_upload, "index") '
+          'VALUES (?, ?, ?, ?, ?, ?)',
+          variables: [
+            Variable.withInt(mangaId),
+            Variable.withString(ch.name),
+            Variable.withString(ch.url),
+            Variable.withString(ch.scanlator ?? ''),
+            Variable.withInt(ch.dateUpload),
+            Variable.withInt(ch.index),
+          ],
+        );
+      }
+    });
+  }
+
+  Future<void> markMangaChapterRead(int chapterId) async {
+    await _db.customUpdate(
+      'UPDATE manga_chapters SET is_read=1 WHERE id=?',
+      variables: [Variable.withInt(chapterId)],
+    );
+  }
+
+  Future<void> updateMangaChapterProgress(int chapterId, int page) async {
+    await _db.customUpdate(
+      'UPDATE manga_chapters SET last_page_read=? WHERE id=?',
+      variables: [Variable.withInt(page), Variable.withInt(chapterId)],
     );
   }
 

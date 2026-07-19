@@ -1,7 +1,7 @@
 name: stashreader
 description: "A hybrid reader + knowledge snippet manager."
 publish_to: 'none'
-version: 2.5.1+24
+version: 2.5.22+45
 
 environment:
   sdk: ^3.9.0
@@ -26,6 +26,8 @@ dependencies:
   flutter_markdown: ^0.7.6
   google_fonts: ^8.1.0
   kindle_unpack: ^0.1.1
+  flutter_native_splash: ^2.2.16
+  flutter_launcher_icons: ^0.9.3
 
 dev_dependencies:
   flutter_test:
@@ -36,3 +38,16 @@ dev_dependencies:
 
 flutter:
   uses-material-design: true
+  assets:
+    - app_icons/
+
+flutter_icons:
+  android: "launcher_icon"
+  image_path: "app_icons/ic_launcher/android/ic_launcher-web.png"
+  min_sdk_android: 21
+
+flutter_native_splash:
+  color: "#000000"          # match your icon's black background
+  image: "app_icons/ic_launcher/android/ic_launcher-web.png"
+  android: true
+  android_gravity: center

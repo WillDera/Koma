@@ -29,6 +29,13 @@ class ExtensionIndexEntry {
     required this.sources,
   });
 
+  String? get className {
+    if (sources.isEmpty) return null;
+    final c = sources.first['className'];
+    if (c is String && c.isNotEmpty) return c;
+    return null;
+  }
+
   factory ExtensionIndexEntry.fromJson(Map<String, dynamic> j) {
     final sources = (j['sources'] as List? ?? const [])
         .cast<Map>()
@@ -104,16 +111,23 @@ class ExtensionManager {
   ///
   /// If the APK is already on disk (e.g. user re-installing), pass
   /// [skipDownload] to skip the fetch.
-  Future<ExtensionSource> install(ExtensionIndexEntry entry) async {
+  Future<ExtensionSource> install(ExtensionIndexEntry entry, {required String repoUrl}) async {
     final dir = await _extensionsDir();
     final apkPath = p.join(dir.path, '${entry.pkg}.apk');
+    final baseUrl = repoUrl.replaceFirst(RegExp(r'/[^/]*$'), '');
+    final resolved = '$baseUrl/apk/${entry.apkUrl}';
 
     final apkFile = File(apkPath);
-    if (!apkFile.existsSync()) {
-      await _downloadApk(entry.apkUrl, apkPath);
+    if (apkFile.existsSync()) {
+      try { await Process.run('chmod', ['+w', apkPath]); } catch (_) {}
+      try { apkFile.deleteSync(); } catch (_) {}
     }
+    await _downloadApk(resolved, apkPath);
 
-    final desc = await _keiyoushi.loadExtension(apkPath: apkPath);
+    final desc = await _keiyoushi.loadExtension(
+      apkPath: apkPath,
+      className: entry.className,
+    );
     final id = (desc['id'] as String?) ?? entry.pkg;
     final src = ExtensionSource(
       id: id,
@@ -179,12 +193,20 @@ class ExtensionManager {
   Future<Directory> _extensionsDir() async {
     final base = await getApplicationSupportDirectory();
     final dir = Directory(p.join(base.path, 'extensions'));
-    if (!dir.existsSync()) dir.createSync(recursive: true);
+    if (!dir.existsSync()) {
+      dir.createSync(recursive: true);
+    }
+    try {
+      await Process.run('chmod', ['-R', '+w', dir.path]);
+    } catch (_) {}
     return dir;
   }
 
   Future<void> _downloadApk(String url, String destPath) async {
-    final bytes = await http.get(Uri.parse(url)).then((r) => r.bodyBytes);
-    await File(destPath).writeAsBytes(bytes);
+    final res = await _http.get(Uri.parse(url));
+    if (res.statusCode != 200) {
+      throw HttpException('APK download failed: ${res.statusCode} at $url');
+    }
+    await File(destPath).writeAsBytes(res.bodyBytes);
   }
 }

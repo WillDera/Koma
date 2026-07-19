@@ -1,25 +1,39 @@
 package eu.kanade.tachiyomi.source
 
-/**
- * Minimal stand-in for `eu.kanade.tachiyomi.source.Source`.
- *
- * Real Keiyoushi/Mihon extensions implement this interface and the loader
- * looks up sources by `id`. We only declare the members that an extension
- * might call at load time — anything else can be added as the integration
- * grows.
- */
+import eu.kanade.tachiyomi.source.model.FilterList
+import eu.kanade.tachiyomi.source.model.MangasPage
+import eu.kanade.tachiyomi.source.model.Page
+import eu.kanade.tachiyomi.source.model.SChapter
+import eu.kanade.tachiyomi.source.model.SManga
+import eu.kanade.tachiyomi.source.model.SMangaUpdate
+import rx.Observable
+
 interface Source {
 
-    /** Display name shown in the source picker (e.g. "MangaPill"). */
-    val name: String
-
-    /** Two-letter language code the source is in (e.g. "en"). */
-    val lang: String
-
-    /**
-     * Stable numeric identifier for this source. Keiyoushi extensions
-     * typically derive this from a hash of the source's class name so it
-     * stays consistent across installs.
-     */
     val id: Long
+    val name: String
+    val lang: String get() = ""
+    val supportsLatest: Boolean
+
+    fun getFilterList(): FilterList = FilterList()
+
+    suspend fun getPopularManga(page: Int): MangasPage
+    suspend fun getLatestUpdates(page: Int): MangasPage
+    suspend fun getSearchManga(page: Int, query: String, filters: FilterList): MangasPage
+    suspend fun getMangaUpdate(
+        manga: SManga,
+        chapters: List<SChapter>,
+        fetchDetails: Boolean,
+        fetchChapters: Boolean,
+    ): SMangaUpdate
+    suspend fun getPageList(chapter: SChapter): List<Page>
+
+    @Deprecated("Use the combined suspend API instead", ReplaceWith("getMangaUpdate"))
+    fun fetchMangaDetails(manga: SManga): Observable<SManga> = throw UnsupportedOperationException()
+
+    @Deprecated("Use the combined suspend API instead", ReplaceWith("getMangaUpdate"))
+    fun fetchChapterList(manga: SManga): Observable<List<SChapter>> = throw UnsupportedOperationException()
+
+    @Deprecated("Use the suspend API instead", ReplaceWith("getPageList"))
+    fun fetchPageList(chapter: SChapter): Observable<List<Page>> = throw UnsupportedOperationException()
 }
