@@ -125,10 +125,19 @@ class KeiyoushiEngine(
         return result.chapters
     }
 
-    fun getPageList(sourceId: String, url: String): List<Page> {
+    fun getPageList(sourceId: String, url: String): List<Map<String, Any?>> {
         val src = requireHttpSource(sourceId)
         val chapter = SChapter.create().apply { this.url = url }
-        return runBlocking { src.getPageList(chapter) }
+        return runBlocking {
+            src.getPageList(chapter).map { page ->
+                val headers = try {
+                    src.getImageRequestHeaders(page).toMap()
+                } catch (_: Exception) {
+                    emptyMap<String, String>()
+                }
+                page.toMap() + ("headers" to headers)
+            }
+        }
     }
 
     /**
@@ -146,8 +155,10 @@ class KeiyoushiEngine(
                         try {
                             val mp = source.getSearchManga(page, query, FilterList())
                             source.id.toString() to mp
+                        } catch (_: NoClassDefFoundError) {
+                            null // extension references a class we don't bundle
                         } catch (_: AbstractMethodError) {
-                            null
+                            null // source doesn't support search
                         } catch (_: Exception) {
                             null
                         }

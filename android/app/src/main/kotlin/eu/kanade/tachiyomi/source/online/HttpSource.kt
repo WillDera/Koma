@@ -178,6 +178,9 @@ abstract class HttpSource : CatalogueSource {
     @Deprecated("Override the request/parse methods directly")
     protected open fun imageUrlParse(response: Response): String = throw UnsupportedOperationException()
 
+    /** Returns the request headers that would be sent for this page's image. */
+    fun getImageRequestHeaders(page: Page): Headers = imageRequest(page).headers
+
     open suspend fun getImage(page: Page, existingSize: Long = 0L): Response {
         return client.newCall(imageRequest(page)).execute()
     }

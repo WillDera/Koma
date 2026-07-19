@@ -24,5 +24,5 @@ fun Page.toMap(): Map<String, Any?> = mapOf(
     "index" to index,
     "url" to url,
     "imageUrl" to imageUrl,
-    "uri" to uri,
+    "uri" to uri?.toString(),
 )

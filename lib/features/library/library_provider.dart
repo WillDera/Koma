@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../core/models/book.dart';
+import '../../core/models/manga.dart';
 import '../../core/services/database_service.dart';
 
 class LibraryProvider extends ChangeNotifier {
@@ -8,6 +9,7 @@ class LibraryProvider extends ChangeNotifier {
 
   final DatabaseService _db;
   List<Book> _books = [];
+  List<Manga> _mangas = [];
   bool _loading = true;
   String? _error;
   final Set<int> _selectedIds = {};
@@ -18,9 +20,6 @@ class LibraryProvider extends ChangeNotifier {
 
   bool get isGridView => _isGridView;
 
-  /// Load persisted preferences (view mode). Must be called from
-  /// main() before the app builds so the first frame uses the
-  /// saved layout.
   Future<void> init() async {
     final prefs = await SharedPreferences.getInstance();
     _isGridView = prefs.getBool(_keyIsGridView) ?? false;
@@ -30,13 +29,13 @@ class LibraryProvider extends ChangeNotifier {
   void toggleLayout() {
     _isGridView = !_isGridView;
     notifyListeners();
-    // Persist asynchronously; fire-and-forget.
     SharedPreferences.getInstance().then(
       (prefs) => prefs.setBool(_keyIsGridView, _isGridView),
     );
   }
 
   List<Book> get books => _books;
+  List<Manga> get mangas => _mangas;
   bool get loading => _loading;
   String? get error => _error;
   Set<int> get selectedIds => _selectedIds;
@@ -49,6 +48,7 @@ class LibraryProvider extends ChangeNotifier {
 
     try {
       _books = await _db.getBooks();
+      _mangas = await _db.getMangasInLibrary();
     } catch (e) {
       _error = e.toString();
     }

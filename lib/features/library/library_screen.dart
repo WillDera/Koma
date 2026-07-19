@@ -3,13 +3,16 @@ import 'package:provider/provider.dart';
 import 'package:file_picker/file_picker.dart';
 import '../../core/models/book.dart';
 import '../../core/models/chapter.dart';
+import '../../core/models/manga.dart';
 import '../../core/services/database_service.dart';
 import '../../core/services/ebook_service.dart';
 import '../../core/services/web_scraper_service.dart';
 import '../../core/services/cache_service.dart';
 import '../../theme/app_theme.dart';
 import '../../theme/theme_provider.dart';
+import '../../theme/tokens/app_spacing.dart';
 
+import '../../widgets/animated_press.dart';
 import '../../widgets/dialog_sheet.dart';
 import '../../widgets/empty_state.dart';
 import '../../widgets/icon_button_round.dart';
@@ -20,6 +23,8 @@ import '../../widgets/loading_skeleton.dart';
 import '../../widgets/one_hand_spacer.dart';
 import '../../widgets/premium_button.dart';
 import '../../widgets/toast.dart';
+import '../extensions/manga_detail_screen.dart';
+import '../reader/manga_reader_screen.dart';
 import '../reader/reader_screen.dart';
 import '../snippets/snippets_provider.dart';
 import 'library_provider.dart';
@@ -150,12 +155,10 @@ class _LibraryScreenState extends State<LibraryScreen> {
   // ── Body dispatcher ─────────────────────────────────────────────────
 
   Widget _body(BuildContext context, LibraryProvider provider) {
-    if (provider.loading && provider.books.isEmpty) return _loading(context);
+    if (provider.loading && provider.books.isEmpty && provider.mangas.isEmpty) return _loading(context);
     if (provider.error != null) return _error(context, provider);
-    if (provider.books.isEmpty) return _empty(context);
-    return provider.isGridView
-        ? _grid(context, provider)
-        : _list(context, provider);
+    if (provider.books.isEmpty && provider.mangas.isEmpty) return _empty(context);
+    return _combined(context, provider);
   }
 
   // ── States ──────────────────────────────────────────────────────────
@@ -232,76 +235,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
 
   // ── Normal content (scrolling includes spacer → header → grid/list) ──
 
-  Widget _grid(BuildContext context, LibraryProvider provider) {
-    return RefreshIndicator(
-      color: context.colors.accent,
-      backgroundColor: context.colors.surface,
-      onRefresh: () => provider.loadBooks(),
-      child: CustomScrollView(
-        controller: _scrollCtrl,
-        physics: const AlwaysScrollableScrollPhysics(),
-        slivers: [
-          // spacer + header scroll with the grid
-          const SliverToBoxAdapter(child: OneHandSpacer()),
-          SliverToBoxAdapter(child: _header(context, provider)),
-          SliverToBoxAdapter(
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(20, 16, 20, 12),
-              child: Row(
-                children: [
-                  Text(
-                    'All books',
-                    style: TextStyle(
-                      color: context.colors.textPrimary,
-                      fontSize: 18,
-                      fontWeight: FontWeight.w600,
-                      letterSpacing: -0.2,
-                    ),
-                  ),
-                  const Spacer(),
-                  Text(
-                    '${provider.books.length}',
-                    style: TextStyle(
-                      color: context.colors.textTertiary,
-                      fontSize: 13,
-                      fontWeight: FontWeight.w500,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-          SliverPadding(
-            padding: const EdgeInsets.fromLTRB(20, 0, 20, 100),
-            sliver: SliverGrid(
-              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                crossAxisCount: 2,
-                mainAxisSpacing: 18,
-                crossAxisSpacing: 18,
-                childAspectRatio: 0.6,
-              ),
-              delegate: SliverChildBuilderDelegate(
-                (ctx, i) => LibraryBookCard(
-                  book: provider.books[i],
-                  variant: LibraryCardVariant.grid,
-                  selected: provider.selectedIds.contains(provider.books[i].id),
-                  selectionMode: provider.selectionMode,
-                  onTap: () => provider.selectionMode
-                      ? provider.toggleSelection(provider.books[i].id)
-                      : _openReader(context, provider.books[i].id),
-                  onLongPress: () =>
-                      provider.toggleSelection(provider.books[i].id),
-                ),
-                childCount: provider.books.length,
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _list(BuildContext context, LibraryProvider provider) {
+  Widget _combined(BuildContext context, LibraryProvider provider) {
     return RefreshIndicator(
       color: context.colors.accent,
       backgroundColor: context.colors.surface,
@@ -313,21 +247,139 @@ class _LibraryScreenState extends State<LibraryScreen> {
         children: [
           const OneHandSpacer(),
           _header(context, provider, _oneHand),
-          const SizedBox(height: 8),
-          for (final book in provider.books)
-            Padding(
-              padding: const EdgeInsets.only(bottom: 4),
-              child: LibraryBookCard(
-                book: book,
-                variant: LibraryCardVariant.list,
-                selected: provider.selectedIds.contains(book.id),
-                selectionMode: provider.selectionMode,
-                onTap: () => provider.selectionMode
-                    ? provider.toggleSelection(book.id)
-                    : _openReader(context, book.id),
-                onLongPress: () => provider.toggleSelection(book.id),
-              ),
+          if (provider.books.isNotEmpty) ...[
+            const SizedBox(height: 16),
+            Row(
+              children: [
+                Text(
+                  'Books',
+                  style: TextStyle(
+                    color: context.colors.textPrimary,
+                    fontSize: 18,
+                    fontWeight: FontWeight.w600,
+                    letterSpacing: -0.2,
+                  ),
+                ),
+                const Spacer(),
+                Text(
+                  '${provider.books.length}',
+                  style: TextStyle(
+                    color: context.colors.textTertiary,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ],
             ),
+            const SizedBox(height: 8),
+            if (provider.isGridView)
+              GridView.builder(
+                shrinkWrap: true,
+                physics: const NeverScrollableScrollPhysics(),
+                gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                  crossAxisCount: 2,
+                  mainAxisSpacing: 18,
+                  crossAxisSpacing: 18,
+                  childAspectRatio: 0.6,
+                ),
+                itemCount: provider.books.length,
+                itemBuilder: (ctx, i) => LibraryBookCard(
+                  book: provider.books[i],
+                  variant: LibraryCardVariant.grid,
+                  selected: provider.selectedIds.contains(provider.books[i].id),
+                  selectionMode: provider.selectionMode,
+                  onTap: () => provider.selectionMode
+                      ? provider.toggleSelection(provider.books[i].id)
+                      : _openReader(context, provider.books[i].id),
+                  onLongPress: () =>
+                      provider.toggleSelection(provider.books[i].id),
+                ),
+              )
+            else
+              for (final book in provider.books)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 4),
+                  child: LibraryBookCard(
+                    book: book,
+                    variant: LibraryCardVariant.list,
+                    selected: provider.selectedIds.contains(book.id),
+                    selectionMode: provider.selectionMode,
+                    onTap: () => provider.selectionMode
+                        ? provider.toggleSelection(book.id)
+                        : _openReader(context, book.id),
+                    onLongPress: () => provider.toggleSelection(book.id),
+                  ),
+                ),
+          ],
+          if (provider.mangas.isNotEmpty) ...[
+            const SizedBox(height: 24),
+            Row(
+              children: [
+                Text(
+                  'Manga',
+                  style: TextStyle(
+                    color: context.colors.textPrimary,
+                    fontSize: 18,
+                    fontWeight: FontWeight.w600,
+                    letterSpacing: -0.2,
+                  ),
+                ),
+                const Spacer(),
+                Text(
+                  '${provider.mangas.length}',
+                  style: TextStyle(
+                    color: context.colors.textTertiary,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            if (provider.isGridView)
+              GridView.builder(
+                shrinkWrap: true,
+                physics: const NeverScrollableScrollPhysics(),
+                gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                  crossAxisCount: 2,
+                  mainAxisSpacing: 8,
+                  crossAxisSpacing: 8,
+                  childAspectRatio: 0.65,
+                ),
+                itemCount: provider.mangas.length,
+                itemBuilder: (ctx, i) {
+                  final m = provider.mangas[i];
+                  return _MangaLibraryCard(
+                    manga: m,
+                    onTap: () => Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => MangaDetailScreen(
+                          sourceId: m.sourceId,
+                          url: m.url,
+                          title: m.name,
+                        ),
+                      ),
+                    ),
+                  );
+                },
+              )
+            else
+              for (final manga in provider.mangas)
+                _MangaLibraryRow(
+                  manga: manga,
+                  onTap: () => Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => MangaDetailScreen(
+                        sourceId: manga.sourceId,
+                        url: manga.url,
+                        title: manga.name,
+                      ),
+                    ),
+                  ),
+                ),
+          ],
         ],
       ),
     );
@@ -669,4 +721,146 @@ class _LibraryScreenState extends State<LibraryScreen> {
       MaterialPageRoute(builder: (_) => ReaderScreen(bookId: bookId)),
     );
   }
+}
+
+// ── Manga library cards ────────────────────────────────────────────────
+
+class _MangaLibraryCard extends StatelessWidget {
+  final Manga manga;
+  final VoidCallback onTap;
+
+  const _MangaLibraryCard({required this.manga, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.colors;
+    return AnimatedPress(
+      onTap: onTap,
+      child: Container(
+        decoration: BoxDecoration(
+          color: c.surface,
+          borderRadius: AppSpacing.brMd,
+          border: Border.all(color: c.border, width: 0.5),
+        ),
+        clipBehavior: Clip.antiAlias,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Expanded(
+              child: manga.imageUrl != null && manga.imageUrl!.isNotEmpty
+                  ? Image.network(
+                      manga.imageUrl!,
+                      width: double.infinity,
+                      fit: BoxFit.cover,
+                      errorBuilder: (_, _, _) => _placeholder(c),
+                    )
+                  : _placeholder(c),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(6, 4, 6, 6),
+              child: Text(
+                manga.name,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  color: c.textPrimary,
+                  fontSize: 11,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _placeholder(StashReaderColors c) => Container(
+        color: c.surfaceMuted,
+        child: Center(
+          child: Icon(Icons.image_outlined, size: 28, color: c.textTertiary),
+        ),
+      );
+}
+
+class _MangaLibraryRow extends StatelessWidget {
+  final Manga manga;
+  final VoidCallback onTap;
+
+  const _MangaLibraryRow({required this.manga, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.colors;
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 4),
+      child: AnimatedPress(
+        onTap: onTap,
+        child: Container(
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: c.surface,
+            borderRadius: AppSpacing.brMd,
+            border: Border.all(color: c.border, width: 0.5),
+          ),
+          child: Row(
+            children: [
+              ClipRRect(
+                borderRadius: AppSpacing.brXs,
+                child: manga.imageUrl != null && manga.imageUrl!.isNotEmpty
+                    ? Image.network(
+                        manga.imageUrl!,
+                        width: 48,
+                        height: 64,
+                        fit: BoxFit.cover,
+                        errorBuilder: (_, _, _) => _placeholder(c, 48, 64),
+                      )
+                    : _placeholder(c, 48, 64),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      manga.name,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: c.textPrimary,
+                        fontSize: 15,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    if (manga.author != null) ...[
+                      const SizedBox(height: 2),
+                      Text(
+                        manga.author!,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          color: c.textSecondary,
+                          fontSize: 13,
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+              Icon(Icons.chevron_right, size: 16, color: c.textTertiary),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _placeholder(StashReaderColors c, double w, double h) => Container(
+        width: w,
+        height: h,
+        color: c.surfaceMuted,
+        child: Center(
+          child: Icon(Icons.image_outlined, size: 24, color: c.textTertiary),
+        ),
+      );
 }

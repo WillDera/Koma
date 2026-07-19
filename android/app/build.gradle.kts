@@ -46,6 +46,16 @@ android {
             signingConfig = signingConfigs.getByName("stashreader")
         }
     }
+
+    packaging {
+        resources {
+            excludes += setOf(
+                "META-INF/versions/9/OSGI-INF/MANIFEST.MF",
+                "META-INF/AL2.0",
+                "META-INF/LGPL2.1",
+            )
+        }
+    }
 }
 
 flutter {
@@ -55,6 +65,7 @@ flutter {
 dependencies {
     implementation("org.jsoup:jsoup:1.17.2")
     implementation("com.squareup.okhttp3:okhttp:5.4.0")
+    implementation("com.squareup.okhttp3:okhttp-brotli:5.4.0")
     implementation("com.squareup.okio:okio:3.9.0")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.7.3")
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.6.3")

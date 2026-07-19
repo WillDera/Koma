@@ -30,6 +30,7 @@ class _MangaDetailScreenState extends State<MangaDetailScreen> {
   final _service = KeiyoushiService();
   Map<String, dynamic>? _details;
   List<Map<String, dynamic>> _chapters = [];
+  Map<String, Map<String, dynamic>> _localChapters = {};
   bool _loading = true;
   bool _inLibrary = false;
   // ignore: unused_field
@@ -57,19 +58,31 @@ class _MangaDetailScreenState extends State<MangaDetailScreen> {
       ]);
       if (!mounted) return;
       final details = results[0] as Map<String, dynamic>;
+      final chapters = results[1] as List<Map<String, dynamic>>;
       setState(() {
         _details = details;
-        _chapters = results[1] as List<Map<String, dynamic>>;
+        _chapters = chapters;
         _error = null;
       });
-      // Check library status
+      // Check library status + local chapter data
       final db = context.read<DatabaseService>();
       final existing = await db.getMangaByKey(widget.sourceId, widget.url);
-      if (!mounted) return;
-      setState(() {
-        _inLibrary = existing?.inLibrary ?? false;
-        _mangaId = existing?.id;
-      });
+      if (existing != null) {
+        final localChs = await db.getMangaChapters(existing.id);
+        final chMap = <String, Map<String, dynamic>>{};
+        for (final lc in localChs) {
+          chMap[lc.url] = {
+            'is_read': lc.isRead,
+            'last_page_read': lc.lastPageRead,
+          };
+        }
+        if (!mounted) return;
+        setState(() {
+          _inLibrary = existing.inLibrary;
+          _mangaId = existing.id;
+          _localChapters = chMap;
+        });
+      }
     } catch (e) {
       if (!mounted) return;
       setState(() => _error = '$e');
@@ -155,6 +168,7 @@ class _MangaDetailScreenState extends State<MangaDetailScreen> {
                     const SizedBox(height: 24),
                     _ChaptersList(
                       chapters: _chapters,
+                      localChapters: _localChapters,
                       c: c,
                       sourceId: widget.sourceId,
                       onChapterTap: (ch) => Navigator.push(
@@ -346,12 +360,14 @@ class _Header extends StatelessWidget {
 
 class _ChaptersList extends StatelessWidget {
   final List<Map<String, dynamic>> chapters;
+  final Map<String, Map<String, dynamic>> localChapters;
   final StashReaderColors c;
   final String sourceId;
   final void Function(Map<String, dynamic> ch) onChapterTap;
 
   const _ChaptersList({
     required this.chapters,
+    required this.localChapters,
     required this.c,
     required this.sourceId,
     required this.onChapterTap,
@@ -371,16 +387,22 @@ class _ChaptersList extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(
-          'Chapters (${chapters.length})',
-          style: TextStyle(
-            color: c.textPrimary,
-            fontSize: 16,
-            fontWeight: FontWeight.w600,
+        Padding(
+          padding: const EdgeInsets.only(bottom: 8),
+          child: Text(
+            'Chapters (${chapters.length})',
+            style: TextStyle(
+              color: c.textPrimary,
+              fontSize: 16,
+              fontWeight: FontWeight.w600,
+            ),
           ),
         ),
-        const SizedBox(height: 8),
         ...chapters.map((ch) {
+          final url = ch['url'] as String? ?? '';
+          final local = localChapters[url];
+          final isRead = local?['is_read'] as bool? ?? false;
+          final lastPage = local?['last_page_read'] as int? ?? 0;
           final name = ch['name'] as String? ?? '';
           final chNum = ch['chapter_number'] as num?;
           final scanlator = ch['scanlator'] as String?;
@@ -397,18 +419,26 @@ class _ChaptersList extends StatelessWidget {
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
               decoration: BoxDecoration(
                 color: c.surface,
-                border: Border(bottom: BorderSide(color: c.border, width: 0.5)),
+                border: Border(bottom: BorderSide(color: c.border, width: 0.3)),
               ),
               child: Row(
                 children: [
+                  Icon(
+                    isRead ? Icons.check_circle : Icons.radio_button_unchecked,
+                    size: 18,
+                    color: isRead ? c.accent : c.textTertiary,
+                  ),
+                  const SizedBox(width: 10),
                   Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
                           name,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
                           style: TextStyle(
-                            color: c.textPrimary,
+                            color: isRead ? c.textTertiary : c.textPrimary,
                             fontSize: 14,
                           ),
                         ),
@@ -423,7 +453,24 @@ class _ChaptersList extends StatelessWidget {
                                   fontSize: 11,
                                 ),
                               ),
-                            if (chNum != null && scanlator != null)
+                            if (chNum != null && (scanlator != null || lastPage > 0))
+                              Text(
+                                ' · ',
+                                style: TextStyle(
+                                  color: c.textTertiary,
+                                  fontSize: 11,
+                                ),
+                              ),
+                            if (lastPage > 0)
+                              Text(
+                                'p.$lastPage',
+                                style: TextStyle(
+                                  color: c.accent,
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w500,
+                                ),
+                              ),
+                            if (lastPage > 0 && scanlator != null)
                               Text(
                                 ' · ',
                                 style: TextStyle(
