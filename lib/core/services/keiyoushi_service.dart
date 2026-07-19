@@ -86,6 +86,22 @@ class KeiyoushiService {
         .toList(growable: false);
   }
 
+  /// Search ALL loaded sources for [query]. Returns one entry per source
+  /// that has results: `[{ sourceId, sourceName, mangas, hasNextPage }]`.
+  Future<List<Map<String, dynamic>>> searchAllInstalled({
+    String query = '',
+    int page = 1,
+  }) async {
+    final res = await _channel.invokeListMethod<dynamic>(
+      'searchAllInstalled',
+      {'query': query, 'page': page},
+    );
+    return (res ?? const [])
+        .cast<Map>()
+        .map((e) => Map<String, dynamic>.from(e))
+        .toList(growable: false);
+  }
+
   /// Fetch page list (image URLs) for a chapter.
   Future<List<Map<String, dynamic>>> getPageList({
     required String sourceId,

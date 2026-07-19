@@ -1,12 +1,16 @@
 package eu.kanade.tachiyomi.extension
 
 import android.content.Context
+import android.content.pm.PackageManager
+import android.os.Handler
+import android.os.Looper
+import android.util.Log
 import eu.kanade.tachiyomi.source.model.Page
 import eu.kanade.tachiyomi.source.model.toMap
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodCall
 import io.flutter.plugin.common.MethodChannel
-import android.content.pm.PackageManager
+import kotlin.concurrent.thread
 
 /**
  * Bridges Dart ↔ Kotlin for Keiyoushi extension operations.
@@ -22,6 +26,7 @@ import android.content.pm.PackageManager
  *   - `getMangaDetails({ sourceId, url })`              → { ...SManga fields... }
  *   - `getChapterList({ sourceId, url })`               → List<Map>
  *   - `getPageList({ sourceId, url })`                  → List<Map>
+ *   - `searchAllInstalled({ query, page })`             → List<{ sourceId, sourceName, mangas, hasNextPage }>
  */
 class KeiyoushiMethodChannel(
     private val context: Context,
@@ -30,7 +35,10 @@ class KeiyoushiMethodChannel(
 
     companion object {
         const val CHANNEL = "eu.kanade.tachiyomi/keiyoushi"
+        private const val TAG = "KeiyoushiMC"
     }
+
+    private val mainHandler = Handler(Looper.getMainLooper())
 
     /**
      * Read the `<meta-data android:name="tachiyomi.extension.class">` tag
@@ -44,11 +52,28 @@ class KeiyoushiMethodChannel(
             apkPath,
             PackageManager.GET_META_DATA,
         ) ?: return null
-        // Without this, resources won't resolve correctly. Doesn't
-        // matter for us — we only want raw meta-data.
         info.applicationInfo?.sourceDir = apkPath
         val meta = info.applicationInfo?.metaData ?: return null
         return meta.getString("tachiyomi.extension.class")
+    }
+
+    /** Run [block] on a background thread, deliver [onResult] on main; report errors to [result]. */
+    private fun <T> bg(block: () -> T, result: MethodChannel.Result, onResult: (T) -> Unit) {
+        thread {
+            try {
+                val value = block()
+                mainHandler.post { onResult(value) }
+            } catch (e: Throwable) {
+                Log.e(TAG, "bg error", e)
+                mainHandler.post {
+                    result.error(
+                        "KEIYOUSHI",
+                        "${e.javaClass.simpleName}: ${e.message}",
+                        e.stackTraceToString(),
+                    )
+                }
+            }
+        }
     }
 
     /** Register this handler on the given Flutter engine. Call from
@@ -59,20 +84,23 @@ class KeiyoushiMethodChannel(
     }
 
     override fun onMethodCall(call: MethodCall, result: MethodChannel.Result) {
+        Log.d(TAG, "onMethodCall: method=${call.method} args=${call.arguments}")
+
         try {
             when (call.method) {
                 "loadExtension" -> {
                     val apkPath = call.argument<String>("apkPath")
                     if (apkPath == null) {
+                        Log.e(TAG, "loadExtension: apkPath missing")
                         result.error("ARG", "apkPath missing", null)
                         return
                     }
-                    // If Dart didn't supply a class name, try to pull it
-                    // from the APK's manifest. Fall back to the engine
-                    // throwing a clear error if neither is present.
+                    Log.d(TAG, "loadExtension: apkPath=$apkPath")
+
                     val className = call.argument<String>("className")
                         ?: extractMainClass(apkPath)
                         ?: run {
+                            Log.e(TAG, "loadExtension: no className for $apkPath")
                             result.error(
                                 "NOCLASS",
                                 "No className supplied and APK manifest " +
@@ -81,97 +109,138 @@ class KeiyoushiMethodChannel(
                             )
                             return
                         }
-                    result.success(engine.loadExtension(apkPath, className))
+                    Log.d(TAG, "loadExtension: className=$className")
+
+                    bg({ engine.loadExtension(apkPath, className) }, result) { desc ->
+                        Log.d(TAG, "loadExtension: success → $desc")
+                        result.success(desc)
+                    }
                 }
                 "unloadExtension" -> {
                     val sourceId = call.argument<String>("sourceId")
                     if (sourceId == null) {
+                        Log.e(TAG, "unloadExtension: sourceId missing")
                         result.error("ARG", "sourceId missing", null)
                         return
                     }
-                    engine.unloadExtension(sourceId)
-                    result.success(null)
+                    Log.d(TAG, "unloadExtension: sourceId=$sourceId")
+                    bg({ engine.unloadExtension(sourceId) }, result) {
+                        result.success(null)
+                    }
                 }
                 "listLoadedExtensions" -> {
-                    result.success(engine.listLoaded())
+                    val list = engine.listLoaded()
+                    Log.d(TAG, "listLoadedExtensions: ${list.size} loaded")
+                    result.success(list)
                 }
                 "getPopularManga" -> {
                     val sourceId = call.argument<String>("sourceId")
                     if (sourceId == null) {
+                        Log.e(TAG, "getPopularManga: sourceId missing")
                         result.error("ARG", "sourceId missing", null)
                         return
                     }
                     val page = call.argument<Int>("page") ?: 1
-                    val mangasPage = engine.getPopularManga(sourceId, page)
-                    result.success(
-                        mapOf(
-                            "mangas" to mangasPage.mangas.map { it.toMap() },
-                            "hasNextPage" to mangasPage.hasNextPage,
+                    Log.d(TAG, "getPopularManga: sourceId=$sourceId page=$page")
+                    bg({ engine.getPopularManga(sourceId, page) }, result) { mangasPage ->
+                        result.success(
+                            mapOf(
+                                "mangas" to mangasPage.mangas.map { it.toMap() },
+                                "hasNextPage" to mangasPage.hasNextPage,
+                            )
                         )
-                    )
+                    }
                 }
                 "searchManga" -> {
                     val sourceId = call.argument<String>("sourceId")
                     if (sourceId == null) {
+                        Log.e(TAG, "searchManga: sourceId missing")
                         result.error("ARG", "sourceId missing", null)
                         return
                     }
                     val query = call.argument<String>("query") ?: ""
                     val page = call.argument<Int>("page") ?: 1
-                    val mangasPage = engine.searchManga(sourceId, query, page)
-                    result.success(
-                        mapOf(
-                            "mangas" to mangasPage.mangas.map { it.toMap() },
-                            "hasNextPage" to mangasPage.hasNextPage,
+                    Log.d(TAG, "searchManga: sourceId=$sourceId query=$query page=$page")
+                    bg({ engine.searchManga(sourceId, query, page) }, result) { mangasPage ->
+                        result.success(
+                            mapOf(
+                                "mangas" to mangasPage.mangas.map { it.toMap() },
+                                "hasNextPage" to mangasPage.hasNextPage,
+                            )
                         )
-                    )
+                    }
                 }
                 "getMangaDetails" -> {
                     val sourceId = call.argument<String>("sourceId")
                     val url = call.argument<String>("url")
                     if (sourceId == null) {
+                        Log.e(TAG, "getMangaDetails: sourceId missing")
                         result.error("ARG", "sourceId missing", null)
                         return
                     }
                     if (url == null) {
+                        Log.e(TAG, "getMangaDetails: url missing")
                         result.error("ARG", "url missing", null)
                         return
                     }
-                    val manga = engine.getMangaDetails(sourceId, url)
-                    result.success(manga.toMap())
+                    Log.d(TAG, "getMangaDetails: sourceId=$sourceId url=$url")
+                    bg({ engine.getMangaDetails(sourceId, url) }, result) { manga ->
+                        result.success(manga.toMap())
+                    }
                 }
                 "getChapterList" -> {
                     val sourceId = call.argument<String>("sourceId")
                     val url = call.argument<String>("url")
                     if (sourceId == null) {
+                        Log.e(TAG, "getChapterList: sourceId missing")
                         result.error("ARG", "sourceId missing", null)
                         return
                     }
                     if (url == null) {
+                        Log.e(TAG, "getChapterList: url missing")
                         result.error("ARG", "url missing", null)
                         return
                     }
-                    val chapters = engine.getChapterList(sourceId, url)
-                    result.success(chapters.map { it.toMap() })
+                    Log.d(TAG, "getChapterList: sourceId=$sourceId")
+                    bg({ engine.getChapterList(sourceId, url) }, result) { chapters ->
+                        result.success(chapters.map { it.toMap() })
+                    }
                 }
                 "getPageList" -> {
                     val sourceId = call.argument<String>("sourceId")
                     val url = call.argument<String>("url")
                     if (sourceId == null) {
+                        Log.e(TAG, "getPageList: sourceId missing")
                         result.error("ARG", "sourceId missing", null)
                         return
                     }
                     if (url == null) {
+                        Log.e(TAG, "getPageList: url missing")
                         result.error("ARG", "url missing", null)
                         return
                     }
-                    val pages: List<Page> = engine.getPageList(sourceId, url)
-                    result.success(pages.map { it.toMap() })
+                    Log.d(TAG, "getPageList: sourceId=$sourceId")
+                    bg({ engine.getPageList(sourceId, url) }, result) { pages ->
+                        result.success(pages.map { it.toMap() })
+                    }
                 }
-                else -> result.notImplemented()
+                "searchAllInstalled" -> {
+                    val query = call.argument<String>("query") ?: ""
+                    val page = call.argument<Int>("page") ?: 1
+                    Log.d(TAG, "searchAllInstalled: query=$query page=$page")
+                    bg({ engine.searchAllInstalled(query, page) }, result) { list ->
+                        result.success(list)
+                    }
+                }
+                else -> {
+                    Log.w(TAG, "Unimplemented method: ${call.method}")
+                    result.notImplemented()
+                }
             }
-        } catch (e: Exception) {
-            result.error("KEIYOUSHI", e.message ?: e.javaClass.simpleName, e.stackTraceToString())
+        } catch (e: Throwable) {
+            Log.e(TAG, "onMethodCall error: method=${call.method}", e)
+            val msg = "${e.javaClass.simpleName}: ${e.message}"
+            result.error("KEIYOUSHI", msg, e.stackTraceToString())
         }
     }
 }

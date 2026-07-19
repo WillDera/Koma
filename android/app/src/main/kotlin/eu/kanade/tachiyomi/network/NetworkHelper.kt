@@ -8,11 +8,9 @@ import okhttp3.RequestBody
 import okhttp3.RequestBody.Companion.toRequestBody
 import java.util.concurrent.TimeUnit
 
-/**
- * Helper builders for the common HTTP verbs. Extensions import these as
- * `import eu.kanade.tachiyomi.network.GET` etc., so the function shapes
- * must match the upstream API.
- */
+open class NetworkHelper(val client: OkHttpClient) {
+    open fun defaultUserAgentProvider(): String = "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36"
+}
 
 fun defaultClient(): OkHttpClient = OkHttpClient.Builder()
     .connectTimeout(20, TimeUnit.SECONDS)

@@ -8,6 +8,8 @@ import '../../core/services/extension_manager.dart';
 import '../../core/services/keiyoushi_service.dart';
 import '../../theme/app_theme.dart';
 import '../../theme/tokens/app_spacing.dart';
+import '../../widgets/animated_press.dart';
+import 'source_browse_screen.dart';
 
 const _keiyoushiDefaultRepoUrl =
     'https://raw.githubusercontent.com/keiyoushi/extensions/repo/index.min.json';
@@ -154,10 +156,10 @@ class _ExtensionsScreenState extends State<ExtensionsScreen>
     await _refresh();
   }
 
-  Future<void> _install(ExtensionIndexEntry entry) async {
+  Future<void> _install(ExtensionIndexEntry entry, ExtensionRepo repo) async {
     final messenger = ScaffoldMessenger.of(context);
     try {
-      await _mgr.install(entry);
+      await _mgr.install(entry, repoUrl: repo.url);
       messenger.showSnackBar(
         SnackBar(content: Text('Installed ${entry.name}')),
       );
@@ -224,6 +226,15 @@ class _ExtensionsScreenState extends State<ExtensionsScreen>
                 _InstalledTab(
                   installed: _installed,
                   onUninstall: _uninstall,
+                  onBrowse: (src) => Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => SourceBrowseScreen(
+                        sourceId: src.id,
+                        sourceName: src.name,
+                      ),
+                    ),
+                  ),
                 ),
                 _AvailableTab(
                   repos: _repos,
@@ -252,8 +263,13 @@ class _ExtensionsScreenState extends State<ExtensionsScreen>
 class _InstalledTab extends StatelessWidget {
   final List<ExtensionSource> installed;
   final void Function(ExtensionSource) onUninstall;
+  final void Function(ExtensionSource) onBrowse;
 
-  const _InstalledTab({required this.installed, required this.onUninstall});
+  const _InstalledTab({
+    required this.installed,
+    required this.onUninstall,
+    required this.onBrowse,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -271,43 +287,46 @@ class _InstalledTab extends StatelessWidget {
       separatorBuilder: (_, __) => const SizedBox(height: 8),
       itemBuilder: (_, i) {
         final src = installed[i];
-        return Container(
-          padding: const EdgeInsets.all(14),
-          decoration: BoxDecoration(
-            color: c.surface,
-            borderRadius: AppSpacing.brMd,
-            border: Border.all(color: c.border),
-          ),
-          child: Row(
-            children: [
-              Icon(Icons.extension, color: c.accent),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      src.name,
-                      style: TextStyle(
-                        color: c.textPrimary,
-                        fontSize: 15,
-                        fontWeight: FontWeight.w600,
+        return AnimatedPress(
+          onTap: () => onBrowse(src),
+          child: Container(
+            padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(
+              color: c.surface,
+              borderRadius: AppSpacing.brMd,
+              border: Border.all(color: c.border),
+            ),
+            child: Row(
+              children: [
+                Icon(Icons.extension, color: c.accent),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        src.name,
+                        style: TextStyle(
+                          color: c.textPrimary,
+                          fontSize: 15,
+                          fontWeight: FontWeight.w600,
+                        ),
                       ),
-                    ),
-                    const SizedBox(height: 2),
-                    Text(
-                      'v${src.version} · ${src.lang}',
-                      style: TextStyle(color: c.textSecondary, fontSize: 12),
-                    ),
-                  ],
+                      const SizedBox(height: 2),
+                      Text(
+                        'v${src.version} · ${src.lang}',
+                        style: TextStyle(color: c.textSecondary, fontSize: 12),
+                      ),
+                    ],
+                  ),
                 ),
-              ),
-              IconButton(
-                icon: Icon(Icons.delete_outline, color: c.textSecondary),
-                onPressed: () => onUninstall(src),
-                tooltip: 'Uninstall',
-              ),
-            ],
+                IconButton(
+                  icon: Icon(Icons.delete_outline, color: c.textSecondary),
+                  onPressed: () => onUninstall(src),
+                  tooltip: 'Uninstall',
+                ),
+              ],
+            ),
           ),
         );
       },
@@ -316,13 +335,13 @@ class _InstalledTab extends StatelessWidget {
 }
 
 // ─── Available tab ──────────────────────────────────────────────────────
-class _AvailableTab extends StatelessWidget {
+class _AvailableTab extends StatefulWidget {
   final List<ExtensionRepo> repos;
   final Map<int, List<ExtensionIndexEntry>> indexCache;
   final Set<int> loading;
   final List<ExtensionSource> installed;
   final void Function(ExtensionRepo) onFetch;
-  final void Function(ExtensionIndexEntry) onInstall;
+  final void Function(ExtensionIndexEntry, ExtensionRepo) onInstall;
   final VoidCallback onSeed;
 
   const _AvailableTab({
@@ -336,44 +355,125 @@ class _AvailableTab extends StatelessWidget {
   });
 
   @override
+  State<_AvailableTab> createState() => _AvailableTabState();
+}
+
+class _AvailableTabState extends State<_AvailableTab> {
+  final _searchCtrl = TextEditingController();
+  String _query = '';
+
+  @override
+  void initState() {
+    super.initState();
+    _searchCtrl.addListener(() => setState(() => _query = _searchCtrl.text));
+  }
+
+  @override
+  void dispose() {
+    _searchCtrl.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
     final c = context.colors;
-    if (repos.isEmpty) {
+    if (widget.repos.isEmpty) {
       return _EmptyState(
         icon: Icons.cloud_download_outlined,
         title: 'No repos yet',
         subtitle:
             'Tap below to add the official Keiyoushi repo, then fetch its index.',
         action: FilledButton.icon(
-          onPressed: onSeed,
+          onPressed: widget.onSeed,
           icon: const Icon(Icons.add),
           label: const Text('Add Keiyoushi repo'),
         ),
       );
     }
-    final installedIds = installed.map((s) => s.id).toSet();
-    return ListView(
-      padding: const EdgeInsets.all(16),
+    final installedIds = widget.installed.map((s) => s.id).toSet();
+
+    // pony tail: filter by en/all lang only
+    bool _langOk(ExtensionIndexEntry e) {
+      final l = e.lang.toLowerCase();
+      return l == 'en' || l == 'all';
+    }
+
+    bool _queryOk(ExtensionIndexEntry e) =>
+        _query.isEmpty || e.name.toLowerCase().contains(_query.toLowerCase());
+
+    final hasAnyFetched =
+        widget.repos.any((r) => widget.indexCache.containsKey(r.id));
+
+    return Column(
       children: [
-        for (final repo in repos) ...[
-          _RepoHeader(
-            repo: repo,
-            loading: loading.contains(repo.id),
-            onFetch: () => onFetch(repo),
-          ),
-          const SizedBox(height: 8),
-          ...?indexCache[repo.id]?.map(
-            (e) => Padding(
-              padding: const EdgeInsets.only(bottom: 6),
-              child: _ExtensionRow(
-                entry: e,
-                installed: installedIds.contains(_entryId(e)),
-                onInstall: () => onInstall(e),
+        if (hasAnyFetched)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+            child: TextField(
+              controller: _searchCtrl,
+              decoration: InputDecoration(
+                hintText: 'Search extensions…',
+                prefixIcon: const Icon(Icons.search, size: 20),
+                suffixIcon: _query.isNotEmpty
+                    ? IconButton(
+                        icon: const Icon(Icons.clear, size: 18),
+                        onPressed: () => _searchCtrl.clear(),
+                      )
+                    : null,
+                isDense: true,
+                contentPadding:
+                    const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                border: OutlineInputBorder(
+                  borderRadius: AppSpacing.brMd,
+                  borderSide: BorderSide(color: c.border),
+                ),
               ),
             ),
           ),
-          const SizedBox(height: 16),
-        ],
+        Expanded(
+          child: ListView(
+            padding: const EdgeInsets.all(16),
+            children: [
+              for (final repo in widget.repos) ...[
+                _RepoHeader(
+                  repo: repo,
+                  loading: widget.loading.contains(repo.id),
+                  onFetch: () => widget.onFetch(repo),
+                ),
+                const SizedBox(height: 8),
+                ...?widget.indexCache[repo.id]
+                    ?.where((e) => _langOk(e) && _queryOk(e))
+                    .map(
+                      (e) => Padding(
+                        padding: const EdgeInsets.only(bottom: 6),
+                        child: _ExtensionRow(
+                          entry: e,
+                          installed: installedIds.contains(_entryId(e)),
+                          onInstall: () => widget.onInstall(e, repo),
+                        ),
+                      ),
+                    ),
+                if (widget.indexCache[repo.id] != null &&
+                    widget.indexCache[repo.id]!
+                        .where((e) => _langOk(e) && _queryOk(e))
+                        .isEmpty)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 8),
+                    child: Text(
+                      _query.isEmpty
+                          ? 'No en/all extensions in this repo'
+                          : 'No matches',
+                      style: TextStyle(
+                        color: c.textSecondary,
+                        fontSize: 12,
+                      ),
+                    ),
+                  ),
+                const SizedBox(height: 16),
+              ],
+            ],
+          ),
+        ),
       ],
     );
   }
