@@ -8,6 +8,7 @@ import '../../core/services/database_service.dart';
 import '../../core/services/keiyoushi_service.dart';
 import '../../theme/app_theme.dart';
 import '../../theme/tokens/app_spacing.dart';
+import '../library/library_provider.dart';
 import '../reader/manga_reader_screen.dart';
 
 class MangaDetailScreen extends StatefulWidget {
@@ -110,7 +111,8 @@ class _MangaDetailScreenState extends State<MangaDetailScreen> {
     );
     final id = await db.insertManga(manga);
     await db.setMangaInLibrary(id, true);
-    // Save chapters
+    // Save chapters (replace, since chapters may have changed)
+    await db.deleteMangaChapters(id);
     final chapters = _chapters.asMap().entries.map((e) => MangaChapter(
       id: 0,
       mangaId: id,
@@ -126,6 +128,9 @@ class _MangaDetailScreenState extends State<MangaDetailScreen> {
       _inLibrary = true;
       _mangaId = id;
     });
+    // Refresh library in case user goes back
+    if (mounted) context.read<LibraryProvider>().loadBooks();
+    if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(content: Text('Added to library')),
     );
