@@ -1,7 +1,7 @@
 name: stashreader
 description: "A hybrid reader + knowledge snippet manager."
 publish_to: 'none'
-version: 2.5.47+67
+version: 2.5.49+67
 
 environment:
   sdk: ^3.9.0
