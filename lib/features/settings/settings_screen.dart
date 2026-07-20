@@ -74,7 +74,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
               title: 'Settings',
               oneHand: _oneHand,
               shrinkProgress: _oneHand ? _scrollProgress : 0.0,
-              subtitle: 'Version 2.5.27',
+              subtitle: 'Version 2.5.30',
             ),
             const StaggeredEntrance(
               child: FeaturePanel(
@@ -1380,7 +1380,7 @@ class _AboutSection extends StatelessWidget {
         SettingsRow(
           icon: Icons.info_outline,
           title: 'StashReader',
-          subtitle: 'Version 2.5.27 · build 2.5.27+50',
+          subtitle: 'Version 2.5.30 · build 2.5.30+53',
         ),
         SettingsRow(
           icon: Icons.favorite_outline,

@@ -23,6 +23,7 @@ import '../../widgets/loading_skeleton.dart';
 import '../../widgets/one_hand_spacer.dart';
 import '../../widgets/premium_button.dart';
 import '../../widgets/screen_chrome.dart';
+import '../../widgets/segmented_control.dart';
 import '../../widgets/toast.dart';
 import '../extensions/manga_detail_screen.dart';
 import '../reader/reader_screen.dart';
@@ -38,8 +39,12 @@ class LibraryScreen extends StatefulWidget {
 
 class _LibraryScreenState extends State<LibraryScreen> {
   final ScrollController _scrollCtrl = ScrollController();
+  final TextEditingController _bookSearchCtrl = TextEditingController();
+  final TextEditingController _mangaSearchCtrl = TextEditingController();
   double _scrollProgress = 0;
   bool _importingFile = false;
+  _LibrarySection _section = _LibrarySection.books;
+  _LibrarySort _sort = _LibrarySort.recent;
 
   @override
   void initState() {
@@ -63,6 +68,8 @@ class _LibraryScreenState extends State<LibraryScreen> {
   void dispose() {
     _scrollCtrl.removeListener(_onScroll);
     _scrollCtrl.dispose();
+    _bookSearchCtrl.dispose();
+    _mangaSearchCtrl.dispose();
     super.dispose();
   }
 
@@ -80,7 +87,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
               SafeArea(bottom: false, child: _body(context, provider)),
               if (!provider.loading &&
                   !provider.selectionMode &&
-                  provider.books.isNotEmpty)
+                  (provider.books.isNotEmpty || provider.mangas.isNotEmpty))
                 Positioned(
                   left: leftHanded ? 20 : null,
                   right: leftHanded ? null : 20,
@@ -246,7 +253,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
       onRefresh: () => provider.loadBooks(),
       child: ListView(
         controller: _scrollCtrl,
-        padding: const EdgeInsets.fromLTRB(20, 0, 20, 100),
+        padding: const EdgeInsets.only(bottom: 100),
         physics: const AlwaysScrollableScrollPhysics(),
         children: [
           const OneHandSpacer(),
@@ -270,108 +277,36 @@ class _LibraryScreenState extends State<LibraryScreen> {
                 ],
               ),
             ),
-          if (provider.books.isNotEmpty) ...[
-            SectionLabel(title: 'Books', meta: '${provider.books.length}'),
-            if (provider.isGridView)
-              GridView.builder(
-                shrinkWrap: true,
-                physics: const NeverScrollableScrollPhysics(),
-                gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                  crossAxisCount: 2,
-                  mainAxisSpacing: 18,
-                  crossAxisSpacing: 18,
-                  childAspectRatio: 0.6,
-                ),
-                itemCount: provider.books.length,
-                itemBuilder: (ctx, i) => StaggeredEntrance(
-                  index: i + 1,
-                  child: LibraryBookCard(
-                    book: provider.books[i],
-                    variant: LibraryCardVariant.grid,
-                    selected: provider.selectedIds.contains(
-                      provider.books[i].id,
-                    ),
-                    selectionMode: provider.selectionMode,
-                    onTap: () => provider.selectionMode
-                        ? provider.toggleSelection(provider.books[i].id)
-                        : _openReader(context, provider.books[i].id),
-                    onLongPress: () =>
-                        provider.toggleSelection(provider.books[i].id),
+          _LibraryControls(
+            section: _section,
+            sort: _sort,
+            bookCount: provider.books.length,
+            mangaCount: provider.mangas.length,
+            queryController: _section == _LibrarySection.books
+                ? _bookSearchCtrl
+                : _mangaSearchCtrl,
+            onSectionChanged: (section) => setState(() => _section = section),
+            onSortChanged: (sort) => setState(() => _sort = sort),
+            onQueryChanged: (_) => setState(() {}),
+          ),
+          AnimatedSwitcher(
+            duration: const Duration(milliseconds: 260),
+            switchInCurve: Curves.easeOutCubic,
+            switchOutCurve: Curves.easeInCubic,
+            child: _section == _LibrarySection.books
+                ? _BookShelf(
+                    key: const ValueKey('books-shelf'),
+                    books: _visibleBooks(provider.books),
+                    provider: provider,
+                    onOpen: (id) => _openReader(context, id),
+                  )
+                : _MangaShelf(
+                    key: const ValueKey('manga-shelf'),
+                    mangas: _visibleMangas(provider.mangas),
+                    gridView: provider.isGridView,
+                    onOpen: (manga) => _openManga(context, manga),
                   ),
-                ),
-              )
-            else
-              for (final entry in provider.books.indexed)
-                Padding(
-                  padding: const EdgeInsets.only(bottom: 4),
-                  child: StaggeredEntrance(
-                    index: entry.$1 + 1,
-                    child: LibraryBookCard(
-                      book: entry.$2,
-                      variant: LibraryCardVariant.list,
-                      selected: provider.selectedIds.contains(entry.$2.id),
-                      selectionMode: provider.selectionMode,
-                      onTap: () => provider.selectionMode
-                          ? provider.toggleSelection(entry.$2.id)
-                          : _openReader(context, entry.$2.id),
-                      onLongPress: () => provider.toggleSelection(entry.$2.id),
-                    ),
-                  ),
-                ),
-          ],
-          if (provider.mangas.isNotEmpty) ...[
-            const SizedBox(height: 10),
-            SectionLabel(title: 'Manga', meta: '${provider.mangas.length}'),
-            if (provider.isGridView)
-              GridView.builder(
-                shrinkWrap: true,
-                physics: const NeverScrollableScrollPhysics(),
-                gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                  crossAxisCount: 2,
-                  mainAxisSpacing: 8,
-                  crossAxisSpacing: 8,
-                  childAspectRatio: 0.65,
-                ),
-                itemCount: provider.mangas.length,
-                itemBuilder: (ctx, i) {
-                  final m = provider.mangas[i];
-                  return StaggeredEntrance(
-                    index: i + 1,
-                    child: _MangaLibraryCard(
-                      manga: m,
-                      onTap: () => Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (_) => MangaDetailScreen(
-                            sourceId: m.sourceId,
-                            url: m.url,
-                            title: m.name,
-                          ),
-                        ),
-                      ),
-                    ),
-                  );
-                },
-              )
-            else
-              for (final entry in provider.mangas.indexed)
-                StaggeredEntrance(
-                  index: entry.$1 + 1,
-                  child: _MangaLibraryRow(
-                    manga: entry.$2,
-                    onTap: () => Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) => MangaDetailScreen(
-                          sourceId: entry.$2.sourceId,
-                          url: entry.$2.url,
-                          title: entry.$2.name,
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-          ],
+          ),
         ],
       ),
     );
@@ -406,17 +341,69 @@ class _LibraryScreenState extends State<LibraryScreen> {
         ],
       );
     }
-    String? subtitle;
-    final count = provider.books.length;
-    if (count > 0) {
-      subtitle = '$count book${count == 1 ? '' : 's'}';
-    }
     return LibraryHeader(
       title: 'Library',
-      subtitle: subtitle,
       titleSize: _oneHand ? 64 : 32,
       shrinkProgress: _oneHand ? _scrollProgress : 0.0,
     );
+  }
+
+  List<Book> _visibleBooks(List<Book> books) {
+    final query = _bookSearchCtrl.text.trim().toLowerCase();
+    final filtered = query.isEmpty
+        ? books.toList()
+        : books.where((book) {
+            final haystack = [
+              book.title,
+              book.author ?? '',
+              book.genre,
+              book.fileExtension,
+            ].join(' ').toLowerCase();
+            return haystack.contains(query);
+          }).toList();
+    filtered.sort(
+      (a, b) => switch (_sort) {
+        _LibrarySort.title => a.title.toLowerCase().compareTo(
+          b.title.toLowerCase(),
+        ),
+        _LibrarySort.author => (a.author ?? '').toLowerCase().compareTo(
+          (b.author ?? '').toLowerCase(),
+        ),
+        _LibrarySort.progress => b.progress.compareTo(a.progress),
+        _LibrarySort.recent => b.updatedAt.compareTo(a.updatedAt),
+      },
+    );
+    return filtered;
+  }
+
+  List<Manga> _visibleMangas(List<Manga> mangas) {
+    final query = _mangaSearchCtrl.text.trim().toLowerCase();
+    final filtered = query.isEmpty
+        ? mangas.toList()
+        : mangas.where((manga) {
+            final haystack = [
+              manga.name,
+              manga.author ?? '',
+              manga.artist ?? '',
+              manga.sourceId,
+              ...manga.genres,
+            ].join(' ').toLowerCase();
+            return haystack.contains(query);
+          }).toList();
+    filtered.sort(
+      (a, b) => switch (_sort) {
+        _LibrarySort.title => a.name.toLowerCase().compareTo(
+          b.name.toLowerCase(),
+        ),
+        _LibrarySort.author =>
+          (a.author ?? a.artist ?? '').toLowerCase().compareTo(
+            (b.author ?? b.artist ?? '').toLowerCase(),
+          ),
+        _LibrarySort.progress => b.readingStatus.compareTo(a.readingStatus),
+        _LibrarySort.recent => b.updatedAt.compareTo(a.updatedAt),
+      },
+    );
+    return filtered;
   }
 
   // ── Dialogs / import ────────────────────────────────────────────────
@@ -711,6 +698,318 @@ class _LibraryScreenState extends State<LibraryScreen> {
     Navigator.push(
       context,
       MaterialPageRoute(builder: (_) => ReaderScreen(bookId: bookId)),
+    );
+  }
+
+  void _openManga(BuildContext context, Manga manga) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => MangaDetailScreen(
+          sourceId: manga.sourceId,
+          url: manga.url,
+          title: manga.name,
+        ),
+      ),
+    );
+  }
+}
+
+enum _LibrarySection { books, manga }
+
+enum _LibrarySort { recent, title, author, progress }
+
+class _LibraryControls extends StatefulWidget {
+  final _LibrarySection section;
+  final _LibrarySort sort;
+  final int bookCount;
+  final int mangaCount;
+  final TextEditingController queryController;
+  final ValueChanged<_LibrarySection> onSectionChanged;
+  final ValueChanged<_LibrarySort> onSortChanged;
+  final ValueChanged<String> onQueryChanged;
+
+  const _LibraryControls({
+    required this.section,
+    required this.sort,
+    required this.bookCount,
+    required this.mangaCount,
+    required this.queryController,
+    required this.onSectionChanged,
+    required this.onSortChanged,
+    required this.onQueryChanged,
+  });
+
+  @override
+  State<_LibraryControls> createState() => _LibraryControlsState();
+}
+
+class _LibraryControlsState extends State<_LibraryControls> {
+  final FocusNode _searchFocus = FocusNode();
+  bool _searchOpen = false;
+
+  @override
+  void dispose() {
+    _searchFocus.dispose();
+    super.dispose();
+  }
+
+  void _openSearch() {
+    setState(() => _searchOpen = true);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _searchFocus.requestFocus();
+    });
+  }
+
+  void _closeSearch() {
+    _searchFocus.unfocus();
+    widget.queryController.clear();
+    widget.onQueryChanged('');
+    setState(() => _searchOpen = false);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.colors;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 0, 20, 16),
+      child: Column(
+        children: [
+          SegmentedControl<_LibrarySection>(
+            segments: {
+              _LibrarySection.books: 'Books ${widget.bookCount}',
+              _LibrarySection.manga: 'Manga ${widget.mangaCount}',
+            },
+            value: widget.section,
+            onChanged: widget.onSectionChanged,
+            height: 42,
+          ),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              Expanded(
+                child: AnimatedSwitcher(
+                  duration: const Duration(milliseconds: 220),
+                  switchInCurve: Curves.easeOutCubic,
+                  switchOutCurve: Curves.easeInCubic,
+                  child: _searchOpen
+                      ? TextField(
+                          key: const ValueKey('library-search-field'),
+                          controller: widget.queryController,
+                          focusNode: _searchFocus,
+                          onChanged: widget.onQueryChanged,
+                          decoration: InputDecoration(
+                            hintText: widget.section == _LibrarySection.books
+                                ? 'Search books'
+                                : 'Search manga',
+                            prefixIcon: const Icon(Icons.search, size: 19),
+                            suffixIcon: IconButton(
+                              tooltip: 'Close search',
+                              icon: const Icon(Icons.close, size: 18),
+                              onPressed: _closeSearch,
+                            ),
+                          ),
+                        )
+                      : const SizedBox.shrink(
+                          key: ValueKey('library-search-empty'),
+                        ),
+                ),
+              ),
+              if (!_searchOpen) ...[
+                IconButtonRound(
+                  icon: Icons.search_rounded,
+                  tooltip: 'Search library',
+                  onPressed: _openSearch,
+                ),
+                const SizedBox(width: 10),
+              ],
+              PopupMenuButton<_LibrarySort>(
+                initialValue: widget.sort,
+                tooltip: 'Sort library',
+                color: c.surface,
+                surfaceTintColor: Colors.transparent,
+                shape: RoundedRectangleBorder(
+                  borderRadius: AppSpacing.brLg,
+                  side: BorderSide(color: c.border, width: 0.5),
+                ),
+                onSelected: widget.onSortChanged,
+                itemBuilder: (context) => const [
+                  PopupMenuItem(
+                    value: _LibrarySort.recent,
+                    child: Text('Recently updated'),
+                  ),
+                  PopupMenuItem(
+                    value: _LibrarySort.title,
+                    child: Text('Title'),
+                  ),
+                  PopupMenuItem(
+                    value: _LibrarySort.author,
+                    child: Text('Author'),
+                  ),
+                  PopupMenuItem(
+                    value: _LibrarySort.progress,
+                    child: Text('Progress'),
+                  ),
+                ],
+                child: SizedBox(
+                  width: 40,
+                  height: 40,
+                  child: Icon(
+                    Icons.tune_rounded,
+                    size: 20,
+                    color: c.textSecondary,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _BookShelf extends StatelessWidget {
+  final List<Book> books;
+  final LibraryProvider provider;
+  final ValueChanged<int> onOpen;
+
+  const _BookShelf({
+    super.key,
+    required this.books,
+    required this.provider,
+    required this.onOpen,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    if (books.isEmpty) {
+      return const SizedBox(
+        height: 260,
+        child: EmptyState(
+          icon: Icons.search_off,
+          title: 'No books found',
+          subtitle: 'Try another title, author, genre, or format.',
+        ),
+      );
+    }
+    if (provider.isGridView) {
+      return Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 20),
+        child: GridView.builder(
+          shrinkWrap: true,
+          physics: const NeverScrollableScrollPhysics(),
+          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+            crossAxisCount: 2,
+            mainAxisSpacing: 18,
+            crossAxisSpacing: 18,
+            childAspectRatio: 0.6,
+          ),
+          itemCount: books.length,
+          itemBuilder: (ctx, i) => StaggeredEntrance(
+            index: i + 1,
+            child: LibraryBookCard(
+              book: books[i],
+              variant: LibraryCardVariant.grid,
+              selected: provider.selectedIds.contains(books[i].id),
+              selectionMode: provider.selectionMode,
+              onTap: () => provider.selectionMode
+                  ? provider.toggleSelection(books[i].id)
+                  : onOpen(books[i].id),
+              onLongPress: () => provider.toggleSelection(books[i].id),
+            ),
+          ),
+        ),
+      );
+    }
+    return Column(
+      children: [
+        for (final entry in books.indexed)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(20, 0, 20, 4),
+            child: StaggeredEntrance(
+              index: entry.$1 + 1,
+              child: LibraryBookCard(
+                book: entry.$2,
+                variant: LibraryCardVariant.list,
+                selected: provider.selectedIds.contains(entry.$2.id),
+                selectionMode: provider.selectionMode,
+                onTap: () => provider.selectionMode
+                    ? provider.toggleSelection(entry.$2.id)
+                    : onOpen(entry.$2.id),
+                onLongPress: () => provider.toggleSelection(entry.$2.id),
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+}
+
+class _MangaShelf extends StatelessWidget {
+  final List<Manga> mangas;
+  final bool gridView;
+  final ValueChanged<Manga> onOpen;
+
+  const _MangaShelf({
+    super.key,
+    required this.mangas,
+    required this.gridView,
+    required this.onOpen,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    if (mangas.isEmpty) {
+      return const SizedBox(
+        height: 260,
+        child: EmptyState(
+          icon: Icons.search_off,
+          title: 'No manga found',
+          subtitle: 'Try another title, author, source, or genre.',
+        ),
+      );
+    }
+    if (gridView) {
+      return Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 20),
+        child: GridView.builder(
+          shrinkWrap: true,
+          physics: const NeverScrollableScrollPhysics(),
+          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+            crossAxisCount: 2,
+            mainAxisSpacing: 8,
+            crossAxisSpacing: 8,
+            childAspectRatio: 0.65,
+          ),
+          itemCount: mangas.length,
+          itemBuilder: (ctx, i) {
+            final manga = mangas[i];
+            return StaggeredEntrance(
+              index: i + 1,
+              child: _MangaLibraryCard(
+                manga: manga,
+                onTap: () => onOpen(manga),
+              ),
+            );
+          },
+        ),
+      );
+    }
+    return Column(
+      children: [
+        for (final entry in mangas.indexed)
+          StaggeredEntrance(
+            index: entry.$1 + 1,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 20),
+              child: _MangaLibraryRow(
+                manga: entry.$2,
+                onTap: () => onOpen(entry.$2),
+              ),
+            ),
+          ),
+      ],
     );
   }
 }

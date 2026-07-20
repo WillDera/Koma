@@ -11,9 +11,11 @@ import '../../theme/theme_provider.dart';
 
 import '../../theme/tokens/app_spacing.dart';
 import '../../widgets/animated_press.dart';
+import '../../widgets/empty_state.dart';
 import '../../widgets/library_header.dart';
 import '../../widgets/one_hand_spacer.dart';
 import '../../widgets/screen_chrome.dart';
+import '../../widgets/segmented_control.dart';
 import '../../widgets/toast.dart';
 
 class DiscoverScreen extends StatefulWidget {
@@ -31,6 +33,7 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
   bool _searching = false;
   bool _loaded = false;
   bool _gridView = false;
+  _DiscoverSection _section = _DiscoverSection.books;
   double _scrollProgress = 0;
   final Map<String, double> _downloading = {};
   bool get _oneHand => context.watch<ThemeProvider>().oneHandMode;
@@ -76,6 +79,9 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
       setState(() {
         _results = results[0] as List<SourceSearchResult>;
         _mangaResults = results[1] as List<Map<String, dynamic>>;
+        if (_results.isEmpty && _mangaItemCount > 0) {
+          _section = _DiscoverSection.manga;
+        }
         _searching = false;
       });
     } catch (_) {
@@ -332,6 +338,7 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
                               _results = [];
                               _mangaResults = [];
                               _loaded = false;
+                              _section = _DiscoverSection.books;
                             });
                           },
                         )
@@ -391,123 +398,256 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
                 ),
               )
             else ...[
-              if (_results.isNotEmpty) ...[
-                SectionLabel(
-                  title: 'Books',
-                  meta: '${_results.length}',
-                  action: AnimatedPress(
-                    onTap: () => setState(() => _gridView = !_gridView),
-                    child: Container(
-                      width: 36,
-                      height: 36,
-                      decoration: BoxDecoration(
-                        color: c.surfaceMuted,
-                        borderRadius: AppSpacing.brMd,
-                        border: Border.all(color: c.border, width: 0.5),
-                      ),
-                      child: Icon(
-                        _gridView ? Icons.view_list : Icons.grid_view,
-                        size: 19,
-                        color: c.textSecondary,
-                      ),
-                    ),
-                  ),
-                ),
-                if (_gridView)
-                  Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 20),
-                    child: GridView.builder(
-                      shrinkWrap: true,
-                      physics: const NeverScrollableScrollPhysics(),
-                      gridDelegate:
-                          const SliverGridDelegateWithFixedCrossAxisCount(
-                            crossAxisCount: 2,
-                            mainAxisSpacing: 8,
-                            crossAxisSpacing: 8,
-                            childAspectRatio: 0.65,
-                          ),
-                      itemCount: _results.length,
-                      itemBuilder: (_, i) => StaggeredEntrance(
-                        index: i + 1,
-                        child: _GridResultCard(
-                          result: _results[i],
-                          downloadProgress: _downloading[_results[i].title],
-                          onTap: () => _showResultOptions(context, _results[i]),
-                        ),
-                      ),
-                    ),
-                  )
-                else
-                  ..._results.indexed.map(
-                    (entry) => StaggeredEntrance(
-                      index: entry.$1 + 1,
-                      child: _ResultCard(
-                        result: entry.$2,
-                        downloadProgress: _downloading[entry.$2.title],
-                        onTap: () => _showResultOptions(context, entry.$2),
-                      ),
-                    ),
-                  ),
-              ],
-              if (_mangaResults.isNotEmpty) ...[
-                const SizedBox(height: 20),
-                SectionLabel(
-                  title: 'Manga',
-                  meta: '${_mangaResults.length} sources',
-                ),
-                for (final srcResult in _mangaResults) ...[
-                  Padding(
-                    padding: const EdgeInsets.fromLTRB(20, 8, 20, 4),
-                    child: Text(
-                      srcResult['sourceName'] as String? ?? '',
-                      style: TextStyle(
-                        color: c.accent,
-                        fontSize: 13,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                  ),
-                  GridView.builder(
-                    shrinkWrap: true,
-                    physics: const NeverScrollableScrollPhysics(),
-                    padding: const EdgeInsets.symmetric(horizontal: 16),
-                    gridDelegate:
-                        const SliverGridDelegateWithFixedCrossAxisCount(
-                          crossAxisCount: 3,
-                          mainAxisSpacing: 8,
-                          crossAxisSpacing: 8,
-                          childAspectRatio: 0.65,
-                        ),
-                    itemCount: (srcResult['mangas'] as List?)?.length ?? 0,
-                    itemBuilder: (_, i) {
-                      final m =
-                          (srcResult['mangas'] as List)[i]
-                              as Map<String, dynamic>;
-                      return StaggeredEntrance(
-                        index: i + 1,
-                        child: _MangaCard(
-                          manga: m,
-                          onTap: () => Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (_) => MangaDetailScreen(
-                                sourceId:
-                                    srcResult['sourceId'] as String? ?? '',
-                                url: m['url'] as String? ?? '',
-                                title: m['title'] as String? ?? '',
-                              ),
+              _DiscoverControls(
+                section: _section,
+                bookCount: _results.length,
+                mangaCount: _mangaItemCount,
+                gridView: _gridView,
+                onSectionChanged: (section) => setState(() {
+                  _section = section;
+                }),
+                onLayoutChanged: () => setState(() {
+                  _gridView = !_gridView;
+                }),
+              ),
+              AnimatedSwitcher(
+                duration: const Duration(milliseconds: 260),
+                switchInCurve: Curves.easeOutCubic,
+                switchOutCurve: Curves.easeInCubic,
+                child: _section == _DiscoverSection.books
+                    ? _DiscoverBookResults(
+                        key: const ValueKey('discover-books'),
+                        results: _results,
+                        gridView: _gridView,
+                        downloading: _downloading,
+                        onTap: (result) => _showResultOptions(context, result),
+                      )
+                    : _DiscoverMangaResults(
+                        key: const ValueKey('discover-manga'),
+                        sourceResults: _mangaResults,
+                        onTap: (srcResult, manga) => Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) => MangaDetailScreen(
+                              sourceId: srcResult['sourceId'] as String? ?? '',
+                              url: manga['url'] as String? ?? '',
+                              title: manga['title'] as String? ?? '',
                             ),
                           ),
                         ),
-                      );
-                    },
-                  ),
-                ],
-              ],
+                      ),
+              ),
             ],
           ],
         ),
       ),
+    );
+  }
+
+  int get _mangaItemCount => _mangaResults.fold<int>(
+    0,
+    (sum, src) => sum + ((src['mangas'] as List?)?.length ?? 0),
+  );
+}
+
+enum _DiscoverSection { books, manga }
+
+class _DiscoverControls extends StatelessWidget {
+  final _DiscoverSection section;
+  final int bookCount;
+  final int mangaCount;
+  final bool gridView;
+  final ValueChanged<_DiscoverSection> onSectionChanged;
+  final VoidCallback onLayoutChanged;
+
+  const _DiscoverControls({
+    required this.section,
+    required this.bookCount,
+    required this.mangaCount,
+    required this.gridView,
+    required this.onSectionChanged,
+    required this.onLayoutChanged,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.colors;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 0, 20, 12),
+      child: Row(
+        children: [
+          Expanded(
+            child: SegmentedControl<_DiscoverSection>(
+              segments: {
+                _DiscoverSection.books: 'Books $bookCount',
+                _DiscoverSection.manga: 'Manga $mangaCount',
+              },
+              value: section,
+              onChanged: onSectionChanged,
+              height: 42,
+            ),
+          ),
+          const SizedBox(width: 10),
+          AnimatedPress(
+            onTap: onLayoutChanged,
+            child: Container(
+              width: 42,
+              height: 42,
+              decoration: BoxDecoration(
+                color: c.surfaceMuted,
+                borderRadius: AppSpacing.brMd,
+                border: Border.all(color: c.border, width: 0.5),
+              ),
+              child: Icon(
+                gridView ? Icons.view_list : Icons.grid_view,
+                size: 19,
+                color: c.textSecondary,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _DiscoverBookResults extends StatelessWidget {
+  final List<SourceSearchResult> results;
+  final bool gridView;
+  final Map<String, double> downloading;
+  final ValueChanged<SourceSearchResult> onTap;
+
+  const _DiscoverBookResults({
+    super.key,
+    required this.results,
+    required this.gridView,
+    required this.downloading,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    if (results.isEmpty) {
+      return const SizedBox(
+        height: 240,
+        child: EmptyState(
+          icon: Icons.search_off,
+          title: 'No book results',
+          subtitle: 'Try another title or switch to manga.',
+        ),
+      );
+    }
+    if (gridView) {
+      return Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 20),
+        child: GridView.builder(
+          shrinkWrap: true,
+          physics: const NeverScrollableScrollPhysics(),
+          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+            crossAxisCount: 2,
+            mainAxisSpacing: 8,
+            crossAxisSpacing: 8,
+            childAspectRatio: 0.65,
+          ),
+          itemCount: results.length,
+          itemBuilder: (_, i) => StaggeredEntrance(
+            index: i + 1,
+            child: _GridResultCard(
+              result: results[i],
+              downloadProgress: downloading[results[i].title],
+              onTap: () => onTap(results[i]),
+            ),
+          ),
+        ),
+      );
+    }
+    return Column(
+      children: [
+        for (final entry in results.indexed)
+          StaggeredEntrance(
+            index: entry.$1 + 1,
+            child: _ResultCard(
+              result: entry.$2,
+              downloadProgress: downloading[entry.$2.title],
+              onTap: () => onTap(entry.$2),
+            ),
+          ),
+      ],
+    );
+  }
+}
+
+class _DiscoverMangaResults extends StatelessWidget {
+  final List<Map<String, dynamic>> sourceResults;
+  final void Function(
+    Map<String, dynamic> sourceResult,
+    Map<String, dynamic> manga,
+  )
+  onTap;
+
+  const _DiscoverMangaResults({
+    super.key,
+    required this.sourceResults,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.colors;
+    final mangaCount = sourceResults.fold<int>(
+      0,
+      (sum, src) => sum + ((src['mangas'] as List?)?.length ?? 0),
+    );
+    if (mangaCount == 0) {
+      return const SizedBox(
+        height: 240,
+        child: EmptyState(
+          icon: Icons.search_off,
+          title: 'No manga results',
+          subtitle: 'Try another title or switch to books.',
+        ),
+      );
+    }
+    return Column(
+      children: [
+        for (final srcResult in sourceResults) ...[
+          Padding(
+            padding: const EdgeInsets.fromLTRB(20, 8, 20, 4),
+            child: Text(
+              srcResult['sourceName'] as String? ?? '',
+              style: TextStyle(
+                color: c.accent,
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+          GridView.builder(
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+              crossAxisCount: 3,
+              mainAxisSpacing: 8,
+              crossAxisSpacing: 8,
+              childAspectRatio: 0.65,
+            ),
+            itemCount: (srcResult['mangas'] as List?)?.length ?? 0,
+            itemBuilder: (_, i) {
+              final manga = Map<String, dynamic>.from(
+                (srcResult['mangas'] as List)[i],
+              );
+              return StaggeredEntrance(
+                index: i + 1,
+                child: _MangaCard(
+                  manga: manga,
+                  onTap: () => onTap(srcResult, manga),
+                ),
+              );
+            },
+          ),
+        ],
+      ],
     );
   }
 }
