@@ -72,7 +72,7 @@ padding: const EdgeInsets.only(bottom: 100),
              title: 'Settings',
              oneHand: _oneHand,
              shrinkProgress: _oneHand ? _scrollProgress : 0.0,
-  subtitle: 'Version 2.5.24',
+  subtitle: 'Version 2.5.26',
             ),
            const SizedBox(height: 4),
            _AppearanceSection(themeProv: themeProv),
@@ -1297,7 +1297,7 @@ class _AboutSection extends StatelessWidget {
 SettingsRow(
          icon: Icons.info_outline,
          title: 'StashReader',
-            subtitle: 'Version 2.5.24 · build 2.5.24+47',
+            subtitle: 'Version 2.5.26 · build 2.5.26+49',
        ),
         SettingsRow(
           icon: Icons.favorite_outline,

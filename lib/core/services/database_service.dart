@@ -806,7 +806,26 @@ class DatabaseService {
 
   Future<int> insertManga(Manga manga) async {
     final existing = await getMangaByKey(manga.sourceId, manga.url);
-    if (existing != null) return existing.id;
+    if (existing != null) {
+      // Update fields and return existing ID
+      await _db.customUpdate(
+        'UPDATE manga SET name=?, image_url=?, author=?, artist=?, description=?, status=?, genre=?, in_library=?, updated_at=? '
+        'WHERE id=?',
+        variables: [
+          Variable.withString(manga.name.isNotEmpty ? manga.name : existing.name),
+          Variable.withString(manga.imageUrl ?? existing.imageUrl ?? ''),
+          Variable.withString(manga.author ?? existing.author ?? ''),
+          Variable.withString(manga.artist ?? existing.artist ?? ''),
+          Variable.withString(manga.description ?? existing.description ?? ''),
+          Variable.withInt(manga.status),
+          Variable.withString(manga.genres.join(', ')),
+          Variable.withInt(1),
+          Variable.withString(DateTime.now().toIso8601String()),
+          Variable.withInt(existing.id),
+        ],
+      );
+      return existing.id;
+    }
     return _db.customInsert(
       'INSERT INTO manga (name, url, image_url, author, artist, description, status, genre, source_id, in_library, reading_status, created_at, updated_at) '
       'VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
@@ -866,6 +885,13 @@ class DatabaseService {
             variables: [Variable.withInt(mangaId)])
         .get();
     return rows.map((r) => MangaChapter.fromJson(r.data)).toList();
+  }
+
+  Future<void> deleteMangaChapters(int mangaId) async {
+    await _db.customUpdate(
+      'DELETE FROM manga_chapters WHERE manga_id=?',
+      variables: [Variable.withInt(mangaId)],
+    );
   }
 
   Future<void> insertMangaChapters(int mangaId, List<MangaChapter> chapters) async {
