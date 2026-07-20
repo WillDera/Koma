@@ -15,6 +15,7 @@ import '../../theme/tokens/app_spacing.dart';
 import '../../widgets/animated_press.dart';
 import '../../widgets/dialog_sheet.dart';
 import '../../widgets/divider_hairline.dart';
+import '../../widgets/library_header.dart';
 import '../../widgets/one_hand_spacer.dart';
 import '../../widgets/reading_streak_card.dart';
 import '../../widgets/screen_chrome.dart';
@@ -23,60 +24,26 @@ import '../../widgets/settings_section.dart';
 import '../../widgets/text_field.dart';
 import '../../widgets/toast.dart';
 
-class SettingsScreen extends StatefulWidget {
+class SettingsScreen extends StatelessWidget {
   const SettingsScreen({super.key});
 
   @override
-  State<SettingsScreen> createState() => _SettingsScreenState();
-}
-
-class _SettingsScreenState extends State<SettingsScreen> {
-  final ScrollController _scrollCtrl = ScrollController();
-  double _scrollProgress = 0;
-
-  @override
-  void initState() {
-    super.initState();
-    _scrollCtrl.addListener(_onScroll);
-  }
-
-  void _onScroll() {
-    if (!_scrollCtrl.hasClients) return;
-    final max = _scrollCtrl.position.maxScrollExtent;
-    final p = max <= 0 ? 0.0 : (_scrollCtrl.offset / max).clamp(0.0, 1.0);
-    if ((p - _scrollProgress).abs() > 0.01) {
-      setState(() => _scrollProgress = p);
-    }
-  }
-
-  @override
-  void dispose() {
-    _scrollCtrl.removeListener(_onScroll);
-    _scrollCtrl.dispose();
-    super.dispose();
-  }
-
-  bool get _oneHand => context.watch<ThemeProvider>().oneHandMode;
-
-  @override
   Widget build(BuildContext context) {
-    final themeProv = context.watch<ThemeProvider>();
     return ScreenBackdrop(
       child: SafeArea(
         bottom: false,
         child: ListView(
-          controller: _scrollCtrl,
           physics: const AlwaysScrollableScrollPhysics(),
           padding: const EdgeInsets.only(bottom: 100),
           children: [
             const OneHandSpacer(),
-            _Heading(
+            const LibraryHeader(
               title: 'Settings',
-              oneHand: _oneHand,
-              shrinkProgress: _oneHand ? _scrollProgress : 0.0,
-              subtitle: 'Version 2.5.30',
+              subtitle: 'Version 2.5.47',
+              padding: EdgeInsets.fromLTRB(24, 20, 20, 12),
             ),
             const StaggeredEntrance(
+              index: 0,
               child: FeaturePanel(
                 icon: Icons.tune_rounded,
                 title: 'Tune the reading room',
@@ -89,23 +56,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 ],
               ),
             ),
-            const SizedBox(height: 4),
-            StaggeredEntrance(
-              index: 1,
-              child: _AppearanceSection(themeProv: themeProv),
-            ),
-            const SizedBox(height: 24),
-            const StaggeredEntrance(index: 2, child: _TypographySection()),
-            const SizedBox(height: 24),
-            const StaggeredEntrance(index: 3, child: _DataSection()),
-            const SizedBox(height: 24),
-            const StaggeredEntrance(index: 4, child: _SourcesSection()),
-            const SizedBox(height: 24),
-            const StaggeredEntrance(index: 5, child: _StatsSection()),
-            const SizedBox(height: 24),
-            const StaggeredEntrance(index: 6, child: _PluginsSection()),
-            const SizedBox(height: 24),
-            const StaggeredEntrance(index: 7, child: _AboutSection()),
+            const SizedBox(height: 8),
+            const StaggeredEntrance(index: 1, child: _SettingsHub()),
           ],
         ),
       ),
@@ -113,70 +65,112 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 }
 
-/// Page heading that animates in one-hand mode.
-class _Heading extends StatelessWidget {
-  final String title;
-  final String? subtitle;
-  final bool oneHand;
-  final double shrinkProgress;
-
-  const _Heading({
-    required this.title,
-    this.subtitle,
-    required this.oneHand,
-    required this.shrinkProgress,
-  });
+class _SettingsHub extends StatelessWidget {
+  const _SettingsHub();
 
   @override
   Widget build(BuildContext context) {
-    final c = context.colors;
-    final p = shrinkProgress.clamp(0.0, 1.0);
-    final fontSize = (oneHand ? 64.0 : 32.0) * (1.0 - 0.5 * p);
-    final opacity = (1.0 - p).clamp(0.0, 1.0);
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(24, 20, 24, 12),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            title,
-            style: TextStyle(
-              color: c.textPrimary,
-              fontSize: fontSize,
-              fontWeight: FontWeight.w600,
-              letterSpacing: -0.5,
-              height: 1.1,
-            ),
-          ),
-          if (subtitle != null)
-            Opacity(
-              opacity: opacity,
-              child: Padding(
-                padding: const EdgeInsets.only(top: 2),
-                child: Text(
-                  subtitle!,
-                  style: TextStyle(
-                    color: c.textSecondary,
-                    fontSize: 13,
-                    fontWeight: FontWeight.w400,
-                  ),
-                ),
-              ),
-            ),
-        ],
+    return SettingsSection(
+      title: 'Settings',
+      showHeader: false,
+      children: [
+        SettingsRow(
+          icon: Icons.palette_outlined,
+          title: 'Appearance',
+          onTap: () => _open(context, 'Appearance', const _AppearanceSection()),
+        ),
+        SettingsRow(
+          icon: Icons.text_fields_rounded,
+          title: 'Typography',
+          onTap: () => _open(context, 'Typography', const _TypographySection()),
+        ),
+        SettingsRow(
+          icon: Icons.storage_outlined,
+          title: 'Data',
+          onTap: () => _open(context, 'Data', const _DataAndStatsPage()),
+        ),
+        SettingsRow(
+          icon: Icons.travel_explore_outlined,
+          title: 'Sources',
+          onTap: () =>
+              _open(context, 'Sources', const _SourcesAndPluginsPage()),
+        ),
+        SettingsRow(
+          icon: Icons.info_outline_rounded,
+          title: 'About',
+          onTap: () => _open(context, 'About', const _AboutSection()),
+        ),
+      ],
+    );
+  }
+
+  void _open(BuildContext context, String title, Widget child) {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => _SettingsDestinationScreen(title: title, child: child),
       ),
+    );
+  }
+}
+
+class _SettingsDestinationScreen extends StatelessWidget {
+  final String title;
+  final Widget child;
+
+  const _SettingsDestinationScreen({required this.title, required this.child});
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      type: MaterialType.transparency,
+      child: ScreenBackdrop(
+        child: SafeArea(
+          bottom: false,
+          child: ListView(
+            padding: const EdgeInsets.only(bottom: 32),
+            children: [
+              const OneHandSpacer(),
+              LibraryHeader(title: title, showBackButton: true),
+              const SizedBox(height: 4),
+              child,
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _DataAndStatsPage extends StatelessWidget {
+  const _DataAndStatsPage();
+
+  @override
+  Widget build(BuildContext context) {
+    return const Column(
+      children: [_DataSection(), SizedBox(height: 24), _StatsSection()],
+    );
+  }
+}
+
+class _SourcesAndPluginsPage extends StatelessWidget {
+  const _SourcesAndPluginsPage();
+
+  @override
+  Widget build(BuildContext context) {
+    return const Column(
+      children: [_SourcesSection(), SizedBox(height: 24), _PluginsSection()],
     );
   }
 }
 
 // ─── Appearance ──────────────────────────────────────────────────────────
 class _AppearanceSection extends StatelessWidget {
-  final ThemeProvider themeProv;
-  const _AppearanceSection({required this.themeProv});
+  const _AppearanceSection();
 
   @override
   Widget build(BuildContext context) {
     final c = context.colors;
+    final themeProv = context.watch<ThemeProvider>();
     return SettingsSection(
       title: 'Appearance',
       children: [
@@ -1119,6 +1113,8 @@ class _SourceRow extends StatelessWidget {
                 children: [
                   Text(
                     source.name,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
                     style: TextStyle(
                       color: c.textPrimary,
                       fontSize: 14,
@@ -1127,6 +1123,8 @@ class _SourceRow extends StatelessWidget {
                   ),
                   Text(
                     source.tag,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
                     style: TextStyle(color: c.accent, fontSize: 11),
                   ),
                   Text(
@@ -1380,7 +1378,7 @@ class _AboutSection extends StatelessWidget {
         SettingsRow(
           icon: Icons.info_outline,
           title: 'StashReader',
-          subtitle: 'Version 2.5.30 · build 2.5.30+53',
+          subtitle: 'Version 2.5.47 · build 2.5.47+67',
         ),
         SettingsRow(
           icon: Icons.favorite_outline,

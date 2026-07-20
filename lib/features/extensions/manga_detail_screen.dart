@@ -1,3 +1,4 @@
+import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
@@ -149,9 +150,28 @@ class _MangaDetailScreenState extends State<MangaDetailScreen> {
   @override
   Widget build(BuildContext context) {
     final c = context.colors;
+    final appBarHeight = MediaQuery.of(context).padding.top + kToolbarHeight;
     return Scaffold(
+      extendBodyBehindAppBar: true,
       backgroundColor: c.bg,
-      appBar: AppBar(title: Text(widget.title)),
+      appBar: AppBar(
+        backgroundColor: Colors.transparent,
+        elevation: 0,
+        title: const Text(''),
+        centerTitle: false,
+        flexibleSpace: Container(
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
+              colors: [
+                Colors.black.withValues(alpha: 0.6),
+                Colors.transparent,
+              ],
+            ),
+          ),
+        ),
+      ),
       body: _loading
           ? const Center(child: CircularProgressIndicator())
           : _error != null
@@ -162,27 +182,31 @@ class _MangaDetailScreenState extends State<MangaDetailScreen> {
                   ),
                 )
               : ListView(
-                  padding: const EdgeInsets.all(16),
+                  padding: EdgeInsets.zero,
                   children: [
                     _Header(
                       details: _details!,
                       c: c,
                       inLibrary: _inLibrary,
                       onAddToLibrary: _addToLibrary,
+                      appBarHeight: appBarHeight,
                     ),
                     const SizedBox(height: 24),
-                    _ChaptersList(
-                      chapters: _chapters,
-                      localChapters: _localChapters,
-                      c: c,
-                      sourceId: widget.sourceId,
-                      onChapterTap: (ch) => Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (_) => MangaReaderScreen(
-                            sourceId: widget.sourceId,
-                            chapterUrl: ch['url'] as String? ?? '',
-                            chapterName: ch['name'] as String? ?? '',
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 16),
+                      child: _ChaptersList(
+                        chapters: _chapters,
+                        localChapters: _localChapters,
+                        c: c,
+                        sourceId: widget.sourceId,
+                        onChapterTap: (ch) => Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) => MangaReaderScreen(
+                              sourceId: widget.sourceId,
+                              chapterUrl: ch['url'] as String? ?? '',
+                              chapterName: ch['name'] as String? ?? '',
+                            ),
                           ),
                         ),
                       ),
@@ -193,171 +217,406 @@ class _MangaDetailScreenState extends State<MangaDetailScreen> {
   }
 }
 
-class _Header extends StatelessWidget {
+class _Header extends StatefulWidget {
   final Map<String, dynamic> details;
   final StashReaderColors c;
   final bool inLibrary;
   final VoidCallback onAddToLibrary;
+  final double appBarHeight;
 
   const _Header({
     required this.details,
     required this.c,
     required this.inLibrary,
     required this.onAddToLibrary,
+    this.appBarHeight = 0,
   });
 
   @override
+  State<_Header> createState() => _HeaderState();
+}
+
+class _HeaderState extends State<_Header> {
+  bool _expanded = false;
+
+  @override
   Widget build(BuildContext context) {
-    final title = details['title'] as String? ?? '';
-    final thumb = details['thumbnail_url'] as String?;
-    final author = details['author'] as String?;
-    final artist = details['artist'] as String?;
-    final description = details['description'] as String?;
-    final genre = details['genre'] as String?;
-    final status = details['status'] as int? ?? 0;
+    final title = widget.details['title'] as String? ?? '';
+    final thumb = widget.details['thumbnail_url'] as String?;
+    final author = widget.details['author'] as String?;
+    final artist = widget.details['artist'] as String?;
+    final description = widget.details['description'] as String?;
+    final genre = widget.details['genre'] as String?;
+    final status = widget.details['status'] as int? ?? 0;
     final statusLabel = _MangaDetailScreenState._statusLabels[status] ?? 'Unknown';
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            ClipRRect(
-              borderRadius: AppSpacing.brMd,
-              child: thumb != null && thumb.isNotEmpty
-                  ? Image.network(
-                      thumb,
-                      width: 120,
-                      height: 180,
-                      fit: BoxFit.cover,
-                      errorBuilder: (_, _, _) => _placeholder(c, 120, 180),
-                    )
-                  : _placeholder(c, 120, 180),
-            ),
-            const SizedBox(width: 16),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    title,
+        if (thumb != null && thumb.isNotEmpty)
+          _HeroSection(
+            title: title,
+            thumb: thumb,
+            author: author,
+            artist: artist,
+            statusLabel: statusLabel,
+            c: widget.c,
+            topPadding: widget.appBarHeight + 24,
+          )
+        else
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: TextStyle(
+                    color: widget.c.textPrimary,
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                if (author != null && author.isNotEmpty)
+                  _detailInfoRow(widget.c, 'Author', author),
+                if (artist != null && artist.isNotEmpty)
+                  _detailInfoRow(widget.c, 'Artist', artist),
+                const SizedBox(height: 8),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                  decoration: BoxDecoration(
+                    color: widget.c.accentMuted,
+                    borderRadius: AppSpacing.brXs,
+                  ),
+                  child: Text(
+                    statusLabel,
                     style: TextStyle(
-                      color: c.textPrimary,
-                      fontSize: 18,
-                      fontWeight: FontWeight.bold,
+                      color: widget.c.accent,
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600,
                     ),
                   ),
-                  const SizedBox(height: 8),
-                  if (author != null && author.isNotEmpty)
-                    _infoRow('Author', author),
-                  if (artist != null && artist.isNotEmpty)
-                    _infoRow('Artist', artist),
-                  const SizedBox(height: 8),
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 8,
-                      vertical: 3,
-                    ),
-                    decoration: BoxDecoration(
-                      color: c.accentMuted,
-                      borderRadius: AppSpacing.brXs,
-                    ),
-                    child: Text(
-                      statusLabel,
+                ),
+              ],
+            ),
+          ),
+        if (description != null && description.isNotEmpty) ...[
+          const SizedBox(height: 16),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text(
+                      'Description',
                       style: TextStyle(
-                        color: c.accent,
-                        fontSize: 11,
+                        color: widget.c.textPrimary,
+                        fontSize: 14,
                         fontWeight: FontWeight.w600,
                       ),
                     ),
-                  ),
-                ],
-              ),
+                    TextButton(
+                      onPressed: () => setState(() => _expanded = !_expanded),
+                      style: TextButton.styleFrom(
+                        padding: EdgeInsets.zero,
+                        minimumSize: const Size(0, 0),
+                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      ),
+                      child: Text(
+                        _expanded ? 'READ LESS' : 'READ MORE',
+                        style: TextStyle(
+                          color: widget.c.accent,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  description,
+                  maxLines: _expanded ? null : 4,
+                  overflow: _expanded ? TextOverflow.visible : TextOverflow.ellipsis,
+                  style: TextStyle(color: widget.c.textSecondary, fontSize: 13),
+                ),
+              ],
             ),
-          ],
-        ),
-        if (description != null && description.isNotEmpty) ...[
-          const SizedBox(height: 16),
-          Text(
-            description,
-            style: TextStyle(color: c.textSecondary, fontSize: 13),
           ),
         ],
         if (genre != null && genre.isNotEmpty) ...[
-          const SizedBox(height: 12),
-          Wrap(
-            spacing: 6,
-            runSpacing: 4,
-            children: genre
-                .split(',')
-                .map((g) => g.trim())
-                .where((g) => g.isNotEmpty)
-                .map(
-                  (g) => Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 8,
-                      vertical: 2,
-                    ),
-                    decoration: BoxDecoration(
-                      color: c.surfaceMuted,
-                      borderRadius: AppSpacing.brPill,
-                    ),
-                    child: Text(
-                      g,
-                      style: TextStyle(
-                        color: c.textSecondary,
-                        fontSize: 11,
-                      ),
-                    ),
+          const SizedBox(height: 16),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Tags',
+                  style: TextStyle(
+                    color: widget.c.textPrimary,
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
                   ),
-                )
-                .toList(),
+                ),
+                const SizedBox(height: 8),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 6,
+                  children: genre
+                      .split(',')
+                      .map((g) => g.trim())
+                      .where((g) => g.isNotEmpty)
+                      .map(
+                        (g) => Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                          decoration: BoxDecoration(
+                            color: widget.c.surfaceMuted,
+                            borderRadius: AppSpacing.brPill,
+                          ),
+                          child: Text(
+                            '${_genreEmoji(g)}$g',
+                            style: TextStyle(
+                              color: widget.c.textSecondary,
+                              fontSize: 13,
+                            ),
+                          ),
+                        ),
+                      )
+                      .toList(),
+                ),
+              ],
+            ),
           ),
         ],
         const SizedBox(height: 16),
-        SizedBox(
-          width: double.infinity,
-          child: OutlinedButton.icon(
-            onPressed: inLibrary ? null : onAddToLibrary,
-            icon: Icon(
-              inLibrary ? Icons.check : Icons.bookmark_add_outlined,
-              size: 18,
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          child: SizedBox(
+            width: double.infinity,
+            child: OutlinedButton.icon(
+              onPressed: widget.inLibrary ? null : widget.onAddToLibrary,
+              icon: Icon(
+                widget.inLibrary ? Icons.check : Icons.bookmark_add_outlined,
+                size: 18,
+              ),
+              label: Text(widget.inLibrary ? 'In library' : 'Add to library'),
             ),
-            label: Text(inLibrary ? 'In library' : 'Add to library'),
           ),
         ),
       ],
     );
   }
 
-  Widget _infoRow(String label, String value) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 2),
-      child: Text.rich(
-        TextSpan(
-          children: [
-            TextSpan(
-              text: '$label: ',
-              style: TextStyle(color: c.textTertiary, fontSize: 12),
-            ),
-            TextSpan(
-              text: value,
-              style: TextStyle(color: c.textPrimary, fontSize: 12),
-            ),
-          ],
-        ),
-      ),
-    );
+  static String _genreEmoji(String genre) {
+    const map = {
+      'Action': '⚔️ ',
+      'Adventure': '🗺️ ',
+      'Comedy': '😂 ',
+      'Drama': '🎭 ',
+      'Romance': '💕 ',
+      'Fantasy': '🐉 ',
+      'Horror': '👻 ',
+      'Sci-Fi': '🚀 ',
+      'Slice of Life': '☕ ',
+      'Mystery': '🔍 ',
+      'Sports': '⚽ ',
+      'Supernatural': '✨ ',
+      'Ecchi': '💋 ',
+      'Harem': '💘 ',
+      'Isekai': '🌀 ',
+      'Magic': '🔮 ',
+      'School': '🏫 ',
+      'Martial Arts': '🥋 ',
+      'Music': '🎵 ',
+      'Psychological': '🧠 ',
+      'Thriller': '🔪 ',
+      'Historical': '📜 ',
+      'Mecha': '🤖 ',
+      'Cooking': '🍳 ',
+      'Gaming': '🎮 ',
+      'Vampire': '🧛 ',
+      'Zombie': '🧟 ',
+      'Demons': '😈 ',
+      'Samurai': '🗡️ ',
+      'Survival': '🏕️ ',
+      'Medical': '🏥 ',
+      'Food': '🍜 ',
+      'Animals': '🐾 ',
+      'Military': '🎖️ ',
+      'Police': '👮 ',
+      'Mature': '🔞 ',
+      'Tragedy': '😢 ',
+      'Suspense': '⏳ ',
+      'Parody': '😜 ',
+      'Crossdressing': '👗 ',
+      'Gender Bender': '🔄 ',
+      'Delinquents': '👊 ',
+      'Webtoon': '📱 ',
+      'Manhwa': '📖 ',
+      'Manhua': '📚 ',
+      '4-Koma': '🎨 ',
+      'Doujinshi': '✏️ ',
+      'Kids': '👶 ',
+      'Family': '👨‍👩‍👧 ',
+      'Yaoi': '💙 ',
+      'Yuri': '💗 ',
+      'BL': '💙 ',
+      'GL': '💗 ',
+    };
+    return map[genre] ?? '';
   }
+}
 
-  Widget _placeholder(StashReaderColors c, double w, double h) {
-    return Container(
-      width: w,
-      height: h,
-      color: c.surfaceMuted,
-      child: Center(
-        child: Icon(Icons.image_outlined, size: 32, color: c.textTertiary),
+Widget _detailInfoRow(StashReaderColors c, String label, String value) {
+  return Padding(
+    padding: const EdgeInsets.only(bottom: 2),
+    child: Text.rich(
+      TextSpan(
+        children: [
+          TextSpan(
+            text: '$label: ',
+            style: TextStyle(color: c.textTertiary, fontSize: 12),
+          ),
+          TextSpan(
+            text: value,
+            style: TextStyle(color: c.textPrimary, fontSize: 12),
+          ),
+        ],
+      ),
+    ),
+  );
+}
+
+class _HeroSection extends StatelessWidget {
+  final String title;
+  final String thumb;
+  final String? author;
+  final String? artist;
+  final String statusLabel;
+  final StashReaderColors c;
+  final double topPadding;
+
+  const _HeroSection({
+    required this.title,
+    required this.thumb,
+    this.author,
+    this.artist,
+    required this.statusLabel,
+    required this.c,
+    this.topPadding = 16,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      height: 280,
+      child: Stack(
+        children: [
+          Positioned.fill(
+            child: BackdropFilter(
+              filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
+              child: Image.network(
+                thumb,
+                fit: BoxFit.cover,
+                errorBuilder: (context, exception, stackTrace) => Container(color: c.surfaceMuted),
+              ),
+            ),
+          ),
+          Positioned(
+            left: 0,
+            right: 0,
+            bottom: 0,
+            height: 100,
+            child: Container(
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  colors: [
+                    Colors.transparent,
+                    c.bg,
+                  ],
+                ),
+              ),
+            ),
+          ),
+          Positioned(
+            left: 16,
+            right: 16,
+            top: topPadding,
+            bottom: 16,
+            child: Row(
+              children: [
+                ClipRRect(
+                  borderRadius: AppSpacing.brMd,
+                  child: Image.network(
+                    thumb,
+                    width: 150,
+                    height: 225,
+                    fit: BoxFit.cover,
+                    errorBuilder: (context, exception, stackTrace) => Container(
+                      width: 150,
+                      height: 225,
+                      color: c.surfaceMuted,
+                      child: Icon(Icons.image_outlined, size: 40, color: c.textTertiary),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 16),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        title,
+                        maxLines: 3,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          color: c.textPrimary,
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
+                          shadows: [
+                            Shadow(
+                              color: Colors.black.withValues(alpha: 0.5),
+                              blurRadius: 4,
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      if (author?.isNotEmpty == true)
+                        _detailInfoRow(c, 'Author', author!),
+                      if (artist?.isNotEmpty == true)
+                        _detailInfoRow(c, 'Artist', artist!),
+                      const SizedBox(height: 8),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                        decoration: BoxDecoration(
+                          color: c.accentMuted,
+                          borderRadius: AppSpacing.brXs,
+                        ),
+                        child: Text(
+                          statusLabel,
+                          style: TextStyle(
+                            color: c.accent,
+                            fontSize: 11,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
       ),
     );
   }
