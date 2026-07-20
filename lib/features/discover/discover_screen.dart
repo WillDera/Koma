@@ -610,43 +610,49 @@ class _DiscoverMangaResults extends StatelessWidget {
     }
     return Column(
       children: [
-        for (final srcResult in sourceResults) ...[
-          Padding(
-            padding: const EdgeInsets.fromLTRB(20, 8, 20, 4),
-            child: Text(
-              srcResult['sourceName'] as String? ?? '',
-              style: TextStyle(
-                color: c.accent,
-                fontSize: 13,
-                fontWeight: FontWeight.w600,
+        for (final srcResult in sourceResults)
+          if ((srcResult['mangas'] as List?)?.isNotEmpty ?? false) ...[
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 12, 20, 8),
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: Text(
+                  srcResult['sourceName'] as String? ?? '',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: c.textPrimary,
+                    fontSize: 17,
+                    fontWeight: FontWeight.w400,
+                  ),
+                ),
               ),
             ),
-          ),
-          GridView.builder(
-            shrinkWrap: true,
-            physics: const NeverScrollableScrollPhysics(),
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-              crossAxisCount: 3,
-              mainAxisSpacing: 8,
-              crossAxisSpacing: 8,
-              childAspectRatio: 0.65,
+            SizedBox(
+              height: 224,
+              child: ListView.separated(
+                scrollDirection: Axis.horizontal,
+                padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
+                itemCount: (srcResult['mangas'] as List?)?.length ?? 0,
+                separatorBuilder: (_, _) => const SizedBox(width: 10),
+                itemBuilder: (_, i) {
+                  final manga = Map<String, dynamic>.from(
+                    (srcResult['mangas'] as List)[i],
+                  );
+                  return StaggeredEntrance(
+                    index: i + 1,
+                    child: SizedBox(
+                      width: 132,
+                      child: _MangaCard(
+                        manga: manga,
+                        onTap: () => onTap(srcResult, manga),
+                      ),
+                    ),
+                  );
+                },
+              ),
             ),
-            itemCount: (srcResult['mangas'] as List?)?.length ?? 0,
-            itemBuilder: (_, i) {
-              final manga = Map<String, dynamic>.from(
-                (srcResult['mangas'] as List)[i],
-              );
-              return StaggeredEntrance(
-                index: i + 1,
-                child: _MangaCard(
-                  manga: manga,
-                  onTap: () => onTap(srcResult, manga),
-                ),
-              );
-            },
-          ),
-        ],
+          ],
       ],
     );
   }

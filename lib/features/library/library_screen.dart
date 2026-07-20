@@ -44,7 +44,10 @@ class _LibraryScreenState extends State<LibraryScreen> {
   double _scrollProgress = 0;
   bool _importingFile = false;
   _LibrarySection _section = _LibrarySection.books;
-  _LibrarySort _sort = _LibrarySort.recent;
+  _LibrarySort _sort = _LibrarySort.alphabetical;
+  final Map<_LibraryFilter, _FilterMode> _filters = {
+    for (final filter in _LibraryFilter.values) filter: _FilterMode.none,
+  };
 
   @override
   void initState() {
@@ -287,6 +290,10 @@ class _LibraryScreenState extends State<LibraryScreen> {
                 : _mangaSearchCtrl,
             onSectionChanged: (section) => setState(() => _section = section),
             onSortChanged: (sort) => setState(() => _sort = sort),
+            filters: _filters,
+            onFilterChanged: (filter, mode) {
+              setState(() => _filters[filter] = mode);
+            },
             onQueryChanged: (_) => setState(() {}),
           ),
           AnimatedSwitcher(
@@ -350,7 +357,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
 
   List<Book> _visibleBooks(List<Book> books) {
     final query = _bookSearchCtrl.text.trim().toLowerCase();
-    final filtered = query.isEmpty
+    final searched = query.isEmpty
         ? books.toList()
         : books.where((book) {
             final haystack = [
@@ -361,16 +368,23 @@ class _LibraryScreenState extends State<LibraryScreen> {
             ].join(' ').toLowerCase();
             return haystack.contains(query);
           }).toList();
+    final filtered = searched
+        .where(
+          (book) => _filters.entries.every(
+            (entry) =>
+                _matchesFilter(entry.value, _bookMatches(book, entry.key)),
+          ),
+        )
+        .toList();
     filtered.sort(
       (a, b) => switch (_sort) {
-        _LibrarySort.title => a.title.toLowerCase().compareTo(
+        _LibrarySort.alphabetical => a.title.toLowerCase().compareTo(
           b.title.toLowerCase(),
         ),
         _LibrarySort.author => (a.author ?? '').toLowerCase().compareTo(
           (b.author ?? '').toLowerCase(),
         ),
         _LibrarySort.progress => b.progress.compareTo(a.progress),
-        _LibrarySort.recent => b.updatedAt.compareTo(a.updatedAt),
       },
     );
     return filtered;
@@ -378,7 +392,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
 
   List<Manga> _visibleMangas(List<Manga> mangas) {
     final query = _mangaSearchCtrl.text.trim().toLowerCase();
-    final filtered = query.isEmpty
+    final searched = query.isEmpty
         ? mangas.toList()
         : mangas.where((manga) {
             final haystack = [
@@ -390,9 +404,17 @@ class _LibraryScreenState extends State<LibraryScreen> {
             ].join(' ').toLowerCase();
             return haystack.contains(query);
           }).toList();
+    final filtered = searched
+        .where(
+          (manga) => _filters.entries.every(
+            (entry) =>
+                _matchesFilter(entry.value, _mangaMatches(manga, entry.key)),
+          ),
+        )
+        .toList();
     filtered.sort(
       (a, b) => switch (_sort) {
-        _LibrarySort.title => a.name.toLowerCase().compareTo(
+        _LibrarySort.alphabetical => a.name.toLowerCase().compareTo(
           b.name.toLowerCase(),
         ),
         _LibrarySort.author =>
@@ -400,11 +422,30 @@ class _LibraryScreenState extends State<LibraryScreen> {
             (b.author ?? b.artist ?? '').toLowerCase(),
           ),
         _LibrarySort.progress => b.readingStatus.compareTo(a.readingStatus),
-        _LibrarySort.recent => b.updatedAt.compareTo(a.updatedAt),
       },
     );
     return filtered;
   }
+
+  bool _bookMatches(Book book, _LibraryFilter filter) => switch (filter) {
+    _LibraryFilter.unread => book.progress <= 0,
+    _LibraryFilter.newlyAdded => book.createdAt.isAfter(
+      DateTime.now().subtract(const Duration(days: 7)),
+    ),
+  };
+
+  bool _mangaMatches(Manga manga, _LibraryFilter filter) => switch (filter) {
+    _LibraryFilter.unread => manga.readingStatus == 0,
+    _LibraryFilter.newlyAdded => manga.createdAt.isAfter(
+      DateTime.now().subtract(const Duration(days: 7)),
+    ),
+  };
+
+  bool _matchesFilter(_FilterMode mode, bool applies) => switch (mode) {
+    _FilterMode.none => true,
+    _FilterMode.include => applies,
+    _FilterMode.exclude => !applies,
+  };
 
   // ── Dialogs / import ────────────────────────────────────────────────
 
@@ -717,16 +758,22 @@ class _LibraryScreenState extends State<LibraryScreen> {
 
 enum _LibrarySection { books, manga }
 
-enum _LibrarySort { recent, title, author, progress }
+enum _LibrarySort { alphabetical, author, progress }
+
+enum _LibraryFilter { unread, newlyAdded }
+
+enum _FilterMode { none, include, exclude }
 
 class _LibraryControls extends StatefulWidget {
   final _LibrarySection section;
   final _LibrarySort sort;
   final int bookCount;
   final int mangaCount;
+  final Map<_LibraryFilter, _FilterMode> filters;
   final TextEditingController queryController;
   final ValueChanged<_LibrarySection> onSectionChanged;
   final ValueChanged<_LibrarySort> onSortChanged;
+  final void Function(_LibraryFilter filter, _FilterMode mode) onFilterChanged;
   final ValueChanged<String> onQueryChanged;
 
   const _LibraryControls({
@@ -734,9 +781,11 @@ class _LibraryControls extends StatefulWidget {
     required this.sort,
     required this.bookCount,
     required this.mangaCount,
+    required this.filters,
     required this.queryController,
     required this.onSectionChanged,
     required this.onSortChanged,
+    required this.onFilterChanged,
     required this.onQueryChanged,
   });
 
@@ -767,6 +816,36 @@ class _LibraryControlsState extends State<_LibraryControls> {
     widget.onQueryChanged('');
     setState(() => _searchOpen = false);
   }
+
+  void _showFilterSheet() {
+    final filters = Map<_LibraryFilter, _FilterMode>.from(widget.filters);
+    var selectedSort = widget.sort;
+    showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setSheetState) => _LibraryFilterSheet(
+          filters: filters,
+          sort: selectedSort,
+          onFilterChanged: (filter) {
+            final next = _nextMode(filters[filter] ?? _FilterMode.none);
+            setSheetState(() => filters[filter] = next);
+            widget.onFilterChanged(filter, next);
+          },
+          onSortChanged: (sort) {
+            setSheetState(() => selectedSort = sort);
+            widget.onSortChanged(sort);
+          },
+        ),
+      ),
+    );
+  }
+
+  _FilterMode _nextMode(_FilterMode mode) => switch (mode) {
+    _FilterMode.none => _FilterMode.include,
+    _FilterMode.include => _FilterMode.exclude,
+    _FilterMode.exclude => _FilterMode.none,
+  };
 
   @override
   Widget build(BuildContext context) {
@@ -823,48 +902,267 @@ class _LibraryControlsState extends State<_LibraryControls> {
                 ),
                 const SizedBox(width: 10),
               ],
-              PopupMenuButton<_LibrarySort>(
-                initialValue: widget.sort,
-                tooltip: 'Sort library',
-                color: c.surface,
-                surfaceTintColor: Colors.transparent,
-                shape: RoundedRectangleBorder(
-                  borderRadius: AppSpacing.brLg,
-                  side: BorderSide(color: c.border, width: 0.5),
-                ),
-                onSelected: widget.onSortChanged,
-                itemBuilder: (context) => const [
-                  PopupMenuItem(
-                    value: _LibrarySort.recent,
-                    child: Text('Recently updated'),
+              Stack(
+                clipBehavior: Clip.none,
+                children: [
+                  IconButtonRound(
+                    icon: Icons.tune_rounded,
+                    tooltip: 'Filter and sort library',
+                    onPressed: _showFilterSheet,
                   ),
-                  PopupMenuItem(
-                    value: _LibrarySort.title,
-                    child: Text('Title'),
-                  ),
-                  PopupMenuItem(
-                    value: _LibrarySort.author,
-                    child: Text('Author'),
-                  ),
-                  PopupMenuItem(
-                    value: _LibrarySort.progress,
-                    child: Text('Progress'),
-                  ),
+                  if (widget.filters.values.any(
+                    (mode) => mode != _FilterMode.none,
+                  ))
+                    Positioned(
+                      top: 5,
+                      right: 5,
+                      child: Container(
+                        width: 8,
+                        height: 8,
+                        decoration: BoxDecoration(
+                          color: c.accent,
+                          shape: BoxShape.circle,
+                          border: Border.all(color: c.surface, width: 1.5),
+                        ),
+                      ),
+                    ),
                 ],
-                child: SizedBox(
-                  width: 40,
-                  height: 40,
-                  child: Icon(
-                    Icons.tune_rounded,
-                    size: 20,
-                    color: c.textSecondary,
-                  ),
-                ),
               ),
             ],
           ),
         ],
       ),
+    );
+  }
+}
+
+class _LibraryFilterSheet extends StatelessWidget {
+  final Map<_LibraryFilter, _FilterMode> filters;
+  final _LibrarySort sort;
+  final ValueChanged<_LibraryFilter> onFilterChanged;
+  final ValueChanged<_LibrarySort> onSortChanged;
+
+  const _LibraryFilterSheet({
+    required this.filters,
+    required this.sort,
+    required this.onFilterChanged,
+    required this.onSortChanged,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.colors;
+    return SafeArea(
+      top: false,
+      child: Container(
+        padding: const EdgeInsets.fromLTRB(20, 10, 20, 24),
+        decoration: BoxDecoration(
+          color: c.surface,
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+          border: Border(top: BorderSide(color: c.border, width: 0.5)),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Center(
+              child: Container(
+                width: 36,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: c.textTertiary,
+                  borderRadius: AppSpacing.brPill,
+                ),
+              ),
+            ),
+            const SizedBox(height: 20),
+            Text(
+              'Filter',
+              style: TextStyle(
+                color: c.textTertiary,
+                fontSize: 12,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+            const SizedBox(height: 6),
+            _FilterOption(
+              icon: Icons.markunread_outlined,
+              label: 'Unread',
+              mode: filters[_LibraryFilter.unread] ?? _FilterMode.none,
+              onTap: () => onFilterChanged(_LibraryFilter.unread),
+            ),
+            _FilterOption(
+              icon: Icons.fiber_new_rounded,
+              label: 'Newly added',
+              mode: filters[_LibraryFilter.newlyAdded] ?? _FilterMode.none,
+              onTap: () => onFilterChanged(_LibraryFilter.newlyAdded),
+            ),
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 14),
+              child: Divider(color: c.border, height: 1),
+            ),
+            Text(
+              'Sort',
+              style: TextStyle(
+                color: c.textTertiary,
+                fontSize: 12,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+            const SizedBox(height: 6),
+            _SortOption(
+              icon: Icons.sort_by_alpha_rounded,
+              label: 'Alphabetical order',
+              selected: sort == _LibrarySort.alphabetical,
+              onTap: () => onSortChanged(_LibrarySort.alphabetical),
+            ),
+            _SortOption(
+              icon: Icons.person_outline_rounded,
+              label: 'Author',
+              selected: sort == _LibrarySort.author,
+              onTap: () => onSortChanged(_LibrarySort.author),
+            ),
+            _SortOption(
+              icon: Icons.donut_large_rounded,
+              label: 'Progress',
+              selected: sort == _LibrarySort.progress,
+              onTap: () => onSortChanged(_LibrarySort.progress),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _FilterOption extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final _FilterMode mode;
+  final VoidCallback onTap;
+
+  const _FilterOption({
+    required this.icon,
+    required this.label,
+    required this.mode,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.colors;
+    return Semantics(
+      button: true,
+      label: '$label filter',
+      value: switch (mode) {
+        _FilterMode.none => 'not applied',
+        _FilterMode.include => 'included',
+        _FilterMode.exclude => 'excluded',
+      },
+      child: AnimatedPress(
+        onTap: onTap,
+        child: SizedBox(
+          height: 50,
+          child: Row(
+            children: [
+              Icon(icon, size: 21, color: c.textSecondary),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Text(
+                  label,
+                  style: TextStyle(
+                    color: c.textPrimary,
+                    fontSize: 15,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+              _TriStateGlyph(mode: mode),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _SortOption extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+
+  const _SortOption({
+    required this.icon,
+    required this.label,
+    required this.selected,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.colors;
+    return AnimatedPress(
+      onTap: onTap,
+      child: SizedBox(
+        height: 50,
+        child: Row(
+          children: [
+            Icon(icon, size: 21, color: c.textSecondary),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Text(
+                label,
+                style: TextStyle(
+                  color: c.textPrimary,
+                  fontSize: 15,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+            AnimatedContainer(
+              duration: const Duration(milliseconds: 180),
+              width: 20,
+              height: 20,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                border: Border.all(
+                  color: selected ? c.accent : c.border,
+                  width: selected ? 6 : 1.5,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _TriStateGlyph extends StatelessWidget {
+  final _FilterMode mode;
+
+  const _TriStateGlyph({required this.mode});
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.colors;
+    final (color, glyph) = switch (mode) {
+      _FilterMode.none => (c.textTertiary, null),
+      _FilterMode.include => (c.accent, Icons.check_rounded),
+      _FilterMode.exclude => (const Color(0xFFC44C4C), Icons.close_rounded),
+    };
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 180),
+      width: 24,
+      height: 24,
+      alignment: Alignment.center,
+      decoration: BoxDecoration(
+        color: mode == _FilterMode.none ? Colors.transparent : color,
+        borderRadius: BorderRadius.circular(6),
+        border: Border.all(color: color, width: 1.5),
+      ),
+      child: glyph == null ? null : Icon(glyph, size: 17, color: c.onAccent),
     );
   }
 }
