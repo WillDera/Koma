@@ -22,9 +22,9 @@ import '../../widgets/library_header.dart';
 import '../../widgets/loading_skeleton.dart';
 import '../../widgets/one_hand_spacer.dart';
 import '../../widgets/premium_button.dart';
+import '../../widgets/screen_chrome.dart';
 import '../../widgets/toast.dart';
 import '../extensions/manga_detail_screen.dart';
-import '../reader/manga_reader_screen.dart';
 import '../reader/reader_screen.dart';
 import '../snippets/snippets_provider.dart';
 import 'library_provider.dart';
@@ -74,79 +74,81 @@ class _LibraryScreenState extends State<LibraryScreen> {
     final navClearance = MediaQuery.paddingOf(context).bottom + 84;
     return Consumer<LibraryProvider>(
       builder: (context, provider, _) {
-        return Stack(
-          children: [
-            SafeArea(bottom: false, child: _body(context, provider)),
-            if (!provider.loading &&
-                !provider.selectionMode &&
-                provider.books.isNotEmpty)
-              Positioned(
-                left: leftHanded ? 20 : null,
-                right: leftHanded ? null : 20,
-                bottom: navClearance,
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    IconButtonRound(
-                      icon: provider.isGridView
-                          ? Icons.list
-                          : Icons.grid_view_rounded,
-                      size: 44,
-                      variant: IconButtonVariant.filled,
-                      backgroundColor: context.colors.surfaceMuted,
-                      iconColor: context.colors.textPrimary,
-                      onPressed: provider.toggleLayout,
-                    ),
-                    const SizedBox(height: 10),
-                    IconButtonRound(
-                      icon: Icons.add,
-                      size: 52,
-                      variant: IconButtonVariant.filled,
-                      backgroundColor: context.colors.accent,
-                      iconColor: context.colors.onAccent,
-                      onPressed: () => _showImportOptions(context),
-                    ),
-                  ],
+        return ScreenBackdrop(
+          child: Stack(
+            children: [
+              SafeArea(bottom: false, child: _body(context, provider)),
+              if (!provider.loading &&
+                  !provider.selectionMode &&
+                  provider.books.isNotEmpty)
+                Positioned(
+                  left: leftHanded ? 20 : null,
+                  right: leftHanded ? null : 20,
+                  bottom: navClearance,
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      IconButtonRound(
+                        icon: provider.isGridView
+                            ? Icons.list
+                            : Icons.grid_view_rounded,
+                        size: 44,
+                        variant: IconButtonVariant.filled,
+                        backgroundColor: context.colors.surfaceMuted,
+                        iconColor: context.colors.textPrimary,
+                        onPressed: provider.toggleLayout,
+                      ),
+                      const SizedBox(height: 10),
+                      IconButtonRound(
+                        icon: Icons.add,
+                        size: 52,
+                        variant: IconButtonVariant.filled,
+                        backgroundColor: context.colors.accent,
+                        iconColor: context.colors.onAccent,
+                        onPressed: () => _showImportOptions(context),
+                      ),
+                    ],
+                  ),
                 ),
-              ),
-            if (_importingFile)
-              Positioned.fill(
-                child: AbsorbPointer(
-                  child: ColoredBox(
-                    color: Colors.black38,
-                    child: Center(
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 20,
-                          vertical: 18,
-                        ),
-                        decoration: BoxDecoration(
-                          color: context.colors.surface,
-                          borderRadius: BorderRadius.circular(18),
-                        ),
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            CircularProgressIndicator(
-                              color: context.colors.accent,
-                            ),
-                            const SizedBox(height: 14),
-                            Text(
-                              'Preparing MOBI...',
-                              style: TextStyle(
-                                color: context.colors.textPrimary,
-                                fontSize: 14,
-                                fontWeight: FontWeight.w600,
+              if (_importingFile)
+                Positioned.fill(
+                  child: AbsorbPointer(
+                    child: ColoredBox(
+                      color: Colors.black38,
+                      child: Center(
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 20,
+                            vertical: 18,
+                          ),
+                          decoration: BoxDecoration(
+                            color: context.colors.surface,
+                            borderRadius: BorderRadius.circular(18),
+                          ),
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              CircularProgressIndicator(
+                                color: context.colors.accent,
                               ),
-                            ),
-                          ],
+                              const SizedBox(height: 14),
+                              Text(
+                                'Preparing MOBI...',
+                                style: TextStyle(
+                                  color: context.colors.textPrimary,
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ],
+                          ),
                         ),
                       ),
                     ),
                   ),
                 ),
-              ),
-          ],
+            ],
+          ),
         );
       },
     );
@@ -155,9 +157,11 @@ class _LibraryScreenState extends State<LibraryScreen> {
   // ── Body dispatcher ─────────────────────────────────────────────────
 
   Widget _body(BuildContext context, LibraryProvider provider) {
-    if (provider.loading && provider.books.isEmpty && provider.mangas.isEmpty) return _loading(context);
+    if (provider.loading && provider.books.isEmpty && provider.mangas.isEmpty)
+      return _loading(context);
     if (provider.error != null) return _error(context, provider);
-    if (provider.books.isEmpty && provider.mangas.isEmpty) return _empty(context);
+    if (provider.books.isEmpty && provider.mangas.isEmpty)
+      return _empty(context);
     return _combined(context, provider);
   }
 
@@ -247,31 +251,27 @@ class _LibraryScreenState extends State<LibraryScreen> {
         children: [
           const OneHandSpacer(),
           _header(context, provider, _oneHand),
-          if (provider.books.isNotEmpty) ...[
-            const SizedBox(height: 16),
-            Row(
-              children: [
-                Text(
-                  'Books',
-                  style: TextStyle(
-                    color: context.colors.textPrimary,
-                    fontSize: 18,
-                    fontWeight: FontWeight.w600,
-                    letterSpacing: -0.2,
+          if (!provider.selectionMode)
+            StaggeredEntrance(
+              index: 0,
+              child: FeaturePanel(
+                icon: Icons.auto_stories_outlined,
+                title: 'Your reading stack',
+                subtitle:
+                    'Books, manga, web saves, and notes arranged for fast return.',
+                stats: [
+                  PanelStat(value: '${provider.books.length}', label: 'Books'),
+                  PanelStat(value: '${provider.mangas.length}', label: 'Manga'),
+                  PanelStat(
+                    value:
+                        '${provider.books.where((b) => b.progress > 0).length}',
+                    label: 'Active',
                   ),
-                ),
-                const Spacer(),
-                Text(
-                  '${provider.books.length}',
-                  style: TextStyle(
-                    color: context.colors.textTertiary,
-                    fontSize: 13,
-                    fontWeight: FontWeight.w500,
-                  ),
-                ),
-              ],
+                ],
+              ),
             ),
-            const SizedBox(height: 8),
+          if (provider.books.isNotEmpty) ...[
+            SectionLabel(title: 'Books', meta: '${provider.books.length}'),
             if (provider.isGridView)
               GridView.builder(
                 shrinkWrap: true,
@@ -283,59 +283,45 @@ class _LibraryScreenState extends State<LibraryScreen> {
                   childAspectRatio: 0.6,
                 ),
                 itemCount: provider.books.length,
-                itemBuilder: (ctx, i) => LibraryBookCard(
-                  book: provider.books[i],
-                  variant: LibraryCardVariant.grid,
-                  selected: provider.selectedIds.contains(provider.books[i].id),
-                  selectionMode: provider.selectionMode,
-                  onTap: () => provider.selectionMode
-                      ? provider.toggleSelection(provider.books[i].id)
-                      : _openReader(context, provider.books[i].id),
-                  onLongPress: () =>
-                      provider.toggleSelection(provider.books[i].id),
+                itemBuilder: (ctx, i) => StaggeredEntrance(
+                  index: i + 1,
+                  child: LibraryBookCard(
+                    book: provider.books[i],
+                    variant: LibraryCardVariant.grid,
+                    selected: provider.selectedIds.contains(
+                      provider.books[i].id,
+                    ),
+                    selectionMode: provider.selectionMode,
+                    onTap: () => provider.selectionMode
+                        ? provider.toggleSelection(provider.books[i].id)
+                        : _openReader(context, provider.books[i].id),
+                    onLongPress: () =>
+                        provider.toggleSelection(provider.books[i].id),
+                  ),
                 ),
               )
             else
-              for (final book in provider.books)
+              for (final entry in provider.books.indexed)
                 Padding(
                   padding: const EdgeInsets.only(bottom: 4),
-                  child: LibraryBookCard(
-                    book: book,
-                    variant: LibraryCardVariant.list,
-                    selected: provider.selectedIds.contains(book.id),
-                    selectionMode: provider.selectionMode,
-                    onTap: () => provider.selectionMode
-                        ? provider.toggleSelection(book.id)
-                        : _openReader(context, book.id),
-                    onLongPress: () => provider.toggleSelection(book.id),
+                  child: StaggeredEntrance(
+                    index: entry.$1 + 1,
+                    child: LibraryBookCard(
+                      book: entry.$2,
+                      variant: LibraryCardVariant.list,
+                      selected: provider.selectedIds.contains(entry.$2.id),
+                      selectionMode: provider.selectionMode,
+                      onTap: () => provider.selectionMode
+                          ? provider.toggleSelection(entry.$2.id)
+                          : _openReader(context, entry.$2.id),
+                      onLongPress: () => provider.toggleSelection(entry.$2.id),
+                    ),
                   ),
                 ),
           ],
           if (provider.mangas.isNotEmpty) ...[
-            const SizedBox(height: 24),
-            Row(
-              children: [
-                Text(
-                  'Manga',
-                  style: TextStyle(
-                    color: context.colors.textPrimary,
-                    fontSize: 18,
-                    fontWeight: FontWeight.w600,
-                    letterSpacing: -0.2,
-                  ),
-                ),
-                const Spacer(),
-                Text(
-                  '${provider.mangas.length}',
-                  style: TextStyle(
-                    color: context.colors.textTertiary,
-                    fontSize: 13,
-                    fontWeight: FontWeight.w500,
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 8),
+            const SizedBox(height: 10),
+            SectionLabel(title: 'Manga', meta: '${provider.mangas.length}'),
             if (provider.isGridView)
               GridView.builder(
                 shrinkWrap: true,
@@ -349,15 +335,18 @@ class _LibraryScreenState extends State<LibraryScreen> {
                 itemCount: provider.mangas.length,
                 itemBuilder: (ctx, i) {
                   final m = provider.mangas[i];
-                  return _MangaLibraryCard(
-                    manga: m,
-                    onTap: () => Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) => MangaDetailScreen(
-                          sourceId: m.sourceId,
-                          url: m.url,
-                          title: m.name,
+                  return StaggeredEntrance(
+                    index: i + 1,
+                    child: _MangaLibraryCard(
+                      manga: m,
+                      onTap: () => Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => MangaDetailScreen(
+                            sourceId: m.sourceId,
+                            url: m.url,
+                            title: m.name,
+                          ),
                         ),
                       ),
                     ),
@@ -365,16 +354,19 @@ class _LibraryScreenState extends State<LibraryScreen> {
                 },
               )
             else
-              for (final manga in provider.mangas)
-                _MangaLibraryRow(
-                  manga: manga,
-                  onTap: () => Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (_) => MangaDetailScreen(
-                        sourceId: manga.sourceId,
-                        url: manga.url,
-                        title: manga.name,
+              for (final entry in provider.mangas.indexed)
+                StaggeredEntrance(
+                  index: entry.$1 + 1,
+                  child: _MangaLibraryRow(
+                    manga: entry.$2,
+                    onTap: () => Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => MangaDetailScreen(
+                          sourceId: entry.$2.sourceId,
+                          url: entry.$2.url,
+                          title: entry.$2.name,
+                        ),
                       ),
                     ),
                   ),
@@ -776,11 +768,11 @@ class _MangaLibraryCard extends StatelessWidget {
   }
 
   Widget _placeholder(StashReaderColors c) => Container(
-        color: c.surfaceMuted,
-        child: Center(
-          child: Icon(Icons.image_outlined, size: 28, color: c.textTertiary),
-        ),
-      );
+    color: c.surfaceMuted,
+    child: Center(
+      child: Icon(Icons.image_outlined, size: 28, color: c.textTertiary),
+    ),
+  );
 }
 
 class _MangaLibraryRow extends StatelessWidget {
@@ -838,10 +830,7 @@ class _MangaLibraryRow extends StatelessWidget {
                         manga.author!,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          color: c.textSecondary,
-                          fontSize: 13,
-                        ),
+                        style: TextStyle(color: c.textSecondary, fontSize: 13),
                       ),
                     ],
                   ],
@@ -856,11 +845,11 @@ class _MangaLibraryRow extends StatelessWidget {
   }
 
   Widget _placeholder(StashReaderColors c, double w, double h) => Container(
-        width: w,
-        height: h,
-        color: c.surfaceMuted,
-        child: Center(
-          child: Icon(Icons.image_outlined, size: 24, color: c.textTertiary),
-        ),
-      );
+    width: w,
+    height: h,
+    color: c.surfaceMuted,
+    child: Center(
+      child: Icon(Icons.image_outlined, size: 24, color: c.textTertiary),
+    ),
+  );
 }

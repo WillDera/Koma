@@ -8,6 +8,7 @@ import '../../widgets/icon_button_round.dart';
 import '../../widgets/library_header.dart';
 import '../../widgets/loading_skeleton.dart';
 import '../../widgets/one_hand_spacer.dart';
+import '../../widgets/screen_chrome.dart';
 import '../../widgets/snippet_card.dart';
 import '../../widgets/snippet_detail_sheet.dart';
 import '../../widgets/tag_filter_bar.dart';
@@ -56,28 +57,30 @@ class _SnippetsScreenState extends State<SnippetsScreen> {
   Widget build(BuildContext context) {
     final leftHanded = context.watch<ThemeProvider>().handMode == HandMode.left;
     final navClearance = MediaQuery.paddingOf(context).bottom + 84;
-    return Stack(
-      children: [
-        SafeArea(
-          bottom: false,
-          child: Consumer<SnippetsProvider>(
-            builder: (context, p, _) => _body(context, p),
+    return ScreenBackdrop(
+      child: Stack(
+        children: [
+          SafeArea(
+            bottom: false,
+            child: Consumer<SnippetsProvider>(
+              builder: (context, p, _) => _body(context, p),
+            ),
           ),
-        ),
-        Positioned(
-          left: leftHanded ? 20 : null,
-          right: leftHanded ? null : 20,
-          bottom: navClearance,
-          child: IconButtonRound(
-            icon: Icons.add,
-            size: 52,
-            variant: IconButtonVariant.filled,
-            backgroundColor: context.colors.accent,
-            iconColor: context.colors.onAccent,
-            onPressed: () => _createSnippet(context),
+          Positioned(
+            left: leftHanded ? 20 : null,
+            right: leftHanded ? null : 20,
+            bottom: navClearance,
+            child: IconButtonRound(
+              icon: Icons.add,
+              size: 52,
+              variant: IconButtonVariant.filled,
+              backgroundColor: context.colors.accent,
+              iconColor: context.colors.onAccent,
+              onPressed: () => _createSnippet(context),
+            ),
           ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 
@@ -142,6 +145,19 @@ class _SnippetsScreenState extends State<SnippetsScreen> {
           titleSize: _oneHand ? 64 : 32,
           shrinkProgress: _oneHand ? _scrollProgress : 0.0,
         ),
+        StaggeredEntrance(
+          child: FeaturePanel(
+            icon: Icons.format_quote_rounded,
+            title: 'Captured thoughts',
+            subtitle:
+                'Highlights, notes, and quotes with just enough structure to find them again.',
+            stats: [
+              PanelStat(value: '${p.snippets.length}', label: 'Saved'),
+              PanelStat(value: '${p.allTags.length}', label: 'Tags'),
+              PanelStat(value: p.filterTag ?? 'All', label: 'Filter'),
+            ],
+          ),
+        ),
         if (p.allTags.isNotEmpty)
           TagFilterBar(
             tags: p.allTags,
@@ -157,16 +173,24 @@ class _SnippetsScreenState extends State<SnippetsScreen> {
               subtitle: 'Try a different tag or remove the filter.',
             ),
           )
-        else
-          ...items.map(
-            (s) => Padding(
+        else ...[
+          SectionLabel(
+            title: p.filterTag == null ? 'Latest' : '#${p.filterTag}',
+            meta: '${items.length}',
+          ),
+          ...items.indexed.map(
+            (entry) => Padding(
               padding: const EdgeInsets.fromLTRB(20, 0, 20, 12),
-              child: SnippetCard(
-                snippet: s,
-                onTap: () => _editSnippet(context, s, p),
+              child: StaggeredEntrance(
+                index: entry.$1 + 1,
+                child: SnippetCard(
+                  snippet: entry.$2,
+                  onTap: () => _editSnippet(context, entry.$2, p),
+                ),
               ),
             ),
           ),
+        ],
         const SizedBox(height: 100),
       ],
     );
