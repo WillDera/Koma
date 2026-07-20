@@ -514,7 +514,7 @@ class _HeroSection extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return SizedBox(
-      height: 280,
+      height: 350,
       child: Stack(
         children: [
           Positioned.fill(
@@ -549,19 +549,19 @@ class _HeroSection extends StatelessWidget {
             left: 16,
             right: 16,
             top: topPadding,
-            bottom: 16,
+            bottom: 24,
             child: Row(
               children: [
                 ClipRRect(
                   borderRadius: AppSpacing.brMd,
                   child: Image.network(
                     thumb,
-                    width: 150,
-                    height: 225,
+                    width: 160,
+                    height: 300,
                     fit: BoxFit.cover,
                     errorBuilder: (context, exception, stackTrace) => Container(
-                      width: 150,
-                      height: 225,
+                      width: 160,
+                      height: 300,
                       color: c.surfaceMuted,
                       child: Icon(Icons.image_outlined, size: 40, color: c.textTertiary),
                     ),
