@@ -1,7 +1,7 @@
 name: stashreader
 description: "A hybrid reader + knowledge snippet manager."
 publish_to: 'none'
-version: 2.5.49+67
+version: 2.5.64+73
 
 environment:
   sdk: ^3.9.0
@@ -22,6 +22,7 @@ dependencies:
   provider: ^6.1.5
   intl: ^0.20.2
   uuid: ^4.5.1
+  crypto: ^3.0.6
   collection: ^1.19.1
   flutter_markdown: ^0.7.6
   google_fonts: ^8.1.0

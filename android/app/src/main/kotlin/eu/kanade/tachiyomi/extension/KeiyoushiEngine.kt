@@ -25,6 +25,8 @@ import uy.kohesive.injekt.api.InjektRegistrar
 import uy.kohesive.injekt.api.addSingleton
 import uy.kohesive.injekt.api.addSingletonFactory
 import uy.kohesive.injekt.api.get
+import java.io.File
+import java.security.MessageDigest
 import java.util.concurrent.ConcurrentHashMap
 
 class KeiyoushiEngine(
@@ -178,6 +180,121 @@ class KeiyoushiEngine(
                     .filterNotNull()
             }
         }
+
+    /**
+     * Download pages for one or more chapters.
+     *
+     * For each chapter URL:
+     *   1. Fetches the page list via [HttpSource.getPageList]
+     *   2. Downloads each page image to local storage via the source's own OkHttpClient (respecting
+     *      per-source headers, cookies, user-agent)
+     *   3. Saves as `<filesDir>/manga/<sourceId>/<mangaKey>/<chapterKey>/<pageIndex>.jpg`
+     *
+     * Returns a map of chapterUrl → list of local file paths (content:// URIs for Flutter).
+     */
+    fun downloadChapters(
+        sourceId: String,
+        mangaUrl: String,
+        chapterUrls: List<String>,
+        chapterNames: List<String>,
+    ): Map<String, List<String>> {
+        val src = requireHttpSource(sourceId)
+        val mangaKey = sha256(mangaUrl).take(16)
+
+        // deduplicate: if a chapter already exists on disk, skip re-download
+        val baseDir = File(context.filesDir, "manga/$sourceId/$mangaKey")
+        baseDir.mkdirs()
+
+        val result = mutableMapOf<String, List<String>>()
+
+        for ((i, chapterUrl) in chapterUrls.withIndex()) {
+            val chName = chapterNames.getOrElse(i) { chapterUrl }
+            val chKey = sha256(chapterUrl).take(16)
+            val chDir = File(baseDir, chKey)
+            chDir.mkdirs()
+
+            // Check if already fully downloaded
+            val existing = chDir.listFiles()?.filter { it.isFile }?.sortedBy { it.name }
+            if (existing != null && existing.isNotEmpty()) {
+                result[chapterUrl] = existing.map { it.toURI().toString() }
+                continue
+            }
+
+            val chapter = SChapter.create().apply { url = chapterUrl; name = chName }
+            val pages: List<Page> = runBlocking { src.getPageList(chapter) }
+            val localPaths = mutableListOf<String>()
+
+            for (page in pages) {
+                try {
+                    // Resolve the image URL if the source didn't set it in
+                    // pageListParse (many Keiyoushi extensions set imageUrl lazily
+                    // via fetchImageUrl / getImageUrl).
+                    if (page.imageUrl == null) {
+                        page.imageUrl = runBlocking { src.getImageUrl(page) }
+                    }
+                    if (page.imageUrl.isNullOrEmpty()) continue
+
+                    val response = runBlocking { src.getImage(page) }
+                    if (!response.isSuccessful) {
+                        Log.w(TAG, "download: HTTP ${response.code} for page ${page.index}")
+                        response.close()
+                        continue
+                    }
+                    val bytes = response.body.bytes()
+                    response.close()
+                    if (bytes == null || bytes.isEmpty()) continue
+
+                    val file = File(chDir, "${page.index}.jpg")
+                    file.writeBytes(bytes)
+                    localPaths.add(file.toURI().toString())
+                } catch (e: Exception) {
+                    Log.e(TAG, "download: failed page ${page.index} of $chName", e)
+                }
+            }
+
+            if (localPaths.isNotEmpty()) {
+                result[chapterUrl] = localPaths
+            }
+        }
+
+        return result
+    }
+
+    /**
+     * Return the set of chapter directory names (SHA256 hashes, first 16 chars)
+     * that exist on disk for the given manga. One call instead of N per-chapter checks.
+     */
+    fun getDownloadedChapterKeys(sourceId: String, mangaUrl: String): List<String> {
+        val mangaKey = sha256(mangaUrl).take(16)
+        val dir = File(context.filesDir, "manga/$sourceId/$mangaKey")
+        if (!dir.isDirectory) return emptyList()
+        return dir.listFiles()
+            ?.filter { it.isDirectory }
+            ?.map { it.name }
+            ?: emptyList()
+    }
+
+    private fun sha256(input: String): String =
+        MessageDigest.getInstance("SHA-256")
+            .digest(input.toByteArray())
+            .joinToString("") { "%02x".format(it) }
+
+    /**
+     * Check for locally downloaded pages for a chapter.
+     * Returns absolute file paths sorted by page index, or empty list.
+     * Flutter reads these with [Image.file] — must be a path, not a URI.
+     */
+    fun getLocalPages(sourceId: String, mangaUrl: String, chapterUrl: String): List<String> {
+        val mangaKey = sha256(mangaUrl).take(16)
+        val chKey = sha256(chapterUrl).take(16)
+        val dir = File(context.filesDir, "manga/$sourceId/$mangaKey/$chKey")
+        if (!dir.isDirectory) return emptyList()
+        return dir.listFiles()
+            ?.filter { it.isFile && it.name.endsWith(".jpg") }
+            ?.sortedBy { it.nameWithoutExtension.toIntOrNull() ?: Int.MAX_VALUE }
+            ?.map { it.absolutePath }
+            ?: emptyList()
+    }
 
     // -- Internals --------------------------------------------------------
 

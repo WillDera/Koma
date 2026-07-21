@@ -898,8 +898,8 @@ class DatabaseService {
     await _db.transaction(() async {
       for (final ch in chapters) {
         await _db.customInsert(
-          'INSERT OR IGNORE INTO manga_chapters (manga_id, name, url, scanlator, date_upload, "index") '
-          'VALUES (?, ?, ?, ?, ?, ?)',
+          'INSERT OR IGNORE INTO manga_chapters (manga_id, name, url, scanlator, date_upload, "index", is_downloaded) '
+          'VALUES (?, ?, ?, ?, ?, ?, ?)',
           variables: [
             Variable.withInt(mangaId),
             Variable.withString(ch.name),
@@ -907,6 +907,7 @@ class DatabaseService {
             Variable.withString(ch.scanlator ?? ''),
             Variable.withInt(ch.dateUpload),
             Variable.withInt(ch.index),
+            Variable.withInt(ch.isDownloaded ? 1 : 0),
           ],
         );
       }
@@ -925,6 +926,22 @@ class DatabaseService {
       'UPDATE manga_chapters SET last_page_read=? WHERE id=?',
       variables: [Variable.withInt(page), Variable.withInt(chapterId)],
     );
+  }
+
+  Future<void> markMangaChapterDownloaded(int chapterId, bool downloaded) async {
+    await _db.customUpdate(
+      'UPDATE manga_chapters SET is_downloaded=? WHERE id=?',
+      variables: [Variable.withInt(downloaded ? 1 : 0), Variable.withInt(chapterId)],
+    );
+  }
+
+  Future<MangaChapter?> getMangaChapterByUrl(int mangaId, String url) async {
+    final rows = await _db.customSelect(
+      'SELECT * FROM manga_chapters WHERE manga_id=? AND url=? LIMIT 1',
+      variables: [Variable.withInt(mangaId), Variable.withString(url)],
+    ).get();
+    if (rows.isEmpty) return null;
+    return MangaChapter.fromJson(rows.first.data);
   }
 
   // -- Extension repos ---------------------------------------------------
