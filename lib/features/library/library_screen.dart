@@ -1009,109 +1009,106 @@ class _LibraryFilterSheet extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final c = context.colors;
-    return SafeArea(
-      top: false,
-      child: Container(
-        padding: const EdgeInsets.fromLTRB(20, 10, 20, 24),
-        decoration: BoxDecoration(
-          color: c.surface,
-          borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
-          border: Border(top: BorderSide(color: c.border, width: 0.5)),
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Center(
-              child: Container(
-                width: 36,
-                height: 4,
-                decoration: BoxDecoration(
-                  color: c.textTertiary,
-                  borderRadius: AppSpacing.brPill,
-                ),
-              ),
-            ),
-            const SizedBox(height: 20),
-            Text(
-              'Filter',
-              style: TextStyle(
+    return Container(
+      padding: const EdgeInsets.fromLTRB(20, 10, 20, 24),
+      decoration: BoxDecoration(
+        color: c.surface,
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+        border: Border(top: BorderSide(color: c.border, width: 0.5)),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Center(
+            child: Container(
+              width: 36,
+              height: 4,
+              decoration: BoxDecoration(
                 color: c.textTertiary,
-                fontSize: 12,
-                fontWeight: FontWeight.w700,
+                borderRadius: AppSpacing.brPill,
               ),
             ),
-            const SizedBox(height: 6),
-            _FilterOption(
-              icon: Icons.markunread_outlined,
-              label: 'Unread',
-              mode: filters[_LibraryFilter.unread] ?? _FilterMode.none,
-              onTap: () => onFilterChanged(_LibraryFilter.unread),
+          ),
+          const SizedBox(height: 20),
+          Text(
+            'Filter',
+            style: TextStyle(
+              color: Colors.white,
+              fontSize: 18,
+              fontWeight: FontWeight.bold,
             ),
-            _FilterOption(
-              icon: Icons.fiber_new_rounded,
-              label: 'Newly added',
-              mode: filters[_LibraryFilter.newlyAdded] ?? _FilterMode.none,
-              onTap: () => onFilterChanged(_LibraryFilter.newlyAdded),
-            ),
-            Padding(
-              padding: const EdgeInsets.symmetric(vertical: 14),
-              child: Divider(color: c.border, height: 1),
-            ),
-            Row(
-              children: [
-                Expanded(
-                  child: Text(
-                    'Show source pills',
-                    style: TextStyle(
-                      color: c.textPrimary,
-                      fontSize: 15,
-                      fontWeight: FontWeight.w600,
-                    ),
+          ),
+          const SizedBox(height: 6),
+          _FilterOption(
+            icon: Icons.markunread_outlined,
+            label: 'Unread',
+            mode: filters[_LibraryFilter.unread] ?? _FilterMode.none,
+            onTap: () => onFilterChanged(_LibraryFilter.unread),
+          ),
+          _FilterOption(
+            icon: Icons.fiber_new_rounded,
+            label: 'Newly added',
+            mode: filters[_LibraryFilter.newlyAdded] ?? _FilterMode.none,
+            onTap: () => onFilterChanged(_LibraryFilter.newlyAdded),
+          ),
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 14),
+            child: Divider(color: c.border, height: 1),
+          ),
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  'Show source pills',
+                  style: TextStyle(
+                    color: c.textPrimary,
+                    fontSize: 15,
+                    fontWeight: FontWeight.w600,
                   ),
                 ),
-                Checkbox(
-                  value: showSourcePills,
-                  onChanged: (value) {
-                    if (value != null) onShowSourcePillsChanged(value);
-                  },
-                  activeColor: c.accent,
-                ),
-              ],
-            ),
-            Padding(
-              padding: const EdgeInsets.symmetric(vertical: 14),
-              child: Divider(color: c.border, height: 1),
-            ),
-            Text(
-              'Sort',
-              style: TextStyle(
-                color: c.textTertiary,
-                fontSize: 12,
-                fontWeight: FontWeight.w700,
               ),
+              Checkbox(
+                value: showSourcePills,
+                onChanged: (value) {
+                  if (value != null) onShowSourcePillsChanged(value);
+                },
+                activeColor: c.accent,
+              ),
+            ],
+          ),
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 14),
+            child: Divider(color: c.border, height: 1),
+          ),
+          Text(
+            'Sort',
+            style: TextStyle(
+              color: c.textTertiary,
+              fontSize: 12,
+              fontWeight: FontWeight.w700,
             ),
-            const SizedBox(height: 6),
-            _SortOption(
-              icon: Icons.sort_by_alpha_rounded,
-              label: 'Alphabetical order',
-              selected: sort == _LibrarySort.alphabetical,
-              onTap: () => onSortChanged(_LibrarySort.alphabetical),
-            ),
-            _SortOption(
-              icon: Icons.person_outline_rounded,
-              label: 'Author',
-              selected: sort == _LibrarySort.author,
-              onTap: () => onSortChanged(_LibrarySort.author),
-            ),
-            _SortOption(
-              icon: Icons.donut_large_rounded,
-              label: 'Progress',
-              selected: sort == _LibrarySort.progress,
-              onTap: () => onSortChanged(_LibrarySort.progress),
-            ),
-          ],
-        ),
+          ),
+          const SizedBox(height: 6),
+          _SortOption(
+            icon: Icons.sort_by_alpha_rounded,
+            label: 'Alphabetical order',
+            selected: sort == _LibrarySort.alphabetical,
+            onTap: () => onSortChanged(_LibrarySort.alphabetical),
+          ),
+          _SortOption(
+            icon: Icons.person_outline_rounded,
+            label: 'Author',
+            selected: sort == _LibrarySort.author,
+            onTap: () => onSortChanged(_LibrarySort.author),
+          ),
+          _SortOption(
+            icon: Icons.donut_large_rounded,
+            label: 'Progress',
+            selected: sort == _LibrarySort.progress,
+            onTap: () => onSortChanged(_LibrarySort.progress),
+          ),
+        ],
       ),
     );
   }
