@@ -6,6 +6,7 @@ import 'package:http/http.dart' as http;
 import 'package:intl/intl.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:provider/provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../core/models/manga.dart';
 import '../../core/models/manga_chapter.dart';
@@ -58,6 +59,8 @@ class _MangaDetailScreenState extends State<MangaDetailScreen> {
   };
   _SortMode _sortMode = _SortMode.chapterAsc;
 
+  static const _keySortMode = 'manga_chapter_sort_mode';
+
   List<Map<String, dynamic>> _sortedChapters(List<Map<String, dynamic>> chapters) {
     final sorted = List<Map<String, dynamic>>.from(chapters);
     switch (_sortMode) {
@@ -70,30 +73,170 @@ class _MangaDetailScreenState extends State<MangaDetailScreen> {
       case _SortMode.dateDesc:
         sorted.sort((a, b) => (b['date_upload'] as int? ?? 0).compareTo(a['date_upload'] as int? ?? 0));
       case _SortMode.chapterAsc:
-        sorted.sort((a, b) => (a['chapter_number'] as num? ?? 0).compareTo(b['chapter_number'] as num? ?? 0));
+        final mapping = _chapterNumberMap(sorted);
+        sorted.sort((a, b) => (mapping[a] ?? -1.0).compareTo(mapping[b] ?? -1.0));
       case _SortMode.chapterDesc:
-        sorted.sort((a, b) => (b['chapter_number'] as num? ?? 0).compareTo(a['chapter_number'] as num? ?? 0));
+        final mapping = _chapterNumberMap(sorted);
+        sorted.sort((a, b) => (mapping[b] ?? -1.0).compareTo(mapping[a] ?? -1.0));
     }
     return sorted;
   }
 
-  void _cycleSort() {
-    setState(() {
-      _sortMode = switch (_sortMode) {
-        _SortMode.nameAsc => _SortMode.nameDesc,
-        _SortMode.nameDesc => _SortMode.dateAsc,
-        _SortMode.dateAsc => _SortMode.dateDesc,
-        _SortMode.dateDesc => _SortMode.chapterAsc,
-        _SortMode.chapterAsc => _SortMode.chapterDesc,
-        _SortMode.chapterDesc => _SortMode.nameAsc,
-      };
+  /// Build a map of chapter map → parsed chapter number.
+  /// Uses source [chapter_number] if valid (> -1), otherwise parses from [name].
+  Map<Map<String, dynamic>, double> _chapterNumberMap(List<Map<String, dynamic>> chapters) {
+    final map = <Map<String, dynamic>, double>{};
+    for (final ch in chapters) {
+      final raw = ch['chapter_number'] as num?;
+      map[ch] = raw != null && raw > -1
+          ? raw.toDouble()
+          : _parseChapterNumber(ch['name'] as String? ?? '', ch['chapter_number'] as num?);
+    }
+    return map;
+  }
+
+  /// Port of Mihon's [ChapterRecognition.parseChapterNumber].
+  /// Extracts the chapter number from the name when the source doesn't set it.
+  static double _parseChapterNumber(String name, num? chapterNumber) {
+    if (chapterNumber != null && (chapterNumber == -2 || chapterNumber > -1)) {
+      return chapterNumber.toDouble();
+    }
+    final cleaned = name
+        .toLowerCase()
+        .replaceAll(',', '.')
+        .replaceAll('-', '.')
+        .replaceAll(RegExp(r'\s(?=extra|special|omake)'), '');
+    final matches = _numberRegex.allMatches(cleaned).toList();
+    if (matches.isEmpty) return chapterNumber?.toDouble() ?? -1.0;
+    if (matches.length == 1) return _parseMatch(matches.first);
+    // Multiple numbers: strip volume/season/etc. tags, try "Ch.xx" first
+    final stripped = cleaned.replaceAll(RegExp(r'\b(?:v|ver|vol|version|volume|season|s)[^a-z]?[0-9]+'), '');
+    final basicMatch = _basicRegex.firstMatch(stripped);
+    if (basicMatch != null) return _parseMatch(basicMatch);
+    final fallback = _numberRegex.firstMatch(stripped);
+    return fallback != null ? _parseMatch(fallback) : -1.0;
+  }
+
+  static final _numberRegex = RegExp(r'([0-9]+)(\.[0-9]+)?(\.?[a-z]+)?');
+  static final _basicRegex = RegExp(r'(?<=ch\.) *([0-9]+)(\.[0-9]+)?(\.?[a-z]+)?');
+
+  static double _parseMatch(RegExpMatch m) {
+    final main = double.parse(m.group(1)!);
+    final decimal = m.group(2);
+    final alpha = m.group(3);
+    if (decimal != null) return main + double.parse(decimal);
+    if (alpha != null) return main + _alphaValue(alpha);
+    return main;
+  }
+
+  static double _alphaValue(String alpha) {
+    final a = alpha.startsWith('.') ? alpha.substring(1) : alpha;
+    if (a == 'extra') return 0.99;
+    if (a == 'omake') return 0.98;
+    if (a == 'special') return 0.97;
+    if (a.length == 1) {
+      final n = a.codeUnitAt(0) - 'a'.codeUnitAt(0) + 1;
+      if (n >= 1 && n <= 9) return n / 10.0;
+    }
+    return 0.0;
+  }
+
+  void _showSortSheet() {
+    final current = _sortMode;
+    showModalBottomSheet<_SortMode>(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (context) => Container(
+        padding: const EdgeInsets.fromLTRB(20, 10, 20, 24),
+        decoration: BoxDecoration(
+          color: context.colors.surface,
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+          border: Border(top: BorderSide(color: context.colors.border, width: 0.5)),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Center(
+              child: Container(
+                width: 36,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: context.colors.textTertiary,
+                  borderRadius: AppSpacing.brPill,
+                ),
+              ),
+            ),
+            const SizedBox(height: 20),
+            Text(
+              'Sort chapters',
+              style: TextStyle(
+                color: Colors.white,
+                fontSize: 18,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+            const SizedBox(height: 6),
+            _SortOption(
+              icon: Icons.sort_by_alpha,
+              label: 'Name (A-Z)',
+              selected: current == _SortMode.nameAsc,
+              onTap: () => Navigator.pop(context, _SortMode.nameAsc),
+            ),
+            _SortOption(
+              icon: Icons.sort_by_alpha,
+              label: 'Name (Z-A)',
+              selected: current == _SortMode.nameDesc,
+              onTap: () => Navigator.pop(context, _SortMode.nameDesc),
+            ),
+            _SortOption(
+              icon: Icons.sort,
+              label: 'Date (oldest first)',
+              selected: current == _SortMode.dateAsc,
+              onTap: () => Navigator.pop(context, _SortMode.dateAsc),
+            ),
+            _SortOption(
+              icon: Icons.sort,
+              label: 'Date (newest first)',
+              selected: current == _SortMode.dateDesc,
+              onTap: () => Navigator.pop(context, _SortMode.dateDesc),
+            ),
+            _SortOption(
+              icon: Icons.swap_vert,
+              label: 'Chapter (ascending)',
+              selected: current == _SortMode.chapterAsc,
+              onTap: () => Navigator.pop(context, _SortMode.chapterAsc),
+            ),
+            _SortOption(
+              icon: Icons.swap_vert,
+              label: 'Chapter (descending)',
+              selected: current == _SortMode.chapterDesc,
+              onTap: () => Navigator.pop(context, _SortMode.chapterDesc),
+            ),
+          ],
+        ),
+      ),
+    ).then((value) async {
+      if (value != null && mounted) {
+        setState(() => _sortMode = value);
+        (await SharedPreferences.getInstance()).setInt(_keySortMode, value.index);
+      }
     });
   }
 
   @override
   void initState() {
     super.initState();
+    _loadSortMode();
     _load();
+  }
+
+  Future<void> _loadSortMode() async {
+    final prefs = await SharedPreferences.getInstance();
+    final index = prefs.getInt(_keySortMode);
+    if (index != null && index < _SortMode.values.length) {
+      _sortMode = _SortMode.values[index];
+    }
   }
 
   Future<void> _cacheThumbnail(String url) async {
@@ -768,7 +911,7 @@ class _MangaDetailScreenState extends State<MangaDetailScreen> {
                         c: c,
                         sourceId: widget.sourceId,
                         sortMode: _sortMode,
-                        onSortChanged: _cycleSort,
+                        onSortChanged: _showSortSheet,
                         onChapterTap: (ch) => Navigator.push(
                           context,
                           MaterialPageRoute(
@@ -1205,6 +1348,49 @@ class _TriStateGlyph extends StatelessWidget {
   }
 }
 
+class _SortOption extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+
+  const _SortOption({
+    required this.icon,
+    required this.label,
+    required this.selected,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.colors;
+    return AnimatedPress(
+      onTap: onTap,
+      child: SizedBox(
+        height: 50,
+        child: Row(
+          children: [
+            Icon(icon, size: 21, color: c.textSecondary),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Text(
+                label,
+                style: TextStyle(
+                  color: c.textPrimary,
+                  fontSize: 15,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+            if (selected)
+              Icon(Icons.check_rounded, size: 20, color: c.accent),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 class _HeroSection extends StatelessWidget {
   final String title;
   final String thumb;
@@ -1396,73 +1582,78 @@ class _ChaptersList extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Padding(
-          padding: const EdgeInsets.only(bottom: 12),
-          child: Row(
-            children: [
-              Text(
-                'Chapters',
-                style: TextStyle(
-                  color: c.textPrimary,
-                  fontSize: 16,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-              const SizedBox(width: 10),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
-                decoration: BoxDecoration(
-                  color: c.surfaceMuted,
-                  borderRadius: AppSpacing.brPill,
-                ),
-                child: Text(
-                  '${chapters.length}',
-                  style: TextStyle(
-                    color: c.textSecondary,
-                    fontSize: 12,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ),
-              if (offlineMode) ...[
-                const SizedBox(width: 8),
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                  decoration: BoxDecoration(
-                    color: Colors.orange.withAlpha(30),
-                    borderRadius: AppSpacing.brPill,
-                    border: Border.all(color: Colors.orange.withAlpha(80)),
-                  ),
-                  child: Text(
-                    'Offline',
-                    style: TextStyle(
-                      color: Colors.orange.shade300,
-                      fontSize: 11,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                ),
-              ],
-              const SizedBox(width: 8),
-              IconButton(
-                icon: Icon(
-                  switch (sortMode) {
-                    _SortMode.nameAsc => Icons.sort_by_alpha,
-                    _SortMode.nameDesc => Icons.sort_by_alpha,
-                    _SortMode.dateAsc => Icons.sort,
-                    _SortMode.dateDesc => Icons.sort,
-                    _SortMode.chapterAsc => Icons.swap_vert,
-                    _SortMode.chapterDesc => Icons.swap_vert,
-                  },
-                  size: 20,
-                  color: c.textSecondary,
-                ),
-                tooltip: 'Sort chapters',
-                onPressed: onSortChanged,
-              ),
-            ],
-          ),
-        ),
+         Padding(
+           padding: const EdgeInsets.only(bottom: 12),
+           child: Row(
+             children: [
+               Expanded(
+                 child: Row(
+                   children: [
+                     Text(
+                       'Chapters',
+                       style: TextStyle(
+                         color: c.textPrimary,
+                         fontSize: 16,
+                         fontWeight: FontWeight.w600,
+                       ),
+                     ),
+                     const SizedBox(width: 10),
+                     Container(
+                       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
+                       decoration: BoxDecoration(
+                         color: c.surfaceMuted,
+                         borderRadius: AppSpacing.brPill,
+                       ),
+                       child: Text(
+                         '${chapters.length}',
+                         style: TextStyle(
+                           color: c.textSecondary,
+                           fontSize: 12,
+                           fontWeight: FontWeight.w600,
+                         ),
+                       ),
+                     ),
+                     if (offlineMode) ...[
+                       const SizedBox(width: 8),
+                       Container(
+                         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                         decoration: BoxDecoration(
+                           color: Colors.orange.withAlpha(30),
+                           borderRadius: AppSpacing.brPill,
+                           border: Border.all(color: Colors.orange.withAlpha(80)),
+                         ),
+                         child: Text(
+                           'Offline',
+                           style: TextStyle(
+                             color: Colors.orange.shade300,
+                             fontSize: 11,
+                             fontWeight: FontWeight.w600,
+                           ),
+                         ),
+                       ),
+                     ],
+                   ],
+                 ),
+               ),
+               IconButton(
+                 icon: Icon(
+                   switch (sortMode) {
+                     _SortMode.nameAsc => Icons.sort_by_alpha,
+                     _SortMode.nameDesc => Icons.sort_by_alpha,
+                     _SortMode.dateAsc => Icons.sort,
+                     _SortMode.dateDesc => Icons.sort,
+                     _SortMode.chapterAsc => Icons.swap_vert,
+                     _SortMode.chapterDesc => Icons.swap_vert,
+                   },
+                   size: 20,
+                   color: c.textSecondary,
+                 ),
+                 tooltip: 'Sort chapters',
+                 onPressed: onSortChanged,
+               ),
+             ],
+           ),
+         ),
         ...chapters.map((ch) {
           final url = ch['url'] as String? ?? '';
           final local = localChapters[url];
