@@ -337,6 +337,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
                     key: const ValueKey('manga-shelf'),
                     mangas: _visibleMangas(provider.mangas),
                     gridView: provider.isGridView,
+                    provider: provider,
                     mangaThumbnails: _mangaThumbnails,
                     onOpen: (manga) => _openManga(context, manga),
                   ),
@@ -357,6 +358,14 @@ class _LibraryScreenState extends State<LibraryScreen> {
       return LibraryHeader(
         title: '${provider.selectedIds.length} selected',
         actions: [
+          IconButtonRound(
+            icon: Icons.select_all_rounded,
+            size: 40,
+            variant: IconButtonVariant.tonal,
+            iconColor: context.colors.textSecondary,
+            onPressed: provider.selectAll,
+          ),
+          const SizedBox(width: 8),
           IconButtonRound(
             icon: Icons.delete_outline,
             size: 40,
@@ -1236,12 +1245,12 @@ class _BookShelf extends StatelessWidget {
             child: LibraryBookCard(
               book: books[i],
               variant: LibraryCardVariant.grid,
-              selected: provider.selectedIds.contains(books[i].id),
+              selected: provider.selectedIds.contains('b:${books[i].id}'),
               selectionMode: provider.selectionMode,
               onTap: () => provider.selectionMode
-                  ? provider.toggleSelection(books[i].id)
+                  ? provider.toggleSelection('b:${books[i].id}')
                   : onOpen(books[i].id),
-              onLongPress: () => provider.toggleSelection(books[i].id),
+              onLongPress: () => provider.toggleSelection('b:${books[i].id}'),
             ),
           ),
         ),
@@ -1257,12 +1266,12 @@ class _BookShelf extends StatelessWidget {
               child: LibraryBookCard(
                 book: entry.$2,
                 variant: LibraryCardVariant.list,
-                selected: provider.selectedIds.contains(entry.$2.id),
+                selected: provider.selectedIds.contains('b:${entry.$2.id}'),
                 selectionMode: provider.selectionMode,
                 onTap: () => provider.selectionMode
-                    ? provider.toggleSelection(entry.$2.id)
+                    ? provider.toggleSelection('b:${entry.$2.id}')
                     : onOpen(entry.$2.id),
-                onLongPress: () => provider.toggleSelection(entry.$2.id),
+                onLongPress: () => provider.toggleSelection('b:${entry.$2.id}'),
               ),
             ),
           ),
@@ -1274,6 +1283,7 @@ class _BookShelf extends StatelessWidget {
 class _MangaShelf extends StatelessWidget {
   final List<Manga> mangas;
   final bool gridView;
+  final LibraryProvider provider;
   final ValueChanged<Manga> onOpen;
   final Map<int, String?> mangaThumbnails;
 
@@ -1281,6 +1291,7 @@ class _MangaShelf extends StatelessWidget {
     super.key,
     required this.mangas,
     required this.gridView,
+    required this.provider,
     required this.onOpen,
     this.mangaThumbnails = const {},
   });
@@ -1317,7 +1328,12 @@ class _MangaShelf extends StatelessWidget {
               child: _MangaLibraryCard(
                 manga: manga,
                 localImagePath: mangaThumbnails[manga.id],
-                onTap: () => onOpen(manga),
+                selected: provider.selectedIds.contains('m:${manga.id}'),
+                selectionMode: provider.selectionMode,
+                onTap: () => provider.selectionMode
+                    ? provider.toggleSelection('m:${manga.id}')
+                    : onOpen(manga),
+                onLongPress: () => provider.toggleSelection('m:${manga.id}'),
               ),
             );
           },
@@ -1334,7 +1350,12 @@ class _MangaShelf extends StatelessWidget {
               child: _MangaLibraryRow(
                 manga: entry.$2,
                 localImagePath: mangaThumbnails[entry.$2.id],
-                onTap: () => onOpen(entry.$2),
+                selected: provider.selectedIds.contains('m:${entry.$2.id}'),
+                selectionMode: provider.selectionMode,
+                onTap: () => provider.selectionMode
+                    ? provider.toggleSelection('m:${entry.$2.id}')
+                    : onOpen(entry.$2),
+                onLongPress: () => provider.toggleSelection('m:${entry.$2.id}'),
               ),
             ),
           ),
@@ -1349,17 +1370,29 @@ class _MangaLibraryCard extends StatelessWidget {
   final Manga manga;
   final VoidCallback onTap;
   final String? localImagePath;
+  final bool selected;
+  final bool selectionMode;
+  final VoidCallback? onLongPress;
 
-  const _MangaLibraryCard({required this.manga, required this.onTap, this.localImagePath});
+  const _MangaLibraryCard({
+    required this.manga,
+    required this.onTap,
+    this.localImagePath,
+    this.selected = false,
+    this.selectionMode = false,
+    this.onLongPress,
+  });
 
   @override
   Widget build(BuildContext context) {
     final c = context.colors;
     return AnimatedPress(
       onTap: onTap,
+      onLongPress: onLongPress,
+      scaleDown: 0.99,
       child: Container(
         decoration: BoxDecoration(
-          color: c.surface,
+          color: selected ? c.accentMuted : c.surface,
           borderRadius: AppSpacing.brMd,
           border: Border.all(color: c.border, width: 0.5),
         ),
@@ -1368,21 +1401,64 @@ class _MangaLibraryCard extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Expanded(
-              child: localImagePath != null
-                  ? Image.file(
-                      File(localImagePath!),
-                      width: double.infinity,
-                      fit: BoxFit.cover,
-                      errorBuilder: (_, __, ___) => _placeholder(c),
-                    )
-                  : manga.imageUrl != null && manga.imageUrl!.isNotEmpty
-                      ? Image.network(
-                          manga.imageUrl!,
-                          width: double.infinity,
-                          fit: BoxFit.cover,
-                          errorBuilder: (_, __, ___) => _placeholder(c),
-                        )
-                      : _placeholder(c),
+              child: Stack(
+                children: [
+                  Positioned.fill(
+                    child: localImagePath != null
+                        ? Image.file(
+                            File(localImagePath!),
+                            width: double.infinity,
+                            fit: BoxFit.cover,
+                            errorBuilder: (_, __, ___) => _placeholder(c),
+                          )
+                        : manga.imageUrl != null && manga.imageUrl!.isNotEmpty
+                            ? Image.network(
+                                manga.imageUrl!,
+                                width: double.infinity,
+                                fit: BoxFit.cover,
+                                errorBuilder: (_, __, ___) => _placeholder(c),
+                              )
+                            : _placeholder(c),
+                  ),
+                  Positioned(
+                    top: 6,
+                    left: 6,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: Colors.black.withValues(alpha: 0.7),
+                        borderRadius: AppSpacing.brPill,
+                      ),
+                      child: Text(
+                        manga.sourceId,
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 10,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                  ),
+                  if (selectionMode)
+                    Positioned(
+                      top: 8,
+                      right: 8,
+                      child: AnimatedContainer(
+                        duration: const Duration(milliseconds: 180),
+                        width: 24,
+                        height: 24,
+                        decoration: BoxDecoration(
+                          color: selected ? c.accent : Colors.black.withValues(alpha: 0.4),
+                          shape: BoxShape.circle,
+                          border: Border.all(color: Colors.white, width: 1.5),
+                        ),
+                        child: selected
+                            ? Icon(Icons.check, size: 14, color: c.onAccent)
+                            : null,
+                      ),
+                    ),
+                ],
+              ),
             ),
             Padding(
               padding: const EdgeInsets.fromLTRB(6, 4, 6, 6),
@@ -1415,8 +1491,18 @@ class _MangaLibraryRow extends StatelessWidget {
   final Manga manga;
   final VoidCallback onTap;
   final String? localImagePath;
+  final bool selected;
+  final bool selectionMode;
+  final VoidCallback? onLongPress;
 
-  const _MangaLibraryRow({required this.manga, required this.onTap, this.localImagePath});
+  const _MangaLibraryRow({
+    required this.manga,
+    required this.onTap,
+    this.localImagePath,
+    this.selected = false,
+    this.selectionMode = false,
+    this.onLongPress,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -1425,34 +1511,67 @@ class _MangaLibraryRow extends StatelessWidget {
       padding: const EdgeInsets.only(bottom: 4),
       child: AnimatedPress(
         onTap: onTap,
+        onLongPress: onLongPress,
+        scaleDown: 0.99,
         child: Container(
           padding: const EdgeInsets.all(12),
           decoration: BoxDecoration(
-            color: c.surface,
+            color: selected ? c.accentMuted : c.surface,
             borderRadius: AppSpacing.brMd,
             border: Border.all(color: c.border, width: 0.5),
           ),
           child: Row(
             children: [
-              ClipRRect(
-                borderRadius: AppSpacing.brXs,
-                child: localImagePath != null
-                    ? Image.file(
-                        File(localImagePath!),
-                        width: 48,
-                        height: 64,
-                        fit: BoxFit.cover,
-                        errorBuilder: (_, __, ___) => _placeholder(c, 48, 64),
-                      )
-                    : manga.imageUrl != null && manga.imageUrl!.isNotEmpty
-                        ? Image.network(
-                            manga.imageUrl!,
+              if (selectionMode) ...[
+                Icon(
+                  selected ? Icons.check_circle : Icons.radio_button_unchecked,
+                  size: 22,
+                  color: selected ? c.accent : c.textTertiary,
+                ),
+                const SizedBox(width: 12),
+              ],
+              Stack(
+                children: [
+                  ClipRRect(
+                    borderRadius: AppSpacing.brXs,
+                    child: localImagePath != null
+                        ? Image.file(
+                            File(localImagePath!),
                             width: 48,
                             height: 64,
                             fit: BoxFit.cover,
                             errorBuilder: (_, __, ___) => _placeholder(c, 48, 64),
                           )
-                        : _placeholder(c, 48, 64),
+                        : manga.imageUrl != null && manga.imageUrl!.isNotEmpty
+                            ? Image.network(
+                                manga.imageUrl!,
+                                width: 48,
+                                height: 64,
+                                fit: BoxFit.cover,
+                                errorBuilder: (_, __, ___) => _placeholder(c, 48, 64),
+                              )
+                            : _placeholder(c, 48, 64),
+                  ),
+                  Positioned(
+                    top: 2,
+                    left: 2,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+                      decoration: BoxDecoration(
+                        color: Colors.black.withValues(alpha: 0.7),
+                        borderRadius: AppSpacing.brPill,
+                      ),
+                      child: Text(
+                        manga.sourceId,
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 9,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
               ),
               const SizedBox(width: 12),
               Expanded(
