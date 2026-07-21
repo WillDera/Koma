@@ -69,6 +69,12 @@ class LibraryProvider extends ChangeNotifier {
     await loadBooks();
   }
 
+  Future<void> deleteManga(int id) async {
+    await _db.deleteManga(id);
+    _selectedIds.remove(id);
+    await loadBooks();
+  }
+
   void toggleSelection(int id) {
     if (_selectedIds.contains(id)) {
       _selectedIds.remove(id);
@@ -90,6 +96,7 @@ class LibraryProvider extends ChangeNotifier {
     if (_selectedIds.isEmpty) return;
     for (final id in _selectedIds.toList()) {
       await _db.deleteBook(id);
+      await _db.deleteManga(id);
     }
     _selectedIds.clear();
     _selectionMode = false;

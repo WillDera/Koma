@@ -1,7 +1,10 @@
+import 'dart:async';
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
+import 'package:provider/provider.dart';
+import '../../core/services/database_service.dart';
 import '../../core/services/keiyoushi_service.dart';
 import '../../core/models/manga_page.dart';
 import '../../theme/app_theme.dart';
@@ -9,6 +12,7 @@ import '../../theme/tokens/app_spacing.dart';
 import 'reader_settings_sheet.dart';
 
 class MangaReaderScreen extends StatefulWidget {
+  final int? mangaId;
   final String sourceId;
   final String mangaUrl;
   final String chapterUrl;
@@ -16,6 +20,7 @@ class MangaReaderScreen extends StatefulWidget {
 
   const MangaReaderScreen({
     super.key,
+    this.mangaId,
     required this.sourceId,
     required this.mangaUrl,
     required this.chapterUrl,
@@ -29,6 +34,7 @@ class MangaReaderScreen extends StatefulWidget {
 class _MangaReaderScreenState extends State<MangaReaderScreen>
     with WidgetsBindingObserver {
   final _service = KeiyoushiService();
+  DatabaseService? _db;
   List<MangaPage> _pages = [];
   bool _loading = true;
   String? _error;
@@ -36,18 +42,22 @@ class _MangaReaderScreenState extends State<MangaReaderScreen>
   int _currentPage = 0;
   bool _showToolbar = false;
   final List<TransformationController> _zoomCtrls = [];
+  int? _chapterId;
+  Timer? _saveTimer;
 
   ReaderSettings _settings = ReaderSettings();
 
   @override
   void initState() {
     super.initState();
+    _db = context.read<DatabaseService>();
     WidgetsBinding.instance.addObserver(this);
     _load();
   }
 
   @override
   void dispose() {
+    _flushPageProgress();
     WidgetsBinding.instance.removeObserver(this);
     _pageCtrl.dispose();
     for (final c in _zoomCtrls) {
@@ -83,6 +93,7 @@ class _MangaReaderScreenState extends State<MangaReaderScreen>
           _zoomCtrls.addAll(List.generate(pages.length, (_) => TransformationController()));
           _loading = false;
         });
+        await _initProgress();
         return;
       }
 
@@ -109,6 +120,7 @@ class _MangaReaderScreenState extends State<MangaReaderScreen>
             .addAll(List.generate(pages.length, (_) => TransformationController()));
         _loading = false;
       });
+      await _initProgress();
     } catch (e) {
       if (!mounted) return;
       setState(() {
@@ -118,16 +130,46 @@ class _MangaReaderScreenState extends State<MangaReaderScreen>
     }
   }
 
+  Future<void> _initProgress() async {
+    if (widget.mangaId == null || _db == null) return;
+    final ch = await _db!.getMangaChapterByUrl(widget.mangaId!, widget.chapterUrl);
+    if (ch == null || !mounted) return;
+    _chapterId = ch.id;
+    final lp = ch.lastPageRead;
+    if (lp > 0 && lp < _pages.length) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _goToPage(lp);
+      });
+    }
+  }
+
+  void _schedulePageSave(int page) {
+    _currentPage = page;
+    _saveTimer?.cancel();
+    _saveTimer = Timer(const Duration(milliseconds: 500), _flushPageProgress);
+    if (mounted) setState(() {});
+  }
+
+  void _flushPageProgress() {
+    if (_chapterId == null || _db == null) return;
+    _saveTimer?.cancel();
+    _saveTimer = null;
+    _db!.updateMangaChapterProgress(_chapterId!, _currentPage);
+    if (_currentPage >= _pages.length - 1) {
+      _db!.markMangaChapterRead(_chapterId!);
+    }
+  }
+
   void _toggleToolbar() => setState(() => _showToolbar = !_showToolbar);
 
-  void _onPageChanged(int i) => setState(() => _currentPage = i);
+  void _onPageChanged(int i) => _schedulePageSave(i);
 
   void _goToPage(int i) {
     final clamped = i.clamp(0, _pages.length - 1);
     _pageCtrl.animateToPage(clamped,
         duration: Duration(milliseconds: _settings.animatePageTransition ? 250 : 0),
         curve: Curves.easeOut);
-    setState(() => _currentPage = clamped);
+    _schedulePageSave(clamped);
   }
 
   void _retryPage(int index) {
@@ -480,7 +522,7 @@ class _MangaReaderScreenState extends State<MangaReaderScreen>
           final viewport = notification.metrics.viewportDimension;
           final page = (offset / viewport).round().clamp(0, _pages.length - 1);
           if (page != _currentPage) {
-            setState(() => _currentPage = page);
+            _schedulePageSave(page);
           }
         }
         return false;

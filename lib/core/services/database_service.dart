@@ -147,6 +147,13 @@ class DatabaseService {
     );
   }
 
+  Future<void> deleteManga(int id) async {
+    await _db.customUpdate(
+      'DELETE FROM manga WHERE id=?',
+      variables: [Variable.withInt(id)],
+    );
+  }
+
   // -- Stats --
 
   Future<Map<String, int>> getGenreCounts() async {

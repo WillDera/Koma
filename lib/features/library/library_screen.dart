@@ -479,9 +479,9 @@ class _LibraryScreenState extends State<LibraryScreen> {
   void _confirmDelete(BuildContext context, LibraryProvider provider) async {
     final confirmed = await StashDialog.show<bool>(
       context,
-      title: 'Remove books?',
+      title: 'Remove titles?',
       content:
-          'Delete ${provider.selectedIds.length} book${provider.selectedIds.length == 1 ? '' : 's'} and all their chapters?',
+          'Delete ${provider.selectedIds.length} title${provider.selectedIds.length == 1 ? '' : 's'}?',
       actions: [
         TextButton(
           onPressed: () => Navigator.pop(context, false),
