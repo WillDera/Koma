@@ -281,6 +281,8 @@ class _MangaDetailScreenState extends State<MangaDetailScreen> {
           chMap[lc.url] = {
             'is_read': lc.isRead,
             'last_page_read': lc.lastPageRead,
+            'is_downloaded': lc.isDownloaded,
+            'is_opened': lc.isOpened,
           };
           final key = sha256.convert(utf8.encode(lc.url)).toString().substring(0, 16);
           if (downloadedKeys.contains(key)) downloadProgress[lc.url] = 'done';
@@ -357,6 +359,7 @@ class _MangaDetailScreenState extends State<MangaDetailScreen> {
             'is_read': lc.isRead,
             'last_page_read': lc.lastPageRead,
             'is_downloaded': lc.isDownloaded,
+            'is_opened': lc.isOpened,
           };
         }
         if (!mounted) return;
@@ -383,15 +386,18 @@ class _MangaDetailScreenState extends State<MangaDetailScreen> {
         // Phase 3: Sync fresh chapters to DB for next visit
         await db.insertMangaChapters(existing.id, chapters.asMap().entries.map((e) {
           final ch = e.value;
+          final url = ch['url'] as String? ?? '';
+          final existingChapter = chMap[url];
           return MangaChapter(
             id: 0,
             mangaId: existing.id,
             name: ch['name'] as String? ?? '',
-            url: ch['url'] as String? ?? '',
+            url: url,
             scanlator: ch['scanlator'] as String?,
             dateUpload: ch['date_upload'] as int? ?? 0,
             index: e.key,
-            isDownloaded: _downloadProgress[ch['url'] as String? ?? ''] == 'done',
+            isDownloaded: _downloadProgress[url] == 'done',
+            isOpened: existingChapter != null && (existingChapter['is_opened'] as bool? ?? false),
           );
         }).toList());
       }
@@ -431,6 +437,7 @@ class _MangaDetailScreenState extends State<MangaDetailScreen> {
     await db.deleteMangaChapters(id);
     final chapters = _chapters.asMap().entries.map((e) {
       final url = e.value['url'] as String? ?? '';
+      final existing = _localChapters[url];
       return MangaChapter(
         id: 0,
         mangaId: id,
@@ -440,6 +447,7 @@ class _MangaDetailScreenState extends State<MangaDetailScreen> {
         dateUpload: e.value['date_upload'] as int? ?? 0,
         index: e.key,
         isDownloaded: _downloadProgress[url] == 'done',
+        isOpened: existing != null && (existing['is_opened'] as bool? ?? false),
       );
     }).toList();
     await db.insertMangaChapters(id, chapters);
@@ -937,6 +945,14 @@ class _MangaDetailScreenState extends State<MangaDetailScreen> {
                         sortMode: _sortMode,
                         onSortChanged: _showSortSheet,
                         onChapterTap: (ch) async {
+                          final url = ch['url'] as String? ?? '';
+                          if (_mangaId != null && url.isNotEmpty && mounted) {
+                            final db = context.read<DatabaseService>();
+                            final existing = await db.getMangaChapterByUrl(_mangaId!, url);
+                            if (existing != null) {
+                              await db.markMangaChapterOpened(existing.id);
+                            }
+                          }
                           await Navigator.push(
                             context,
                             MaterialPageRoute(
@@ -958,6 +974,7 @@ class _MangaDetailScreenState extends State<MangaDetailScreen> {
                                 'is_read': lc.isRead,
                                 'last_page_read': lc.lastPageRead,
                                 'is_downloaded': lc.isDownloaded,
+                                'is_opened': lc.isOpened,
                               };
                             }
                             setState(() {
@@ -1698,43 +1715,60 @@ class _ChaptersList extends StatelessWidget {
              ],
            ),
          ),
-        ...chapters.map((ch) {
-          final url = ch['url'] as String? ?? '';
-          final local = localChapters[url];
-          final isRead = local?['is_read'] as bool? ?? false;
-          final name = ch['name'] as String? ?? '';
-          final chNum = ch['chapter_number'] as num?;
-          final scanlator = ch['scanlator'] as String?;
-          final dateUpload = ch['date_upload'] as int? ?? 0;
-          final dateStr = dateUpload > 0
-              ? DateFormat.yMMMd().format(
-                  DateTime.fromMillisecondsSinceEpoch(dateUpload),
-                )
-              : '';
+         ...chapters.map((ch) {
+           final url = ch['url'] as String? ?? '';
+           final local = localChapters[url];
+           final isOpened = local?['is_opened'] as bool? ?? false;
+           final isRead = local?['is_read'] as bool? ?? false;
+           final name = ch['name'] as String? ?? '';
+           final chNum = ch['chapter_number'] as num?;
+           final scanlator = ch['scanlator'] as String?;
+           final dateUpload = ch['date_upload'] as int? ?? 0;
+           final dateStr = dateUpload > 0
+               ? DateFormat.yMMMd().format(
+                   DateTime.fromMillisecondsSinceEpoch(dateUpload),
+                 )
+               : '';
 
-          return AnimatedPress(
-            onTap: () => onChapterTap(ch),
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-              decoration: BoxDecoration(
-                border: Border(bottom: BorderSide(color: c.border, width: 0.3)),
-              ),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          name,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(
-                            color: isRead ? c.textTertiary : c.textPrimary,
-                            fontSize: 14,
-                            fontWeight: FontWeight.w500,
-                          ),
-                        ),
+           return AnimatedPress(
+             onTap: () => onChapterTap(ch),
+             child: Container(
+               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+               decoration: BoxDecoration(
+                 border: Border(bottom: BorderSide(color: c.border, width: 0.3)),
+               ),
+               child: Row(
+                 children: [
+                   Expanded(
+                     child: Column(
+                       crossAxisAlignment: CrossAxisAlignment.start,
+                       children: [
+                         Row(
+                           children: [
+                             if (isOpened)
+                               Container(
+                                 width: 6,
+                                 height: 6,
+                                 margin: const EdgeInsets.only(right: 8),
+                                 decoration: BoxDecoration(
+                                   color: c.accent,
+                                   shape: BoxShape.circle,
+                                 ),
+                               ),
+                             Expanded(
+                               child: Text(
+                                 name,
+                                 maxLines: 1,
+                                 overflow: TextOverflow.ellipsis,
+                                 style: TextStyle(
+                                   color: isRead ? c.textTertiary : c.textPrimary,
+                                   fontSize: 14,
+                                   fontWeight: FontWeight.w500,
+                                 ),
+                               ),
+                             ),
+                           ],
+                         ),
                         if (!isRead && (local?['last_page_read'] as int? ?? 0) > 0)
                           Padding(
                             padding: const EdgeInsets.only(top: 2),
