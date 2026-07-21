@@ -36,6 +36,42 @@ class ReaderSettings {
     this.animatePageTransition = true,
     this.progressBarPlacement = ProgressBarPlacement.horizontalBottom,
   });
+
+  Map<String, dynamic> toJson() => {
+        'readingMode': readingMode.index,
+        'rotationMode': rotationMode.index,
+        'tapZones': tapZones.index,
+        'sidePadding': sidePadding,
+        'cropBorders': cropBorders ? 1 : 0,
+        'bookMode': bookMode ? 1 : 0,
+        'disableDoubleTap': disableDoubleTap ? 1 : 0,
+        'disableZoomOut': disableZoomOut ? 1 : 0,
+        'showPageNumber': showPageNumber ? 1 : 0,
+        'showPageNavigator': showPageNavigator ? 1 : 0,
+        'fullscreen': fullscreen ? 1 : 0,
+        'keepScreenOn': keepScreenOn ? 1 : 0,
+        'showActionsOnLongTap': showActionsOnLongTap ? 1 : 0,
+        'animatePageTransition': animatePageTransition ? 1 : 0,
+        'progressBarPlacement': progressBarPlacement.index,
+      };
+
+  factory ReaderSettings.fromJson(Map<String, dynamic> json) => ReaderSettings(
+        readingMode: ReadingMode.values[json['readingMode'] as int? ?? 0],
+        rotationMode: RotationMode.values[json['rotationMode'] as int? ?? 1],
+        tapZones: TapZoneMode.values[json['tapZones'] as int? ?? 1],
+        sidePadding: (json['sidePadding'] as num?)?.toDouble() ?? 0.0,
+        cropBorders: (json['cropBorders'] as int? ?? 0) == 1,
+        bookMode: (json['bookMode'] as int? ?? 0) == 1,
+        disableDoubleTap: (json['disableDoubleTap'] as int? ?? 0) == 1,
+        disableZoomOut: (json['disableZoomOut'] as int? ?? 0) == 1,
+        showPageNumber: (json['showPageNumber'] as int? ?? 1) == 1,
+        showPageNavigator: (json['showPageNavigator'] as int? ?? 1) == 1,
+        fullscreen: (json['fullscreen'] as int? ?? 0) == 1,
+        keepScreenOn: (json['keepScreenOn'] as int? ?? 1) == 1,
+        showActionsOnLongTap: (json['showActionsOnLongTap'] as int? ?? 1) == 1,
+        animatePageTransition: (json['animatePageTransition'] as int? ?? 1) == 1,
+        progressBarPlacement: ProgressBarPlacement.values[json['progressBarPlacement'] as int? ?? 1],
+      );
 }
 
 enum ReadingMode { defaultL2R, rightToLeft, webtoon, longStrip, longStripWithGaps }

@@ -253,13 +253,17 @@ class KeiyoushiMethodChannel(
                     val mangaUrl = call.argument<String>("mangaUrl") ?: ""
                     val chapterUrl = call.argument<String>("chapterUrl") ?: ""
                     Log.d(TAG, "getLocalPages: sourceId=$sourceId chapterUrl=$chapterUrl")
-                    result.success(engine.getLocalPages(sourceId, mangaUrl, chapterUrl))
+                    bg({ engine.getLocalPages(sourceId, mangaUrl, chapterUrl) }, result) { pages ->
+                        result.success(pages)
+                    }
                 }
                 "getDownloadedChapterKeys" -> {
                     val sourceId = call.argument<String>("sourceId") ?: ""
                     val mangaUrl = call.argument<String>("mangaUrl") ?: ""
                     Log.d(TAG, "getDownloadedChapterKeys: sourceId=$sourceId")
-                    result.success(engine.getDownloadedChapterKeys(sourceId, mangaUrl))
+                    bg({ engine.getDownloadedChapterKeys(sourceId, mangaUrl) }, result) { keys ->
+                        result.success(keys)
+                    }
                 }
                 else -> {
                     Log.w(TAG, "Unimplemented method: ${call.method}")
