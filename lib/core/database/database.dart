@@ -8,7 +8,7 @@ class AppDatabase extends GeneratedDatabase {
   AppDatabase(QueryExecutor executor) : super(executor);
 
   @override
-  int get schemaVersion => 3;
+  int get schemaVersion => 4;
 
   @override
   Iterable<TableInfo> get allTables => const [];
@@ -63,6 +63,12 @@ class AppDatabase extends GeneratedDatabase {
         try {
           await customStatement(
             "UPDATE books SET file_extension = 'note' WHERE file_extension = '' AND source = 'manual'"
+          );
+        } catch (_) {}
+        // v3 → v4: downloaded flag on manga_chapters.
+        try {
+          await customStatement(
+            'ALTER TABLE manga_chapters ADD COLUMN is_downloaded INTEGER NOT NULL DEFAULT 0'
           );
         } catch (_) {}
       },

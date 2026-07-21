@@ -1,6 +1,10 @@
+import 'dart:convert';
+import 'dart:io';
+import 'package:crypto/crypto.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:file_picker/file_picker.dart';
+import 'package:path_provider/path_provider.dart';
 import '../../core/models/book.dart';
 import '../../core/models/chapter.dart';
 import '../../core/models/manga.dart';
@@ -48,6 +52,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
   final Map<_LibraryFilter, _FilterMode> _filters = {
     for (final filter in _LibraryFilter.values) filter: _FilterMode.none,
   };
+  final Map<int, String?> _mangaThumbnails = {};
 
   @override
   void initState() {
@@ -55,7 +60,28 @@ class _LibraryScreenState extends State<LibraryScreen> {
     _scrollCtrl.addListener(_onScroll);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       context.read<LibraryProvider>().loadBooks();
+      _loadThumbnails();
     });
+  }
+
+  Future<void> _loadThumbnails() async {
+    try {
+      final appDir = await getApplicationDocumentsDirectory();
+      final thumbDir = Directory('${appDir.path}/thumbnails');
+      if (!await thumbDir.exists()) return;
+      final provider = context.read<LibraryProvider>();
+      final paths = <int, String?>{};
+      for (final manga in provider.mangas) {
+        if (manga.imageUrl != null && manga.imageUrl!.isNotEmpty) {
+          final hash = sha256.convert(utf8.encode(manga.imageUrl!)).toString();
+          final path = '${thumbDir.path}/$hash.jpg';
+          paths[manga.id] = File(path).existsSync() ? path : null;
+        }
+      }
+      if (mounted) setState(() => _mangaThumbnails.addAll(paths));
+    } catch (_) {
+      // ignore thumbnail loading failures
+    }
   }
 
   void _onScroll() {
@@ -311,6 +337,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
                     key: const ValueKey('manga-shelf'),
                     mangas: _visibleMangas(provider.mangas),
                     gridView: provider.isGridView,
+                    mangaThumbnails: _mangaThumbnails,
                     onOpen: (manga) => _openManga(context, manga),
                   ),
           ),
@@ -1248,12 +1275,14 @@ class _MangaShelf extends StatelessWidget {
   final List<Manga> mangas;
   final bool gridView;
   final ValueChanged<Manga> onOpen;
+  final Map<int, String?> mangaThumbnails;
 
   const _MangaShelf({
     super.key,
     required this.mangas,
     required this.gridView,
     required this.onOpen,
+    this.mangaThumbnails = const {},
   });
 
   @override
@@ -1287,6 +1316,7 @@ class _MangaShelf extends StatelessWidget {
               index: i + 1,
               child: _MangaLibraryCard(
                 manga: manga,
+                localImagePath: mangaThumbnails[manga.id],
                 onTap: () => onOpen(manga),
               ),
             );
@@ -1303,6 +1333,7 @@ class _MangaShelf extends StatelessWidget {
               padding: const EdgeInsets.symmetric(horizontal: 20),
               child: _MangaLibraryRow(
                 manga: entry.$2,
+                localImagePath: mangaThumbnails[entry.$2.id],
                 onTap: () => onOpen(entry.$2),
               ),
             ),
@@ -1317,8 +1348,9 @@ class _MangaShelf extends StatelessWidget {
 class _MangaLibraryCard extends StatelessWidget {
   final Manga manga;
   final VoidCallback onTap;
+  final String? localImagePath;
 
-  const _MangaLibraryCard({required this.manga, required this.onTap});
+  const _MangaLibraryCard({required this.manga, required this.onTap, this.localImagePath});
 
   @override
   Widget build(BuildContext context) {
@@ -1336,14 +1368,21 @@ class _MangaLibraryCard extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Expanded(
-              child: manga.imageUrl != null && manga.imageUrl!.isNotEmpty
-                  ? Image.network(
-                      manga.imageUrl!,
+              child: localImagePath != null
+                  ? Image.file(
+                      File(localImagePath!),
                       width: double.infinity,
                       fit: BoxFit.cover,
-                      errorBuilder: (_, _, _) => _placeholder(c),
+                      errorBuilder: (_, __, ___) => _placeholder(c),
                     )
-                  : _placeholder(c),
+                  : manga.imageUrl != null && manga.imageUrl!.isNotEmpty
+                      ? Image.network(
+                          manga.imageUrl!,
+                          width: double.infinity,
+                          fit: BoxFit.cover,
+                          errorBuilder: (_, __, ___) => _placeholder(c),
+                        )
+                      : _placeholder(c),
             ),
             Padding(
               padding: const EdgeInsets.fromLTRB(6, 4, 6, 6),
@@ -1375,8 +1414,9 @@ class _MangaLibraryCard extends StatelessWidget {
 class _MangaLibraryRow extends StatelessWidget {
   final Manga manga;
   final VoidCallback onTap;
+  final String? localImagePath;
 
-  const _MangaLibraryRow({required this.manga, required this.onTap});
+  const _MangaLibraryRow({required this.manga, required this.onTap, this.localImagePath});
 
   @override
   Widget build(BuildContext context) {
@@ -1396,15 +1436,23 @@ class _MangaLibraryRow extends StatelessWidget {
             children: [
               ClipRRect(
                 borderRadius: AppSpacing.brXs,
-                child: manga.imageUrl != null && manga.imageUrl!.isNotEmpty
-                    ? Image.network(
-                        manga.imageUrl!,
+                child: localImagePath != null
+                    ? Image.file(
+                        File(localImagePath!),
                         width: 48,
                         height: 64,
                         fit: BoxFit.cover,
-                        errorBuilder: (_, _, _) => _placeholder(c, 48, 64),
+                        errorBuilder: (_, __, ___) => _placeholder(c, 48, 64),
                       )
-                    : _placeholder(c, 48, 64),
+                    : manga.imageUrl != null && manga.imageUrl!.isNotEmpty
+                        ? Image.network(
+                            manga.imageUrl!,
+                            width: 48,
+                            height: 64,
+                            fit: BoxFit.cover,
+                            errorBuilder: (_, __, ___) => _placeholder(c, 48, 64),
+                          )
+                        : _placeholder(c, 48, 64),
               ),
               const SizedBox(width: 12),
               Expanded(

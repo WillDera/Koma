@@ -232,6 +232,35 @@ class KeiyoushiMethodChannel(
                         result.success(list)
                     }
                 }
+                "downloadChapters" -> {
+                    val sourceId = call.argument<String>("sourceId")
+                    val mangaUrl = call.argument<String>("mangaUrl")
+                    val chapterUrls = call.argument<List<String>>("chapterUrls")
+                    val chapterNames = call.argument<List<String>>("chapterNames")
+                    if (sourceId == null || mangaUrl == null || chapterUrls == null) {
+                        result.error("ARG", "Missing required arguments", null)
+                        return
+                    }
+                    Log.d(TAG, "downloadChapters: sourceId=$sourceId chapters=${chapterUrls.size}")
+                    bg({
+                        engine.downloadChapters(sourceId, mangaUrl, chapterUrls, chapterNames ?: emptyList())
+                    }, result) { map ->
+                        result.success(map)
+                    }
+                }
+                "getLocalPages" -> {
+                    val sourceId = call.argument<String>("sourceId") ?: ""
+                    val mangaUrl = call.argument<String>("mangaUrl") ?: ""
+                    val chapterUrl = call.argument<String>("chapterUrl") ?: ""
+                    Log.d(TAG, "getLocalPages: sourceId=$sourceId chapterUrl=$chapterUrl")
+                    result.success(engine.getLocalPages(sourceId, mangaUrl, chapterUrl))
+                }
+                "getDownloadedChapterKeys" -> {
+                    val sourceId = call.argument<String>("sourceId") ?: ""
+                    val mangaUrl = call.argument<String>("mangaUrl") ?: ""
+                    Log.d(TAG, "getDownloadedChapterKeys: sourceId=$sourceId")
+                    result.success(engine.getDownloadedChapterKeys(sourceId, mangaUrl))
+                }
                 else -> {
                     Log.w(TAG, "Unimplemented method: ${call.method}")
                     result.notImplemented()

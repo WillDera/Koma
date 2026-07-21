@@ -10,12 +10,14 @@ import 'reader_settings_sheet.dart';
 
 class MangaReaderScreen extends StatefulWidget {
   final String sourceId;
+  final String mangaUrl;
   final String chapterUrl;
   final String chapterName;
 
   const MangaReaderScreen({
     super.key,
     required this.sourceId,
+    required this.mangaUrl,
     required this.chapterUrl,
     required this.chapterName,
   });
@@ -63,6 +65,27 @@ class _MangaReaderScreenState extends State<MangaReaderScreen>
 
   Future<void> _load() async {
     try {
+      // Check for locally downloaded files first
+      final localUrls = await _service.getLocalPages(
+        sourceId: widget.sourceId,
+        mangaUrl: widget.mangaUrl,
+        chapterUrl: widget.chapterUrl,
+      );
+      if (localUrls.isNotEmpty) {
+        final pages = localUrls.asMap().entries.map((e) => MangaPage(
+          index: e.key,
+          imageUrl: e.value,
+          localPath: e.value,
+        )).toList();
+        if (!mounted) return;
+        setState(() {
+          _pages = pages;
+          _zoomCtrls.addAll(List.generate(pages.length, (_) => TransformationController()));
+          _loading = false;
+        });
+        return;
+      }
+
       final raw = await _service.getPageList(
         sourceId: widget.sourceId,
         url: widget.chapterUrl,
@@ -467,17 +490,25 @@ class _MangaReaderScreenState extends State<MangaReaderScreen>
         child: Column(
           children: List.generate(_pages.length, (i) {
             final page = _pages[i];
-            return Image.network(
-              page.imageUrl,
-              headers: page.headers,
-              fit: BoxFit.contain,
-              width: double.infinity,
-              loadingBuilder: (_, child, progress) =>
-                  progress != null
-                      ? const AspectRatio(aspectRatio: 16/9, child: Center(child: CircularProgressIndicator(color: Colors.white54)))
-                      : child,
-              errorBuilder: (_, _, _) => const AspectRatio(aspectRatio: 16/9, child: Center(child: Icon(Icons.broken_image, color: Colors.white38, size: 48))),
-            );
+            final img = page.localPath != null
+                ? Image.file(
+                    File(page.localPath!),
+                    fit: BoxFit.contain,
+                    width: double.infinity,
+                    errorBuilder: (_, _, _) => const AspectRatio(aspectRatio: 16/9, child: Center(child: Icon(Icons.broken_image, color: Colors.white38, size: 48))),
+                  )
+                : Image.network(
+                    page.imageUrl,
+                    headers: page.headers,
+                    fit: BoxFit.contain,
+                    width: double.infinity,
+                    loadingBuilder: (_, child, progress) =>
+                        progress != null
+                            ? const AspectRatio(aspectRatio: 16/9, child: Center(child: CircularProgressIndicator(color: Colors.white54)))
+                            : child,
+                    errorBuilder: (_, _, _) => const AspectRatio(aspectRatio: 16/9, child: Center(child: Icon(Icons.broken_image, color: Colors.white38, size: 48))),
+                  );
+            return img;
           }),
         ),
       ),
@@ -495,7 +526,28 @@ class _MangaReaderScreenState extends State<MangaReaderScreen>
     final horizontalPadding = (MediaQuery.of(context).size.width * padding) / 2;
     final verticalPadding = (MediaQuery.of(context).size.height * padding) / 2;
 
-    Widget imageWidget = Image.network(
+    Widget imageWidget = page.localPath != null
+        ? Image.file(
+            File(page.localPath!),
+            fit: _settings.cropBorders ? BoxFit.cover : BoxFit.contain,
+            width: double.infinity,
+            height: double.infinity,
+            errorBuilder: (_, _, _) => Center(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Icon(Icons.broken_image, color: Colors.white38, size: 48),
+                  const SizedBox(height: 8),
+                  TextButton.icon(
+                    onPressed: () => _retryPage(index),
+                    icon: const Icon(Icons.refresh, color: Colors.white54),
+                    label: const Text('Retry', style: TextStyle(color: Colors.white54)),
+                  ),
+                ],
+              ),
+            ),
+          )
+        : Image.network(
       page.imageUrl,
       headers: page.headers,
       fit: _settings.cropBorders ? BoxFit.cover : BoxFit.contain,

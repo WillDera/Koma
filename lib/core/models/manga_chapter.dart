@@ -9,6 +9,7 @@ class MangaChapter {
   final bool isRead;
   final int lastPageRead;
   final double scrollPosition;
+  final bool isDownloaded;
 
   MangaChapter({
     required this.id,
@@ -21,6 +22,7 @@ class MangaChapter {
     this.isRead = false,
     this.lastPageRead = 0,
     this.scrollPosition = 0.0,
+    this.isDownloaded = false,
   });
 
   MangaChapter copyWith({
@@ -34,6 +36,7 @@ class MangaChapter {
     bool? isRead,
     int? lastPageRead,
     double? scrollPosition,
+    bool? isDownloaded,
   }) {
     return MangaChapter(
       id: id ?? this.id,
@@ -46,6 +49,7 @@ class MangaChapter {
       isRead: isRead ?? this.isRead,
       lastPageRead: lastPageRead ?? this.lastPageRead,
       scrollPosition: scrollPosition ?? this.scrollPosition,
+      isDownloaded: isDownloaded ?? this.isDownloaded,
     );
   }
 
@@ -60,6 +64,7 @@ class MangaChapter {
         'is_read': isRead ? 1 : 0,
         'last_page_read': lastPageRead,
         'scroll_position': scrollPosition,
+        'is_downloaded': isDownloaded ? 1 : 0,
       };
 
   factory MangaChapter.fromJson(Map<String, dynamic> json) => MangaChapter(
@@ -73,5 +78,6 @@ class MangaChapter {
         isRead: (json['is_read'] as int? ?? 0) == 1,
         lastPageRead: json['last_page_read'] as int? ?? 0,
         scrollPosition: (json['scroll_position'] as num?)?.toDouble() ?? 0.0,
+        isDownloaded: (json['is_downloaded'] as int? ?? 0) == 1,
       );
 }

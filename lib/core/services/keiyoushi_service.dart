@@ -117,6 +117,53 @@ class KeiyoushiService {
         .toList(growable: false);
   }
 
+  /// Download one or more chapters to local storage.
+  ///
+  /// Returns a map of chapterUrl → list of local file URIs.
+  Future<Map<String, List<String>>> downloadChapters({
+    required String sourceId,
+    required String mangaUrl,
+    required List<Map<String, dynamic>> chapters,
+  }) async {
+    final urls = chapters.map((ch) => ch['url'] as String? ?? '').toList();
+    final names = chapters.map((ch) => ch['name'] as String? ?? '').toList();
+    final res = await _channel.invokeMapMethod<String, dynamic>('downloadChapters', {
+      'sourceId': sourceId,
+      'mangaUrl': mangaUrl,
+      'chapterUrls': urls,
+      'chapterNames': names,
+    });
+    return (res ?? const {}).map((k, v) =>
+        MapEntry(k, (v as List).cast<String>()));
+  }
+
+  /// Check for locally downloaded page files for a chapter.
+  /// Returns a list of file URIs sorted by page index, or empty list.
+  Future<List<String>> getLocalPages({
+    required String sourceId,
+    required String mangaUrl,
+    required String chapterUrl,
+  }) async {
+    final res = await _channel.invokeListMethod<String>('getLocalPages', {
+      'sourceId': sourceId,
+      'mangaUrl': mangaUrl,
+      'chapterUrl': chapterUrl,
+    });
+    return res ?? const [];
+  }
+
+  /// Return the set of chapter key hashes that have downloaded files on disk.
+  Future<Set<String>> getDownloadedChapterKeys({
+    required String sourceId,
+    required String mangaUrl,
+  }) async {
+    final res = await _channel.invokeListMethod<String>('getDownloadedChapterKeys', {
+      'sourceId': sourceId,
+      'mangaUrl': mangaUrl,
+    });
+    return (res ?? const []).toSet();
+  }
+
   ({List<Map<String, dynamic>> mangas, bool hasNextPage}) _parseMangasPage(
     Map<String, dynamic>? raw,
   ) {
