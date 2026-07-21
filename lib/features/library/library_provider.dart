@@ -12,6 +12,7 @@ import '../../core/services/database_service.dart';
 
 class LibraryProvider extends ChangeNotifier {
   static const _keyIsGridView = 'library_is_grid_view';
+  static const _keyShowSourcePills = 'library_show_source_pills';
 
   final DatabaseService _db;
   List<Book> _books = [];
@@ -21,14 +22,19 @@ class LibraryProvider extends ChangeNotifier {
   final Set<String> _selectedIds = {};
   bool _selectionMode = false;
   bool _isGridView = false;
+  bool _showSourcePills = true;
+  final Map<String, String> _extensionNames = {};
 
   LibraryProvider(this._db);
 
   bool get isGridView => _isGridView;
+  bool get showSourcePills => _showSourcePills;
+  Map<String, String> get extensionNames => _extensionNames;
 
   Future<void> init() async {
     final prefs = await SharedPreferences.getInstance();
     _isGridView = prefs.getBool(_keyIsGridView) ?? false;
+    _showSourcePills = prefs.getBool(_keyShowSourcePills) ?? true;
     notifyListeners();
   }
 
@@ -37,6 +43,14 @@ class LibraryProvider extends ChangeNotifier {
     notifyListeners();
     SharedPreferences.getInstance().then(
       (prefs) => prefs.setBool(_keyIsGridView, _isGridView),
+    );
+  }
+
+  void setShowSourcePills(bool value) {
+    _showSourcePills = value;
+    notifyListeners();
+    SharedPreferences.getInstance().then(
+      (prefs) => prefs.setBool(_keyShowSourcePills, value),
     );
   }
 
@@ -55,6 +69,11 @@ class LibraryProvider extends ChangeNotifier {
     try {
       _books = await _db.getBooks();
       _mangas = await _db.getMangasInLibrary();
+      _extensionNames.clear();
+      final extensions = await _db.getInstalledExtensions();
+      for (final ext in extensions) {
+        _extensionNames[ext.id] = ext.name;
+      }
     } catch (e) {
       _error = e.toString();
     }

@@ -321,6 +321,10 @@ class _LibraryScreenState extends State<LibraryScreen> {
               setState(() => _filters[filter] = mode);
             },
             onQueryChanged: (_) => setState(() {}),
+            showSourcePills: provider.showSourcePills,
+            onShowSourcePillsChanged: (value) {
+              provider.setShowSourcePills(value);
+            },
           ),
           AnimatedSwitcher(
             duration: const Duration(milliseconds: 260),
@@ -331,6 +335,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
                     key: const ValueKey('books-shelf'),
                     books: _visibleBooks(provider.books),
                     provider: provider,
+                    showSourcePills: provider.showSourcePills,
                     onOpen: (id) => _openReader(context, id),
                   )
                 : _MangaShelf(
@@ -338,7 +343,9 @@ class _LibraryScreenState extends State<LibraryScreen> {
                     mangas: _visibleMangas(provider.mangas),
                     gridView: provider.isGridView,
                     provider: provider,
+                    extensionNames: provider.extensionNames,
                     mangaThumbnails: _mangaThumbnails,
+                    showSourcePills: provider.showSourcePills,
                     onOpen: (manga) => _openManga(context, manga),
                   ),
           ),
@@ -811,6 +818,8 @@ class _LibraryControls extends StatefulWidget {
   final ValueChanged<_LibrarySort> onSortChanged;
   final void Function(_LibraryFilter filter, _FilterMode mode) onFilterChanged;
   final ValueChanged<String> onQueryChanged;
+  final bool showSourcePills;
+  final ValueChanged<bool> onShowSourcePillsChanged;
 
   const _LibraryControls({
     required this.section,
@@ -823,6 +832,8 @@ class _LibraryControls extends StatefulWidget {
     required this.onSortChanged,
     required this.onFilterChanged,
     required this.onQueryChanged,
+    required this.showSourcePills,
+    required this.onShowSourcePillsChanged,
   });
 
   @override
@@ -856,6 +867,7 @@ class _LibraryControlsState extends State<_LibraryControls> {
   void _showFilterSheet() {
     final filters = Map<_LibraryFilter, _FilterMode>.from(widget.filters);
     var selectedSort = widget.sort;
+    var showSourcePills = widget.showSourcePills;
     showModalBottomSheet<void>(
       context: context,
       backgroundColor: Colors.transparent,
@@ -863,6 +875,7 @@ class _LibraryControlsState extends State<_LibraryControls> {
         builder: (context, setSheetState) => _LibraryFilterSheet(
           filters: filters,
           sort: selectedSort,
+          showSourcePills: showSourcePills,
           onFilterChanged: (filter) {
             final next = _nextMode(filters[filter] ?? _FilterMode.none);
             setSheetState(() => filters[filter] = next);
@@ -871,6 +884,10 @@ class _LibraryControlsState extends State<_LibraryControls> {
           onSortChanged: (sort) {
             setSheetState(() => selectedSort = sort);
             widget.onSortChanged(sort);
+          },
+          onShowSourcePillsChanged: (value) {
+            setSheetState(() => showSourcePills = value);
+            widget.onShowSourcePillsChanged(value);
           },
         ),
       ),
@@ -975,14 +992,18 @@ class _LibraryControlsState extends State<_LibraryControls> {
 class _LibraryFilterSheet extends StatelessWidget {
   final Map<_LibraryFilter, _FilterMode> filters;
   final _LibrarySort sort;
+  final bool showSourcePills;
   final ValueChanged<_LibraryFilter> onFilterChanged;
   final ValueChanged<_LibrarySort> onSortChanged;
+  final ValueChanged<bool> onShowSourcePillsChanged;
 
   const _LibraryFilterSheet({
     required this.filters,
     required this.sort,
+    required this.showSourcePills,
     required this.onFilterChanged,
     required this.onSortChanged,
+    required this.onShowSourcePillsChanged,
   });
 
   @override
@@ -1032,6 +1053,31 @@ class _LibraryFilterSheet extends StatelessWidget {
               label: 'Newly added',
               mode: filters[_LibraryFilter.newlyAdded] ?? _FilterMode.none,
               onTap: () => onFilterChanged(_LibraryFilter.newlyAdded),
+            ),
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 14),
+              child: Divider(color: c.border, height: 1),
+            ),
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    'Show source pills',
+                    style: TextStyle(
+                      color: c.textPrimary,
+                      fontSize: 15,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+                Checkbox(
+                  value: showSourcePills,
+                  onChanged: (value) {
+                    if (value != null) onShowSourcePillsChanged(value);
+                  },
+                  activeColor: c.accent,
+                ),
+              ],
             ),
             Padding(
               padding: const EdgeInsets.symmetric(vertical: 14),
@@ -1207,12 +1253,14 @@ class _BookShelf extends StatelessWidget {
   final List<Book> books;
   final LibraryProvider provider;
   final ValueChanged<int> onOpen;
+  final bool showSourcePills;
 
   const _BookShelf({
     super.key,
     required this.books,
     required this.provider,
     required this.onOpen,
+    this.showSourcePills = true,
   });
 
   @override
@@ -1247,6 +1295,7 @@ class _BookShelf extends StatelessWidget {
               variant: LibraryCardVariant.grid,
               selected: provider.selectedIds.contains('b:${books[i].id}'),
               selectionMode: provider.selectionMode,
+              showSourcePills: provider.showSourcePills,
               onTap: () => provider.selectionMode
                   ? provider.toggleSelection('b:${books[i].id}')
                   : onOpen(books[i].id),
@@ -1268,6 +1317,7 @@ class _BookShelf extends StatelessWidget {
                 variant: LibraryCardVariant.list,
                 selected: provider.selectedIds.contains('b:${entry.$2.id}'),
                 selectionMode: provider.selectionMode,
+                showSourcePills: provider.showSourcePills,
                 onTap: () => provider.selectionMode
                     ? provider.toggleSelection('b:${entry.$2.id}')
                     : onOpen(entry.$2.id),
@@ -1286,6 +1336,8 @@ class _MangaShelf extends StatelessWidget {
   final LibraryProvider provider;
   final ValueChanged<Manga> onOpen;
   final Map<int, String?> mangaThumbnails;
+  final Map<String, String> extensionNames;
+  final bool showSourcePills;
 
   const _MangaShelf({
     super.key,
@@ -1294,6 +1346,8 @@ class _MangaShelf extends StatelessWidget {
     required this.provider,
     required this.onOpen,
     this.mangaThumbnails = const {},
+    this.extensionNames = const {},
+    this.showSourcePills = true,
   });
 
   @override
@@ -1330,6 +1384,8 @@ class _MangaShelf extends StatelessWidget {
                 localImagePath: mangaThumbnails[manga.id],
                 selected: provider.selectedIds.contains('m:${manga.id}'),
                 selectionMode: provider.selectionMode,
+                extensionName: extensionNames[manga.sourceId] ?? manga.sourceId,
+                showSourcePills: showSourcePills,
                 onTap: () => provider.selectionMode
                     ? provider.toggleSelection('m:${manga.id}')
                     : onOpen(manga),
@@ -1352,6 +1408,8 @@ class _MangaShelf extends StatelessWidget {
                 localImagePath: mangaThumbnails[entry.$2.id],
                 selected: provider.selectedIds.contains('m:${entry.$2.id}'),
                 selectionMode: provider.selectionMode,
+                extensionName: extensionNames[entry.$2.sourceId] ?? entry.$2.sourceId,
+                showSourcePills: showSourcePills,
                 onTap: () => provider.selectionMode
                     ? provider.toggleSelection('m:${entry.$2.id}')
                     : onOpen(entry.$2),
@@ -1373,6 +1431,8 @@ class _MangaLibraryCard extends StatelessWidget {
   final bool selected;
   final bool selectionMode;
   final VoidCallback? onLongPress;
+  final String? extensionName;
+  final bool showSourcePills;
 
   const _MangaLibraryCard({
     required this.manga,
@@ -1381,6 +1441,8 @@ class _MangaLibraryCard extends StatelessWidget {
     this.selected = false,
     this.selectionMode = false,
     this.onLongPress,
+    this.extensionName,
+    this.showSourcePills = true,
   });
 
   @override
@@ -1419,27 +1481,28 @@ class _MangaLibraryCard extends StatelessWidget {
                                 errorBuilder: (_, __, ___) => _placeholder(c),
                               )
                             : _placeholder(c),
-                  ),
-                  Positioned(
-                    top: 6,
-                    left: 6,
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                      decoration: BoxDecoration(
-                        color: Colors.black.withValues(alpha: 0.7),
-                        borderRadius: AppSpacing.brPill,
-                      ),
-                      child: Text(
-                        manga.sourceId,
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 10,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                    ),
-                  ),
-                  if (selectionMode)
+                   ),
+                   if (showSourcePills)
+                     Positioned(
+                       top: 6,
+                       left: 6,
+                       child: Container(
+                         padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                         decoration: BoxDecoration(
+                           color: Colors.black.withValues(alpha: 0.7),
+                           borderRadius: AppSpacing.brPill,
+                         ),
+                         child: Text(
+                           extensionName ?? manga.sourceId,
+                           style: const TextStyle(
+                             color: Colors.white,
+                             fontSize: 10,
+                             fontWeight: FontWeight.w600,
+                           ),
+                         ),
+                       ),
+                     ),
+                   if (selectionMode)
                     Positioned(
                       top: 8,
                       right: 8,
@@ -1494,6 +1557,8 @@ class _MangaLibraryRow extends StatelessWidget {
   final bool selected;
   final bool selectionMode;
   final VoidCallback? onLongPress;
+  final String? extensionName;
+  final bool showSourcePills;
 
   const _MangaLibraryRow({
     required this.manga,
@@ -1502,6 +1567,8 @@ class _MangaLibraryRow extends StatelessWidget {
     this.selected = false,
     this.selectionMode = false,
     this.onLongPress,
+    this.extensionName,
+    this.showSourcePills = true,
   });
 
   @override
@@ -1552,25 +1619,26 @@ class _MangaLibraryRow extends StatelessWidget {
                               )
                             : _placeholder(c, 48, 64),
                   ),
-                  Positioned(
-                    top: 2,
-                    left: 2,
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
-                      decoration: BoxDecoration(
-                        color: Colors.black.withValues(alpha: 0.7),
-                        borderRadius: AppSpacing.brPill,
-                      ),
-                      child: Text(
-                        manga.sourceId,
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 9,
-                          fontWeight: FontWeight.w600,
+                  if (showSourcePills)
+                    Positioned(
+                      top: 2,
+                      left: 2,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+                        decoration: BoxDecoration(
+                          color: Colors.black.withValues(alpha: 0.7),
+                          borderRadius: AppSpacing.brPill,
+                        ),
+                        child: Text(
+                          extensionName ?? manga.sourceId,
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 9,
+                            fontWeight: FontWeight.w600,
+                          ),
                         ),
                       ),
                     ),
-                  ),
                 ],
               ),
               const SizedBox(width: 12),

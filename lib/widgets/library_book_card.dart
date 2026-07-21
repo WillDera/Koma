@@ -16,6 +16,7 @@ class LibraryBookCard extends StatelessWidget {
   final bool selected;
   final bool selectionMode;
   final LibraryCardVariant variant;
+  final bool showSourcePills;
 
   const LibraryBookCard({
     super.key,
@@ -25,6 +26,7 @@ class LibraryBookCard extends StatelessWidget {
     this.selected = false,
     this.selectionMode = false,
     this.variant = LibraryCardVariant.grid,
+    this.showSourcePills = true,
   });
 
   @override
@@ -47,25 +49,26 @@ class LibraryBookCard extends StatelessWidget {
           Stack(
             children: [
               BookCover(book: book, variant: BookCoverVariant.grid),
-              Positioned(
-                top: 6,
-                left: 6,
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                  decoration: BoxDecoration(
-                    color: Colors.black.withValues(alpha: 0.7),
-                    borderRadius: AppSpacing.brPill,
-                  ),
-                  child: Text(
-                    _sourceLabel(book.source),
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 10,
-                      fontWeight: FontWeight.w600,
+              if (showSourcePills)
+                Positioned(
+                  top: 6,
+                  left: 6,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: Colors.black.withValues(alpha: 0.7),
+                      borderRadius: AppSpacing.brPill,
+                    ),
+                    child: Text(
+                      _sourceLabel(book.source),
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 10,
+                        fontWeight: FontWeight.w600,
+                      ),
                     ),
                   ),
                 ),
-              ),
               if (book.progress > 0 && book.progress < 1)
                 Positioned(
                   bottom: 8,
@@ -163,25 +166,26 @@ class LibraryBookCard extends StatelessWidget {
             Stack(
               children: [
                 BookCover(book: book, variant: BookCoverVariant.list),
-                Positioned(
-                  top: 2,
-                  left: 2,
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
-                    decoration: BoxDecoration(
-                      color: Colors.black.withValues(alpha: 0.7),
-                      borderRadius: AppSpacing.brPill,
-                    ),
-                    child: Text(
-                      _sourceLabel(book.source),
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 9,
-                        fontWeight: FontWeight.w600,
+                if (showSourcePills)
+                  Positioned(
+                    top: 2,
+                    left: 2,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+                      decoration: BoxDecoration(
+                        color: Colors.black.withValues(alpha: 0.7),
+                        borderRadius: AppSpacing.brPill,
+                      ),
+                      child: Text(
+                        _sourceLabel(book.source),
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 9,
+                          fontWeight: FontWeight.w600,
+                        ),
                       ),
                     ),
                   ),
-                ),
               ],
             ),
             const SizedBox(width: 16),
@@ -287,11 +291,13 @@ class LibraryBookCard extends StatelessWidget {
   String _sourceLabel(String source) {
     switch (source) {
       case 'web':
-        return 'WEB ARTICLE';
+        final host = Uri.tryParse(book.sourceUrl ?? '')?.host;
+        if (host != null && host.isNotEmpty) return host;
+        return 'Web';
       case 'manual':
-        return 'NOTE';
+        return 'Note';
       default:
-        return 'EPUB';
+        return 'Local File';
     }
   }
 }
