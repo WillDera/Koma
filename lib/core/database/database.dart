@@ -8,7 +8,7 @@ class AppDatabase extends GeneratedDatabase {
   AppDatabase(QueryExecutor executor) : super(executor);
 
   @override
-  int get schemaVersion => 4;
+  int get schemaVersion => 5;
 
   @override
   Iterable<TableInfo> get allTables => const [];
@@ -69,6 +69,12 @@ class AppDatabase extends GeneratedDatabase {
         try {
           await customStatement(
             'ALTER TABLE manga_chapters ADD COLUMN is_downloaded INTEGER NOT NULL DEFAULT 0'
+          );
+        } catch (_) {}
+        // v4 → v5: opened flag on manga_chapters.
+        try {
+          await customStatement(
+            'ALTER TABLE manga_chapters ADD COLUMN is_opened INTEGER NOT NULL DEFAULT 0'
           );
         } catch (_) {}
       },

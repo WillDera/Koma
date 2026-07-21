@@ -905,8 +905,8 @@ class DatabaseService {
     await _db.transaction(() async {
       for (final ch in chapters) {
         await _db.customInsert(
-          'INSERT OR IGNORE INTO manga_chapters (manga_id, name, url, scanlator, date_upload, "index", is_downloaded) '
-          'VALUES (?, ?, ?, ?, ?, ?, ?)',
+          'INSERT OR IGNORE INTO manga_chapters (manga_id, name, url, scanlator, date_upload, "index", is_downloaded, is_opened) '
+          'VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
           variables: [
             Variable.withInt(mangaId),
             Variable.withString(ch.name),
@@ -915,6 +915,7 @@ class DatabaseService {
             Variable.withInt(ch.dateUpload),
             Variable.withInt(ch.index),
             Variable.withInt(ch.isDownloaded ? 1 : 0),
+            Variable.withInt(ch.isOpened ? 1 : 0),
           ],
         );
       }
@@ -924,6 +925,13 @@ class DatabaseService {
   Future<void> markMangaChapterRead(int chapterId) async {
     await _db.customUpdate(
       'UPDATE manga_chapters SET is_read=1 WHERE id=?',
+      variables: [Variable.withInt(chapterId)],
+    );
+  }
+
+  Future<void> markMangaChapterOpened(int chapterId) async {
+    await _db.customUpdate(
+      'UPDATE manga_chapters SET is_opened=1 WHERE id=?',
       variables: [Variable.withInt(chapterId)],
     );
   }
