@@ -264,6 +264,11 @@ class _MangaDetailScreenState extends State<MangaDetailScreen> {
     final db = context.read<DatabaseService>();
     final existing = await db.getMangaByKey(widget.sourceId, widget.url);
 
+    // Show cached DB data immediately (like Mihon — instant, then background refresh)
+    if (existing != null) {
+      await _showCached(existing, db);
+    }
+
     try {
       final results = await Future.wait([
         _service.getMangaDetails(
@@ -302,7 +307,6 @@ class _MangaDetailScreenState extends State<MangaDetailScreen> {
           };
         }
         if (!mounted) return;
-        // Check filesystem for download status (filesystem is the truth, like Mihon)
         final downloadedKeys = await _service.getDownloadedChapterKeys(
           sourceId: widget.sourceId,
           mangaUrl: widget.url,
@@ -325,63 +329,64 @@ class _MangaDetailScreenState extends State<MangaDetailScreen> {
         });
       }
     } catch (e) {
-      // Source fetch failed — try local data fallback
+      // Source fetch failed — cached data already shown if available
       if (existing != null) {
-        final localChs = await db.getMangaChapters(existing.id);
-        final chMap = <String, Map<String, dynamic>>{};
-        for (final lc in localChs) {
-          chMap[lc.url] = {
-            'is_read': lc.isRead,
-            'last_page_read': lc.lastPageRead,
-          };
-        }
         if (!mounted) return;
-        // Check filesystem for which chapters are actually downloaded
-        final downloadedKeys = await _service.getDownloadedChapterKeys(
-          sourceId: widget.sourceId,
-          mangaUrl: widget.url,
-        );
-        final downloaded = localChs.where((c) {
-          final key = sha256.convert(utf8.encode(c.url)).toString().substring(0, 16);
-          return downloadedKeys.contains(key);
-        }).toList();
-        final offlineProgress = <String, String>{};
-        for (final ch in downloaded) {
-          offlineProgress[ch.url] = 'done';
-        }
-        setState(() {
-          _details = {
-            'title': existing.name,
-            'thumbnail_url': existing.imageUrl,
-            'author': existing.author,
-            'artist': existing.artist,
-            'description': existing.description,
-            'status': existing.status,
-            'genre': existing.genres.join(', '),
-          };
-          _chapters = downloaded.map((c) => {
-            'url': c.url,
-            'name': c.name,
-            'chapter_number': c.index.toDouble(),
-            'scanlator': c.scanlator,
-            'date_upload': c.dateUpload,
-          }).toList();
-          _inLibrary = true;
-          _mangaId = existing.id;
-          _localChapters = chMap;
-          _downloadProgress
-            ..clear()
-            ..addAll(offlineProgress);
-          _offlineMode = true;
-          _error = null;
-        });
+        setState(() => _offlineMode = true);
       } else {
         if (!mounted) return;
         setState(() => _error = '$e');
       }
     } finally {
-      if (mounted) setState(() => _loading = false);
+      if (mounted && existing == null) setState(() => _loading = false);
     }
+  }
+
+  /// Show cached chapters from DB while source fetch runs in background.
+  Future<void> _showCached(Manga existing, DatabaseService db) async {
+    final localChs = await db.getMangaChapters(existing.id);
+    final chMap = <String, Map<String, dynamic>>{};
+    for (final lc in localChs) {
+      chMap[lc.url] = {
+        'is_read': lc.isRead,
+        'last_page_read': lc.lastPageRead,
+      };
+    }
+    if (!mounted) return;
+    final downloadedKeys = await _service.getDownloadedChapterKeys(
+      sourceId: widget.sourceId,
+      mangaUrl: widget.url,
+    );
+    final downloadProgress = <String, String>{};
+    for (final lc in localChs) {
+      final key = sha256.convert(utf8.encode(lc.url)).toString().substring(0, 16);
+      if (downloadedKeys.contains(key)) downloadProgress[lc.url] = 'done';
+    }
+    setState(() {
+      _details = {
+        'title': existing.name,
+        'thumbnail_url': existing.imageUrl,
+        'author': existing.author,
+        'artist': existing.artist,
+        'description': existing.description,
+        'status': existing.status,
+        'genre': existing.genres.join(', '),
+      };
+      _chapters = localChs.map((c) => {
+        'url': c.url,
+        'name': c.name,
+        'chapter_number': c.index.toDouble(),
+        'scanlator': c.scanlator,
+        'date_upload': c.dateUpload,
+      }).toList();
+      _inLibrary = true;
+      _mangaId = existing.id;
+      _localChapters = chMap;
+      _downloadProgress
+        ..clear()
+        ..addAll(downloadProgress);
+      _loading = false;
+    });
   }
 
   Future<void> _addToLibrary() async {
@@ -1460,17 +1465,17 @@ class _HeroSection extends StatelessWidget {
               bottom: 0,
               child: Container(
                 decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.topCenter,
-                    end: Alignment.bottomCenter,
-                    colors: [
-                      Colors.black.withValues(alpha: 0.3),
-                      Colors.transparent,
-                      Colors.transparent,
-                      c.bg,
-                    ],
-                    stops: const [0.0, 0.3, 0.6, 1.0],
-                  ),
+                   gradient: LinearGradient(
+                     begin: Alignment.topCenter,
+                     end: Alignment.bottomCenter,
+                     colors: [
+                       Colors.black.withValues(alpha: 0.15),
+                       Colors.black.withValues(alpha: 0.45),
+                       Colors.black.withValues(alpha: 0.85),
+                       Colors.black,
+                     ],
+                     stops: const [0.0, 0.35, 0.7, 1.0],
+                   ),
                 ),
               ),
             ),
