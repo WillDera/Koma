@@ -1,9 +1,11 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
 import 'package:provider/provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../../core/services/database_service.dart';
 import '../../core/services/keiyoushi_service.dart';
 import '../../core/models/manga_page.dart';
@@ -39,6 +41,8 @@ class _MangaReaderScreenState extends State<MangaReaderScreen>
   bool _loading = true;
   String? _error;
   final _pageCtrl = PageController();
+  final _scrollCtrl = ScrollController();
+  double _currentScrollPos = 0.0;
   int _currentPage = 0;
   bool _showToolbar = false;
   final List<TransformationController> _zoomCtrls = [];
@@ -52,7 +56,15 @@ class _MangaReaderScreenState extends State<MangaReaderScreen>
     super.initState();
     _db = context.read<DatabaseService>();
     WidgetsBinding.instance.addObserver(this);
-    _load();
+    _scrollCtrl.addListener(() {
+      _currentScrollPos = _scrollCtrl.position.pixels;
+    });
+    _initAsync();
+  }
+
+  Future<void> _initAsync() async {
+    await _loadSettings();
+    if (mounted) _load();
   }
 
   @override
@@ -60,6 +72,7 @@ class _MangaReaderScreenState extends State<MangaReaderScreen>
     _flushPageProgress();
     WidgetsBinding.instance.removeObserver(this);
     _pageCtrl.dispose();
+    _scrollCtrl.dispose();
     for (final c in _zoomCtrls) {
       c.dispose();
     }
@@ -130,16 +143,44 @@ class _MangaReaderScreenState extends State<MangaReaderScreen>
     }
   }
 
+  Future<void> _loadSettings() async {
+    if (widget.mangaId == null) return;
+    final prefs = await SharedPreferences.getInstance();
+    final key = 'reader_${widget.mangaId}';
+    final raw = prefs.getString(key);
+    if (raw != null && mounted) {
+      try {
+        final map = json.decode(raw) as Map<String, dynamic>;
+        _settings = ReaderSettings.fromJson(map);
+      } catch (_) {}
+    }
+  }
+
+  Future<void> _saveSettings() async {
+    if (widget.mangaId == null) return;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('reader_${widget.mangaId}', json.encode(_settings.toJson()));
+  }
+
   Future<void> _initProgress() async {
     if (widget.mangaId == null || _db == null) return;
     final ch = await _db!.getMangaChapterByUrl(widget.mangaId!, widget.chapterUrl);
     if (ch == null || !mounted) return;
     _chapterId = ch.id;
-    final lp = ch.lastPageRead;
-    if (lp > 0 && lp < _pages.length) {
+    final isWebtoon = _settings.readingMode == ReadingMode.webtoon;
+    if (isWebtoon && ch.scrollPosition > 0) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) _goToPage(lp);
+        if (mounted && _scrollCtrl.hasClients) {
+          _scrollCtrl.jumpTo(ch.scrollPosition.clamp(0, _scrollCtrl.position.maxScrollExtent));
+        }
       });
+    } else if (!isWebtoon) {
+      final lp = ch.lastPageRead;
+      if (lp > 0 && lp < _pages.length) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) _goToPage(lp);
+        });
+      }
     }
   }
 
@@ -154,7 +195,11 @@ class _MangaReaderScreenState extends State<MangaReaderScreen>
     if (_chapterId == null || _db == null) return;
     _saveTimer?.cancel();
     _saveTimer = null;
-    _db!.updateMangaChapterProgress(_chapterId!, _currentPage);
+    if (_settings.readingMode == ReadingMode.webtoon) {
+      _db!.updateMangaChapterScrollPosition(_chapterId!, _currentScrollPos);
+    } else {
+      _db!.updateMangaChapterProgress(_chapterId!, _currentPage);
+    }
     if (_currentPage >= _pages.length - 1) {
       _db!.markMangaChapterRead(_chapterId!);
     }
@@ -166,9 +211,11 @@ class _MangaReaderScreenState extends State<MangaReaderScreen>
 
   void _goToPage(int i) {
     final clamped = i.clamp(0, _pages.length - 1);
-    _pageCtrl.animateToPage(clamped,
-        duration: Duration(milliseconds: _settings.animatePageTransition ? 250 : 0),
-        curve: Curves.easeOut);
+    if (_pageCtrl.hasClients) {
+      _pageCtrl.animateToPage(clamped,
+          duration: Duration(milliseconds: _settings.animatePageTransition ? 250 : 0),
+          curve: Curves.easeOut);
+    }
     _schedulePageSave(clamped);
   }
 
@@ -276,6 +323,7 @@ class _MangaReaderScreenState extends State<MangaReaderScreen>
         settings: _settings,
         onChanged: (s) {
           setState(() => _settings = s);
+          _saveSettings();
           if (s.keepScreenOn) {
             WidgetsBinding.instance.scheduleFrame();
           }
@@ -528,6 +576,7 @@ class _MangaReaderScreenState extends State<MangaReaderScreen>
         return false;
       },
       child: SingleChildScrollView(
+        controller: _scrollCtrl,
         scrollDirection: Axis.vertical,
         child: Column(
           children: List.generate(_pages.length, (i) {

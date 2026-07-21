@@ -935,6 +935,13 @@ class DatabaseService {
     );
   }
 
+  Future<void> updateMangaChapterScrollPosition(int chapterId, double position) async {
+    await _db.customUpdate(
+      'UPDATE manga_chapters SET scroll_position=? WHERE id=?',
+      variables: [Variable.withReal(position), Variable.withInt(chapterId)],
+    );
+  }
+
   Future<void> markMangaChapterDownloaded(int chapterId, bool downloaded) async {
     await _db.customUpdate(
       'UPDATE manga_chapters SET is_downloaded=? WHERE id=?',
