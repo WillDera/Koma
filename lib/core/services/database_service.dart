@@ -592,6 +592,7 @@ class DatabaseService {
               }
             }
             oldToNewChapterId[map['id'] as int] = local.id;
+            oldToNewChapterId[map['id'] as int] = local.id;
             chaptersImported++;
           } else if (newlyImportedOldBookIds.contains(oldBookId)) {
             final chapter = Chapter.fromJson(map)
@@ -905,8 +906,8 @@ class DatabaseService {
     await _db.transaction(() async {
       for (final ch in chapters) {
         await _db.customInsert(
-          'INSERT OR IGNORE INTO manga_chapters (manga_id, name, url, scanlator, date_upload, "index", is_downloaded, is_opened) '
-          'VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+          'INSERT OR IGNORE INTO manga_chapters (manga_id, name, url, scanlator, date_upload, "index", is_downloaded, is_opened, read_at) '
+          'VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
           variables: [
             Variable.withInt(mangaId),
             Variable.withString(ch.name),
@@ -916,6 +917,9 @@ class DatabaseService {
             Variable.withInt(ch.index),
             Variable.withInt(ch.isDownloaded ? 1 : 0),
             Variable.withInt(ch.isOpened ? 1 : 0),
+            ch.readAt != null
+                ? Variable.withString(ch.readAt!.toIso8601String())
+                : Variable<Object>(null),
           ],
         );
       }
@@ -924,9 +928,22 @@ class DatabaseService {
 
   Future<void> markMangaChapterRead(int chapterId) async {
     await _db.customUpdate(
-      'UPDATE manga_chapters SET is_read=1 WHERE id=?',
-      variables: [Variable.withInt(chapterId)],
+      'UPDATE manga_chapters SET is_read=1, read_at=? WHERE id=?',
+      variables: [Variable.withString(DateTime.now().toIso8601String()), Variable.withInt(chapterId)],
     );
+  }
+
+  Future<List<Map<String, dynamic>>> getInProgressManga() async {
+    final rows = await _db.customSelect('''
+      SELECT m.*,
+        (SELECT COUNT(*) FROM manga_chapters WHERE manga_id = m.id AND is_read = 1) AS read_count,
+        (SELECT COUNT(*) FROM manga_chapters WHERE manga_id = m.id) AS total_chapters,
+        (SELECT MAX(read_at) FROM manga_chapters WHERE manga_id = m.id AND read_at IS NOT NULL) AS last_read_at
+      FROM manga m
+      WHERE (SELECT COUNT(*) FROM manga_chapters WHERE manga_id = m.id AND read_at IS NOT NULL) > 0
+      ORDER BY last_read_at DESC
+    ''').get();
+    return rows.map((r) => r.data).toList();
   }
 
   Future<void> markMangaChapterOpened(int chapterId) async {
@@ -938,15 +955,15 @@ class DatabaseService {
 
   Future<void> updateMangaChapterProgress(int chapterId, int page) async {
     await _db.customUpdate(
-      'UPDATE manga_chapters SET last_page_read=? WHERE id=?',
-      variables: [Variable.withInt(page), Variable.withInt(chapterId)],
+      'UPDATE manga_chapters SET last_page_read=?, read_at=? WHERE id=?',
+      variables: [Variable.withInt(page), Variable.withString(DateTime.now().toIso8601String()), Variable.withInt(chapterId)],
     );
   }
 
   Future<void> updateMangaChapterScrollPosition(int chapterId, double position) async {
     await _db.customUpdate(
-      'UPDATE manga_chapters SET scroll_position=? WHERE id=?',
-      variables: [Variable.withReal(position), Variable.withInt(chapterId)],
+      'UPDATE manga_chapters SET scroll_position=?, read_at=? WHERE id=?',
+      variables: [Variable.withReal(position), Variable.withString(DateTime.now().toIso8601String()), Variable.withInt(chapterId)],
     );
   }
 
@@ -1028,6 +1045,13 @@ class DatabaseService {
     await _db.customUpdate(
       'DELETE FROM extension_sources WHERE id=?',
       variables: [Variable.withString(id)],
+    );
+  }
+
+  Future<void> clearMangaChapterHistory(int mangaId) async {
+    await _db.customUpdate(
+      'UPDATE manga_chapters SET is_read=0, read_at=NULL WHERE manga_id=?',
+      variables: [Variable.withInt(mangaId)],
     );
   }
 }

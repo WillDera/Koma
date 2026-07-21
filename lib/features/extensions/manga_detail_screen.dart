@@ -283,6 +283,7 @@ class _MangaDetailScreenState extends State<MangaDetailScreen> {
             'last_page_read': lc.lastPageRead,
             'is_downloaded': lc.isDownloaded,
             'is_opened': lc.isOpened,
+            'read_at': lc.readAt?.toIso8601String(),
           };
           final key = sha256.convert(utf8.encode(lc.url)).toString().substring(0, 16);
           if (downloadedKeys.contains(key)) downloadProgress[lc.url] = 'done';
@@ -360,6 +361,7 @@ class _MangaDetailScreenState extends State<MangaDetailScreen> {
             'last_page_read': lc.lastPageRead,
             'is_downloaded': lc.isDownloaded,
             'is_opened': lc.isOpened,
+            'read_at': lc.readAt?.toIso8601String(),
           };
         }
         if (!mounted) return;
@@ -398,6 +400,9 @@ class _MangaDetailScreenState extends State<MangaDetailScreen> {
             index: e.key,
             isDownloaded: _downloadProgress[url] == 'done',
             isOpened: existingChapter != null && (existingChapter['is_opened'] as bool? ?? false),
+            readAt: existingChapter != null
+                ? DateTime.tryParse(existingChapter['read_at'] as String? ?? '')
+                : null,
           );
         }).toList());
       }

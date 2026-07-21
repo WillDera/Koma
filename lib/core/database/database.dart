@@ -8,7 +8,7 @@ class AppDatabase extends GeneratedDatabase {
   AppDatabase(QueryExecutor executor) : super(executor);
 
   @override
-  int get schemaVersion => 5;
+  int get schemaVersion => 6;
 
   @override
   Iterable<TableInfo> get allTables => const [];
@@ -77,6 +77,12 @@ class AppDatabase extends GeneratedDatabase {
             'ALTER TABLE manga_chapters ADD COLUMN is_opened INTEGER NOT NULL DEFAULT 0'
           );
         } catch (_) {}
+        // v5 → v6: read_at timestamp on manga_chapters.
+        try {
+          await customStatement(
+            'ALTER TABLE manga_chapters ADD COLUMN read_at TEXT'
+          );
+        } catch (_) {}
       },
     );
   }
@@ -142,7 +148,10 @@ class AppDatabase extends GeneratedDatabase {
         "index" INTEGER NOT NULL,
         is_read INTEGER NOT NULL DEFAULT 0,
         last_page_read INTEGER NOT NULL DEFAULT 0,
-        scroll_position REAL NOT NULL DEFAULT 0.0
+        scroll_position REAL NOT NULL DEFAULT 0.0,
+        is_downloaded INTEGER NOT NULL DEFAULT 0,
+        is_opened INTEGER NOT NULL DEFAULT 0,
+        read_at TEXT
       )
     ''');
     await customStatement('''
