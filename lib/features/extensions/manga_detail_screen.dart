@@ -264,11 +264,16 @@ class _MangaDetailScreenState extends State<MangaDetailScreen> {
     final db = context.read<DatabaseService>();
     final existing = await db.getMangaByKey(widget.sourceId, widget.url);
 
-    // Show cached DB data immediately (like Mihon — instant, then background refresh)
+    // Phase 1: Show cached DB data immediately (like Mihon)
     if (existing != null) {
       await _showCached(existing, db);
     }
 
+    // Phase 2: Background refresh from source — non-blocking
+    _refreshFromSource(db, existing);
+  }
+
+  Future<void> _refreshFromSource(DatabaseService db, Manga? existing) async {
     try {
       final results = await Future.wait([
         _service.getMangaDetails(
@@ -287,6 +292,7 @@ class _MangaDetailScreenState extends State<MangaDetailScreen> {
       if (thumb != null && thumb.isNotEmpty) {
         _cacheThumbnail(thumb);
       }
+      if (!mounted) return;
       setState(() {
         _details = details;
         _chapters = chapters;
@@ -327,9 +333,22 @@ class _MangaDetailScreenState extends State<MangaDetailScreen> {
             ..clear()
             ..addAll(downloadProgress);
         });
+        // Phase 3: Sync fresh chapters to DB for next visit
+        await db.insertMangaChapters(existing.id, chapters.asMap().entries.map((e) {
+          final ch = e.value;
+          return MangaChapter(
+            id: 0,
+            mangaId: existing.id,
+            name: ch['name'] as String? ?? '',
+            url: ch['url'] as String? ?? '',
+            scanlator: ch['scanlator'] as String?,
+            dateUpload: ch['date_upload'] as int? ?? 0,
+            index: e.key,
+            isDownloaded: _downloadProgress[ch['url'] as String? ?? ''] == 'done',
+          );
+        }).toList());
       }
     } catch (e) {
-      // Source fetch failed — cached data already shown if available
       if (existing != null) {
         if (!mounted) return;
         setState(() => _offlineMode = true);
@@ -338,7 +357,7 @@ class _MangaDetailScreenState extends State<MangaDetailScreen> {
         setState(() => _error = '$e');
       }
     } finally {
-      if (mounted && existing == null) setState(() => _loading = false);
+      if (existing == null && mounted) setState(() => _loading = false);
     }
   }
 
@@ -917,17 +936,37 @@ class _MangaDetailScreenState extends State<MangaDetailScreen> {
                         sourceId: widget.sourceId,
                         sortMode: _sortMode,
                         onSortChanged: _showSortSheet,
-                        onChapterTap: (ch) => Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (_) => MangaReaderScreen(
-                              sourceId: widget.sourceId,
-                              mangaUrl: widget.url,
-                              chapterUrl: ch['url'] as String? ?? '',
-                              chapterName: ch['name'] as String? ?? '',
+                        onChapterTap: (ch) async {
+                          await Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => MangaReaderScreen(
+                                mangaId: _mangaId,
+                                sourceId: widget.sourceId,
+                                mangaUrl: widget.url,
+                                chapterUrl: ch['url'] as String? ?? '',
+                                chapterName: ch['name'] as String? ?? '',
+                              ),
                             ),
-                          ),
-                        ),
+                          );
+                          if (_mangaId != null && mounted) {
+                            final db = context.read<DatabaseService>();
+                            final localChs = await db.getMangaChapters(_mangaId!);
+                            final chMap = <String, Map<String, dynamic>>{};
+                            for (final lc in localChs) {
+                              chMap[lc.url] = {
+                                'is_read': lc.isRead,
+                                'last_page_read': lc.lastPageRead,
+                                'is_downloaded': lc.isDownloaded,
+                              };
+                            }
+                            setState(() {
+                              _localChapters
+                                ..clear()
+                                ..addAll(chMap);
+                            });
+                          }
+                        },
                         onDownloadTap: (ch) => _downloadSingleChapter(ch),
                       ),
                     ),
@@ -1696,6 +1735,17 @@ class _ChaptersList extends StatelessWidget {
                             fontWeight: FontWeight.w500,
                           ),
                         ),
+                        if (!isRead && (local?['last_page_read'] as int? ?? 0) > 0)
+                          Padding(
+                            padding: const EdgeInsets.only(top: 2),
+                            child: Text(
+                              'Page ${(local?['last_page_read'] as int? ?? 0) + 1}',
+                              style: TextStyle(
+                                color: c.textTertiary,
+                                fontSize: 11,
+                              ),
+                            ),
+                          ),
                         const SizedBox(height: 4),
                         Row(
                           children: [
