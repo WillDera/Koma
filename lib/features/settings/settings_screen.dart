@@ -39,7 +39,7 @@ class SettingsScreen extends StatelessWidget {
             const OneHandSpacer(),
             const LibraryHeader(
               title: 'Settings',
-               subtitle: 'Version 2.5.81',
+               subtitle: 'Version 2.5.82',
               padding: EdgeInsets.fromLTRB(24, 20, 20, 12),
             ),
             const StaggeredEntrance(
@@ -1378,7 +1378,7 @@ class _AboutSection extends StatelessWidget {
         SettingsRow(
           icon: Icons.info_outline,
           title: 'StashReader',
-             subtitle: 'Version 2.5.81 · build 2.5.81+82',
+             subtitle: 'Version 2.5.82 · build 2.5.82+82',
         ),
         SettingsRow(
           icon: Icons.favorite_outline,
