@@ -11,6 +11,7 @@ class MangaChapter {
   final double scrollPosition;
   final bool isDownloaded;
   final bool isOpened;
+  final DateTime? readAt;
 
   MangaChapter({
     required this.id,
@@ -25,6 +26,7 @@ class MangaChapter {
     this.scrollPosition = 0.0,
     this.isDownloaded = false,
     this.isOpened = false,
+    this.readAt,
   });
 
   MangaChapter copyWith({
@@ -40,6 +42,7 @@ class MangaChapter {
     double? scrollPosition,
     bool? isDownloaded,
     bool? isOpened,
+    DateTime? readAt,
   }) {
     return MangaChapter(
       id: id ?? this.id,
@@ -54,6 +57,7 @@ class MangaChapter {
       scrollPosition: scrollPosition ?? this.scrollPosition,
       isDownloaded: isDownloaded ?? this.isDownloaded,
       isOpened: isOpened ?? this.isOpened,
+      readAt: readAt ?? this.readAt,
     );
   }
 
@@ -70,6 +74,7 @@ class MangaChapter {
         'scroll_position': scrollPosition,
         'is_downloaded': isDownloaded ? 1 : 0,
         'is_opened': isOpened ? 1 : 0,
+        'read_at': readAt?.toIso8601String(),
       };
 
   factory MangaChapter.fromJson(Map<String, dynamic> json) => MangaChapter(
@@ -85,5 +90,6 @@ class MangaChapter {
         scrollPosition: (json['scroll_position'] as num?)?.toDouble() ?? 0.0,
         isDownloaded: (json['is_downloaded'] as int? ?? 0) == 1,
         isOpened: (json['is_opened'] as int? ?? 0) == 1,
+        readAt: json['read_at'] != null ? DateTime.parse(json['read_at'] as String) : null,
       );
 }
