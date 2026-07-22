@@ -4,7 +4,7 @@ import 'tokens/app_colors.dart';
 import 'tokens/app_spacing.dart';
 import 'tokens/app_type.dart';
 
-/// StashReader theme — built from design tokens (colors, type, spacing).
+/// Koma theme — built from design tokens (colors, type, spacing).
 ///
 /// Three modes: Light (warm paper), Dark (cool charcoal), Sepia (paper-like).
 /// Single sophisticated indigo anchor (`AppColors.accentIndigo`).
@@ -418,7 +418,7 @@ class AppTheme {
         ),
       ),
       extensions: <ThemeExtension<dynamic>>[
-        StashReaderColors(
+        KomaColors(
           bg: bg,
           bgElevated: bgElevated,
           surface: surface,
@@ -440,7 +440,7 @@ class AppTheme {
 /// Custom theme extension exposing our semantic color tokens directly
 /// (no more `isDark ? X : Y` ladders in every widget).
 @immutable
-class StashReaderColors extends ThemeExtension<StashReaderColors> {
+class KomaColors extends ThemeExtension<KomaColors> {
   final Color bg;
   final Color bgElevated;
   final Color surface;
@@ -454,7 +454,7 @@ class StashReaderColors extends ThemeExtension<StashReaderColors> {
   final Color accentMuted;
   final Color onAccent;
 
-  const StashReaderColors({
+  const KomaColors({
     required this.bg,
     required this.bgElevated,
     required this.surface,
@@ -470,7 +470,7 @@ class StashReaderColors extends ThemeExtension<StashReaderColors> {
   });
 
   @override
-  StashReaderColors copyWith({
+  KomaColors copyWith({
     Color? bg,
     Color? bgElevated,
     Color? surface,
@@ -484,7 +484,7 @@ class StashReaderColors extends ThemeExtension<StashReaderColors> {
     Color? accentMuted,
     Color? onAccent,
   }) {
-    return StashReaderColors(
+    return KomaColors(
       bg: bg ?? this.bg,
       bgElevated: bgElevated ?? this.bgElevated,
       surface: surface ?? this.surface,
@@ -501,9 +501,9 @@ class StashReaderColors extends ThemeExtension<StashReaderColors> {
   }
 
   @override
-  StashReaderColors lerp(ThemeExtension<StashReaderColors>? other, double t) {
-    if (other is! StashReaderColors) return this;
-    return StashReaderColors(
+  KomaColors lerp(ThemeExtension<KomaColors>? other, double t) {
+    if (other is! KomaColors) return this;
+    return KomaColors(
       bg: Color.lerp(bg, other.bg, t)!,
       bgElevated: Color.lerp(bgElevated, other.bgElevated, t)!,
       surface: Color.lerp(surface, other.surface, t)!,
@@ -520,14 +520,14 @@ class StashReaderColors extends ThemeExtension<StashReaderColors> {
   }
 }
 
-/// Convenience accessor — `context.colors` returns the StashReaderColors
+/// Convenience accessor — `context.colors` returns the KomaColors
 /// extension for the current theme. Falls back to light tokens if the
 /// extension is missing (it never should be — we set it in app_theme).
-extension StashReaderColorsAccess on BuildContext {
-  StashReaderColors get colors {
-    final ext = Theme.of(this).extension<StashReaderColors>();
+extension KomaColorsAccess on BuildContext {
+  KomaColors get colors {
+    final ext = Theme.of(this).extension<KomaColors>();
     if (ext != null) return ext;
-    return const StashReaderColors(
+    return const KomaColors(
       bg: AppColors.lightBg,
       bgElevated: AppColors.lightBgElevated,
       surface: AppColors.lightSurface,

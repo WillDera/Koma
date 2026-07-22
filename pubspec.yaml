@@ -1,7 +1,7 @@
-name: stashreader
+name: koma
 description: "A hybrid reader + knowledge snippet manager."
 publish_to: 'none'
-version: 2.5.86+84
+version: 2.5.89+84
 
 environment:
   sdk: ^3.9.0
@@ -44,11 +44,11 @@ flutter:
 
 flutter_icons:
   android: "launcher_icon"
-  image_path: "app_icons/ic_launcher/android/ic_launcher-web.png"
+  image_path: "app_icons/hon.png"
   min_sdk_android: 21
 
 flutter_native_splash:
-  color: "#000000"          # match your icon's black background
-  image: "app_icons/ic_launcher/android/ic_launcher-web.png"
+  color: "#000000"
+  image: "app_icons/hon.png"
   android: true
   android_gravity: center

@@ -245,7 +245,7 @@ class _MangaGridCard extends StatelessWidget {
     );
   }
 
-  Widget _placeholder(StashReaderColors c) {
+  Widget _placeholder(KomaColors c) {
     return Container(
       color: c.surfaceMuted,
       child: Center(

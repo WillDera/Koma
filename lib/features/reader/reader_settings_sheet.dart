@@ -310,7 +310,7 @@ class _OtherTab extends StatelessWidget {
 
 // ── Shared widgets ─────────────────────────────────────────────────────
 class _SectionLabel extends StatelessWidget {
-  final StashReaderColors c;
+  final KomaColors c;
   final String label;
   const _SectionLabel(this.c, this.label);
 
@@ -358,7 +358,7 @@ class _ChipRow extends StatelessWidget {
 }
 
 class _CheckboxTile extends StatelessWidget {
-  final StashReaderColors c;
+  final KomaColors c;
   final String title;
   final bool value;
   final ValueChanged<bool> onChanged;

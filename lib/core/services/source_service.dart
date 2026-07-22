@@ -53,7 +53,7 @@ class SourceService {
       return await client
           .get(Uri.parse(url), headers: {
             'User-Agent':
-                'Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 StashReader/1.0'
+                'Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 Koma/1.0'
           })
           .timeout(const Duration(seconds: 15));
     } catch (_) {
@@ -208,7 +208,7 @@ class SourceService {
       try {
         final request = http.Request('GET', Uri.parse(url));
         request.headers['User-Agent'] =
-            'Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 StashReader/1.0';
+            'Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 Koma/1.0';
         final response = await client.send(request);
 
         if (response.statusCode != 200) return false;

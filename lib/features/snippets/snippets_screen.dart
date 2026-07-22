@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:collection/collection.dart';
 import '../../core/models/snippet.dart';
+import '../../core/models/snippet_collection.dart';
 import '../../theme/app_theme.dart';
 import '../../theme/theme_provider.dart';
 import '../../widgets/empty_state.dart';
@@ -11,6 +13,7 @@ import '../../widgets/one_hand_spacer.dart';
 import '../../widgets/screen_chrome.dart';
 import '../../widgets/snippet_card.dart';
 import '../../widgets/snippet_detail_sheet.dart';
+import '../../widgets/dialog_sheet.dart';
 import '../../widgets/tag_filter_bar.dart';
 import '../../widgets/toast.dart';
 import 'snippets_provider.dart';
@@ -58,35 +61,34 @@ class _SnippetsScreenState extends State<SnippetsScreen> {
     final leftHanded = context.watch<ThemeProvider>().handMode == HandMode.left;
     final navClearance = MediaQuery.paddingOf(context).bottom + 84;
     return ScreenBackdrop(
-      child: Stack(
-        children: [
-          SafeArea(
-            bottom: false,
-            child: Consumer<SnippetsProvider>(
-              builder: (context, p, _) => _body(context, p),
+      child: Consumer<SnippetsProvider>(
+        builder: (context, p, _) => Stack(
+          children: [
+            SafeArea(
+              bottom: false,
+              child: _body(context, p),
             ),
-          ),
-          Positioned(
-            left: leftHanded ? 20 : null,
-            right: leftHanded ? null : 20,
-            bottom: navClearance,
-            child: IconButtonRound(
-              icon: Icons.add,
-              size: 52,
-              variant: IconButtonVariant.filled,
-              backgroundColor: context.colors.accent,
-              iconColor: context.colors.onAccent,
-              onPressed: () => _createSnippet(context),
-            ),
-          ),
-        ],
+            if (!p.selectionMode)
+              Positioned(
+                left: leftHanded ? 20 : null,
+                right: leftHanded ? null : 20,
+                bottom: navClearance,
+                child: IconButtonRound(
+                  icon: Icons.add,
+                  size: 52,
+                  variant: IconButtonVariant.filled,
+                  backgroundColor: context.colors.accent,
+                  iconColor: context.colors.onAccent,
+                  onPressed: () => _createSnippet(context),
+                ),
+              ),
+          ],
+        ),
       ),
     );
   }
 
   Widget _body(BuildContext context, SnippetsProvider p) {
-    // Single scrollable surface — spacer, header, tag bar, and list all
-    // scroll together, matching the Settings layout.
     if (p.loading && p.snippets.isEmpty) return _loading();
     if (p.error != null) {
       return ListView(
@@ -110,8 +112,13 @@ class _SnippetsScreenState extends State<SnippetsScreen> {
         ],
       );
     }
+
     final items = p.snippets;
-    if (items.isEmpty && p.filterTag == null) {
+    final hasFilter = p.filterTag != null ||
+        p.filterCollectionId != null ||
+        p.filterCollectionId == -1;
+
+    if (items.isEmpty && !hasFilter && p.collections.isEmpty) {
       return ListView(
         controller: _scrollCtrl,
         padding: EdgeInsets.zero,
@@ -134,36 +141,41 @@ class _SnippetsScreenState extends State<SnippetsScreen> {
         ],
       );
     }
+
     return ListView(
       controller: _scrollCtrl,
       padding: EdgeInsets.zero,
       physics: const AlwaysScrollableScrollPhysics(),
       children: [
         const OneHandSpacer(),
-        LibraryHeader(
-          title: 'Snippets',
-          titleSize: _oneHand ? 64 : 32,
-          shrinkProgress: _oneHand ? _scrollProgress : 0.0,
-        ),
-        StaggeredEntrance(
-          child: FeaturePanel(
-            icon: Icons.format_quote_rounded,
-            title: 'Captured thoughts',
-            subtitle:
-                'Highlights, notes, and quotes with just enough structure to find them again.',
-            stats: [
-              PanelStat(value: '${p.snippets.length}', label: 'Saved'),
-              PanelStat(value: '${p.allTags.length}', label: 'Tags'),
-              PanelStat(value: p.filterTag ?? 'All', label: 'Filter'),
-            ],
+        _buildHeader(p),
+        if (!p.selectionMode)
+          StaggeredEntrance(
+            child: FeaturePanel(
+              icon: Icons.format_quote_rounded,
+              title: 'Captured thoughts',
+              subtitle:
+                  'Highlights, notes, and quotes with just enough structure to find them again.',
+              stats: [
+                PanelStat(value: '${p.snippets.length}', label: 'Saved'),
+                PanelStat(value: '${p.allTags.length}', label: 'Tags'),
+                PanelStat(value: hasFilter ? 'Filtered' : 'Uncollected', label: 'View'),
+              ],
+            ),
           ),
-        ),
-        if (p.allTags.isNotEmpty)
-          TagFilterBar(
-            tags: p.allTags,
-            selected: p.filterTag,
-            onChanged: p.setFilterTag,
+        if (!p.selectionMode) ...[
+          _CollectionFilterBar(
+            collections: p.collections,
+            selectedId: p.filterCollectionId,
+            onSelected: p.setFilterCollection,
           ),
+          if (p.allTags.isNotEmpty)
+            TagFilterBar(
+              tags: p.allTags,
+              selected: p.filterTag,
+              onChanged: p.setFilterTag,
+            ),
+        ],
         if (items.isEmpty)
           SizedBox(
             height: 200,
@@ -175,7 +187,7 @@ class _SnippetsScreenState extends State<SnippetsScreen> {
           )
         else ...[
           SectionLabel(
-            title: p.filterTag == null ? 'Latest' : '#${p.filterTag}',
+            title: _sectionTitle(p),
             meta: '${items.length}',
           ),
           ...items.indexed.map(
@@ -185,13 +197,106 @@ class _SnippetsScreenState extends State<SnippetsScreen> {
                 index: entry.$1 + 1,
                 child: SnippetCard(
                   snippet: entry.$2,
-                  onTap: () => _editSnippet(context, entry.$2, p),
+                  selected: p.selectionMode && p.selectedIds.contains(entry.$2.id),
+                  selectionMode: p.selectionMode,
+                  onTap: () {
+                    if (p.selectionMode) {
+                      p.toggleSelection(entry.$2.id);
+                    } else {
+                      _editSnippet(context, entry.$2, p);
+                    }
+                  },
+                  onLongPress: () {
+                    if (!p.selectionMode) {
+                      p.toggleSelection(entry.$2.id);
+                    }
+                  },
                 ),
               ),
             ),
           ),
         ],
         const SizedBox(height: 100),
+      ],
+    );
+  }
+
+  String _sectionTitle(SnippetsProvider p) {
+    final colId = p.filterCollectionId;
+    if (colId == -1) return 'All snippets';
+    if (colId == null) return 'Uncollected';
+    final col = p.collections.firstWhereOrNull((c) => c.id == colId);
+    return col?.name ?? 'Collection';
+  }
+
+  Widget _buildHeader(SnippetsProvider p) {
+    if (p.selectionMode) {
+      return LibraryHeader(
+        title: '${p.selectedIds.length} selected',
+        titleSize: _oneHand ? 64 : 32,
+        actions: [
+          IconButtonRound(
+            icon: Icons.select_all_rounded,
+            size: 36,
+            variant: IconButtonVariant.tonal,
+            iconColor: context.colors.textSecondary,
+            tooltip: 'Select All',
+            onPressed: p.selectedIds.length == p.snippets.length && p.snippets.isNotEmpty
+                ? p.clearSelection
+                : p.selectAll,
+          ),
+          const SizedBox(width: 4),
+          IconButtonRound(
+            icon: Icons.swap_horiz_rounded,
+            size: 36,
+            variant: IconButtonVariant.tonal,
+            iconColor: context.colors.textSecondary,
+            tooltip: 'Inverse',
+            onPressed: p.inverseSelection,
+          ),
+          const SizedBox(width: 4),
+          IconButtonRound(
+            icon: Icons.folder_open_outlined,
+            size: 36,
+            variant: IconButtonVariant.tonal,
+            iconColor: context.colors.textSecondary,
+            tooltip: 'Group into collection',
+            onPressed: () => _groupSelected(context, p),
+          ),
+          const SizedBox(width: 4),
+          IconButtonRound(
+            icon: Icons.delete_outline,
+            size: 36,
+            variant: IconButtonVariant.tonal,
+            iconColor: const Color(0xFFC44C4C),
+            tooltip: 'Delete selected',
+            onPressed: _confirmDelete,
+          ),
+          const SizedBox(width: 4),
+          IconButtonRound(
+            icon: Icons.close,
+            size: 36,
+            variant: IconButtonVariant.tonal,
+            iconColor: context.colors.textSecondary,
+            tooltip: 'Done',
+            onPressed: p.clearSelection,
+          ),
+        ],
+      );
+    }
+    return LibraryHeader(
+      title: 'Snippets',
+      titleSize: _oneHand ? 64 : 32,
+      shrinkProgress: _oneHand ? _scrollProgress : 0.0,
+      actions: [
+        IconButtonRound(
+          icon: Icons.checklist_rtl_rounded,
+          size: 36,
+          variant: IconButtonVariant.tonal,
+          iconColor: context.colors.textSecondary,
+          tooltip: 'Select',
+          onPressed: () => p.selectAll(),
+        ),
       ],
     );
   }
@@ -270,6 +375,248 @@ class _SnippetsScreenState extends State<SnippetsScreen> {
           );
         }
       },
+    );
+  }
+
+  Future<void> _confirmDelete() async {
+    final p = context.read<SnippetsProvider>();
+    final ctx = context;
+    final confirmed = await StashDialog.show<bool>(
+      ctx,
+      title: 'Delete ${p.selectedIds.length} snippets?',
+      content: 'This cannot be undone.',
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(ctx, false),
+          child: Text(
+            'Cancel',
+            style: TextStyle(color: ctx.colors.textSecondary),
+          ),
+        ),
+        TextButton(
+          onPressed: () => Navigator.pop(ctx, true),
+          child: const Text(
+            'Delete',
+            style: TextStyle(color: Color(0xFFC44C4C)),
+          ),
+        ),
+      ],
+    );
+    if (confirmed == true) {
+      await p.deleteSelected();
+      if (ctx.mounted) {
+        StashToast.show(
+          ctx,
+          message: 'Snippets deleted',
+          icon: Icons.check,
+        );
+      }
+    }
+  }
+
+  Future<void> _groupSelected(BuildContext context, SnippetsProvider p) async {
+    final result = await showModalBottomSheet<int?>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) {
+        final c = Theme.of(ctx).colorScheme;
+        return Container(
+          decoration: BoxDecoration(
+            color: c.surface,
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+          ),
+          child: ListView(
+            shrinkWrap: true,
+            padding: const EdgeInsets.symmetric(vertical: 8),
+            children: [
+              ListTile(
+                leading: Icon(Icons.folder_off_outlined, color: c.secondary),
+                title: Text('Ungrouped', style: TextStyle(color: c.secondary)),
+                onTap: () => Navigator.pop(ctx, null),
+              ),
+              if (p.collections.isNotEmpty) const Divider(height: 1),
+              ...p.collections.map((col) {
+                return ListTile(
+                  leading: CircleAvatar(
+                    radius: 12,
+                    backgroundColor: _parseColor(col.color),
+                  ),
+                  title: Text(col.name),
+                  onTap: () => Navigator.pop(ctx, col.id),
+                );
+              }),
+              const Divider(height: 1),
+              ListTile(
+                leading: Icon(Icons.add_circle_outline, color: c.primary),
+                title: Text('New collection', style: TextStyle(color: c.primary)),
+                trailing: Icon(Icons.chevron_right, color: c.primary),
+                onTap: () async {
+                  final nameController = TextEditingController();
+                  final colorController = TextEditingController(text: '#FFD700');
+                  final confirmed = await showDialog<bool>(
+                    context: ctx,
+                    builder: (dialogCtx) {
+                      final dc = Theme.of(dialogCtx).colorScheme;
+                      return AlertDialog(
+                        title: const Text('New collection'),
+                        content: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            TextField(
+                              controller: nameController,
+                              decoration: const InputDecoration(
+                                labelText: 'Name',
+                                hintText: 'My collection',
+                              ),
+                              autofocus: true,
+                            ),
+                          ],
+                        ),
+                        actions: [
+                          TextButton(
+                            onPressed: () => Navigator.pop(dialogCtx, false),
+                            child: Text('Cancel', style: TextStyle(color: dc.secondary)),
+                          ),
+                          TextButton(
+                            onPressed: () => Navigator.pop(dialogCtx, true),
+                            child: const Text('Create'),
+                          ),
+                        ],
+                      );
+                    },
+                  );
+                  if (confirmed == true && nameController.text.trim().isNotEmpty) {
+                    final id = await p.createCollection(nameController.text.trim(), color: colorController.text.trim());
+                    if (ctx.mounted) {
+                      Navigator.pop(ctx, id);
+                    }
+                  }
+                },
+              ),
+            ],
+          ),
+        );
+      },
+    );
+
+    if (result == null) {
+      await p.moveSnippetsToCollection(p.selectedIds.toList(), null);
+    } else if (result > 0) {
+      await p.moveSnippetsToCollection(p.selectedIds.toList(), result);
+    }
+    if (context.mounted) {
+      p.clearSelection();
+    }
+  }
+
+  Color _parseColor(String hex) {
+    final cleaned = hex.replaceFirst('#', '');
+    final value = int.parse(cleaned.padLeft(6, '0'), radix: 16) + 0xFF000000;
+    return Color(value);
+  }
+}
+
+Color _parseHexColor(String hex) {
+  final cleaned = hex.replaceFirst('#', '');
+  final value = int.parse(cleaned.padLeft(6, '0'), radix: 16) + 0xFF000000;
+  return Color(value);
+}
+
+class _CollectionFilterBar extends StatelessWidget {
+  final List<SnippetCollection> collections;
+  final int? selectedId;
+  final ValueChanged<int?> onSelected;
+
+  const _CollectionFilterBar({
+    required this.collections,
+    required this.selectedId,
+    required this.onSelected,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.colors;
+    final chips = <Widget>[
+      _Chip(
+        label: 'All',
+        selected: selectedId == -1,
+        color: c.accent,
+        onSelected: () => onSelected(-1),
+      ),
+      const SizedBox(width: 8),
+      _Chip(
+        label: 'Uncollected',
+        selected: selectedId == null,
+        color: c.textSecondary,
+        onSelected: () => onSelected(null),
+      ),
+    ];
+    for (final col in collections) {
+      chips.add(const SizedBox(width: 8));
+      chips.add(
+        _Chip(
+          label: col.name,
+          selected: selectedId == col.id,
+          color: _parseHexColor(col.color),
+          onSelected: () {
+            if (selectedId == col.id) {
+              onSelected(null);
+            } else {
+              onSelected(col.id);
+            }
+          },
+        ),
+      );
+    }
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
+      child: SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        child: Row(children: chips),
+      ),
+    );
+  }
+}
+
+class _Chip extends StatelessWidget {
+  final String label;
+  final bool selected;
+  final Color color;
+  final VoidCallback onSelected;
+
+  const _Chip({
+    required this.label,
+    required this.selected,
+    required this.color,
+    required this.onSelected,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.colors;
+    final bg = selected ? color.withValues(alpha: 0.18) : c.surfaceMuted;
+    final fg = selected ? color : c.textSecondary;
+    final border = selected ? Border.all(color: color.withValues(alpha: 0.6)) : null;
+    return GestureDetector(
+      onTap: onSelected,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 180),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+        decoration: BoxDecoration(
+          color: bg,
+          borderRadius: BorderRadius.circular(20),
+          border: border,
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+            color: fg,
+            fontSize: 13,
+            fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
+          ),
+        ),
+      ),
     );
   }
 }

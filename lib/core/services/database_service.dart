@@ -8,6 +8,7 @@ import '../models/extension_source.dart';
 import '../models/manga.dart';
 import '../models/manga_chapter.dart';
 import '../models/snippet.dart';
+import '../models/snippet_collection.dart';
 import '../models/reading_stat.dart';
 import '../models/source.dart';
 
@@ -298,7 +299,7 @@ class DatabaseService {
             variables: [Variable.withInt(id)])
         .get();
     if (rows.isEmpty) return null;
-    return await _snippetFromRow(rows.first.data, await _getTagsForSnippet(id));
+    return _snippetFromRow(rows.first.data, await _getTagsForSnippet(id));
   }
 
   Future<int> createSnippet({
@@ -309,12 +310,13 @@ class DatabaseService {
     String? color,
     int? bookId,
     int? chapterId,
+    int? collectionId,
     List<String> tags = const [],
   }) async {
     final now = DateTime.now();
     final id = await _db.customInsert(
-      'INSERT INTO snippets (content, note, source_title, source_url, color, book_id, chapter_id, created_at, updated_at) '
-      'VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+      'INSERT INTO snippets (content, note, source_title, source_url, color, book_id, chapter_id, collection_id, created_at, updated_at) '
+      'VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
       variables: [
         Variable.withString(text),
         Variable.withString(note ?? ''),
@@ -323,6 +325,7 @@ class DatabaseService {
         Variable.withString(color ?? ''),
         bookId != null ? Variable.withInt(bookId) : Variable<int>(null),
         chapterId != null ? Variable.withInt(chapterId) : Variable<int>(null),
+        collectionId != null ? Variable.withInt(collectionId) : Variable<int>(null),
         Variable.withDateTime(now),
         Variable.withDateTime(now),
       ],
@@ -334,7 +337,7 @@ class DatabaseService {
   Future<void> updateSnippet(Snippet snippet) async {
     await _db.customUpdate(
       'UPDATE snippets SET content=?, note=?, source_title=?, source_url=?, '
-      'color=?, book_id=?, chapter_id=?, updated_at=? WHERE id=?',
+      'color=?, book_id=?, chapter_id=?, collection_id=?, updated_at=? WHERE id=?',
       variables: [
         Variable.withString(snippet.text),
         Variable.withString(snippet.note ?? ''),
@@ -347,6 +350,9 @@ class DatabaseService {
         snippet.chapterId != null
             ? Variable.withInt(snippet.chapterId!)
             : Variable<int>(null),
+        snippet.collectionId != null
+            ? Variable.withInt(snippet.collectionId!)
+            : Variable<int>(null),
         Variable.withDateTime(DateTime.now()),
         Variable.withInt(snippet.id),
       ],
@@ -357,6 +363,60 @@ class DatabaseService {
   Future<void> deleteSnippet(int id) async {
     await _db.customUpdate(
       'DELETE FROM snippets WHERE id=?',
+      variables: [Variable.withInt(id)],
+    );
+  }
+
+  Future<void> deleteSelectedSnippets(List<int> ids) async {
+    if (ids.isEmpty) return;
+    await _db.customUpdate(
+      'DELETE FROM snippets WHERE id IN (${ids.map((_) => '?').join(',')})',
+      variables: ids.map((id) => Variable.withInt(id)).toList(),
+    );
+  }
+
+  // -- Snippet Collections --
+
+  Future<List<SnippetCollection>> getCollections() async {
+    final rows = await _db
+        .customSelect('SELECT * FROM snippet_collections ORDER BY name ASC')
+        .get();
+    return rows.map((r) => SnippetCollection.fromJson(r.data)).toList();
+  }
+
+  Future<int> createCollection(String name, {String color = '#FFD700'}) async {
+    final now = DateTime.now();
+    return await _db.customInsert(
+      'INSERT INTO snippet_collections (name, color, created_at, updated_at) VALUES (?, ?, ?, ?)',
+      variables: [
+        Variable.withString(name),
+        Variable.withString(color),
+        Variable.withDateTime(now),
+        Variable.withDateTime(now),
+      ],
+    );
+  }
+
+  Future<void> updateCollection(SnippetCollection collection) async {
+    await _db.customUpdate(
+      'UPDATE snippet_collections SET name=?, color=?, updated_at=? WHERE id=?',
+      variables: [
+        Variable.withString(collection.name),
+        Variable.withString(collection.color),
+        Variable.withDateTime(DateTime.now()),
+        Variable.withInt(collection.id),
+      ],
+    );
+  }
+
+  Future<void> deleteCollection(int id) async {
+    await _db.customUpdate(
+      'DELETE FROM snippet_collections WHERE id=?',
+      variables: [Variable.withInt(id)],
+    );
+    // Set collection_id to NULL for snippets in this collection
+    await _db.customUpdate(
+      'UPDATE snippets SET collection_id=NULL WHERE collection_id=?',
       variables: [Variable.withInt(id)],
     );
   }
@@ -731,6 +791,7 @@ class DatabaseService {
       color: row['color'] as String?,
       bookId: row['book_id'] as int?,
       chapterId: row['chapter_id'] as int?,
+      collectionId: row['collection_id'] as int?,
       tags: preloadedTags ?? [],
     );
   }

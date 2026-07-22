@@ -1539,7 +1539,7 @@ class _MangaLibraryCard extends StatelessWidget {
     );
   }
 
-  Widget _placeholder(StashReaderColors c) => Container(
+  Widget _placeholder(KomaColors c) => Container(
     color: c.surfaceMuted,
     child: Center(
       child: Icon(Icons.image_outlined, size: 28, color: c.textTertiary),
@@ -1673,7 +1673,7 @@ class _MangaLibraryRow extends StatelessWidget {
     );
   }
 
-  Widget _placeholder(StashReaderColors c, double w, double h) => Container(
+  Widget _placeholder(KomaColors c, double w, double h) => Container(
     width: w,
     height: h,
     color: c.surfaceMuted,

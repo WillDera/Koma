@@ -1000,7 +1000,7 @@ class _MangaDetailScreenState extends State<MangaDetailScreen> {
 
 class _Header extends StatefulWidget {
   final Map<String, dynamic> details;
-  final StashReaderColors c;
+  final KomaColors c;
   final bool inLibrary;
   final VoidCallback onAddToLibrary;
   final double appBarHeight;
@@ -1262,7 +1262,7 @@ class _HeaderState extends State<_Header> {
   }
 }
 
-Widget _detailInfoRow(StashReaderColors c, String label, String value) {
+Widget _detailInfoRow(KomaColors c, String label, String value) {
   return Padding(
     padding: const EdgeInsets.only(bottom: 2),
     child: Text.rich(
@@ -1463,7 +1463,7 @@ class _HeroSection extends StatelessWidget {
   final String? author;
   final String? artist;
   final String statusLabel;
-  final StashReaderColors c;
+  final KomaColors c;
   final double appBarHeight;
   final String? localThumbnail;
   final String sourceId;
@@ -1614,7 +1614,7 @@ class _ChaptersList extends StatelessWidget {
   final Map<String, Map<String, dynamic>> localChapters;
   final Map<String, String> downloadProgress;
   final bool offlineMode;
-  final StashReaderColors c;
+  final KomaColors c;
   final String sourceId;
   final void Function(Map<String, dynamic> ch) onChapterTap;
   final void Function(Map<String, dynamic> ch)? onDownloadTap;

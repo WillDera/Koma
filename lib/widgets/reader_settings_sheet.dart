@@ -69,7 +69,7 @@ class _ReaderSettingsSheetState extends State<ReaderSettingsSheet> {
               ),
               const SizedBox(height: 8),
               Text(
-                'StashReader is a calm, focused place to read what matters, save what moves you, and revisit it any time.',
+                'Koma is a calm, focused place to read what matters, save what moves you, and revisit it any time.',
                 style: AppType.reading(
                   fontSize: p.fontSize,
                   lineHeight: p.lineHeight,

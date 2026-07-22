@@ -10,15 +10,15 @@ import 'theme/theme_provider.dart';
 import 'theme/tokens/app_motion.dart';
 import 'widgets/glass_pill_nav.dart';
 
-class StashReaderApp extends StatelessWidget {
-  const StashReaderApp({super.key});
+class KomaApp extends StatelessWidget {
+  const KomaApp({super.key});
 
   @override
   Widget build(BuildContext context) {
     final themeProv = context.watch<ThemeProvider>();
 
     return MaterialApp(
-      title: 'StashReader',
+      title: 'Koma',
       debugShowCheckedModeBanner: false,
       theme: themeProv.isSepia ? themeProv.sepiaTheme : themeProv.lightTheme,
       darkTheme: themeProv.darkTheme,

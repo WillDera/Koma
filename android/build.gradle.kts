@@ -35,7 +35,7 @@ allprojects {
                 val setter = ext.javaClass.methods.firstOrNull {
                     it.name == "setNamespace" && it.parameterCount == 1
                 }
-                val fallback = "com.stashreader.${project.name.replace('-', '_')}"
+                val fallback = "com.koma.${project.name.replace('-', '_')}"
                 setter?.invoke(ext, fallback)
             }
         }
@@ -49,7 +49,7 @@ allprojects {
                 val setter = ext.javaClass.methods.firstOrNull {
                     it.name == "setNamespace" && it.parameterCount == 1
                 }
-                val fallback = "com.stashreader.${project.name.replace('-', '_')}"
+                val fallback = "com.koma.${project.name.replace('-', '_')}"
                 setter?.invoke(ext, fallback)
             }
         }
