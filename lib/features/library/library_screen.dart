@@ -782,7 +782,11 @@ class _LibraryScreenState extends State<LibraryScreen> {
     Navigator.push(
       context,
       MaterialPageRoute(builder: (_) => ReaderScreen(bookId: bookId)),
-    );
+    ).then((_) {
+      // Reader was popped — reload so reading-progress, chapter changes,
+      // and new snippets are reflected in the library immediately.
+      context.read<LibraryProvider>().loadBooks();
+    });
   }
 
   void _openManga(BuildContext context, Manga manga) {
