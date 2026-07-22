@@ -98,9 +98,6 @@ class ReaderProvider extends ChangeNotifier {
   void updateScrollPosition(double position) {
     _scrollPosition = position;
     _chapterScrollPositions[_currentIndex] = position;
-    // Debounce the DB write — scrolling fires hundreds of events per
-    // second; we only need to persist the latest position once the
-    // user pauses.
     _pendingScroll = position;
     _scrollPersistTimer?.cancel();
     _scrollPersistTimer = Timer(const Duration(milliseconds: 1500), () {
@@ -108,17 +105,20 @@ class ReaderProvider extends ChangeNotifier {
     });
   }
 
-  void _flushPendingScroll() {
+  /// Flush the pending scroll position to the DB and return when done.
+  Future<void> _flushPendingScroll() async {
     _scrollPersistTimer?.cancel();
     _scrollPersistTimer = null;
     final pos = _pendingScroll;
     final ch = _currentChapter;
     if (pos == null || ch == null) return;
     _pendingScroll = null;
-    _db.updateChapterScroll(ch.id, pos);
+    await _db.updateChapterScroll(ch.id, pos);
   }
 
-  void _updateBookProgress() {
+  /// Update the book's progress / position in the DB.
+  /// Returns once the write is committed.
+  Future<void> _updateBookProgress() async {
     if (_book == null || _chapters.isEmpty) return;
     final progress = (_currentIndex + 1) / _chapters.length;
     _book = _book!.copyWith(
@@ -126,7 +126,7 @@ class ReaderProvider extends ChangeNotifier {
       currentChapterIndex: _currentIndex,
       scrollPosition: _scrollPosition,
     );
-    _db.updateProgress(
+    await _db.updateProgress(
       _book!.id,
       progress,
       currentChapterIndex: _currentIndex,
@@ -142,25 +142,32 @@ class ReaderProvider extends ChangeNotifier {
     });
   }
 
-  void stopReadingTimer() {
+  /// Flush pending scroll position and stop the reading timer.
+  /// The caller should await this before navigating away so the DB
+  /// write completes before the next screen reads the data.
+  Future<void> stopReadingTimer() async {
     _readingTimer?.cancel();
     _readingTimer = null;
     if (_elapsedSeconds > 0) {
       _statsService.trackReading(_book?.id ?? 0, _elapsedSeconds % 30);
     }
-    // Persist the most recent scroll position before tearing down.
-    _flushPendingScroll();
-    // Mark book as complete if at last chapter
+    await _flushPendingScroll();
     if (_book != null &&
         _currentIndex == _chapters.length - 1 &&
         _book!.progress < 1.0) {
       _book = _book!.copyWith(
           progress: 1.0, scrollPosition: _scrollPosition);
-      _db.updateProgress(_book!.id, 1.0,
+      await _db.updateProgress(_book!.id, 1.0,
           scrollPosition: _scrollPosition);
       _statsService.trackCompletion(_book!.id);
     }
+    // Update book progress & scroll position — this is what the
+    // history screen reads.  Await it so the data is in the DB
+    // before the .then() fires on the calling screen.
     _updateBookProgress();
+    // _updateBookProgress fires async DB writes.  Wait for the DB
+    // queue to drain before returning.
+    await _db.db.customSelect('SELECT 1');
   }
 
   @override

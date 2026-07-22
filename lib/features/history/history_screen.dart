@@ -5,6 +5,7 @@ import '../../core/services/database_service.dart';
 import '../../theme/app_theme.dart';
 import '../../theme/theme_provider.dart';
 import '../../theme/tokens/app_spacing.dart';
+import '../../app.dart' show routeObserver;
 import '../../widgets/animated_press.dart';
 import '../../widgets/book_cover.dart';
 import '../../widgets/dialog_sheet.dart';
@@ -23,7 +24,7 @@ class HistoryScreen extends StatefulWidget {
   State<HistoryScreen> createState() => _HistoryScreenState();
 }
 
-class _HistoryScreenState extends State<HistoryScreen> {
+class _HistoryScreenState extends State<HistoryScreen> with RouteAware {
   final ScrollController _scrollCtrl = ScrollController();
   double _scrollProgress = 0;
   List<Book> _books = [];
@@ -50,7 +51,19 @@ class _HistoryScreenState extends State<HistoryScreen> {
   void dispose() {
     _scrollCtrl.removeListener(_onScroll);
     _scrollCtrl.dispose();
+    routeObserver.unsubscribe(this);
     super.dispose();
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    routeObserver.subscribe(this, ModalRoute.of(context)!);
+  }
+
+  @override
+  void didPopNext() {
+    _load();
   }
 
   bool get _oneHand => context.watch<ThemeProvider>().oneHandMode;
@@ -193,7 +206,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
             MaterialPageRoute(
               builder: (_) => ReaderScreen(bookId: book.id),
             ),
-          ).then((_) => _load()),
+          ),
           child: Container(
             padding: const EdgeInsets.all(12),
             decoration: BoxDecoration(
@@ -316,7 +329,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
                 title: name,
               ),
             ),
-          ).then((_) => _load()),
+          ),
           child: Container(
             padding: const EdgeInsets.all(12),
             decoration: BoxDecoration(
