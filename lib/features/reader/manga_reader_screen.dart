@@ -191,18 +191,22 @@ class _MangaReaderScreenState extends State<MangaReaderScreen>
     if (mounted) setState(() {});
   }
 
-  void _flushPageProgress() {
+  Future<void> _saveProgress() async {
     if (_chapterId == null || _db == null) return;
-    _saveTimer?.cancel();
-    _saveTimer = null;
     if (_settings.readingMode == ReadingMode.webtoon) {
-      _db!.updateMangaChapterScrollPosition(_chapterId!, _currentScrollPos);
+      await _db!.updateMangaChapterScrollPosition(_chapterId!, _currentScrollPos);
     } else {
-      _db!.updateMangaChapterProgress(_chapterId!, _currentPage);
+      await _db!.updateMangaChapterProgress(_chapterId!, _currentPage);
     }
     if (_currentPage >= _pages.length - 1) {
-      _db!.markMangaChapterRead(_chapterId!);
+      await _db!.markMangaChapterRead(_chapterId!);
     }
+  }
+
+  void _flushPageProgress() {
+    _saveTimer?.cancel();
+    _saveTimer = null;
+    _saveProgress();
   }
 
   void _toggleToolbar() => setState(() => _showToolbar = !_showToolbar);
@@ -395,8 +399,16 @@ class _MangaReaderScreenState extends State<MangaReaderScreen>
       orientations.addAll([DeviceOrientation.landscapeLeft, DeviceOrientation.landscapeRight]);
     }
 
-    return Scaffold(
-      backgroundColor: Colors.black,
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, _) {
+        if (didPop) return;
+        _saveProgress().then((_) {
+          if (context.mounted) Navigator.of(context).pop();
+        });
+      },
+      child: Scaffold(
+        backgroundColor: Colors.black,
       body: OrientationBuilder(
         builder: (context, orientation) {
           final isLandscape = orientation == Orientation.landscape;
@@ -458,6 +470,7 @@ class _MangaReaderScreenState extends State<MangaReaderScreen>
             ],
           );
         },
+      ),
       ),
     );
   }
