@@ -6,6 +6,7 @@ import '../../core/models/chapter.dart' as ch_model;
 import '../../core/models/snippet.dart';
 import '../../core/services/database_service.dart';
 import '../../core/services/search_service.dart';
+import '../../features/library/library_provider.dart';
 import '../../theme/app_theme.dart';
 import '../../theme/theme_provider.dart';
 import '../../theme/tokens/app_spacing.dart';
@@ -372,6 +373,9 @@ class _SearchScreenState extends State<SearchScreen> {
     Navigator.push(
       context,
       MaterialPageRoute(builder: (_) => ReaderScreen(bookId: bookId)),
-    );
+    ).then((_) {
+      if (!mounted) return;
+      context.read<LibraryProvider>().loadBooks();
+    });
   }
 }
