@@ -16,6 +16,7 @@ import '../../theme/app_theme.dart';
 import '../../theme/theme_provider.dart';
 import '../../theme/tokens/app_spacing.dart';
 
+import '../../app.dart' show routeObserver;
 import '../../widgets/animated_press.dart';
 import '../../widgets/dialog_sheet.dart';
 import '../../widgets/empty_state.dart';
@@ -41,7 +42,7 @@ class LibraryScreen extends StatefulWidget {
   State<LibraryScreen> createState() => _LibraryScreenState();
 }
 
-class _LibraryScreenState extends State<LibraryScreen> {
+class _LibraryScreenState extends State<LibraryScreen> with RouteAware {
   final ScrollController _scrollCtrl = ScrollController();
   final TextEditingController _bookSearchCtrl = TextEditingController();
   final TextEditingController _mangaSearchCtrl = TextEditingController();
@@ -99,7 +100,22 @@ class _LibraryScreenState extends State<LibraryScreen> {
     _scrollCtrl.dispose();
     _bookSearchCtrl.dispose();
     _mangaSearchCtrl.dispose();
+    routeObserver.unsubscribe(this);
     super.dispose();
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    routeObserver.subscribe(this, ModalRoute.of(context)!);
+  }
+
+  @override
+  void didPopNext() {
+    // A pushed route (e.g. reader) was popped and we're visible again.
+    // Reload data — this is the Mihon-equivalent of Room Flow
+    // reacting to an onPause write.
+    context.read<LibraryProvider>().loadBooks();
   }
 
   bool get _oneHand => context.watch<ThemeProvider>().oneHandMode;
@@ -782,11 +798,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
     Navigator.push(
       context,
       MaterialPageRoute(builder: (_) => ReaderScreen(bookId: bookId)),
-    ).then((_) {
-      // Reader was popped — reload so reading-progress, chapter changes,
-      // and new snippets are reflected in the library immediately.
-      context.read<LibraryProvider>().loadBooks();
-    });
+    );
   }
 
   void _openManga(BuildContext context, Manga manga) {

@@ -10,6 +10,8 @@ import 'theme/theme_provider.dart';
 import 'theme/tokens/app_motion.dart';
 import 'widgets/glass_pill_nav.dart';
 
+final RouteObserver<ModalRoute<void>> routeObserver = RouteObserver<ModalRoute<void>>();
+
 class KomaApp extends StatelessWidget {
   const KomaApp({super.key});
 
@@ -20,6 +22,7 @@ class KomaApp extends StatelessWidget {
     return MaterialApp(
       title: 'Koma',
       debugShowCheckedModeBanner: false,
+      navigatorObservers: [routeObserver],
       theme: themeProv.isSepia ? themeProv.sepiaTheme : themeProv.lightTheme,
       darkTheme: themeProv.darkTheme,
       themeMode:

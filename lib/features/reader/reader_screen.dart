@@ -102,9 +102,11 @@ class _ReaderScreenState extends State<ReaderScreen>
     });
   }
 
+  bool _didHandleBack = false;
+
   @override
   void dispose() {
-    _provider?.stopReadingTimer();
+    if (!_didHandleBack) _provider?.stopReadingTimer();
     _scrollController.dispose();
     _toolbarCtrl.dispose();
     _colorCtrl.dispose();
@@ -339,7 +341,13 @@ class _ReaderScreenState extends State<ReaderScreen>
                     chapterTitle: chapter.title,
                     progress: progress,
                     visible: _showUI,
-                    onBack: () => Navigator.pop(context),
+                    onBack: () async {
+                      if (_provider != null) {
+                        await _provider!.stopReadingTimer();
+                      }
+                      _didHandleBack = true;
+                      if (mounted) Navigator.pop(context);
+                    },
                     onSettings: () =>
                         ReaderSettingsSheet.show(context, themeProv),
                   ),
