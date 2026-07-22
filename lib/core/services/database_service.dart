@@ -314,12 +314,13 @@ class DatabaseService {
     int? collectionId,
     int? startOffset,
     int? endOffset,
+    double? scrollPosition,
     List<String> tags = const [],
   }) async {
     final now = DateTime.now();
     final id = await _db.customInsert(
-      'INSERT INTO snippets (content, note, source_title, source_url, color, book_id, chapter_id, collection_id, start_offset, end_offset, created_at, updated_at) '
-      'VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+      'INSERT INTO snippets (content, note, source_title, source_url, color, book_id, chapter_id, collection_id, start_offset, end_offset, scroll_position, created_at, updated_at) '
+      'VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
       variables: [
         Variable.withString(text),
         Variable.withString(note ?? ''),
@@ -331,6 +332,7 @@ class DatabaseService {
         collectionId != null ? Variable.withInt(collectionId) : Variable<int>(null),
         startOffset != null ? Variable.withInt(startOffset) : Variable<int>(null),
         endOffset != null ? Variable.withInt(endOffset) : Variable<int>(null),
+        scrollPosition != null ? Variable.withReal(scrollPosition) : Variable<int>(null),
         Variable.withDateTime(now),
         Variable.withDateTime(now),
       ],
@@ -799,6 +801,7 @@ class DatabaseService {
       collectionId: row['collection_id'] as int?,
       startOffset: row['start_offset'] as int?,
       endOffset: row['end_offset'] as int?,
+      scrollPosition: (row['scroll_position'] as num?)?.toDouble(),
       tags: preloadedTags ?? [],
     );
   }

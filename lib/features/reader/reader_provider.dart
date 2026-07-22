@@ -36,7 +36,8 @@ class ReaderProvider extends ChangeNotifier {
   bool get loading => _loading;
   String? get error => _error;
 
-  Future<void> loadBook(int bookId) async {
+  Future<void> loadBook(int bookId,
+      {int? targetChapterId, double? targetScrollOffset}) async {
     _loading = true;
     _error = null;
     _elapsedSeconds = 0;
@@ -49,16 +50,22 @@ class ReaderProvider extends ChangeNotifier {
       if (_book != null && _chapters.isNotEmpty) {
         _currentIndex =
             _book!.currentChapterIndex.clamp(0, _chapters.length - 1);
+        // Jump-to-snippet: convert snippet.chapterId to a chapter index
+        // and jump to it.
+        if (targetChapterId != null) {
+          final idx =
+              _chapters.indexWhere((ch) => ch.id == targetChapterId);
+          if (idx >= 0) _currentIndex = idx;
+        }
         _currentChapter = _chapters[_currentIndex];
-        // Populate the per-chapter scroll map from the DB. This makes
-        // back-navigation restore exactly where the user left off.
+        // Populate the per-chapter scroll map from the DB.
         for (var i = 0; i < _chapters.length; i++) {
           _chapterScrollPositions[i] = _chapters[i].scrollPosition;
         }
         // The book-level scroll is only used as a fallback when the
         // current chapter's per-chapter position is 0.
         final chPos = _chapterScrollPositions[_currentIndex] ?? 0.0;
-        _scrollPosition = chPos > 0 ? chPos : _book!.scrollPosition;
+        _scrollPosition = targetScrollOffset ?? (chPos > 0 ? chPos : _book!.scrollPosition);
         await _db.markChapterRead(_currentChapter!.id);
       }
 

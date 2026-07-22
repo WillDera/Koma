@@ -25,7 +25,19 @@ import 'reader_provider.dart';
 
 class ReaderScreen extends StatefulWidget {
   final int bookId;
-  const ReaderScreen({super.key, required this.bookId});
+
+  /// Optional target chapter id and scroll offset for jump-to-snippet
+  /// navigation.  When chapterId is set the reader opens at that chapter
+  /// at the given scroll offset.
+  final int? snippetChapterId;
+  final double? snippetScrollOffset;
+
+  const ReaderScreen({
+    super.key,
+    required this.bookId,
+    this.snippetChapterId,
+    this.snippetScrollOffset,
+  });
 
   @override
   State<ReaderScreen> createState() => _ReaderScreenState();
@@ -44,6 +56,7 @@ class _ReaderScreenState extends State<ReaderScreen>
   bool _showUI = true;
   bool _toolbarVisible = false;
   bool _colorPickerVisible = false;
+  int _highlightVersion = 0;
   double _lastScrollOffset = 0;
   Offset _selectionOrigin = Offset.zero;
 
@@ -76,7 +89,9 @@ class _ReaderScreenState extends State<ReaderScreen>
   }
 
   Future<void> _loadAndRestore() async {
-    await _provider!.loadBook(widget.bookId);
+    await _provider!.loadBook(widget.bookId,
+        targetChapterId: widget.snippetChapterId,
+        targetScrollOffset: widget.snippetScrollOffset);
     if (!mounted) return;
     _restoreScrollPosition();
   }
@@ -110,6 +125,18 @@ class _ReaderScreenState extends State<ReaderScreen>
     } else {
       _highlights = [];
     }
+    // Jump to the saved scroll position for this chapter.  The
+    // provider's _scrollPosition may be 0 for an unvisited chapter,
+    // but a snippet-jump sets a specific offset (startOffset) that
+    // should be used instead.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || !_scrollController.hasClients) return;
+      final pos = _provider?.scrollPosition ?? 0;
+      if (pos > 0) {
+        _scrollController.jumpTo(
+            pos.clamp(0, _scrollController.position.maxScrollExtent));
+      }
+    });
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted || !_scrollController.hasClients) return;
       final pos = _provider?.scrollPosition ?? 0;
@@ -263,11 +290,6 @@ class _ReaderScreenState extends State<ReaderScreen>
                   behavior: HitTestBehavior.opaque,
                   child: NotificationListener<ScrollStartNotification>(
                     onNotification: (notification) {
-                      // When the user starts scrolling while the selection
-                      // toolbar is visible, dismiss it and absorb the
-                      // scroll-start notification so ScrollNotificationObserver
-                      // never tries to query the now-stale text selection
-                      // (assertion: selection.isValid).
                       if (_toolbarVisible) {
                         _hideToolbar();
                         return true;
@@ -307,6 +329,7 @@ class _ReaderScreenState extends State<ReaderScreen>
                               ),
                               const SizedBox(height: 28),
                               SelectableText.rich(
+                                key: ValueKey('content-${_highlightVersion}'),
                                 TextSpan(
                                   style: _readingStyle(themeProv),
                                   children: _buildReadingSpans(
@@ -326,7 +349,6 @@ class _ReaderScreenState extends State<ReaderScreen>
                                       _showToolbar(Offset.zero);
                                     }
                                   } else if (_toolbarVisible) {
-                                    // Delay to allow taps on toolbar items.
                                     Future.delayed(
                                       const Duration(milliseconds: 200),
                                       () {
@@ -470,8 +492,9 @@ class _ReaderScreenState extends State<ReaderScreen>
     }
 
     // Merge highlight backgrounds into the text.
-    // Walk the text sorted by highlight start, cut segments, and apply
-    // the highlight colour as background + bionic if active.
+    // Walk the text sorted by highlight start, cut segments.
+    // Uses backgroundColor on the TextSpan style (NOT background: Paint())
+    // so text selection hit-testing works properly on highlighted spans.
     final sorted = List<Highlight>.from(_highlights)
       ..sort((a, b) => a.startOffset.compareTo(b.startOffset));
     final spans = <TextSpan>[];
@@ -490,7 +513,7 @@ class _ReaderScreenState extends State<ReaderScreen>
       if (end > hl.startOffset) {
         final chunk = text.substring(hl.startOffset, end);
         final hlStyle = style.copyWith(
-          background: Paint()..color = AppColors.highlight(hl.color, brightness, isSepia: false).withValues(alpha: 0.4),
+          backgroundColor: AppColors.highlight(hl.color, brightness, isSepia: false).withValues(alpha: 0.35),
         );
         spans.addAll(
           _segments(themeProv, chunk, hlStyle, hlStyle),
@@ -545,49 +568,46 @@ class _ReaderScreenState extends State<ReaderScreen>
       return;
     }
     try {
-      final snippetsProvider = context.read<SnippetsProvider>();
       final db = context.read<DatabaseService>();
       final ch = p.currentChapter;
-      final contentStr = ch != null ? TextExtractor.extractFromHtml(ch.content) : '';
-      // Find the text offset within the chapter content.
+      final contentStr =
+          ch != null ? TextExtractor.extractFromHtml(ch.content) : '';
+      final selected = _selectedText!.trim();
       int? startOff;
-      if (ch != null && _selectedText != null && _selectedText!.trim().isNotEmpty) {
-        startOff = contentStr.indexOf(_selectedText!.trim());
+      if (ch != null && selected.isNotEmpty) {
+        startOff = contentStr.indexOf(selected);
       }
-      final snippetId = await snippetsProvider.createSnippet(
-        text: _selectedText!.trim(),
-        color: color,
-        sourceTitle: p.book?.title,
-        sourceUrl: p.book?.sourceUrl,
-        bookId: p.book?.id,
-        chapterId: p.currentChapter?.id,
-        startOffset: startOff != null && startOff >= 0 ? startOff : null,
-        endOffset: startOff != null && startOff >= 0 && _selectedText != null
-            ? startOff + _selectedText!.trim().length
-            : null,
-        tags: const ['highlight'],
-      );
-      // Persist to the highlights table for in-reader rendering.
-      if (p.book != null &&
-          p.currentChapter != null &&
-          startOff != null &&
-          startOff >= 0 &&
-          _selectedText != null) {
+      // Bug 1 fix: save ONLY to the highlights table, NOT to snippets.
+      // Only "Note" (renamed to "Snippet") creates a snippet row.
+      if (p.book != null && ch != null && startOff != null && startOff >= 0) {
         await db.insertHighlight(Highlight(
           id: 0,
-          snippetId: snippetId,
+          // No snippetId — marks are separate from snippets
           bookId: p.book!.id,
-          chapterId: p.currentChapter!.id,
+          chapterId: ch.id,
           startOffset: startOff,
-          endOffset: startOff + _selectedText!.trim().length,
+          endOffset: startOff + selected.length,
           color: color,
-          text: _selectedText!.trim(),
+          text: selected,
         ));
       }
+      // Bug 1 fix: immediately insert into the local list so the reader
+      // re-renders with the highlight visible.
+      setState(() {
+        _highlights.add(Highlight(
+          id: 0,
+          bookId: p.book?.id ?? 0,
+          chapterId: ch?.id ?? 0,
+          startOffset: startOff ?? 0,
+          endOffset: (startOff ?? 0) + selected.length,
+          color: color,
+          text: selected,
+        ));
+      });
       if (mounted) {
         StashToast.show(
           context,
-          message: 'Highlighted',
+          message: 'Marked',
           icon: Icons.format_color_fill,
         );
       }
@@ -600,7 +620,18 @@ class _ReaderScreenState extends State<ReaderScreen>
         );
       }
     } finally {
+      // Discard the old selection so the next long-press can create
+      // fresh selection handles.
+      // The highlight toolbar just saved — hide it, then increment the
+      // SelectableText key so the widget unmounts/remounts cleanly,
+      // discarding the old selection state.  Next long-press creates
+      // new handles.
       _hideToolbar();
+      _selectedText = null;
+      setState(() => _highlightVersion++);
+      // Dismiss keyboard/selection focus so the next long-press
+      // creates a fresh set of selection handles.
+      FocusScope.of(context).unfocus();
     }
   }
 
@@ -672,14 +703,26 @@ class _ReaderScreenState extends State<ReaderScreen>
     if (saved != true) return;
     try {
       final snippetsProvider = context.read<SnippetsProvider>();
+      final ch = p.currentChapter;
+      final contentStr =
+          ch != null ? TextExtractor.extractFromHtml(ch.content) : '';
+      final selected = _selectedText?.trim() ?? '';
+      int? startOff;
+      if (ch != null && selected.isNotEmpty) {
+        startOff = contentStr.indexOf(selected);
+      }
+      final currPos = _scrollController.hasClients ? _scrollController.offset : null;
       await snippetsProvider.createSnippet(
-        text: _selectedText!.trim(),
+        text: selected,
         note: noteCtrl.text.trim().isNotEmpty ? noteCtrl.text.trim() : null,
         color: themeProv.defaultHighlight,
         sourceTitle: p.book?.title,
         sourceUrl: p.book?.sourceUrl,
         bookId: p.book?.id,
         chapterId: p.currentChapter?.id,
+        scrollPosition: currPos,
+        startOffset: startOff != null && startOff >= 0 ? startOff : null,
+        endOffset: startOff != null && startOff >= 0 ? startOff + selected.length : null,
       );
       if (mounted) {
         StashToast.show(
@@ -696,6 +739,8 @@ class _ReaderScreenState extends State<ReaderScreen>
           icon: Icons.error_outline,
         );
       }
+    } finally {
+      _selectedText = null;
     }
   }
 
