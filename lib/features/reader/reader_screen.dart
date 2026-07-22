@@ -1,3 +1,4 @@
+import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
@@ -17,6 +18,8 @@ import '../../widgets/reader_settings_sheet.dart';
 import '../../widgets/reader_top_bar.dart';
 import '../../widgets/text_selection_toolbar.dart';
 import '../../widgets/toast.dart';
+import '../../core/models/highlight.dart';
+import '../../core/services/database_service.dart';
 import '../../core/utils/text_extractor.dart';
 import 'reader_provider.dart';
 
@@ -32,6 +35,10 @@ class _ReaderScreenState extends State<ReaderScreen>
     with TickerProviderStateMixin {
   final ScrollController _scrollController = ScrollController();
   ReaderProvider? _provider;
+
+  /// Highlights loaded for the current chapter, used to decorate the
+  /// reading text with colored backgrounds.
+  List<Highlight> _highlights = [];
 
   String? _selectedText;
   bool _showUI = true;
@@ -94,6 +101,15 @@ class _ReaderScreenState extends State<ReaderScreen>
     if (newIndex == _lastSeenChapterIndex) return;
     _lastSeenChapterIndex = newIndex;
     _lastScrollOffset = 0;
+    // Load highlights for this chapter.
+    final ch = _provider?.chapters;
+    if (ch != null && newIndex >= 0 && newIndex < ch.length) {
+      context.read<DatabaseService>().getHighlightsForChapter(ch[newIndex].id).then((hl) {
+        if (mounted) setState(() => _highlights = hl);
+      });
+    } else {
+      _highlights = [];
+    }
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted || !_scrollController.hasClients) return;
       final pos = _provider?.scrollPosition ?? 0;
@@ -446,15 +462,66 @@ class _ReaderScreenState extends State<ReaderScreen>
 
   List<TextSpan> _buildReadingSpans(ThemeProvider themeProv, String text) {
     final style = _readingStyle(themeProv);
-    if (themeProv.bionicReading) {
-      return BionicText.spans(
-        text,
-        baseStyle: style,
-        bionicWeight: themeProv.bionicBoldWeight,
-        bionicFraction: themeProv.bionicBoldFraction,
+    final brightness = Theme.of(context).brightness;
+
+    // If there are no highlights and bionic is off, return a single span.
+    if (_highlights.isEmpty && !themeProv.bionicReading) {
+      return [TextSpan(text: text, style: style)];
+    }
+
+    // Merge highlight backgrounds into the text.
+    // Walk the text sorted by highlight start, cut segments, and apply
+    // the highlight colour as background + bionic if active.
+    final sorted = List<Highlight>.from(_highlights)
+      ..sort((a, b) => a.startOffset.compareTo(b.startOffset));
+    final spans = <TextSpan>[];
+    int cursor = 0;
+
+    for (final hl in sorted) {
+      // Plain segment before this highlight
+      if (hl.startOffset > cursor) {
+        final chunk = text.substring(cursor, min(hl.startOffset, text.length));
+        spans.addAll(
+          _segments(themeProv, chunk, style, null),
+        );
+      }
+      // Highlighted segment
+      final end = min(hl.endOffset, text.length);
+      if (end > hl.startOffset) {
+        final chunk = text.substring(hl.startOffset, end);
+        final hlStyle = style.copyWith(
+          background: Paint()..color = AppColors.highlight(hl.color, brightness, isSepia: false).withValues(alpha: 0.4),
+        );
+        spans.addAll(
+          _segments(themeProv, chunk, hlStyle, hlStyle),
+        );
+      }
+      cursor = end;
+    }
+    // Remaining text after the last highlight
+    if (cursor < text.length) {
+      spans.addAll(
+        _segments(themeProv, text.substring(cursor), style, null),
       );
     }
-    return [TextSpan(text: text, style: style)];
+    return spans;
+  }
+
+  /// Split [text] into bionic segments if bionic mode is on, otherwise
+  /// a single TokenSpan. When [hlAltStyle] is provided it replaces the
+  /// bold segment's style for highlighted bionic text (both arms use
+  /// the highlight background).
+  List<TextSpan> _segments(ThemeProvider prov, String text, TextStyle base,
+      TextStyle? hlAltStyle) {
+    if (!prov.bionicReading) {
+      return [TextSpan(text: text, style: hlAltStyle ?? base)];
+    }
+    return BionicText.spans(
+      text,
+      baseStyle: hlAltStyle ?? base,
+      bionicWeight: hlAltStyle?.fontWeight ?? prov.bionicBoldWeight,
+      bionicFraction: prov.bionicBoldFraction,
+    );
   }
 
   double _horizontalPadding(double maxWidth) {
@@ -479,15 +546,44 @@ class _ReaderScreenState extends State<ReaderScreen>
     }
     try {
       final snippetsProvider = context.read<SnippetsProvider>();
-      await snippetsProvider.createSnippet(
+      final db = context.read<DatabaseService>();
+      final ch = p.currentChapter;
+      final contentStr = ch != null ? TextExtractor.extractFromHtml(ch.content) : '';
+      // Find the text offset within the chapter content.
+      int? startOff;
+      if (ch != null && _selectedText != null && _selectedText!.trim().isNotEmpty) {
+        startOff = contentStr.indexOf(_selectedText!.trim());
+      }
+      final snippetId = await snippetsProvider.createSnippet(
         text: _selectedText!.trim(),
         color: color,
         sourceTitle: p.book?.title,
         sourceUrl: p.book?.sourceUrl,
         bookId: p.book?.id,
         chapterId: p.currentChapter?.id,
+        startOffset: startOff != null && startOff >= 0 ? startOff : null,
+        endOffset: startOff != null && startOff >= 0 && _selectedText != null
+            ? startOff + _selectedText!.trim().length
+            : null,
         tags: const ['highlight'],
       );
+      // Persist to the highlights table for in-reader rendering.
+      if (p.book != null &&
+          p.currentChapter != null &&
+          startOff != null &&
+          startOff >= 0 &&
+          _selectedText != null) {
+        await db.insertHighlight(Highlight(
+          id: 0,
+          snippetId: snippetId,
+          bookId: p.book!.id,
+          chapterId: p.currentChapter!.id,
+          startOffset: startOff,
+          endOffset: startOff + _selectedText!.trim().length,
+          color: color,
+          text: _selectedText!.trim(),
+        ));
+      }
       if (mounted) {
         StashToast.show(
           context,

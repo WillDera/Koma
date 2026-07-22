@@ -6,6 +6,7 @@ import '../../core/models/snippet_collection.dart';
 import '../../theme/app_theme.dart';
 import '../../theme/theme_provider.dart';
 import '../../widgets/empty_state.dart';
+import '../../widgets/highlight_color_picker.dart';
 import '../../widgets/icon_button_round.dart';
 import '../../widgets/library_header.dart';
 import '../../widgets/loading_skeleton.dart';
@@ -16,6 +17,7 @@ import '../../widgets/snippet_detail_sheet.dart';
 import '../../widgets/dialog_sheet.dart';
 import '../../widgets/tag_filter_bar.dart';
 import '../../widgets/toast.dart';
+import '../reader/reader_screen.dart';
 import 'snippets_provider.dart';
 
 class SnippetsScreen extends StatefulWidget {
@@ -211,6 +213,9 @@ class _SnippetsScreenState extends State<SnippetsScreen> {
                       p.toggleSelection(entry.$2.id);
                     }
                   },
+                  onOpenSource: entry.$2.bookId != null
+                      ? () => _openBookReader(context, entry.$2.bookId!)
+                      : null,
                 ),
               ),
             ),
@@ -315,6 +320,13 @@ class _SnippetsScreenState extends State<SnippetsScreen> {
             ),
           ),
       ],
+    );
+  }
+
+  void _openBookReader(BuildContext context, int bookId) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => ReaderScreen(bookId: bookId)),
     );
   }
 
@@ -453,41 +465,61 @@ class _SnippetsScreenState extends State<SnippetsScreen> {
                 trailing: Icon(Icons.chevron_right, color: c.primary),
                 onTap: () async {
                   final nameController = TextEditingController();
-                  final colorController = TextEditingController(text: '#FFD700');
+                  String selectedColor = '#FFD700';
                   final confirmed = await showDialog<bool>(
                     context: ctx,
                     builder: (dialogCtx) {
                       final dc = Theme.of(dialogCtx).colorScheme;
-                      return AlertDialog(
-                        title: const Text('New collection'),
-                        content: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            TextField(
-                              controller: nameController,
-                              decoration: const InputDecoration(
-                                labelText: 'Name',
-                                hintText: 'My collection',
+                      return StatefulBuilder(
+                        builder: (ctx2, setState2) => AlertDialog(
+                          title: const Text('New collection'),
+                          content: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              TextField(
+                                controller: nameController,
+                                decoration: const InputDecoration(
+                                  labelText: 'Name',
+                                  hintText: 'My collection',
+                                ),
+                                autofocus: true,
                               ),
-                              autofocus: true,
+                              const SizedBox(height: 16),
+                              Text('Accent colour',
+                                  style: TextStyle(color: dc.secondary, fontSize: 13)),
+                              const SizedBox(height: 8),
+                              HighlightColorPicker(
+                                colors: HighlightColorPicker.palette,
+                                selected: selectedColor,
+                                onChanged: (c) {
+                                  setState2(() => selectedColor = c);
+                                },
+                              ),
+                            ],
+                          ),
+                          actions: [
+                            TextButton(
+                              onPressed: () => Navigator.pop(dialogCtx, false),
+                              child: Text('Cancel', style: TextStyle(color: dc.secondary)),
+                            ),
+                            TextButton(
+                              onPressed: () => Navigator.pop(dialogCtx, true),
+                              child: const Text('Create'),
                             ),
                           ],
                         ),
-                        actions: [
-                          TextButton(
-                            onPressed: () => Navigator.pop(dialogCtx, false),
-                            child: Text('Cancel', style: TextStyle(color: dc.secondary)),
-                          ),
-                          TextButton(
-                            onPressed: () => Navigator.pop(dialogCtx, true),
-                            child: const Text('Create'),
-                          ),
-                        ],
                       );
                     },
                   );
+                  const keyToHex = <String, String>{
+                    'yellow': '#FFE8A8',
+                    'blue': '#C8D8FF',
+                    'pink': '#FFD4DC',
+                    'green': '#C8E6C9',
+                  };
                   if (confirmed == true && nameController.text.trim().isNotEmpty) {
-                    final id = await p.createCollection(nameController.text.trim(), color: colorController.text.trim());
+                    final hex = keyToHex[selectedColor] ?? '#FFE8A8';
+                    final id = await p.createCollection(nameController.text.trim(), color: hex);
                     if (ctx.mounted) {
                       Navigator.pop(ctx, id);
                     }
@@ -512,15 +544,19 @@ class _SnippetsScreenState extends State<SnippetsScreen> {
 
   Color _parseColor(String hex) {
     final cleaned = hex.replaceFirst('#', '');
-    final value = int.parse(cleaned.padLeft(6, '0'), radix: 16) + 0xFF000000;
-    return Color(value);
+    if (cleaned.length < 6) return const Color(0xFFFFE8A8);
+    final value = int.tryParse(cleaned.substring(0, 6), radix: 16);
+    if (value == null) return const Color(0xFFFFE8A8);
+    return Color(value + 0xFF000000);
   }
 }
 
 Color _parseHexColor(String hex) {
   final cleaned = hex.replaceFirst('#', '');
-  final value = int.parse(cleaned.padLeft(6, '0'), radix: 16) + 0xFF000000;
-  return Color(value);
+  if (cleaned.length < 6) return const Color(0xFFFFE8A8);
+  final value = int.tryParse(cleaned.substring(0, 6), radix: 16);
+  if (value == null) return const Color(0xFFFFE8A8);
+  return Color(value + 0xFF000000);
 }
 
 class _CollectionFilterBar extends StatelessWidget {
