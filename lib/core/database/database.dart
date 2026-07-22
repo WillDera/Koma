@@ -100,6 +100,15 @@ class AppDatabase extends GeneratedDatabase {
             )
           ''');
         } catch (_) {}
+        // v7 → v8: start_offset / end_offset on snippets.
+        try {
+          await customStatement(
+              'ALTER TABLE snippets ADD COLUMN start_offset INTEGER');
+        } catch (_) {}
+        try {
+          await customStatement(
+              'ALTER TABLE snippets ADD COLUMN end_offset INTEGER');
+        } catch (_) {}
       },
     );
   }
@@ -220,6 +229,20 @@ class AppDatabase extends GeneratedDatabase {
         snippet_id INTEGER NOT NULL REFERENCES snippets(id) ON DELETE CASCADE,
         tag_id INTEGER NOT NULL REFERENCES tags(id) ON DELETE CASCADE,
         PRIMARY KEY (snippet_id, tag_id)
+      )
+    ''');
+    await customStatement('''
+      CREATE TABLE IF NOT EXISTS highlights (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        snippet_id INTEGER REFERENCES snippets(id) ON DELETE CASCADE,
+        book_id INTEGER NOT NULL REFERENCES books(id) ON DELETE CASCADE,
+        chapter_id INTEGER NOT NULL REFERENCES chapters(id) ON DELETE CASCADE,
+        start_offset INTEGER NOT NULL,
+        end_offset INTEGER NOT NULL,
+        color TEXT NOT NULL DEFAULT 'yellow',
+        text TEXT NOT NULL,
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        updated_at TEXT NOT NULL DEFAULT (datetime('now'))
       )
     ''');
     await customStatement('''

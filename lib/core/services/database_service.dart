@@ -5,6 +5,7 @@ import '../models/book.dart';
 import '../models/chapter.dart';
 import '../models/extension_repo.dart';
 import '../models/extension_source.dart';
+import '../models/highlight.dart';
 import '../models/manga.dart';
 import '../models/manga_chapter.dart';
 import '../models/snippet.dart';
@@ -311,12 +312,14 @@ class DatabaseService {
     int? bookId,
     int? chapterId,
     int? collectionId,
+    int? startOffset,
+    int? endOffset,
     List<String> tags = const [],
   }) async {
     final now = DateTime.now();
     final id = await _db.customInsert(
-      'INSERT INTO snippets (content, note, source_title, source_url, color, book_id, chapter_id, collection_id, created_at, updated_at) '
-      'VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+      'INSERT INTO snippets (content, note, source_title, source_url, color, book_id, chapter_id, collection_id, start_offset, end_offset, created_at, updated_at) '
+      'VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
       variables: [
         Variable.withString(text),
         Variable.withString(note ?? ''),
@@ -326,6 +329,8 @@ class DatabaseService {
         bookId != null ? Variable.withInt(bookId) : Variable<int>(null),
         chapterId != null ? Variable.withInt(chapterId) : Variable<int>(null),
         collectionId != null ? Variable.withInt(collectionId) : Variable<int>(null),
+        startOffset != null ? Variable.withInt(startOffset) : Variable<int>(null),
+        endOffset != null ? Variable.withInt(endOffset) : Variable<int>(null),
         Variable.withDateTime(now),
         Variable.withDateTime(now),
       ],
@@ -792,8 +797,44 @@ class DatabaseService {
       bookId: row['book_id'] as int?,
       chapterId: row['chapter_id'] as int?,
       collectionId: row['collection_id'] as int?,
+      startOffset: row['start_offset'] as int?,
+      endOffset: row['end_offset'] as int?,
       tags: preloadedTags ?? [],
     );
+  }
+
+  // -- Highlights --
+
+  Future<List<Highlight>> getHighlightsForChapter(int chapterId) async {
+    final rows = await _db
+        .customSelect(
+            'SELECT * FROM highlights WHERE chapter_id = ? ORDER BY start_offset ASC',
+            variables: [Variable.withInt(chapterId)])
+        .get();
+    return rows.map((r) => Highlight.fromJson(r.data)).toList();
+  }
+
+  Future<void> insertHighlight(Highlight hl) async {
+    final id = await _db.customInsert(
+      'INSERT INTO highlights (snippet_id, book_id, chapter_id, start_offset, end_offset, color, text, created_at, updated_at) '
+      'VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+      variables: [
+        hl.snippetId != null ? Variable.withInt(hl.snippetId!) : Variable<int>(null),
+        Variable.withInt(hl.bookId),
+        Variable.withInt(hl.chapterId),
+        Variable.withInt(hl.startOffset),
+        Variable.withInt(hl.endOffset),
+        Variable.withString(hl.color),
+        Variable.withString(hl.text),
+        Variable.withDateTime(DateTime.now()),
+        Variable.withDateTime(DateTime.now()),
+      ],
+    );
+  }
+
+  Future<void> deleteHighlight(int id) async {
+    await _db.customUpdate('DELETE FROM highlights WHERE id=?',
+        variables: [Variable.withInt(id)]);
   }
 
   // -- Sources --

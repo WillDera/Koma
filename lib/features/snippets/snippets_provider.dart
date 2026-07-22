@@ -80,6 +80,8 @@ class SnippetsProvider extends ChangeNotifier {
     int? bookId,
     int? chapterId,
     int? collectionId,
+    int? startOffset,
+    int? endOffset,
     List<String> tags = const [],
   }) async {
     final id = await _db.createSnippet(
@@ -91,6 +93,8 @@ class SnippetsProvider extends ChangeNotifier {
       bookId: bookId,
       chapterId: chapterId,
       collectionId: collectionId,
+      startOffset: startOffset,
+      endOffset: endOffset,
       tags: tags,
     );
     await _statsService.trackSnippet();

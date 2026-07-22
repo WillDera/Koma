@@ -12,6 +12,7 @@ class SnippetCard extends StatelessWidget {
   final Snippet snippet;
   final VoidCallback? onTap;
   final VoidCallback? onLongPress;
+  final VoidCallback? onOpenSource;
   final bool dense;
   final bool selected;
   final bool selectionMode;
@@ -21,6 +22,7 @@ class SnippetCard extends StatelessWidget {
     required this.snippet,
     this.onTap,
     this.onLongPress,
+    this.onOpenSource,
     this.dense = false,
     this.selected = false,
     this.selectionMode = false,
@@ -121,22 +123,34 @@ class SnippetCard extends StatelessWidget {
             Row(
               children: [
                 if (snippet.sourceTitle != null) ...[
-                  Icon(
-                    Icons.book_outlined,
-                    size: 13,
-                    color: c.textTertiary,
-                  ),
-                  const SizedBox(width: 5),
-                  Flexible(
-                    child: Text(
-                      snippet.sourceTitle!,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        color: c.textSecondary,
-                        fontSize: 12,
-                        fontWeight: FontWeight.w500,
-                      ),
+                  GestureDetector(
+                    onTap: onOpenSource,
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(Icons.book_outlined,
+                            size: 13,
+                            color: onOpenSource != null
+                                ? c.accent
+                                : c.textTertiary),
+                        const SizedBox(width: 5),
+                        Flexible(
+                          child: Text(
+                            snippet.sourceTitle!,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              color: onOpenSource != null
+                                  ? c.accent
+                                  : c.textSecondary,
+                              fontSize: 12,
+                              fontWeight: onOpenSource != null
+                                  ? FontWeight.w600
+                                  : FontWeight.w500,
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
                   ),
                   const SizedBox(width: 8),
