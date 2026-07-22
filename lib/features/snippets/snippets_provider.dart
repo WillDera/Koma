@@ -82,6 +82,7 @@ class SnippetsProvider extends ChangeNotifier {
     int? collectionId,
     int? startOffset,
     int? endOffset,
+    double? scrollPosition,
     List<String> tags = const [],
   }) async {
     final id = await _db.createSnippet(
@@ -95,6 +96,7 @@ class SnippetsProvider extends ChangeNotifier {
       collectionId: collectionId,
       startOffset: startOffset,
       endOffset: endOffset,
+      scrollPosition: scrollPosition,
       tags: tags,
     );
     await _statsService.trackSnippet();

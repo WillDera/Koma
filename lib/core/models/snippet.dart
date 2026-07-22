@@ -10,6 +10,7 @@ class Snippet {
   final int? collectionId;
   final int? startOffset;
   final int? endOffset;
+  final double? scrollPosition;
   final List<String> tags;
   final DateTime createdAt;
   final DateTime updatedAt;
@@ -26,6 +27,7 @@ class Snippet {
     this.collectionId,
     this.startOffset,
     this.endOffset,
+    this.scrollPosition,
     this.tags = const [],
     DateTime? createdAt,
     DateTime? updatedAt,
@@ -44,6 +46,7 @@ class Snippet {
     int? collectionId,
     int? startOffset,
     int? endOffset,
+    double? scrollPosition,
     List<String>? tags,
     DateTime? createdAt,
     DateTime? updatedAt,
@@ -60,6 +63,7 @@ class Snippet {
       collectionId: collectionId ?? this.collectionId,
       startOffset: startOffset ?? this.startOffset,
       endOffset: endOffset ?? this.endOffset,
+      scrollPosition: scrollPosition ?? this.scrollPosition,
       tags: tags ?? this.tags,
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
@@ -78,6 +82,7 @@ class Snippet {
         'collection_id': collectionId,
         'start_offset': startOffset,
         'end_offset': endOffset,
+        'scroll_position': scrollPosition,
         'tags': tags,
         'created_at': createdAt.toIso8601String(),
         'updated_at': updatedAt.toIso8601String(),
@@ -95,6 +100,7 @@ class Snippet {
         collectionId: json['collection_id'] as int?,
         startOffset: json['start_offset'] as int?,
         endOffset: json['end_offset'] as int?,
+        scrollPosition: (json['scroll_position'] as num?)?.toDouble(),
         tags: (json['tags'] as List<dynamic>?)
                 ?.map((e) => e as String)
                 .toList() ??

@@ -214,7 +214,11 @@ class _SnippetsScreenState extends State<SnippetsScreen> {
                     }
                   },
                   onOpenSource: entry.$2.bookId != null
-                      ? () => _openBookReader(context, entry.$2.bookId!)
+                      ? () => _openBookReader(
+                          context,
+                          entry.$2.bookId!,
+                          chapterId: entry.$2.chapterId,
+                          scrollOffset: entry.$2.scrollPosition)
                       : null,
                 ),
               ),
@@ -323,10 +327,17 @@ class _SnippetsScreenState extends State<SnippetsScreen> {
     );
   }
 
-  void _openBookReader(BuildContext context, int bookId) {
+  void _openBookReader(BuildContext context, int bookId,
+      {int? chapterId, double? scrollOffset}) {
     Navigator.push(
       context,
-      MaterialPageRoute(builder: (_) => ReaderScreen(bookId: bookId)),
+      MaterialPageRoute(
+        builder: (_) => ReaderScreen(
+          bookId: bookId,
+          snippetChapterId: chapterId,
+          snippetScrollOffset: scrollOffset,
+        ),
+      ),
     );
   }
 

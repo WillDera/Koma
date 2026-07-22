@@ -109,6 +109,11 @@ class AppDatabase extends GeneratedDatabase {
           await customStatement(
               'ALTER TABLE snippets ADD COLUMN end_offset INTEGER');
         } catch (_) {}
+        // v8 → v9: scroll_position on snippets.
+        try {
+          await customStatement(
+              'ALTER TABLE snippets ADD COLUMN scroll_position REAL');
+        } catch (_) {}
       },
     );
   }
