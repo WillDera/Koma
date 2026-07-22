@@ -356,6 +356,9 @@ class _ReaderScreenState extends State<ReaderScreen>
                                         if (_toolbarVisible) _hideToolbar();
                                       },
                                     );
+                                  } else if (selection.isValid &&
+                                      selection.isCollapsed) {
+                                    setState(() => _showUI = !_showUI);
                                   }
                                 },
                               ),
