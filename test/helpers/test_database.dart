@@ -1,5 +1,5 @@
 import 'package:drift/native.dart';
-import 'package:stashreader/core/database/database.dart';
+import 'package:koma/core/database/database.dart';
 
 Future<AppDatabase> createTestDb() async {
   final db = AppDatabase(NativeDatabase.memory());

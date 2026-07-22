@@ -8,7 +8,7 @@ class AppDatabase extends GeneratedDatabase {
   AppDatabase(QueryExecutor executor) : super(executor);
 
   @override
-  int get schemaVersion => 6;
+  int get schemaVersion => 7;
 
   @override
   Iterable<TableInfo> get allTables => const [];
@@ -82,6 +82,23 @@ class AppDatabase extends GeneratedDatabase {
           await customStatement(
             'ALTER TABLE manga_chapters ADD COLUMN read_at TEXT'
           );
+        } catch (_) {}
+        // v6 → v7: snippet collections.
+        try {
+          await customStatement(
+            'ALTER TABLE snippets ADD COLUMN collection_id INTEGER REFERENCES snippet_collections(id) ON DELETE SET NULL'
+          );
+        } catch (_) {}
+        try {
+          await customStatement('''
+            CREATE TABLE IF NOT EXISTS snippet_collections (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              name TEXT NOT NULL,
+              color TEXT NOT NULL DEFAULT '#FFD700',
+              created_at TEXT NOT NULL DEFAULT (datetime('now')),
+              updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+            )
+          ''');
         } catch (_) {}
       },
     );
@@ -164,6 +181,7 @@ class AppDatabase extends GeneratedDatabase {
         color TEXT,
         book_id INTEGER REFERENCES books(id) ON DELETE SET NULL,
         chapter_id INTEGER REFERENCES chapters(id) ON DELETE SET NULL,
+        collection_id INTEGER REFERENCES snippet_collections(id) ON DELETE SET NULL,
         created_at TEXT NOT NULL DEFAULT (datetime('now')),
         updated_at TEXT NOT NULL DEFAULT (datetime('now'))
       )
@@ -242,7 +260,7 @@ class AppDatabase extends GeneratedDatabase {
 
   static Future<AppDatabase> create() async {
     final dir = await getApplicationDocumentsDirectory();
-    final file = File(p.join(dir.path, 'stashreader.db'));
+    final file = File(p.join(dir.path, 'koma.db'));
     final executor = NativeDatabase(file);
     return AppDatabase(executor);
   }

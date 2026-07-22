@@ -48,7 +48,7 @@ void main() async {
         ChangeNotifierProvider<ReaderProvider>.value(value: readerProvider),
         ChangeNotifierProvider<SnippetsProvider>.value(value: snippetsProvider),
       ],
-      child: const StashReaderApp(),
+      child: const KomaApp(),
     ),
   );
 

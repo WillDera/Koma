@@ -1,4 +1,4 @@
-package com.stashreader.stashreader
+package com.koma.koma
 
 import eu.kanade.tachiyomi.extension.KeiyoushiMethodChannel
 import io.flutter.embedding.android.FlutterActivity

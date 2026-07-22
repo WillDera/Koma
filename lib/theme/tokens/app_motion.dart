@@ -1,6 +1,6 @@
 import 'package:flutter/animation.dart';
 
-/// StashReader motion tokens — durations, curves, and a few common helpers.
+/// Koma motion tokens — durations, curves, and a few common helpers.
 class AppMotion {
   AppMotion._();
 

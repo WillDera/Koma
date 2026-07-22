@@ -7,6 +7,7 @@ class Snippet {
   final String? color;
   final int? bookId;
   final int? chapterId;
+  final int? collectionId;
   final List<String> tags;
   final DateTime createdAt;
   final DateTime updatedAt;
@@ -20,6 +21,7 @@ class Snippet {
     this.color,
     this.bookId,
     this.chapterId,
+    this.collectionId,
     this.tags = const [],
     DateTime? createdAt,
     DateTime? updatedAt,
@@ -35,6 +37,7 @@ class Snippet {
     String? color,
     int? bookId,
     int? chapterId,
+    int? collectionId,
     List<String>? tags,
     DateTime? createdAt,
     DateTime? updatedAt,
@@ -48,6 +51,7 @@ class Snippet {
       color: color ?? this.color,
       bookId: bookId ?? this.bookId,
       chapterId: chapterId ?? this.chapterId,
+      collectionId: collectionId ?? this.collectionId,
       tags: tags ?? this.tags,
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
@@ -63,6 +67,7 @@ class Snippet {
         'color': color,
         'book_id': bookId,
         'chapter_id': chapterId,
+        'collection_id': collectionId,
         'tags': tags,
         'created_at': createdAt.toIso8601String(),
         'updated_at': updatedAt.toIso8601String(),
@@ -77,6 +82,7 @@ class Snippet {
         color: json['color'] as String?,
         bookId: json['book_id'] as int?,
         chapterId: json['chapter_id'] as int?,
+        collectionId: json['collection_id'] as int?,
         tags: (json['tags'] as List<dynamic>?)
                 ?.map((e) => e as String)
                 .toList() ??

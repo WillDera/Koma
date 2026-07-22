@@ -6,7 +6,7 @@ plugins {
 }
 
 android {
-    namespace = "com.stashreader.stashreader"
+    namespace = "com.koma.koma"
     compileSdk = flutter.compileSdkVersion
     ndkVersion = flutter.ndkVersion
 
@@ -22,7 +22,7 @@ android {
     }
 
     defaultConfig {
-        applicationId = "com.stashreader.stashreader"
+        applicationId = "com.koma.koma"
         minSdk = flutter.minSdkVersion
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
@@ -30,8 +30,8 @@ android {
     }
 
     signingConfigs {
-        create("stashreader") {
-            storeFile = file("stashreader-debug.keystore")
+        create("koma") {
+            storeFile = file("koma-debug.keystore")
             storePassword = "stashreader"
             keyAlias = "stashreader"
             keyPassword = "stashreader"
@@ -40,10 +40,10 @@ android {
 
     buildTypes {
         debug {
-            signingConfig = signingConfigs.getByName("stashreader")
+            signingConfig = signingConfigs.getByName("koma")
         }
         release {
-            signingConfig = signingConfigs.getByName("stashreader")
+            signingConfig = signingConfigs.getByName("koma")
         }
     }
 

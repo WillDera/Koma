@@ -39,7 +39,7 @@ class SettingsScreen extends StatelessWidget {
             const OneHandSpacer(),
             const LibraryHeader(
               title: 'Settings',
-               subtitle: 'Version 2.5.86',
+                subtitle: 'Version 2.5.89',
               padding: EdgeInsets.fromLTRB(24, 20, 20, 12),
             ),
             const StaggeredEntrance(
@@ -1305,7 +1305,7 @@ class _StatsSectionState extends State<_StatsSection> {
     );
   }
 
-  Widget _row(StashReaderColors c, IconData icon, String label, int? count) {
+  Widget _row(KomaColors c, IconData icon, String label, int? count) {
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 4, 16, 12),
       child: Row(
@@ -1342,7 +1342,7 @@ class _PluginsSection extends StatelessWidget {
     return SettingsSection(
       title: 'Plugins',
       footer:
-          'Plugins extend StashReader with new sources via Keiyoushi/Mihon extension APKs. Add a repo, fetch its index, and install the ones you want.',
+          'Plugins extend Koma with new sources via Keiyoushi/Mihon extension APKs. Add a repo, fetch its index, and install the ones you want.',
       children: [
         SettingsRow(
           icon: Icons.extension_outlined,
@@ -1377,8 +1377,8 @@ class _AboutSection extends StatelessWidget {
       children: [
         SettingsRow(
           icon: Icons.info_outline,
-          title: 'StashReader',
-              subtitle: 'Version 2.5.86 · build 2.5.86+84',
+          title: 'Koma',
+               subtitle: 'Version 2.5.89 · build 2.5.89+84',
         ),
         SettingsRow(
           icon: Icons.favorite_outline,

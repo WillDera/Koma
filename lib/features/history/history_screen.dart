@@ -180,7 +180,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
     );
   }
 
-  Widget _bookTile(StashReaderColors c, int i) {
+  Widget _bookTile(KomaColors c, int i) {
     final book = _books[i];
     final pct = (book.progress * 100).toInt();
     return StaggeredEntrance(
@@ -289,7 +289,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
     );
   }
 
-  Widget _mangaTile(StashReaderColors c, int i) {
+  Widget _mangaTile(KomaColors c, int i) {
     final row = _mangaRows[i];
     final name = row['name'] as String? ?? '';
     final author = row['author'] as String?;

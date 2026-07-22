@@ -781,7 +781,7 @@ class _ResultCard extends StatelessWidget {
     );
   }
 
-  Widget _extensionBadge(StashReaderColors c, String ext) {
+  Widget _extensionBadge(KomaColors c, String ext) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
       decoration: BoxDecoration(
@@ -799,7 +799,7 @@ class _ResultCard extends StatelessWidget {
     );
   }
 
-  Widget _posterPlaceholder(StashReaderColors c) {
+  Widget _posterPlaceholder(KomaColors c) {
     return Container(
       width: 48,
       height: 64,
@@ -915,7 +915,7 @@ class _GridResultCard extends StatelessWidget {
     );
   }
 
-  Widget _extensionBadge(StashReaderColors c, String ext) {
+  Widget _extensionBadge(KomaColors c, String ext) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
       decoration: BoxDecoration(
@@ -933,7 +933,7 @@ class _GridResultCard extends StatelessWidget {
     );
   }
 
-  Widget _posterPlaceholder(StashReaderColors c) {
+  Widget _posterPlaceholder(KomaColors c) {
     return Container(
       color: c.surfaceMuted,
       child: Center(child: Icon(Icons.book, size: 32, color: c.textTertiary)),
@@ -993,7 +993,7 @@ class _MangaCard extends StatelessWidget {
     );
   }
 
-  Widget _placeholder(StashReaderColors c) {
+  Widget _placeholder(KomaColors c) {
     return Container(
       color: c.surfaceMuted,
       child: Center(

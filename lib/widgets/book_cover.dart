@@ -73,7 +73,7 @@ class BookCover extends StatelessWidget {
     );
   }
 
-  Widget _placeholder(StashReaderColors c) {
+  Widget _placeholder(KomaColors c) {
     final gradient = _gradientFor(book.title, c);
     final monogram = _monogramFor(book.title);
     final sourceIcon = _sourceIcon(book.source);
@@ -166,7 +166,7 @@ class BookCover extends StatelessWidget {
     }
   }
 
-  List<Color> _gradientFor(String title, StashReaderColors c) {
+  List<Color> _gradientFor(String title, KomaColors c) {
     // Hash the title to a stable pair of accent colors. Use the theme's
     // accent + accentMuted so the placeholder always feels on-brand.
     final hash = title.codeUnits.fold<int>(0, (acc, ch) => acc + ch);
