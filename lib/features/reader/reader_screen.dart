@@ -43,6 +43,8 @@ class ReaderScreen extends StatefulWidget {
   State<ReaderScreen> createState() => _ReaderScreenState();
 }
 
+enum _SwipeDirection { none, next, previous }
+
 class _ReaderScreenState extends State<ReaderScreen>
     with TickerProviderStateMixin {
   final ScrollController _scrollController = ScrollController();
@@ -59,6 +61,8 @@ class _ReaderScreenState extends State<ReaderScreen>
   int _highlightVersion = 0;
   double _lastScrollOffset = 0;
   Offset _selectionOrigin = Offset.zero;
+  _SwipeDirection _lastSwipeDirection = _SwipeDirection.none;
+  double? _dragStartX;
 
   /// Index of the chapter we're currently showing. Used to detect a
   /// chapter change after navigation so we can jump the scroll back
@@ -80,6 +84,12 @@ class _ReaderScreenState extends State<ReaderScreen>
       duration: AppMotion.base,
     );
     Future.microtask(() => _loadAndRestore());
+  }
+
+  void _scheduleDirectionReset() {
+    Future.delayed(AppMotion.sheet, () {
+      if (mounted) setState(() => _lastSwipeDirection = _SwipeDirection.none);
+    });
   }
 
   @override
@@ -156,6 +166,41 @@ class _ReaderScreenState extends State<ReaderScreen>
     super.dispose();
   }
 
+  void _onHorizontalDragStart(DragStartDetails details) {
+    _dragStartX = details.globalPosition.dx;
+  }
+
+  void _onHorizontalDragEnd(DragEndDetails details) {
+    if (_dragStartX == null) return;
+    final velocity = details.velocity.pixelsPerSecond.dx;
+
+    if (velocity < -500) {
+      _lastSwipeDirection = _SwipeDirection.next;
+      _provider?.goToNextChapter();
+      if (mounted) {
+        setState(() {
+          _lastScrollOffset = 0;
+          _showUI = true;
+        });
+      }
+      HapticFeedback.lightImpact();
+      _scheduleDirectionReset();
+    } else if (velocity > 500) {
+      _lastSwipeDirection = _SwipeDirection.previous;
+      _provider?.goToPreviousChapter();
+      if (mounted) {
+        setState(() {
+          _lastScrollOffset = 0;
+          _showUI = true;
+        });
+      }
+      HapticFeedback.lightImpact();
+      _scheduleDirectionReset();
+    }
+
+    _dragStartX = null;
+  }
+
   bool _onScrollNotification(ScrollNotification notification) {
     if (notification is ScrollUpdateNotification) {
       final currentOffset = _scrollController.hasClients
@@ -192,18 +237,22 @@ class _ReaderScreenState extends State<ReaderScreen>
     final provider = _provider!;
     if (provider.chapters.length > 1) {
       if (localPos.dx < screenWidth / 3) {
+        _lastSwipeDirection = _SwipeDirection.previous;
         provider.goToPreviousChapter();
         setState(() {
           _lastScrollOffset = 0;
           _showUI = true;
         });
+        _scheduleDirectionReset();
         return;
       } else if (localPos.dx > 2 * screenWidth / 3) {
+        _lastSwipeDirection = _SwipeDirection.next;
         provider.goToNextChapter();
         setState(() {
           _lastScrollOffset = 0;
           _showUI = true;
         });
+        _scheduleDirectionReset();
         return;
       }
     }
@@ -287,6 +336,8 @@ class _ReaderScreenState extends State<ReaderScreen>
               children: [
                 GestureDetector(
                   onTapUp: _handleTapUp,
+                  onHorizontalDragStart: _onHorizontalDragStart,
+                  onHorizontalDragEnd: _onHorizontalDragEnd,
                   behavior: HitTestBehavior.opaque,
                   child: NotificationListener<ScrollStartNotification>(
                     onNotification: (notification) {
@@ -311,9 +362,32 @@ class _ReaderScreenState extends State<ReaderScreen>
                           constraints: BoxConstraints(
                             maxWidth: themeProv.pageWidth,
                           ),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
+                          child: AnimatedSwitcher(
+                            duration: AppMotion.sheet,
+                            transitionBuilder: (child, animation) {
+                              var begin = Offset.zero;
+                              switch (_lastSwipeDirection) {
+                                case _SwipeDirection.next:
+                                  begin = const Offset(1, 0);
+                                case _SwipeDirection.previous:
+                                  begin = const Offset(-1, 0);
+                                case _SwipeDirection.none:
+                                  begin = Offset.zero;
+                              }
+                              return SlideTransition(
+                                position: animation.drive(
+                                  Tween(begin: begin, end: Offset.zero),
+                                ),
+                                child: FadeTransition(
+                                  opacity: animation,
+                                  child: child,
+                                ),
+                              );
+                            },
+                            child: Column(
+                              key: ValueKey('chapter-${chapter.id}'),
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
                               // Chapter title
                               Text(
                                 chapter.title,
@@ -365,7 +439,8 @@ class _ReaderScreenState extends State<ReaderScreen>
                               const SizedBox(height: 80),
                             ],
                           ),                        // Column
-                        ),                          // ConstrainedBox
+                        ),                          // AnimatedSwitcher
+                      ),                            // ConstrainedBox
                       ),                            // Center
                     ),                              // SingleChildScrollView
                   ),                                // NotificationListener<ScrollUpdateNotification>
