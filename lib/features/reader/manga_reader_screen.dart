@@ -326,10 +326,17 @@ class _MangaReaderScreenState extends State<MangaReaderScreen>
       builder: (ctx) => ReaderSettingsSheet(
         settings: _settings,
         onChanged: (s) {
+          final oldMode = _settings.readingMode;
           setState(() => _settings = s);
           _saveSettings();
           if (s.keepScreenOn) {
             WidgetsBinding.instance.scheduleFrame();
+          }
+          if (oldMode != s.readingMode) {
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              if (!mounted) return;
+              _initProgress();
+            });
           }
         },
       ),
@@ -588,33 +595,32 @@ class _MangaReaderScreenState extends State<MangaReaderScreen>
         }
         return false;
       },
-      child: SingleChildScrollView(
+      child: ListView.builder(
         controller: _scrollCtrl,
         scrollDirection: Axis.vertical,
-        child: Column(
-          children: List.generate(_pages.length, (i) {
-            final page = _pages[i];
-            final img = page.localPath != null
-                ? Image.file(
-                    File(page.localPath!),
-                    fit: BoxFit.contain,
-                    width: double.infinity,
-                    errorBuilder: (_, _, _) => const AspectRatio(aspectRatio: 16/9, child: Center(child: Icon(Icons.broken_image, color: Colors.white38, size: 48))),
-                  )
-                : Image.network(
-                    page.imageUrl,
-                    headers: page.headers,
-                    fit: BoxFit.contain,
-                    width: double.infinity,
-                    loadingBuilder: (_, child, progress) =>
-                        progress != null
-                            ? const AspectRatio(aspectRatio: 16/9, child: Center(child: CircularProgressIndicator(color: Colors.white54)))
-                            : child,
-                    errorBuilder: (_, _, _) => const AspectRatio(aspectRatio: 16/9, child: Center(child: Icon(Icons.broken_image, color: Colors.white38, size: 48))),
-                  );
-            return img;
-          }),
-        ),
+        itemCount: _pages.length,
+        itemBuilder: (context, i) {
+          final page = _pages[i];
+          final img = page.localPath != null
+              ? Image.file(
+                  File(page.localPath!),
+                  fit: BoxFit.contain,
+                  width: double.infinity,
+                  errorBuilder: (_, __, ___) => const AspectRatio(aspectRatio: 16/9, child: Center(child: Icon(Icons.broken_image, color: Colors.white38, size: 48))),
+                )
+              : Image.network(
+                  page.imageUrl,
+                  headers: page.headers,
+                  fit: BoxFit.contain,
+                  width: double.infinity,
+                  loadingBuilder: (_, child, progress) =>
+                      progress != null
+                          ? const AspectRatio(aspectRatio: 16/9, child: Center(child: CircularProgressIndicator(color: Colors.white54)))
+                          : child,
+                  errorBuilder: (_, __, ___) => const AspectRatio(aspectRatio: 16/9, child: Center(child: Icon(Icons.broken_image, color: Colors.white38, size: 48))),
+                );
+          return img;
+        },
       ),
     );
   }

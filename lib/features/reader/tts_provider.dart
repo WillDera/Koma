@@ -19,7 +19,8 @@ class TtsProvider extends ChangeNotifier {
 
   bool get isPlaying => _engine.isPlaying;
   bool get isPaused => _engine.isPaused;
-  bool get isActive => _engine.isPlaying || _engine.isPaused;
+  bool get isActive => _engine.isPlaying || _engine.isPaused || _engine.isBuffering;
+  bool get isBuffering => _engine.isBuffering;
   int get currentIndex => _currentIndex;
   int get totalSentences => _sentences.length;
   int get currentSentenceOffset =>
@@ -222,7 +223,7 @@ class TtsProvider extends ChangeNotifier {
     _engine.stop();
     await _switchEngine(type);
     await _engine.init();
-    if (_sentences.isNotEmpty && isActive) _speakFromCurrent();
+    if (_sentences.isNotEmpty && _currentIndex < _sentences.length) _speakFromCurrent();
     notifyListeners();
   }
 

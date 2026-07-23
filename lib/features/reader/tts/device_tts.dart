@@ -9,6 +9,8 @@ class DeviceTtsEngine implements TtsEngine {
   TtsVoice? _selectedVoice;
   bool _isPlaying = false;
   bool _isPaused = false;
+  @override
+  bool get isBuffering => false;
   double _rate = 0.5;
   double _pitch = 1.0;
   int _startOffset = 0;

@@ -47,6 +47,7 @@ abstract class TtsEngine {
   TtsVoice? get selectedVoice;
   bool get isPlaying;
   bool get isPaused;
+  bool get isBuffering => false;
 
   Future<void> init();
   Future<void> speak(

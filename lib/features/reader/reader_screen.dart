@@ -424,32 +424,36 @@ class _ReaderScreenState extends State<ReaderScreen>
                           constraints: BoxConstraints(
                             maxWidth: themeProv.pageWidth,
                           ),
-                          child: AnimatedSwitcher(
-                            duration: AppMotion.sheet,
-                            transitionBuilder: (child, animation) {
-                              var begin = Offset.zero;
-                              switch (_lastSwipeDirection) {
-                                case _SwipeDirection.next:
-                                  begin = const Offset(1, 0);
-                                case _SwipeDirection.previous:
-                                  begin = const Offset(-1, 0);
-                                case _SwipeDirection.none:
-                                  begin = Offset.zero;
-                              }
-                              return SlideTransition(
-                                position: animation.drive(
-                                  Tween(begin: begin, end: Offset.zero),
-                                ),
-                                child: FadeTransition(
-                                  opacity: animation,
-                                  child: child,
-                                ),
-                              );
-                            },
-                            child: Column(
-                              key: ValueKey('chapter-${chapter.id}'),
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
+                           child: ClipRect(
+                            child: AnimatedSwitcher(
+                              duration: AppMotion.sheet,
+                              transitionBuilder: (child, animation) {
+                                var begin = Offset.zero;
+                                switch (_lastSwipeDirection) {
+                                  case _SwipeDirection.next:
+                                    begin = const Offset(1, 0);
+                                  case _SwipeDirection.previous:
+                                    begin = const Offset(-1, 0);
+                                  case _SwipeDirection.none:
+                                    begin = Offset.zero;
+                                }
+                                final slide = Tween(begin: begin, end: Offset.zero);
+                                final scale = Tween(begin: 0.96, end: 1.0);
+                                return SlideTransition(
+                                  position: animation.drive(slide),
+                                  child: ScaleTransition(
+                                    scale: animation.drive(scale),
+                                    child: FadeTransition(
+                                      opacity: animation,
+                                      child: child,
+                                    ),
+                                  ),
+                                );
+                              },
+                              child: Column(
+                                key: ValueKey('chapter-${chapter.id}'),
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
                               // Chapter title
                               Text(
                                 chapter.title,
@@ -505,8 +509,9 @@ class _ReaderScreenState extends State<ReaderScreen>
                             ],
                           ),                        // Column
                         ),                          // AnimatedSwitcher
-                      ),                            // ConstrainedBox
-                      ),                            // Center
+                      ),                            // ClipRect
+                    ),                              // ConstrainedBox
+                  ),                                // Center
                     ),                              // SingleChildScrollView
                   ),                                // NotificationListener<ScrollUpdateNotification>
                 ),                                  // NotificationListener<ScrollStartNotification>

@@ -17,6 +17,8 @@ class GoogleCloudTtsEngine implements TtsEngine {
   double _pitch = 0.0;
   bool _isPlaying = false;
   bool _isPaused = false;
+  @override
+  bool get isBuffering => false;
 
   Timer? _progressTimer;
   StreamSubscription? _posSub;
