@@ -3,7 +3,6 @@ import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:provider/provider.dart';
 import 'package:scrollable_positioned_list/scrollable_positioned_list.dart';
@@ -11,9 +10,14 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../../core/services/database_service.dart';
 import '../../core/services/keiyoushi_service.dart';
 import '../../core/models/manga_page.dart';
+import '../../core/models/manga_chapter.dart';
 import '../../theme/app_theme.dart';
-import '../../theme/tokens/app_spacing.dart';
 import 'reader_settings_sheet.dart';
+import 'widgets/reader_app_bar.dart';
+import 'widgets/reader_bottom_bar.dart';
+import 'widgets/page_indicator.dart';
+import 'widgets/navigation_overlay.dart';
+import 'widgets/chapter_list_dialog.dart';
 
 class MangaReaderScreen extends StatefulWidget {
   final int? mangaId;
@@ -46,12 +50,9 @@ class _MangaReaderScreenState extends State<MangaReaderScreen>
   final ItemScrollController _itemScrollCtrl = ItemScrollController();
   final ItemPositionsListener _itemPositionsListener =
       ItemPositionsListener.create();
-  // Page index lives in a ValueNotifier so the page-number overlay and
-  // bottom bar can update via ValueListenableBuilder — without calling
-  // setState on the whole tree (which would rebuild the ListView and
-  // make the user see the images "reload" every time they scroll a page).
   final ValueNotifier<int> _currentPageNotifier = ValueNotifier<int>(0);
   bool _showToolbar = false;
+  bool _showNavigationOverlay = false;
   final List<TransformationController> _zoomCtrls = [];
   int? _chapterId;
   Timer? _saveTimer;
@@ -197,6 +198,7 @@ class _MangaReaderScreenState extends State<MangaReaderScreen>
     final ch = await _db!.getMangaChapterByUrl(widget.mangaId!, widget.chapterUrl);
     if (ch == null || !mounted) return;
     _chapterId = ch.id;
+    _showNavigationOverlay = true;
     if (!ch.isOpened) {
       _db!.markMangaChapterOpened(ch.id);
     }
@@ -377,6 +379,7 @@ class _MangaReaderScreenState extends State<MangaReaderScreen>
   }
 
   void _showSettings() {
+    _showNavigationOverlay = false;
     showModalBottomSheet(
       context: context,
       backgroundColor: context.colors.surface,
@@ -405,10 +408,30 @@ class _MangaReaderScreenState extends State<MangaReaderScreen>
     );
   }
 
+  void _showChapterList() {
+    if (widget.mangaId == null) return;
+    showDialog<MangaChapter>(
+      context: context,
+      builder: (ctx) => ChapterListDialog(
+        mangaId: widget.mangaId!,
+        sourceId: widget.sourceId,
+        mangaUrl: widget.mangaUrl,
+        currentChapterUrl: widget.chapterUrl,
+      ),
+    ).then((result) {
+      if (result != null && mounted) {
+        // Navigate to selected chapter — in a real app this would
+        // reload the reader with the new chapter. For now just
+        // show the chapter name.
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Navigating to ${result.name}')),
+        );
+      }
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
-    final c = context.colors;
-
     if (_loading) {
       return Scaffold(
         backgroundColor: Colors.black,
@@ -498,87 +521,50 @@ class _MangaReaderScreenState extends State<MangaReaderScreen>
                           onPageChanged: _onPageChanged,
                           itemBuilder: (_, i) => _buildPage(i),
                         ),
+              // Navigation overlay (shown on first open)
+              if (_showNavigationOverlay)
+                NavigationOverlay(
+                  onDismiss: () => setState(() => _showNavigationOverlay = false),
+                  navigationLayout: 0,
+                ),
               // Tap zones for navigation (on TOP of page viewer)
-              if (!_showToolbar)
+              if (!_showToolbar && !_showNavigationOverlay)
                 Positioned.fill(child: _buildTapZones()),
-              // Toolbar overlay
-              if (_showToolbar) ...[
-                GestureDetector(
-                  onTap: _toggleToolbar,
-                  child: Container(color: Colors.black26),
-                ),
-                Positioned(
-                  top: 0,
-                  left: 0,
-                  right: 0,
-                  child: _ReaderTopBar(
-                    chapterName: widget.chapterName,
-                    onClose: () {
-                      _saveProgress().then((_) {
-                        if (context.mounted) Navigator.of(context).pop();
-                      });
-                    },
-                    onSave: _saveCurrentPage,
-                  ),
-                ),
-                Positioned(
-                  bottom: 0,
-                  left: 0,
-                  right: 0,
-                  child: GestureDetector(
-                    onTap: () {},
-                    child: _ReaderBottomBar(
-                      pageListenable: _currentPageNotifier,
-                      totalPages: _pages.length,
-                      showNavigator: _settings.showPageNavigator,
-                      onPageChanged: _goToPage,
-                      onSettings: _showSettings,
-                    ),
-                  ),
-                ),
-              ],
-              // Page number overlay (when toolbar hidden).
-              // ValueListenableBuilder so we only rebuild the overlay
-              // when the page index actually changes — not the whole
-              // Stack / ListView / every Image beneath it.
-              if (!_showToolbar && _settings.showPageNumber)
-                ValueListenableBuilder<int>(
-                  valueListenable: _currentPageNotifier,
-                  builder: (_, page, __) =>
-                      _buildPageNumberOverlay(orientation, page),
-                ),
+              // New redesigned ReaderAppBar
+              ReaderAppBar(
+                chapterName: widget.chapterName,
+                isBookmarked: false,
+                isVisible: _showToolbar,
+                onClose: () {
+                  _saveProgress().then((_) {
+                    if (context.mounted) Navigator.of(context).pop();
+                  });
+                },
+                onBookmarkToggle: () {},
+                onChapterList: _showChapterList,
+              ),
+              // New redesigned ReaderBottomBar
+              ReaderBottomBar(
+                pageListenable: _currentPageNotifier,
+                totalPages: _pages.length,
+                showNavigator: _settings.showPageNavigator,
+                onPageChanged: _goToPage,
+                onSettings: _showSettings,
+                isVisible: _showToolbar,
+              ),
+              // New PageIndicator (always shown when UI hidden)
+              PageIndicator(
+                pageListenable: _currentPageNotifier,
+                totalPages: _pages.length,
+                isVisible: _showToolbar,
+                showPageNumbers: _settings.showPageNumber,
+              ),
             ],
           );
         },
       ),
       ),
     );
-  }
-
-  Widget _buildPageNumberOverlay(Orientation orientation, int currentPage) {
-    final placement = _settings.progressBarPlacement;
-    final text = '${currentPage + 1} / ${_pages.length}';
-    final pill = Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-      decoration: BoxDecoration(
-        color: Colors.black54,
-        borderRadius: AppSpacing.brPill,
-      ),
-      child: Text(text,
-          style: const TextStyle(
-              color: Colors.white, fontSize: 13, fontWeight: FontWeight.w500)),
-    );
-
-    if (placement == ProgressBarPlacement.horizontalTop) {
-      return Positioned(top: MediaQuery.of(context).padding.top + 8, left: 0, right: 0, child: Center(child: pill));
-    }
-    if (placement == ProgressBarPlacement.horizontalBottom) {
-      return Positioned(bottom: 32, left: 0, right: 0, child: Center(child: pill));
-    }
-    if (placement == ProgressBarPlacement.verticalLeft) {
-      return Positioned(left: 8, top: 0, bottom: 0, child: Center(child: RotatedBox(quarterTurns: -1, child: pill)));
-    }
-    return Positioned(right: 8, top: 0, bottom: 0, child: Center(child: RotatedBox(quarterTurns: 1, child: pill)));
   }
 
   Widget _buildTapZones() {
@@ -809,174 +795,4 @@ class _BottomRightClipper extends CustomClipper<Path> {
   Path getClip(Size size) => Path()..moveTo(size.width, 0)..lineTo(size.width, size.height)..lineTo(0, size.height)..close();
   @override
   bool shouldReclip(_) => false;
-}
-
-// ── Top bar overlay ────────────────────────────────────────────────────
-class _ReaderTopBar extends StatelessWidget {
-  final String chapterName;
-  final VoidCallback onClose;
-  final VoidCallback onSave;
-
-  const _ReaderTopBar({
-    required this.chapterName,
-    required this.onClose,
-    required this.onSave,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: EdgeInsets.only(
-        top: MediaQuery.of(context).padding.top + 8,
-        bottom: 8,
-        left: 4,
-        right: 4,
-      ),
-      decoration: const BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topCenter,
-          end: Alignment.bottomCenter,
-          colors: [Colors.black87, Colors.transparent],
-        ),
-      ),
-      child: Row(
-        children: [
-          IconButton(
-            icon: const Icon(Icons.arrow_back, color: Colors.white),
-            onPressed: onClose,
-          ),
-          Expanded(
-            child: Text(
-              chapterName,
-              style: const TextStyle(
-                  color: Colors.white, fontSize: 14, fontWeight: FontWeight.w500),
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-            ),
-          ),
-          IconButton(
-            icon: const Icon(Icons.download_outlined, color: Colors.white),
-            onPressed: onSave,
-            tooltip: 'Save page',
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-// ── Bottom bar ─────────────────────────────────────────────────────────
-// Listens to a [ValueListenable] for the current page so only the
-// prev/next/slider/text rebuild when the page changes — not the whole
-// reader tree above it.
-class _ReaderBottomBar extends StatelessWidget {
-  final ValueListenable<int> pageListenable;
-  final int totalPages;
-  final bool showNavigator;
-  final void Function(int) onPageChanged;
-  final VoidCallback onSettings;
-
-  const _ReaderBottomBar({
-    required this.pageListenable,
-    required this.totalPages,
-    required this.showNavigator,
-    required this.onPageChanged,
-    required this.onSettings,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: EdgeInsets.only(
-        left: 4,
-        right: 4,
-        top: 8,
-        bottom: MediaQuery.of(context).padding.bottom + 8,
-      ),
-      decoration: const BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.bottomCenter,
-          end: Alignment.topCenter,
-          colors: [Colors.black87, Colors.transparent],
-        ),
-      ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          if (showNavigator)
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 8),
-              child: Row(
-                children: [
-                  ValueListenableBuilder<int>(
-                    valueListenable: pageListenable,
-                    builder: (_, page, __) => IconButton(
-                      icon: const Icon(Icons.chevron_left, color: Colors.white),
-                      onPressed: page > 0
-                          ? () => onPageChanged(page - 1)
-                          : null,
-                      tooltip: 'Previous',
-                    ),
-                  ),
-                  Expanded(
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        SliderTheme(
-                          data: SliderThemeData(
-                            trackHeight: 3,
-                            thumbShape:
-                                const RoundSliderThumbShape(enabledThumbRadius: 6),
-                            overlayShape:
-                                const RoundSliderOverlayShape(overlayRadius: 14),
-                            activeTrackColor: Colors.white,
-                            inactiveTrackColor: Colors.white30,
-                            thumbColor: Colors.white,
-                            overlayColor: Colors.white12,
-                          ),
-                          child: ValueListenableBuilder<int>(
-                            valueListenable: pageListenable,
-                            builder: (_, page, __) => Slider(
-                              value: page.toDouble(),
-                              min: 0,
-                              max: (totalPages - 1).toDouble(),
-                              divisions: totalPages - 1,
-                              onChanged: (v) => onPageChanged(v.round()),
-                            ),
-                          ),
-                        ),
-                        ValueListenableBuilder<int>(
-                          valueListenable: pageListenable,
-                          builder: (_, page, __) => Text(
-                            '${page + 1} / $totalPages',
-                            style: const TextStyle(
-                                color: Colors.white70, fontSize: 11),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  ValueListenableBuilder<int>(
-                    valueListenable: pageListenable,
-                    builder: (_, page, __) => IconButton(
-                      icon: const Icon(Icons.chevron_right, color: Colors.white),
-                      onPressed: page < totalPages - 1
-                          ? () => onPageChanged(page + 1)
-                          : null,
-                      tooltip: 'Next',
-                    ),
-                  ),
-                  IconButton(
-                    icon: const Icon(Icons.settings_outlined, color: Colors.white70),
-                    onPressed: onSettings,
-                    tooltip: 'Settings',
-                  ),
-                  const SizedBox(width: 4),
-                ],
-              ),
-            ),
-        ],
-      ),
-    );
-  }
 }
