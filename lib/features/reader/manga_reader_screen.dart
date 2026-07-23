@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -43,7 +44,11 @@ class _MangaReaderScreenState extends State<MangaReaderScreen>
   final _pageCtrl = PageController();
   final _scrollCtrl = ScrollController();
   double _currentScrollPos = 0.0;
-  int _currentPage = 0;
+  // Page index lives in a ValueNotifier so the page-number overlay and
+  // bottom bar can update via ValueListenableBuilder — without calling
+  // setState on the whole tree (which would rebuild the ListView and
+  // make the user see the images "reload" every time they scroll a page).
+  final ValueNotifier<int> _currentPageNotifier = ValueNotifier<int>(0);
   bool _showToolbar = false;
   final List<TransformationController> _zoomCtrls = [];
   int? _chapterId;
@@ -73,6 +78,7 @@ class _MangaReaderScreenState extends State<MangaReaderScreen>
     WidgetsBinding.instance.removeObserver(this);
     _pageCtrl.dispose();
     _scrollCtrl.dispose();
+    _currentPageNotifier.dispose();
     for (final c in _zoomCtrls) {
       c.dispose();
     }
@@ -185,20 +191,24 @@ class _MangaReaderScreenState extends State<MangaReaderScreen>
   }
 
   void _schedulePageSave(int page) {
-    _currentPage = page;
+    // Only update the notifier — do NOT call setState. A setState here
+    // would rebuild the whole tree, recreating the ListView.builder and
+    // every Image inside it, which the user perceives as "screens reload
+    // and the panel jumps to the top" when they scroll back up.
+    _currentPageNotifier.value = page;
     _saveTimer?.cancel();
     _saveTimer = Timer(const Duration(milliseconds: 500), _flushPageProgress);
-    if (mounted) setState(() {});
   }
 
   Future<void> _saveProgress() async {
     if (_chapterId == null || _db == null) return;
+    final page = _currentPageNotifier.value;
     if (_settings.readingMode == ReadingMode.webtoon) {
       await _db!.updateMangaChapterScrollPosition(_chapterId!, _currentScrollPos);
     } else {
-      await _db!.updateMangaChapterProgress(_chapterId!, _currentPage);
+      await _db!.updateMangaChapterProgress(_chapterId!, page);
     }
-    if (_currentPage >= _pages.length - 1) {
+    if (page >= _pages.length - 1) {
       await _db!.markMangaChapterRead(_chapterId!);
     }
   }
@@ -215,10 +225,29 @@ class _MangaReaderScreenState extends State<MangaReaderScreen>
 
   void _goToPage(int i) {
     final clamped = i.clamp(0, _pages.length - 1);
-    if (_pageCtrl.hasClients) {
-      _pageCtrl.animateToPage(clamped,
-          duration: Duration(milliseconds: _settings.animatePageTransition ? 250 : 0),
-          curve: Curves.easeOut);
+    if (_settings.readingMode == ReadingMode.webtoon) {
+      // Webtoon: actually scroll the ListView to the page's offset
+      // (clamped to the current scroll extent). Without this, the
+      // bottom-bar slider was a no-op in webtoon mode.
+      if (_scrollCtrl.hasClients) {
+        final viewport = _scrollCtrl.position.viewportDimension;
+        final target = clamped * viewport;
+        _scrollCtrl.animateTo(
+          target.clamp(0.0, _scrollCtrl.position.maxScrollExtent),
+          duration: Duration(
+              milliseconds: _settings.animatePageTransition ? 250 : 0),
+          curve: Curves.easeOut,
+        );
+      }
+    } else {
+      if (_pageCtrl.hasClients) {
+        _pageCtrl.animateToPage(
+          clamped,
+          duration: Duration(
+              milliseconds: _settings.animatePageTransition ? 250 : 0),
+          curve: Curves.easeOut,
+        );
+      }
     }
     _schedulePageSave(clamped);
   }
@@ -234,8 +263,9 @@ class _MangaReaderScreenState extends State<MangaReaderScreen>
   }
 
   Future<void> _saveCurrentPage() async {
-    if (_currentPage >= _pages.length) return;
-    final page = _pages[_currentPage];
+    final current = _currentPageNotifier.value;
+    if (current >= _pages.length) return;
+    final page = _pages[current];
     if (page.imageUrl.isEmpty) return;
     try {
       final uri = Uri.parse(page.imageUrl);
@@ -245,7 +275,7 @@ class _MangaReaderScreenState extends State<MangaReaderScreen>
       final bytes = await streamed.stream.toBytes();
       if (!mounted) return;
       final dir = Directory.systemTemp;
-      final file = File('${dir.path}/page_${_currentPage + 1}.jpg');
+      final file = File('${dir.path}/page_${current + 1}.jpg');
       await file.writeAsBytes(bytes);
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -260,14 +290,16 @@ class _MangaReaderScreenState extends State<MangaReaderScreen>
   }
 
   void _shareCurrentPage() {
-    Clipboard.setData(ClipboardData(text: _pages[_currentPage].imageUrl));
+    final current = _currentPageNotifier.value;
+    Clipboard.setData(ClipboardData(text: _pages[current].imageUrl));
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(content: Text('Image URL copied to clipboard')),
     );
   }
 
   void _copyCurrentPage() {
-    Clipboard.setData(ClipboardData(text: _pages[_currentPage].imageUrl));
+    final current = _currentPageNotifier.value;
+    Clipboard.setData(ClipboardData(text: _pages[current].imageUrl));
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(content: Text('Image URL copied')),
     );
@@ -462,7 +494,7 @@ class _MangaReaderScreenState extends State<MangaReaderScreen>
                   child: GestureDetector(
                     onTap: () {},
                     child: _ReaderBottomBar(
-                      currentPage: _currentPage,
+                      pageListenable: _currentPageNotifier,
                       totalPages: _pages.length,
                       showNavigator: _settings.showPageNavigator,
                       onPageChanged: _goToPage,
@@ -471,9 +503,16 @@ class _MangaReaderScreenState extends State<MangaReaderScreen>
                   ),
                 ),
               ],
-              // Page number overlay (when toolbar hidden)
+              // Page number overlay (when toolbar hidden).
+              // ValueListenableBuilder so we only rebuild the overlay
+              // when the page index actually changes — not the whole
+              // Stack / ListView / every Image beneath it.
               if (!_showToolbar && _settings.showPageNumber)
-                _buildPageNumberOverlay(orientation),
+                ValueListenableBuilder<int>(
+                  valueListenable: _currentPageNotifier,
+                  builder: (_, page, __) =>
+                      _buildPageNumberOverlay(orientation, page),
+                ),
             ],
           );
         },
@@ -482,9 +521,9 @@ class _MangaReaderScreenState extends State<MangaReaderScreen>
     );
   }
 
-  Widget _buildPageNumberOverlay(Orientation orientation) {
+  Widget _buildPageNumberOverlay(Orientation orientation, int currentPage) {
     final placement = _settings.progressBarPlacement;
-    final text = '${_currentPage + 1} / ${_pages.length}';
+    final text = '${currentPage + 1} / ${_pages.length}';
     final pill = Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
       decoration: BoxDecoration(
@@ -518,7 +557,7 @@ class _MangaReaderScreenState extends State<MangaReaderScreen>
                 child: ClipPath(
                   clipper: const _TopLeftClipper(),
                   child: GestureDetector(
-                    onTap: () => _goToPage(_currentPage - 1),
+                    onTap: () => _goToPage(_currentPageNotifier.value - 1),
                     onLongPress: _showLongPressMenu,
                     behavior: HitTestBehavior.translucent,
                   ),
@@ -528,7 +567,7 @@ class _MangaReaderScreenState extends State<MangaReaderScreen>
                 child: ClipPath(
                   clipper: const _BottomRightClipper(),
                   child: GestureDetector(
-                    onTap: () => _goToPage(_currentPage + 1),
+                    onTap: () => _goToPage(_currentPageNotifier.value + 1),
                     onLongPress: _showLongPressMenu,
                     behavior: HitTestBehavior.translucent,
                   ),
@@ -540,7 +579,7 @@ class _MangaReaderScreenState extends State<MangaReaderScreen>
       case TapZoneMode.leftRight:
         return Row(children: [
           Expanded(child: GestureDetector(
-            onTap: () => _goToPage(_currentPage - 1),
+            onTap: () => _goToPage(_currentPageNotifier.value - 1),
             onLongPress: _showLongPressMenu,
             behavior: HitTestBehavior.translucent,
             child: const SizedBox.expand(),
@@ -552,7 +591,7 @@ class _MangaReaderScreenState extends State<MangaReaderScreen>
             child: const SizedBox.expand(),
           )),
           Expanded(child: GestureDetector(
-            onTap: () => _goToPage(_currentPage + 1),
+            onTap: () => _goToPage(_currentPageNotifier.value + 1),
             onLongPress: _showLongPressMenu,
             behavior: HitTestBehavior.translucent,
             child: const SizedBox.expand(),
@@ -561,7 +600,7 @@ class _MangaReaderScreenState extends State<MangaReaderScreen>
       case TapZoneMode.leftCenterRight:
         return Row(children: [
           Expanded(flex: 2, child: GestureDetector(
-            onTap: () => _goToPage(_currentPage - 1),
+            onTap: () => _goToPage(_currentPageNotifier.value - 1),
             onLongPress: _showLongPressMenu,
             behavior: HitTestBehavior.translucent,
             child: const SizedBox.expand(),
@@ -573,7 +612,7 @@ class _MangaReaderScreenState extends State<MangaReaderScreen>
             child: const SizedBox.expand(),
           )),
           Expanded(flex: 2, child: GestureDetector(
-            onTap: () => _goToPage(_currentPage + 1),
+            onTap: () => _goToPage(_currentPageNotifier.value + 1),
             onLongPress: _showLongPressMenu,
             behavior: HitTestBehavior.translucent,
             child: const SizedBox.expand(),
@@ -589,27 +628,35 @@ class _MangaReaderScreenState extends State<MangaReaderScreen>
           final offset = notification.metrics.pixels;
           final viewport = notification.metrics.viewportDimension;
           final page = (offset / viewport).round().clamp(0, _pages.length - 1);
-          if (page != _currentPage) {
+          if (page != _currentPageNotifier.value) {
             _schedulePageSave(page);
           }
         }
         return false;
       },
+      // cacheExtent: prefetch more images off-screen so scrolling feels
+      // seamless and we don't churn through the in-memory image cache.
       child: ListView.builder(
         controller: _scrollCtrl,
         scrollDirection: Axis.vertical,
         itemCount: _pages.length,
+        cacheExtent: 2000,
         itemBuilder: (context, i) {
           final page = _pages[i];
+          // Stable keys so Flutter reuses the same Image element across
+          // any parent rebuilds — prevents the loadingBuilder from
+          // firing again for cached images.
           final img = page.localPath != null
               ? Image.file(
                   File(page.localPath!),
+                  key: ValueKey('webtoon-${page.index}'),
                   fit: BoxFit.contain,
                   width: double.infinity,
                   errorBuilder: (_, __, ___) => const AspectRatio(aspectRatio: 16/9, child: Center(child: Icon(Icons.broken_image, color: Colors.white38, size: 48))),
                 )
               : Image.network(
                   page.imageUrl,
+                  key: ValueKey('webtoon-${page.index}'),
                   headers: page.headers,
                   fit: BoxFit.contain,
                   width: double.infinity,
@@ -717,8 +764,6 @@ class _MangaReaderScreenState extends State<MangaReaderScreen>
   }
 
   Widget _buildBookModePages(Axis axis, bool reverse) {
-    // Simple book mode: show 2 pages side by side in landscape
-    final even = _currentPage.isEven ? _currentPage : _currentPage - 1;
     return PageView.builder(
       controller: _pageCtrl,
       scrollDirection: axis,
@@ -812,15 +857,18 @@ class _ReaderTopBar extends StatelessWidget {
 }
 
 // ── Bottom bar ─────────────────────────────────────────────────────────
+// Listens to a [ValueListenable] for the current page so only the
+// prev/next/slider/text rebuild when the page changes — not the whole
+// reader tree above it.
 class _ReaderBottomBar extends StatelessWidget {
-  final int currentPage;
+  final ValueListenable<int> pageListenable;
   final int totalPages;
   final bool showNavigator;
   final void Function(int) onPageChanged;
   final VoidCallback onSettings;
 
   const _ReaderBottomBar({
-    required this.currentPage,
+    required this.pageListenable,
     required this.totalPages,
     required this.showNavigator,
     required this.onPageChanged,
@@ -851,12 +899,15 @@ class _ReaderBottomBar extends StatelessWidget {
               padding: const EdgeInsets.symmetric(horizontal: 8),
               child: Row(
                 children: [
-                  IconButton(
-                    icon: const Icon(Icons.chevron_left, color: Colors.white),
-                    onPressed: currentPage > 0
-                        ? () => onPageChanged(currentPage - 1)
-                        : null,
-                    tooltip: 'Previous',
+                  ValueListenableBuilder<int>(
+                    valueListenable: pageListenable,
+                    builder: (_, page, __) => IconButton(
+                      icon: const Icon(Icons.chevron_left, color: Colors.white),
+                      onPressed: page > 0
+                          ? () => onPageChanged(page - 1)
+                          : null,
+                      tooltip: 'Previous',
+                    ),
                   ),
                   Expanded(
                     child: Column(
@@ -874,28 +925,37 @@ class _ReaderBottomBar extends StatelessWidget {
                             thumbColor: Colors.white,
                             overlayColor: Colors.white12,
                           ),
-                          child: Slider(
-                            value: currentPage.toDouble(),
-                            min: 0,
-                            max: (totalPages - 1).toDouble(),
-                            divisions: totalPages - 1,
-                            onChanged: (v) => onPageChanged(v.round()),
+                          child: ValueListenableBuilder<int>(
+                            valueListenable: pageListenable,
+                            builder: (_, page, __) => Slider(
+                              value: page.toDouble(),
+                              min: 0,
+                              max: (totalPages - 1).toDouble(),
+                              divisions: totalPages - 1,
+                              onChanged: (v) => onPageChanged(v.round()),
+                            ),
                           ),
                         ),
-                        Text(
-                          '${currentPage + 1} / $totalPages',
-                          style:
-                              const TextStyle(color: Colors.white70, fontSize: 11),
+                        ValueListenableBuilder<int>(
+                          valueListenable: pageListenable,
+                          builder: (_, page, __) => Text(
+                            '${page + 1} / $totalPages',
+                            style: const TextStyle(
+                                color: Colors.white70, fontSize: 11),
+                          ),
                         ),
                       ],
                     ),
                   ),
-                  IconButton(
-                    icon: const Icon(Icons.chevron_right, color: Colors.white),
-                    onPressed: currentPage < totalPages - 1
-                        ? () => onPageChanged(currentPage + 1)
-                        : null,
-                    tooltip: 'Next',
+                  ValueListenableBuilder<int>(
+                    valueListenable: pageListenable,
+                    builder: (_, page, __) => IconButton(
+                      icon: const Icon(Icons.chevron_right, color: Colors.white),
+                      onPressed: page < totalPages - 1
+                          ? () => onPageChanged(page + 1)
+                          : null,
+                      tooltip: 'Next',
+                    ),
                   ),
                   IconButton(
                     icon: const Icon(Icons.settings_outlined, color: Colors.white70),
