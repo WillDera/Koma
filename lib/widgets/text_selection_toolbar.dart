@@ -55,13 +55,13 @@ class ReaderSelectionToolbar extends StatelessWidget {
                 children: [
                   _ToolAction(
                     icon: Icons.format_color_fill,
-                    label: 'Highlight',
+                    label: 'Mark',
                     onTap: () => onHighlight(defaultHighlightColor),
                   ),
                   _Divider(),
                   _ToolAction(
                     icon: Icons.edit_note,
-                    label: 'Note',
+                    label: 'Snippet',
                     onTap: onNote,
                   ),
                   _Divider(),

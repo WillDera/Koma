@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-/// StashReader spacing, radii, and elevation tokens.
+/// Koma spacing, radii, and elevation tokens.
 class AppSpacing {
   AppSpacing._();
 

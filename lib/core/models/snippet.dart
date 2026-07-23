@@ -7,6 +7,10 @@ class Snippet {
   final String? color;
   final int? bookId;
   final int? chapterId;
+  final int? collectionId;
+  final int? startOffset;
+  final int? endOffset;
+  final double? scrollPosition;
   final List<String> tags;
   final DateTime createdAt;
   final DateTime updatedAt;
@@ -20,6 +24,10 @@ class Snippet {
     this.color,
     this.bookId,
     this.chapterId,
+    this.collectionId,
+    this.startOffset,
+    this.endOffset,
+    this.scrollPosition,
     this.tags = const [],
     DateTime? createdAt,
     DateTime? updatedAt,
@@ -35,6 +43,10 @@ class Snippet {
     String? color,
     int? bookId,
     int? chapterId,
+    int? collectionId,
+    int? startOffset,
+    int? endOffset,
+    double? scrollPosition,
     List<String>? tags,
     DateTime? createdAt,
     DateTime? updatedAt,
@@ -48,6 +60,10 @@ class Snippet {
       color: color ?? this.color,
       bookId: bookId ?? this.bookId,
       chapterId: chapterId ?? this.chapterId,
+      collectionId: collectionId ?? this.collectionId,
+      startOffset: startOffset ?? this.startOffset,
+      endOffset: endOffset ?? this.endOffset,
+      scrollPosition: scrollPosition ?? this.scrollPosition,
       tags: tags ?? this.tags,
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
@@ -63,6 +79,10 @@ class Snippet {
         'color': color,
         'book_id': bookId,
         'chapter_id': chapterId,
+        'collection_id': collectionId,
+        'start_offset': startOffset,
+        'end_offset': endOffset,
+        'scroll_position': scrollPosition,
         'tags': tags,
         'created_at': createdAt.toIso8601String(),
         'updated_at': updatedAt.toIso8601String(),
@@ -77,6 +97,10 @@ class Snippet {
         color: json['color'] as String?,
         bookId: json['book_id'] as int?,
         chapterId: json['chapter_id'] as int?,
+        collectionId: json['collection_id'] as int?,
+        startOffset: json['start_offset'] as int?,
+        endOffset: json['end_offset'] as int?,
+        scrollPosition: (json['scroll_position'] as num?)?.toDouble(),
         tags: (json['tags'] as List<dynamic>?)
                 ?.map((e) => e as String)
                 .toList() ??

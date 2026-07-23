@@ -44,7 +44,7 @@ app.*.map.json
 /android/app/profile
 /android/app/release
 PRD.md
-AGENTS.md
+#AGENTS.md
 .opencode/
 graphify-out/
 /.commandcode/taste/taste.md

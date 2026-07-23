@@ -8,20 +8,24 @@ import '../theme/tokens/app_type.dart';
 import 'animated_press.dart';
 import 'tag_pill.dart';
 
-/// A Deepstash-style snippet "idea card". Top hairline in the highlight
-/// color, large italic quote in Literata, optional note, source, tags.
 class SnippetCard extends StatelessWidget {
   final Snippet snippet;
   final VoidCallback? onTap;
   final VoidCallback? onLongPress;
+  final VoidCallback? onOpenSource;
   final bool dense;
+  final bool selected;
+  final bool selectionMode;
 
   const SnippetCard({
     super.key,
     required this.snippet,
     this.onTap,
     this.onLongPress,
+    this.onOpenSource,
     this.dense = false,
+    this.selected = false,
+    this.selectionMode = false,
   });
 
   @override
@@ -39,23 +43,53 @@ class SnippetCard extends StatelessWidget {
       child: Container(
         padding: const EdgeInsets.fromLTRB(20, 18, 20, 18),
         decoration: BoxDecoration(
-          color: c.surface,
+          color: selectionMode && selected ? c.accentMuted : c.surface,
           borderRadius: AppSpacing.brLg,
           border: Border.all(color: c.border, width: 0.5),
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Top color hairline
-            Container(
-              height: 2,
-              width: 36,
-              decoration: BoxDecoration(
-                color: color,
-                borderRadius: BorderRadius.circular(1),
-              ),
+            if (selectionMode) ...[
+              const SizedBox(height: 4),
+            ],
+            // Top row with color hairline + optional checkbox
+            Row(
+              children: [
+                Container(
+                  height: 2,
+                  width: 36,
+                  decoration: BoxDecoration(
+                    color: color,
+                    borderRadius: BorderRadius.circular(1),
+                  ),
+                ),
+                if (selectionMode) ...[
+                  const Spacer(),
+                  AnimatedContainer(
+                    duration: const Duration(milliseconds: 200),
+                    width: 22,
+                    height: 22,
+                    decoration: BoxDecoration(
+                      color: selected ? c.accent : Colors.black.withValues(alpha: 0.2),
+                      shape: BoxShape.circle,
+                      border: Border.all(
+                        color: selected ? c.accent : c.textTertiary,
+                        width: 1.5,
+                      ),
+                    ),
+                    child: selected
+                        ? Icon(Icons.check, size: 13, color: c.onAccent)
+                        : null,
+                  ),
+                ],
+              ],
             ),
-            const SizedBox(height: 16),
+            if (!selectionMode) ...[
+              const SizedBox(height: 16),
+            ] else ...[
+              const SizedBox(height: 12),
+            ],
             // Quote
             Text(
               '"${snippet.text}"',
@@ -89,22 +123,34 @@ class SnippetCard extends StatelessWidget {
             Row(
               children: [
                 if (snippet.sourceTitle != null) ...[
-                  Icon(
-                    Icons.book_outlined,
-                    size: 13,
-                    color: c.textTertiary,
-                  ),
-                  const SizedBox(width: 5),
-                  Flexible(
-                    child: Text(
-                      snippet.sourceTitle!,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        color: c.textSecondary,
-                        fontSize: 12,
-                        fontWeight: FontWeight.w500,
-                      ),
+                  GestureDetector(
+                    onTap: onOpenSource,
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(Icons.book_outlined,
+                            size: 13,
+                            color: onOpenSource != null
+                                ? c.accent
+                                : c.textTertiary),
+                        const SizedBox(width: 5),
+                        Flexible(
+                          child: Text(
+                            snippet.sourceTitle!,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              color: onOpenSource != null
+                                  ? c.accent
+                                  : c.textSecondary,
+                              fontSize: 12,
+                              fontWeight: onOpenSource != null
+                                  ? FontWeight.w600
+                                  : FontWeight.w500,
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
                   ),
                   const SizedBox(width: 8),

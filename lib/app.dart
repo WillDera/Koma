@@ -10,16 +10,19 @@ import 'theme/theme_provider.dart';
 import 'theme/tokens/app_motion.dart';
 import 'widgets/glass_pill_nav.dart';
 
-class StashReaderApp extends StatelessWidget {
-  const StashReaderApp({super.key});
+final RouteObserver<ModalRoute<void>> routeObserver = RouteObserver<ModalRoute<void>>();
+
+class KomaApp extends StatelessWidget {
+  const KomaApp({super.key});
 
   @override
   Widget build(BuildContext context) {
     final themeProv = context.watch<ThemeProvider>();
 
     return MaterialApp(
-      title: 'StashReader',
+      title: 'Koma',
       debugShowCheckedModeBanner: false,
+      navigatorObservers: [routeObserver],
       theme: themeProv.isSepia ? themeProv.sepiaTheme : themeProv.lightTheme,
       darkTheme: themeProv.darkTheme,
       themeMode:
@@ -90,6 +93,7 @@ class _MainShellState extends State<MainShell> {
   Widget build(BuildContext context) {
     final themeProv = context.watch<ThemeProvider>();
     return Scaffold(
+      extendBody: true,
       backgroundColor: themeProv.bgColor,
       body: Stack(
         children: [

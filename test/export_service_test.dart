@@ -1,11 +1,11 @@
 import 'dart:convert';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:drift/drift.dart' hide isNull, isNotNull;
-import 'package:stashreader/core/database/database.dart';
-import 'package:stashreader/core/models/book.dart';
-import 'package:stashreader/core/models/chapter.dart';
-import 'package:stashreader/core/models/snippet.dart';
-import 'package:stashreader/core/services/database_service.dart';
+import 'package:koma/core/database/database.dart';
+import 'package:koma/core/models/book.dart';
+import 'package:koma/core/models/chapter.dart';
+import 'package:koma/core/models/snippet.dart';
+import 'package:koma/core/services/database_service.dart';
 
 import 'helpers/test_database.dart';
 

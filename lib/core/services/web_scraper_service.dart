@@ -16,7 +16,7 @@ class WebScrapeResult {
 
 class WebScraperService {
   static const _userAgent =
-      'Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 StashReader/1.0';
+      'Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 Koma/1.0';
 
   Future<WebScrapeResult> fetchContent(String url) async {
     try {

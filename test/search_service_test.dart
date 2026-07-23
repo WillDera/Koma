@@ -1,7 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:drift/drift.dart' hide isNull, isNotNull;
-import 'package:stashreader/core/database/database.dart';
-import 'package:stashreader/core/services/search_service.dart';
+import 'package:koma/core/database/database.dart';
+import 'package:koma/core/services/search_service.dart';
 
 import 'helpers/test_database.dart';
 
