@@ -15,6 +15,7 @@ class EdgeTtsEngine implements TtsEngine {
   double _pitch = -0.02;
   bool _isPlaying = false;
   bool _isPaused = false;
+  bool _isBuffering = false;
 
   StreamSubscription? _posSub;
   StreamSubscription? _stateSub;
@@ -42,6 +43,8 @@ class EdgeTtsEngine implements TtsEngine {
 
   @override
   bool get isPaused => _isPaused;
+  @override
+  bool get isBuffering => _isBuffering;
 
   String get _ratePercent {
     final p = (_rate - 1.0) * 100;
@@ -76,6 +79,7 @@ class EdgeTtsEngine implements TtsEngine {
 
     _isPlaying = true;
     _isPaused = false;
+    _isBuffering = true;
 
     try {
       final chunks = _splitChunks(adjusted, startOffset);
@@ -85,8 +89,20 @@ class EdgeTtsEngine implements TtsEngine {
         return;
       }
 
-      final playlist = ConcatenatingAudioSource(children: []);
-      await _player.setAudioSource(playlist);
+      final audioList = await _synthesizeAll(chunks.map((c) => c.text).toList());
+      final sources = audioList
+          .where((a) => a.isNotEmpty)
+          .map((a) => _BytesAudioSource(a))
+          .toList();
+
+      if (sources.isEmpty) {
+        _isBuffering = false;
+        _isPlaying = false;
+        onComplete();
+        return;
+      }
+
+      await _player.setAudioSource(ConcatenatingAudioSource(children: sources));
 
       _stateSub?.cancel();
       _stateSub = _player.processingStateStream.listen((state) {
@@ -96,24 +112,8 @@ class EdgeTtsEngine implements TtsEngine {
       _posSub?.cancel();
       _posSub = _player.positionStream.listen(_onPosition);
 
-      final audioList = await _synthesizeAll(chunks.map((c) => c.text).toList());
-      bool started = false;
-      for (final audio in audioList) {
-        if (audio.isNotEmpty) {
-          await playlist.add(_BytesAudioSource(audio));
-          if (!started) {
-            started = true;
-            unawaited(_player.play());
-          }
-        }
-      }
-
-      if (!started) {
-        _isPlaying = false;
-        onComplete();
-        return;
-      }
-
+      _isBuffering = false;
+      _player.play();
       _resolveCharOffsets(adjusted, startOffset);
     } catch (e) {
       debugPrint('edge-tts speak error: $e');
@@ -204,7 +204,7 @@ class EdgeTtsEngine implements TtsEngine {
       turnAudio.clear();
       turnDone = Completer<void>();
       ws.add(_buildSsmlMessage(text));
-      await turnDone!.future;
+      await turnDone!.future.timeout(const Duration(seconds: 30));
       results.add(Uint8List.fromList(List.from(turnAudio)));
     }
 
@@ -367,6 +367,7 @@ class EdgeTtsEngine implements TtsEngine {
     _cleanup();
     _isPlaying = false;
     _isPaused = false;
+    _isBuffering = false;
     _onComplete?.call();
   }
 
@@ -391,6 +392,7 @@ class EdgeTtsEngine implements TtsEngine {
     _player.stop();
     _isPlaying = false;
     _isPaused = false;
+    _isBuffering = false;
   }
 
   void _cleanup() {

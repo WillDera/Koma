@@ -41,20 +41,29 @@ class TtsControls extends StatelessWidget {
                         : null,
                   ),
                   const SizedBox(width: 4),
-                  IconButtonRound(
-                    icon: provider.isPaused ? Icons.play_arrow : Icons.pause,
-                    size: 36,
-                    variant: IconButtonVariant.filled,
-                    iconColor: c.onAccent,
-                    backgroundColor: c.accent,
-                    onPressed: () {
-                      if (provider.isPaused) {
-                        provider.play();
-                      } else {
-                        provider.pause();
-                      }
-                    },
-                  ),
+                  provider.isBuffering
+                      ? SizedBox(
+                          width: 36,
+                          height: 36,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: c.accent,
+                          ),
+                        )
+                      : IconButtonRound(
+                          icon: provider.isPaused ? Icons.play_arrow : Icons.pause,
+                          size: 36,
+                          variant: IconButtonVariant.filled,
+                          iconColor: c.onAccent,
+                          backgroundColor: c.accent,
+                          onPressed: () {
+                            if (provider.isPaused) {
+                              provider.play();
+                            } else {
+                              provider.pause();
+                            }
+                          },
+                        ),
                   const SizedBox(width: 4),
                   IconButtonRound(
                     icon: Icons.skip_next,
