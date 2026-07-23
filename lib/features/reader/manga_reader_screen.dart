@@ -6,6 +6,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:provider/provider.dart';
+import 'package:scrollable_positioned_list/scrollable_positioned_list.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../core/services/database_service.dart';
 import '../../core/services/keiyoushi_service.dart';
@@ -42,8 +43,9 @@ class _MangaReaderScreenState extends State<MangaReaderScreen>
   bool _loading = true;
   String? _error;
   final _pageCtrl = PageController();
-  final _scrollCtrl = ScrollController();
-  double _currentScrollPos = 0.0;
+  final ItemScrollController _itemScrollCtrl = ItemScrollController();
+  final ItemPositionsListener _itemPositionsListener =
+      ItemPositionsListener.create();
   // Page index lives in a ValueNotifier so the page-number overlay and
   // bottom bar can update via ValueListenableBuilder — without calling
   // setState on the whole tree (which would rebuild the ListView and
@@ -61,9 +63,7 @@ class _MangaReaderScreenState extends State<MangaReaderScreen>
     super.initState();
     _db = context.read<DatabaseService>();
     WidgetsBinding.instance.addObserver(this);
-    _scrollCtrl.addListener(() {
-      _currentScrollPos = _scrollCtrl.position.pixels;
-    });
+    _itemPositionsListener.itemPositions.addListener(_onWebtoonScroll);
     _initAsync();
   }
 
@@ -75,9 +75,10 @@ class _MangaReaderScreenState extends State<MangaReaderScreen>
   @override
   void dispose() {
     _flushPageProgress();
+    _restoreSystemUI();
+    _itemPositionsListener.itemPositions.removeListener(_onWebtoonScroll);
     WidgetsBinding.instance.removeObserver(this);
     _pageCtrl.dispose();
-    _scrollCtrl.dispose();
     _currentPageNotifier.dispose();
     for (final c in _zoomCtrls) {
       c.dispose();
@@ -85,9 +86,31 @@ class _MangaReaderScreenState extends State<MangaReaderScreen>
     super.dispose();
   }
 
+  void _applySystemUI() {
+    if (_settings.fullscreen) {
+      SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
+      SystemChrome.setSystemUIOverlayStyle(const SystemUiOverlayStyle(
+        statusBarColor: Colors.transparent,
+        systemNavigationBarColor: Colors.black,
+      ));
+    } else {
+      SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
+      SystemChrome.setSystemUIOverlayStyle(const SystemUiOverlayStyle(
+        statusBarColor: Colors.transparent,
+        systemNavigationBarColor: Colors.black,
+      ));
+    }
+  }
+
+  void _restoreSystemUI() {
+    SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
+  }
+
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.resumed && _settings.keepScreenOn) {
+    if (state == AppLifecycleState.paused) {
+      _flushPageProgress();
+    } else if (state == AppLifecycleState.resumed && _settings.keepScreenOn) {
       WidgetsBinding.instance.scheduleFrame();
     }
   }
@@ -160,6 +183,7 @@ class _MangaReaderScreenState extends State<MangaReaderScreen>
         _settings = ReaderSettings.fromJson(map);
       } catch (_) {}
     }
+    if (mounted) _applySystemUI();
   }
 
   Future<void> _saveSettings() async {
@@ -173,11 +197,14 @@ class _MangaReaderScreenState extends State<MangaReaderScreen>
     final ch = await _db!.getMangaChapterByUrl(widget.mangaId!, widget.chapterUrl);
     if (ch == null || !mounted) return;
     _chapterId = ch.id;
+    if (!ch.isOpened) {
+      _db!.markMangaChapterOpened(ch.id);
+    }
     final isWebtoon = _settings.readingMode == ReadingMode.webtoon;
-    if (isWebtoon && ch.scrollPosition > 0) {
+    if (isWebtoon && ch.lastPageRead > 0) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted && _scrollCtrl.hasClients) {
-          _scrollCtrl.jumpTo(ch.scrollPosition.clamp(0, _scrollCtrl.position.maxScrollExtent));
+        if (mounted) {
+          _itemScrollCtrl.jumpTo(index: ch.lastPageRead.clamp(0, _pages.length - 1));
         }
       });
     } else if (!isWebtoon) {
@@ -203,11 +230,7 @@ class _MangaReaderScreenState extends State<MangaReaderScreen>
   Future<void> _saveProgress() async {
     if (_chapterId == null || _db == null) return;
     final page = _currentPageNotifier.value;
-    if (_settings.readingMode == ReadingMode.webtoon) {
-      await _db!.updateMangaChapterScrollPosition(_chapterId!, _currentScrollPos);
-    } else {
-      await _db!.updateMangaChapterProgress(_chapterId!, page);
-    }
+    await _db!.updateMangaChapterProgress(_chapterId!, page);
     if (page >= _pages.length - 1) {
       await _db!.markMangaChapterRead(_chapterId!);
     }
@@ -221,24 +244,30 @@ class _MangaReaderScreenState extends State<MangaReaderScreen>
 
   void _toggleToolbar() => setState(() => _showToolbar = !_showToolbar);
 
-  void _onPageChanged(int i) => _schedulePageSave(i);
+  void _onWebtoonScroll() {
+    final positions = _itemPositionsListener.itemPositions.value;
+    if (positions.isEmpty) return;
+    final first = positions.first.index;
+    if (first != _currentPageNotifier.value) {
+      _schedulePageSave(first);
+    }
+  }
+
+  void _onPageChanged(int i) {
+    HapticFeedback.selectionClick();
+    _schedulePageSave(i);
+  }
 
   void _goToPage(int i) {
+    HapticFeedback.lightImpact();
     final clamped = i.clamp(0, _pages.length - 1);
     if (_settings.readingMode == ReadingMode.webtoon) {
-      // Webtoon: actually scroll the ListView to the page's offset
-      // (clamped to the current scroll extent). Without this, the
-      // bottom-bar slider was a no-op in webtoon mode.
-      if (_scrollCtrl.hasClients) {
-        final viewport = _scrollCtrl.position.viewportDimension;
-        final target = clamped * viewport;
-        _scrollCtrl.animateTo(
-          target.clamp(0.0, _scrollCtrl.position.maxScrollExtent),
-          duration: Duration(
-              milliseconds: _settings.animatePageTransition ? 250 : 0),
-          curve: Curves.easeOut,
-        );
-      }
+      _itemScrollCtrl.scrollTo(
+        index: clamped,
+        duration: Duration(
+            milliseconds: _settings.animatePageTransition ? 250 : 0),
+        curve: Curves.easeOut,
+      );
     } else {
       if (_pageCtrl.hasClients) {
         _pageCtrl.animateToPage(
@@ -361,6 +390,7 @@ class _MangaReaderScreenState extends State<MangaReaderScreen>
           final oldMode = _settings.readingMode;
           setState(() => _settings = s);
           _saveSettings();
+          _applySystemUI();
           if (s.keepScreenOn) {
             WidgetsBinding.instance.scheduleFrame();
           }
@@ -483,7 +513,11 @@ class _MangaReaderScreenState extends State<MangaReaderScreen>
                   right: 0,
                   child: _ReaderTopBar(
                     chapterName: widget.chapterName,
-                    onClose: () => Navigator.pop(context),
+                    onClose: () {
+                      _saveProgress().then((_) {
+                        if (context.mounted) Navigator.of(context).pop();
+                      });
+                    },
                     onSave: _saveCurrentPage,
                   ),
                 ),
@@ -622,53 +656,28 @@ class _MangaReaderScreenState extends State<MangaReaderScreen>
   }
 
   Widget _buildWebtoonPages() {
-    return NotificationListener<ScrollNotification>(
-      onNotification: (notification) {
-        if (notification is ScrollUpdateNotification) {
-          final offset = notification.metrics.pixels;
-          final viewport = notification.metrics.viewportDimension;
-          final page = (offset / viewport).round().clamp(0, _pages.length - 1);
-          if (page != _currentPageNotifier.value) {
-            _schedulePageSave(page);
-          }
-        }
-        return false;
+    return ScrollablePositionedList.builder(
+      itemScrollController: _itemScrollCtrl,
+      itemPositionsListener: _itemPositionsListener,
+      scrollDirection: Axis.vertical,
+      itemCount: _pages.length,
+      minCacheExtent: 2000,
+      itemBuilder: (context, i) {
+        final page = _pages[i];
+        return Image(
+          image: page.localPath != null
+              ? FileImage(File(page.localPath!))
+              : NetworkImage(page.imageUrl, headers: page.headers),
+          key: ValueKey('webtoon-${page.index}'),
+          fit: BoxFit.contain,
+          width: double.infinity,
+          loadingBuilder: (_, child, progress) =>
+              progress != null
+                  ? const AspectRatio(aspectRatio: 16/9, child: Center(child: CircularProgressIndicator(color: Colors.white54)))
+                  : child,
+          errorBuilder: (_, __, ___) => const AspectRatio(aspectRatio: 16/9, child: Center(child: Icon(Icons.broken_image, color: Colors.white38, size: 48))),
+        );
       },
-      // cacheExtent: prefetch more images off-screen so scrolling feels
-      // seamless and we don't churn through the in-memory image cache.
-      child: ListView.builder(
-        controller: _scrollCtrl,
-        scrollDirection: Axis.vertical,
-        itemCount: _pages.length,
-        cacheExtent: 2000,
-        itemBuilder: (context, i) {
-          final page = _pages[i];
-          // Stable keys so Flutter reuses the same Image element across
-          // any parent rebuilds — prevents the loadingBuilder from
-          // firing again for cached images.
-          final img = page.localPath != null
-              ? Image.file(
-                  File(page.localPath!),
-                  key: ValueKey('webtoon-${page.index}'),
-                  fit: BoxFit.contain,
-                  width: double.infinity,
-                  errorBuilder: (_, __, ___) => const AspectRatio(aspectRatio: 16/9, child: Center(child: Icon(Icons.broken_image, color: Colors.white38, size: 48))),
-                )
-              : Image.network(
-                  page.imageUrl,
-                  key: ValueKey('webtoon-${page.index}'),
-                  headers: page.headers,
-                  fit: BoxFit.contain,
-                  width: double.infinity,
-                  loadingBuilder: (_, child, progress) =>
-                      progress != null
-                          ? const AspectRatio(aspectRatio: 16/9, child: Center(child: CircularProgressIndicator(color: Colors.white54)))
-                          : child,
-                  errorBuilder: (_, __, ___) => const AspectRatio(aspectRatio: 16/9, child: Center(child: Icon(Icons.broken_image, color: Colors.white38, size: 48))),
-                );
-          return img;
-        },
-      ),
     );
   }
 
@@ -753,7 +762,7 @@ class _MangaReaderScreenState extends State<MangaReaderScreen>
             },
       child: InteractiveViewer(
         transformationController: zc,
-        minScale: _settings.disableZoomOut ? 1.0 : 1.0,
+        minScale: _settings.disableZoomOut ? 1.0 : 0.5,
         maxScale: 5.0,
         child: Padding(
           padding: EdgeInsets.symmetric(horizontal: horizontalPadding, vertical: verticalPadding),
