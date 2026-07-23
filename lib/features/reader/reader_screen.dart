@@ -21,7 +21,9 @@ import '../../widgets/toast.dart';
 import '../../core/models/highlight.dart';
 import '../../core/services/database_service.dart';
 import '../../core/utils/text_extractor.dart';
+import '../../widgets/tts_controls.dart';
 import 'reader_provider.dart';
+import 'tts_provider.dart';
 
 class ReaderScreen extends StatefulWidget {
   final int bookId;
@@ -64,6 +66,9 @@ class _ReaderScreenState extends State<ReaderScreen>
   _SwipeDirection _lastSwipeDirection = _SwipeDirection.none;
   double? _dragStartX;
 
+  TtsProvider? _ttsProvider;
+  bool _ttsListening = false;
+
   /// Index of the chapter we're currently showing. Used to detect a
   /// chapter change after navigation so we can jump the scroll back
   /// to the saved (or 0) position.
@@ -83,6 +88,7 @@ class _ReaderScreenState extends State<ReaderScreen>
       vsync: this,
       duration: AppMotion.base,
     );
+    _ttsProvider = TtsProvider()..addListener(_onTtsChanged);
     Future.microtask(() => _loadAndRestore());
   }
 
@@ -135,6 +141,13 @@ class _ReaderScreenState extends State<ReaderScreen>
     } else {
       _highlights = [];
     }
+    // Re-init TTS for the new chapter if TTS was active.
+    if (_ttsProvider != null && _ttsListening && ch != null) {
+      final tts = _ttsProvider!;
+      tts.stop();
+      tts.init(TextExtractor.extractFromHtml(ch[newIndex].content));
+      tts.play();
+    }
     // Jump to the saved scroll position for this chapter.  The
     // provider's _scrollPosition may be 0 for an unvisited chapter,
     // but a snippet-jump sets a specific offset (startOffset) that
@@ -157,9 +170,58 @@ class _ReaderScreenState extends State<ReaderScreen>
 
   bool _didHandleBack = false;
 
+  void _onTtsChanged() {
+    if (!mounted) return;
+    // ponytail: defer rebuild to avoid setState during build
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      setState(() {});
+      _scrollToTtsSentence();
+      _autoAdvanceChapterOnTtsEnd();
+    });
+  }
+
+  void _scrollToTtsSentence() {
+    final tts = _ttsProvider;
+    if (tts == null || !_scrollController.hasClients) return;
+    if (!tts.isPlaying && !tts.isPaused) return;
+    final text = _currentText;
+    if (text.isEmpty) return;
+    final offset = tts.currentSentenceOffset;
+    if (offset <= 0) return;
+    final ratio = offset / text.length;
+    final target = ratio * _scrollController.position.maxScrollExtent;
+    if ((target - _scrollController.offset).abs() > 60) {
+      _scrollController.animateTo(
+        target.clamp(0, _scrollController.position.maxScrollExtent),
+        duration: const Duration(milliseconds: 300),
+        curve: Curves.easeInOut,
+      );
+    }
+  }
+
+  void _autoAdvanceChapterOnTtsEnd() {
+    final tts = _ttsProvider;
+    if (tts == null || tts.isPlaying || tts.isPaused) return;
+    // ponytail: simple end-of-chapter detection
+    if (tts.currentIndex >= tts.totalSentences - 1 && tts.totalSentences > 0) {
+      final p = _provider;
+      if (p != null && p.currentIndex < p.chapters.length - 1) {
+        p.goToNextChapter();
+      }
+    }
+  }
+
+  String get _currentText {
+    final ch = _provider?.currentChapter;
+    return ch != null ? TextExtractor.extractFromHtml(ch.content) : '';
+  }
+
   @override
   void dispose() {
     if (!_didHandleBack) _provider?.stopReadingTimer();
+    _ttsProvider?.removeListener(_onTtsChanged);
+    _ttsProvider?.dispose();
     _scrollController.dispose();
     _toolbarCtrl.dispose();
     _colorCtrl.dispose();
@@ -409,6 +471,9 @@ class _ReaderScreenState extends State<ReaderScreen>
                                   children: _buildReadingSpans(
                                     themeProv,
                                     TextExtractor.extractFromHtml(chapter.content),
+                                    ttsActive: _ttsProvider?.isActive ?? false,
+                                    ttsStart: _ttsProvider?.currentSentenceOffset ?? 0,
+                                    ttsEnd: _ttsProvider?.currentSentenceEnd ?? 0,
                                   ),
                                 ),
                                 textAlign: themeProv.textAlign,
@@ -458,6 +523,7 @@ class _ReaderScreenState extends State<ReaderScreen>
                     progress: progress,
                     visible: _showUI,
                     onBack: () async {
+                      _ttsProvider?.stop();
                       if (_provider != null) {
                         await _provider!.stopReadingTimer();
                       }
@@ -466,6 +532,8 @@ class _ReaderScreenState extends State<ReaderScreen>
                     },
                     onSettings: () =>
                         ReaderSettingsSheet.show(context, themeProv),
+                    onTtsToggle: _toggleTts,
+                    isTtsActive: _ttsProvider?.isActive ?? false,
                   ),
                 ),
 
@@ -542,12 +610,42 @@ class _ReaderScreenState extends State<ReaderScreen>
                       ),
                     ),
                   ),
+                // TTS controls overlay
+                if (_ttsProvider != null && _ttsProvider!.isActive)
+                  Positioned(
+                    bottom: 0,
+                    left: 0,
+                    right: 0,
+                    child: TtsControls(provider: _ttsProvider!),
+                  ),
               ],
             ),
           ),
         );
       },
     );
+  }
+
+  void _toggleTts() {
+    final tts = _ttsProvider;
+    if (tts == null) return;
+    if (tts.isActive) {
+      tts.stop();
+      _ttsListening = false;
+    } else {
+      final text = _currentText;
+      if (text.isEmpty) return;
+      tts.init(text);
+      // ponytail: start from user's rough scroll position
+      if (_scrollController.hasClients) {
+        final ratio = _scrollController.offset /
+            _scrollController.position.maxScrollExtent.clamp(1, double.infinity);
+        final idx = (ratio * tts.totalSentences).round().clamp(0, tts.totalSentences - 1);
+        tts.seekToSentence(idx);
+      }
+      tts.play();
+      _ttsListening = true;
+    }
   }
 
   TextStyle _readingStyle(ThemeProvider themeProv) {
@@ -560,50 +658,106 @@ class _ReaderScreenState extends State<ReaderScreen>
     );
   }
 
-  List<TextSpan> _buildReadingSpans(ThemeProvider themeProv, String text) {
+  List<TextSpan> _buildReadingSpans(
+    ThemeProvider themeProv,
+    String text, {
+    bool ttsActive = false,
+    int ttsStart = 0,
+    int ttsEnd = 0,
+  }) {
     final style = _readingStyle(themeProv);
     final brightness = Theme.of(context).brightness;
 
-    // If there are no highlights and bionic is off, return a single span.
-    if (_highlights.isEmpty && !themeProv.bionicReading) {
+    if (_highlights.isEmpty && !themeProv.bionicReading && !ttsActive) {
       return [TextSpan(text: text, style: style)];
     }
 
-    // Merge highlight backgrounds into the text.
-    // Walk the text sorted by highlight start, cut segments.
-    // Uses backgroundColor on the TextSpan style (NOT background: Paint())
-    // so text selection hit-testing works properly on highlighted spans.
+    // Assemble segments from highlights + TTS sentence.
+    // Walk the text and produce spans for each boundary.
     final sorted = List<Highlight>.from(_highlights)
       ..sort((a, b) => a.startOffset.compareTo(b.startOffset));
-    final spans = <TextSpan>[];
-    int cursor = 0;
 
+    // Build boundary list: (offset, isHighlightStart, isHighlightEnd, color)
+    final boundaries = <_TextBoundary>[];
     for (final hl in sorted) {
-      // Plain segment before this highlight
-      if (hl.startOffset > cursor) {
-        final chunk = text.substring(cursor, min(hl.startOffset, text.length));
-        spans.addAll(
-          _segments(themeProv, chunk, style, null),
-        );
-      }
-      // Highlighted segment
       final end = min(hl.endOffset, text.length);
       if (end > hl.startOffset) {
-        final chunk = text.substring(hl.startOffset, end);
-        final hlStyle = style.copyWith(
-          backgroundColor: AppColors.highlight(hl.color, brightness, isSepia: false).withValues(alpha: 0.35),
-        );
-        spans.addAll(
-          _segments(themeProv, chunk, hlStyle, hlStyle),
+        boundaries.add(_TextBoundary(hl.startOffset, true, hl.color));
+        boundaries.add(_TextBoundary(end, false, hl.color));
+      }
+    }
+    if (ttsActive && ttsStart < ttsEnd && ttsEnd > 0) {
+      boundaries.add(_TextBoundary(ttsStart, true, '_tts'));
+      boundaries.add(_TextBoundary(ttsEnd, false, '_tts'));
+    }
+    boundaries.sort((a, b) => a.offset.compareTo(b.offset));
+
+    // ponytail: O(n log n) boundary merge, fine for typical book chapters
+    final spans = <TextSpan>[];
+    int cursor = 0;
+    final activeHighlights = <String>{};
+    final activeTts = <bool>[false];
+
+    for (final b in boundaries) {
+      if (b.offset <= cursor) {
+        if (b.isStart) {
+          if (b.color == '_tts') activeTts[0] = true;
+          else activeHighlights.add(b.color);
+        } else {
+          if (b.color == '_tts') activeTts[0] = false;
+          else activeHighlights.remove(b.color);
+        }
+        continue;
+      }
+      if (b.offset > cursor) {
+        final chunk = text.substring(cursor, min(b.offset, text.length));
+        var segStyle = style;
+        if (activeHighlights.isNotEmpty) {
+          final hlColor = activeHighlights.first;
+          segStyle = segStyle.copyWith(
+            backgroundColor: AppColors.highlight(hlColor, brightness, isSepia: false).withValues(alpha: 0.35),
+          );
+        }
+        if (activeTts[0]) {
+          final bg = segStyle.backgroundColor ?? Colors.transparent;
+          segStyle = segStyle.copyWith(
+            backgroundColor: Color.lerp(
+              bg,
+              themeProv.accentColor.withValues(alpha: 0.15),
+              1.0,
+            ),
+          );
+        }
+        spans.addAll(_segments(themeProv, chunk, segStyle, null));
+        cursor = b.offset;
+      }
+      if (b.isStart) {
+        if (b.color == '_tts') activeTts[0] = true;
+        else activeHighlights.add(b.color);
+      } else {
+        if (b.color == '_tts') activeTts[0] = false;
+        else activeHighlights.remove(b.color);
+      }
+    }
+    if (cursor < text.length) {
+      var segStyle = style;
+      if (activeHighlights.isNotEmpty) {
+        final hlColor = activeHighlights.first;
+        segStyle = segStyle.copyWith(
+          backgroundColor: AppColors.highlight(hlColor, brightness, isSepia: false).withValues(alpha: 0.35),
         );
       }
-      cursor = end;
-    }
-    // Remaining text after the last highlight
-    if (cursor < text.length) {
-      spans.addAll(
-        _segments(themeProv, text.substring(cursor), style, null),
-      );
+      if (activeTts[0]) {
+        final bg = segStyle.backgroundColor ?? Colors.transparent;
+        segStyle = segStyle.copyWith(
+          backgroundColor: Color.lerp(
+            bg,
+            themeProv.accentColor.withValues(alpha: 0.15),
+            1.0,
+          ),
+        );
+      }
+      spans.addAll(_segments(themeProv, text.substring(cursor), segStyle, null));
     }
     return spans;
   }
@@ -838,5 +992,12 @@ class _ReaderScreenState extends State<ReaderScreen>
       },
     );
   }
+}
 
+// ponytail: simple boundary record for merging highlight + TTS ranges
+class _TextBoundary {
+  final int offset;
+  final bool isStart;
+  final String color;
+  const _TextBoundary(this.offset, this.isStart, this.color);
 }

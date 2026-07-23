@@ -1,7 +1,7 @@
 name: koma
 description: "A hybrid reader + knowledge snippet manager."
 publish_to: 'none'
-version: 2.5.93+86
+version: 2.5.94+87
 
 environment:
   sdk: ^3.9.0
@@ -29,6 +29,7 @@ dependencies:
   kindle_unpack: ^0.1.1
   flutter_native_splash: ^2.2.16
   flutter_launcher_icons: ^0.9.3
+  flutter_tts: ^4.2.5
 
 dev_dependencies:
   flutter_test:
