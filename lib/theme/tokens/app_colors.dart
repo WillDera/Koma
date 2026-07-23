@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-/// StashReader design tokens — colors.
+/// Koma design tokens — colors.
 ///
 /// Three modes (light, dark, sepia) with one sophisticated indigo anchor.
 /// All colors are intentionally desaturated to support long reading sessions

@@ -11,6 +11,8 @@ class ReaderTopBar extends StatelessWidget {
   final double progress;
   final VoidCallback onBack;
   final VoidCallback onSettings;
+  final VoidCallback? onTtsToggle;
+  final bool isTtsActive;
   final bool visible;
   final Color? background;
 
@@ -21,6 +23,8 @@ class ReaderTopBar extends StatelessWidget {
     required this.progress,
     required this.onBack,
     required this.onSettings,
+    this.onTtsToggle,
+    this.isTtsActive = false,
     required this.visible,
     this.background,
   });
@@ -82,6 +86,22 @@ class ReaderTopBar extends StatelessWidget {
                             ],
                           ),
                         ),
+                        if (onTtsToggle != null) ...[
+                          const SizedBox(width: 4),
+                          IconButtonRound(
+                            icon: isTtsActive
+                                ? Icons.headphones
+                                : Icons.headphones_outlined,
+                            size: 40,
+                            variant: isTtsActive
+                                ? IconButtonVariant.filled
+                                : IconButtonVariant.tonal,
+                            iconColor: isTtsActive ? context.colors.onAccent : null,
+                            backgroundColor:
+                                isTtsActive ? context.colors.accent : null,
+                            onPressed: onTtsToggle,
+                          ),
+                        ],
                         const SizedBox(width: 4),
                         IconButtonRound(
                           icon: Icons.tune,

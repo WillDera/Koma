@@ -1,3 +1,4 @@
+import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
@@ -17,28 +18,56 @@ import '../../widgets/reader_settings_sheet.dart';
 import '../../widgets/reader_top_bar.dart';
 import '../../widgets/text_selection_toolbar.dart';
 import '../../widgets/toast.dart';
+import '../../core/models/highlight.dart';
+import '../../core/services/database_service.dart';
 import '../../core/utils/text_extractor.dart';
+import '../../widgets/tts_controls.dart';
 import 'reader_provider.dart';
+import 'tts_provider.dart';
 
 class ReaderScreen extends StatefulWidget {
   final int bookId;
-  const ReaderScreen({super.key, required this.bookId});
+
+  /// Optional target chapter id and scroll offset for jump-to-snippet
+  /// navigation.  When chapterId is set the reader opens at that chapter
+  /// at the given scroll offset.
+  final int? snippetChapterId;
+  final double? snippetScrollOffset;
+
+  const ReaderScreen({
+    super.key,
+    required this.bookId,
+    this.snippetChapterId,
+    this.snippetScrollOffset,
+  });
 
   @override
   State<ReaderScreen> createState() => _ReaderScreenState();
 }
+
+enum _SwipeDirection { none, next, previous }
 
 class _ReaderScreenState extends State<ReaderScreen>
     with TickerProviderStateMixin {
   final ScrollController _scrollController = ScrollController();
   ReaderProvider? _provider;
 
+  /// Highlights loaded for the current chapter, used to decorate the
+  /// reading text with colored backgrounds.
+  List<Highlight> _highlights = [];
+
   String? _selectedText;
   bool _showUI = true;
   bool _toolbarVisible = false;
   bool _colorPickerVisible = false;
+  int _highlightVersion = 0;
   double _lastScrollOffset = 0;
   Offset _selectionOrigin = Offset.zero;
+  _SwipeDirection _lastSwipeDirection = _SwipeDirection.none;
+  double? _dragStartX;
+
+  TtsProvider? _ttsProvider;
+  bool _ttsListening = false;
 
   /// Index of the chapter we're currently showing. Used to detect a
   /// chapter change after navigation so we can jump the scroll back
@@ -59,7 +88,14 @@ class _ReaderScreenState extends State<ReaderScreen>
       vsync: this,
       duration: AppMotion.base,
     );
+    _ttsProvider = TtsProvider()..addListener(_onTtsChanged);
     Future.microtask(() => _loadAndRestore());
+  }
+
+  void _scheduleDirectionReset() {
+    Future.delayed(AppMotion.sheet, () {
+      if (mounted) setState(() => _lastSwipeDirection = _SwipeDirection.none);
+    });
   }
 
   @override
@@ -69,7 +105,9 @@ class _ReaderScreenState extends State<ReaderScreen>
   }
 
   Future<void> _loadAndRestore() async {
-    await _provider!.loadBook(widget.bookId);
+    await _provider!.loadBook(widget.bookId,
+        targetChapterId: widget.snippetChapterId,
+        targetScrollOffset: widget.snippetScrollOffset);
     if (!mounted) return;
     _restoreScrollPosition();
   }
@@ -94,6 +132,34 @@ class _ReaderScreenState extends State<ReaderScreen>
     if (newIndex == _lastSeenChapterIndex) return;
     _lastSeenChapterIndex = newIndex;
     _lastScrollOffset = 0;
+    // Load highlights for this chapter.
+    final ch = _provider?.chapters;
+    if (ch != null && newIndex >= 0 && newIndex < ch.length) {
+      context.read<DatabaseService>().getHighlightsForChapter(ch[newIndex].id).then((hl) {
+        if (mounted) setState(() => _highlights = hl);
+      });
+    } else {
+      _highlights = [];
+    }
+    // Re-init TTS for the new chapter if TTS was active.
+    if (_ttsProvider != null && _ttsListening && ch != null) {
+      final tts = _ttsProvider!;
+      tts.stop();
+      tts.init(TextExtractor.extractFromHtml(ch[newIndex].content));
+      tts.play();
+    }
+    // Jump to the saved scroll position for this chapter.  The
+    // provider's _scrollPosition may be 0 for an unvisited chapter,
+    // but a snippet-jump sets a specific offset (startOffset) that
+    // should be used instead.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || !_scrollController.hasClients) return;
+      final pos = _provider?.scrollPosition ?? 0;
+      if (pos > 0) {
+        _scrollController.jumpTo(
+            pos.clamp(0, _scrollController.position.maxScrollExtent));
+      }
+    });
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted || !_scrollController.hasClients) return;
       final pos = _provider?.scrollPosition ?? 0;
@@ -102,13 +168,99 @@ class _ReaderScreenState extends State<ReaderScreen>
     });
   }
 
+  bool _didHandleBack = false;
+
+  void _onTtsChanged() {
+    if (!mounted) return;
+    // ponytail: defer rebuild to avoid setState during build
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      setState(() {});
+      _scrollToTtsSentence();
+      _autoAdvanceChapterOnTtsEnd();
+    });
+  }
+
+  void _scrollToTtsSentence() {
+    final tts = _ttsProvider;
+    if (tts == null || !_scrollController.hasClients) return;
+    if (!tts.isPlaying && !tts.isPaused) return;
+    final text = _currentText;
+    if (text.isEmpty) return;
+    final offset = tts.currentSentenceOffset;
+    if (offset <= 0) return;
+    final ratio = offset / text.length;
+    final target = ratio * _scrollController.position.maxScrollExtent;
+    if ((target - _scrollController.offset).abs() > 60) {
+      _scrollController.animateTo(
+        target.clamp(0, _scrollController.position.maxScrollExtent),
+        duration: const Duration(milliseconds: 300),
+        curve: Curves.easeInOut,
+      );
+    }
+  }
+
+  void _autoAdvanceChapterOnTtsEnd() {
+    final tts = _ttsProvider;
+    if (tts == null || tts.isPlaying || tts.isPaused) return;
+    // ponytail: simple end-of-chapter detection
+    if (tts.currentIndex >= tts.totalSentences - 1 && tts.totalSentences > 0) {
+      final p = _provider;
+      if (p != null && p.currentIndex < p.chapters.length - 1) {
+        p.goToNextChapter();
+      }
+    }
+  }
+
+  String get _currentText {
+    final ch = _provider?.currentChapter;
+    return ch != null ? TextExtractor.extractFromHtml(ch.content) : '';
+  }
+
   @override
   void dispose() {
-    _provider?.stopReadingTimer();
+    if (!_didHandleBack) _provider?.stopReadingTimer();
+    _ttsProvider?.removeListener(_onTtsChanged);
+    _ttsProvider?.dispose();
     _scrollController.dispose();
     _toolbarCtrl.dispose();
     _colorCtrl.dispose();
     super.dispose();
+  }
+
+  void _onHorizontalDragStart(DragStartDetails details) {
+    _dragStartX = details.globalPosition.dx;
+  }
+
+  void _onHorizontalDragEnd(DragEndDetails details) {
+    if (_dragStartX == null) return;
+    final velocity = details.velocity.pixelsPerSecond.dx;
+
+    if (velocity < -500) {
+      _lastSwipeDirection = _SwipeDirection.next;
+      _provider?.goToNextChapter();
+      if (mounted) {
+        setState(() {
+          _lastScrollOffset = 0;
+          _showUI = true;
+        });
+      }
+      HapticFeedback.lightImpact();
+      _scheduleDirectionReset();
+    } else if (velocity > 500) {
+      _lastSwipeDirection = _SwipeDirection.previous;
+      _provider?.goToPreviousChapter();
+      if (mounted) {
+        setState(() {
+          _lastScrollOffset = 0;
+          _showUI = true;
+        });
+      }
+      HapticFeedback.lightImpact();
+      _scheduleDirectionReset();
+    }
+
+    _dragStartX = null;
   }
 
   bool _onScrollNotification(ScrollNotification notification) {
@@ -147,18 +299,22 @@ class _ReaderScreenState extends State<ReaderScreen>
     final provider = _provider!;
     if (provider.chapters.length > 1) {
       if (localPos.dx < screenWidth / 3) {
+        _lastSwipeDirection = _SwipeDirection.previous;
         provider.goToPreviousChapter();
         setState(() {
           _lastScrollOffset = 0;
           _showUI = true;
         });
+        _scheduleDirectionReset();
         return;
       } else if (localPos.dx > 2 * screenWidth / 3) {
+        _lastSwipeDirection = _SwipeDirection.next;
         provider.goToNextChapter();
         setState(() {
           _lastScrollOffset = 0;
           _showUI = true;
         });
+        _scheduleDirectionReset();
         return;
       }
     }
@@ -242,14 +398,11 @@ class _ReaderScreenState extends State<ReaderScreen>
               children: [
                 GestureDetector(
                   onTapUp: _handleTapUp,
+                  onHorizontalDragStart: _onHorizontalDragStart,
+                  onHorizontalDragEnd: _onHorizontalDragEnd,
                   behavior: HitTestBehavior.opaque,
                   child: NotificationListener<ScrollStartNotification>(
                     onNotification: (notification) {
-                      // When the user starts scrolling while the selection
-                      // toolbar is visible, dismiss it and absorb the
-                      // scroll-start notification so ScrollNotificationObserver
-                      // never tries to query the now-stale text selection
-                      // (assertion: selection.isValid).
                       if (_toolbarVisible) {
                         _hideToolbar();
                         return true;
@@ -271,9 +424,36 @@ class _ReaderScreenState extends State<ReaderScreen>
                           constraints: BoxConstraints(
                             maxWidth: themeProv.pageWidth,
                           ),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
+                           child: ClipRect(
+                            child: AnimatedSwitcher(
+                              duration: AppMotion.sheet,
+                              transitionBuilder: (child, animation) {
+                                var begin = Offset.zero;
+                                switch (_lastSwipeDirection) {
+                                  case _SwipeDirection.next:
+                                    begin = const Offset(1, 0);
+                                  case _SwipeDirection.previous:
+                                    begin = const Offset(-1, 0);
+                                  case _SwipeDirection.none:
+                                    begin = Offset.zero;
+                                }
+                                final slide = Tween(begin: begin, end: Offset.zero);
+                                final scale = Tween(begin: 0.96, end: 1.0);
+                                return SlideTransition(
+                                  position: animation.drive(slide),
+                                  child: ScaleTransition(
+                                    scale: animation.drive(scale),
+                                    child: FadeTransition(
+                                      opacity: animation,
+                                      child: child,
+                                    ),
+                                  ),
+                                );
+                              },
+                              child: Column(
+                                key: ValueKey('chapter-${chapter.id}'),
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
                               // Chapter title
                               Text(
                                 chapter.title,
@@ -289,11 +469,15 @@ class _ReaderScreenState extends State<ReaderScreen>
                               ),
                               const SizedBox(height: 28),
                               SelectableText.rich(
+                                key: ValueKey('content-${_highlightVersion}'),
                                 TextSpan(
                                   style: _readingStyle(themeProv),
                                   children: _buildReadingSpans(
                                     themeProv,
                                     TextExtractor.extractFromHtml(chapter.content),
+                                    ttsActive: _ttsProvider?.isActive ?? false,
+                                    ttsStart: _ttsProvider?.currentSentenceOffset ?? 0,
+                                    ttsEnd: _ttsProvider?.currentSentenceEnd ?? 0,
                                   ),
                                 ),
                                 textAlign: themeProv.textAlign,
@@ -308,7 +492,6 @@ class _ReaderScreenState extends State<ReaderScreen>
                                       _showToolbar(Offset.zero);
                                     }
                                   } else if (_toolbarVisible) {
-                                    // Delay to allow taps on toolbar items.
                                     Future.delayed(
                                       const Duration(milliseconds: 200),
                                       () {
@@ -316,14 +499,19 @@ class _ReaderScreenState extends State<ReaderScreen>
                                         if (_toolbarVisible) _hideToolbar();
                                       },
                                     );
+                                  } else if (selection.isValid &&
+                                      selection.isCollapsed) {
+                                    setState(() => _showUI = !_showUI);
                                   }
                                 },
                               ),
                               const SizedBox(height: 80),
                             ],
                           ),                        // Column
-                        ),                          // ConstrainedBox
-                      ),                            // Center
+                        ),                          // AnimatedSwitcher
+                      ),                            // ClipRect
+                    ),                              // ConstrainedBox
+                  ),                                // Center
                     ),                              // SingleChildScrollView
                   ),                                // NotificationListener<ScrollUpdateNotification>
                 ),                                  // NotificationListener<ScrollStartNotification>
@@ -339,9 +527,18 @@ class _ReaderScreenState extends State<ReaderScreen>
                     chapterTitle: chapter.title,
                     progress: progress,
                     visible: _showUI,
-                    onBack: () => Navigator.pop(context),
+                    onBack: () async {
+                      _ttsProvider?.stop();
+                      if (_provider != null) {
+                        await _provider!.stopReadingTimer();
+                      }
+                      _didHandleBack = true;
+                      if (mounted) Navigator.pop(context);
+                    },
                     onSettings: () =>
                         ReaderSettingsSheet.show(context, themeProv),
+                    onTtsToggle: _toggleTts,
+                    isTtsActive: _ttsProvider?.isActive ?? false,
                   ),
                 ),
 
@@ -418,12 +615,42 @@ class _ReaderScreenState extends State<ReaderScreen>
                       ),
                     ),
                   ),
+                // TTS controls overlay
+                if (_ttsProvider != null && _ttsProvider!.isActive)
+                  Positioned(
+                    bottom: 0,
+                    left: 0,
+                    right: 0,
+                    child: TtsControls(provider: _ttsProvider!),
+                  ),
               ],
             ),
           ),
         );
       },
     );
+  }
+
+  void _toggleTts() {
+    final tts = _ttsProvider;
+    if (tts == null) return;
+    if (tts.isActive) {
+      tts.stop();
+      _ttsListening = false;
+    } else {
+      final text = _currentText;
+      if (text.isEmpty) return;
+      tts.init(text);
+      // ponytail: start from user's rough scroll position
+      if (_scrollController.hasClients) {
+        final ratio = _scrollController.offset /
+            _scrollController.position.maxScrollExtent.clamp(1, double.infinity);
+        final idx = (ratio * tts.totalSentences).round().clamp(0, tts.totalSentences - 1);
+        tts.seekToSentence(idx);
+      }
+      tts.play();
+      _ttsListening = true;
+    }
   }
 
   TextStyle _readingStyle(ThemeProvider themeProv) {
@@ -436,17 +663,125 @@ class _ReaderScreenState extends State<ReaderScreen>
     );
   }
 
-  List<TextSpan> _buildReadingSpans(ThemeProvider themeProv, String text) {
+  List<TextSpan> _buildReadingSpans(
+    ThemeProvider themeProv,
+    String text, {
+    bool ttsActive = false,
+    int ttsStart = 0,
+    int ttsEnd = 0,
+  }) {
     final style = _readingStyle(themeProv);
-    if (themeProv.bionicReading) {
-      return BionicText.spans(
-        text,
-        baseStyle: style,
-        bionicWeight: themeProv.bionicBoldWeight,
-        bionicFraction: themeProv.bionicBoldFraction,
-      );
+    final brightness = Theme.of(context).brightness;
+
+    if (_highlights.isEmpty && !themeProv.bionicReading && !ttsActive) {
+      return [TextSpan(text: text, style: style)];
     }
-    return [TextSpan(text: text, style: style)];
+
+    // Assemble segments from highlights + TTS sentence.
+    // Walk the text and produce spans for each boundary.
+    final sorted = List<Highlight>.from(_highlights)
+      ..sort((a, b) => a.startOffset.compareTo(b.startOffset));
+
+    // Build boundary list: (offset, isHighlightStart, isHighlightEnd, color)
+    final boundaries = <_TextBoundary>[];
+    for (final hl in sorted) {
+      final end = min(hl.endOffset, text.length);
+      if (end > hl.startOffset) {
+        boundaries.add(_TextBoundary(hl.startOffset, true, hl.color));
+        boundaries.add(_TextBoundary(end, false, hl.color));
+      }
+    }
+    if (ttsActive && ttsStart < ttsEnd && ttsEnd > 0) {
+      boundaries.add(_TextBoundary(ttsStart, true, '_tts'));
+      boundaries.add(_TextBoundary(ttsEnd, false, '_tts'));
+    }
+    boundaries.sort((a, b) => a.offset.compareTo(b.offset));
+
+    // ponytail: O(n log n) boundary merge, fine for typical book chapters
+    final spans = <TextSpan>[];
+    int cursor = 0;
+    final activeHighlights = <String>{};
+    final activeTts = <bool>[false];
+
+    for (final b in boundaries) {
+      if (b.offset <= cursor) {
+        if (b.isStart) {
+          if (b.color == '_tts') activeTts[0] = true;
+          else activeHighlights.add(b.color);
+        } else {
+          if (b.color == '_tts') activeTts[0] = false;
+          else activeHighlights.remove(b.color);
+        }
+        continue;
+      }
+      if (b.offset > cursor) {
+        final chunk = text.substring(cursor, min(b.offset, text.length));
+        var segStyle = style;
+        if (activeHighlights.isNotEmpty) {
+          final hlColor = activeHighlights.first;
+          segStyle = segStyle.copyWith(
+            backgroundColor: AppColors.highlight(hlColor, brightness, isSepia: false).withValues(alpha: 0.35),
+          );
+        }
+        if (activeTts[0]) {
+          final bg = segStyle.backgroundColor ?? Colors.transparent;
+          segStyle = segStyle.copyWith(
+            backgroundColor: Color.lerp(
+              bg,
+              themeProv.accentColor.withValues(alpha: 0.15),
+              1.0,
+            ),
+          );
+        }
+        spans.addAll(_segments(themeProv, chunk, segStyle, null));
+        cursor = b.offset;
+      }
+      if (b.isStart) {
+        if (b.color == '_tts') activeTts[0] = true;
+        else activeHighlights.add(b.color);
+      } else {
+        if (b.color == '_tts') activeTts[0] = false;
+        else activeHighlights.remove(b.color);
+      }
+    }
+    if (cursor < text.length) {
+      var segStyle = style;
+      if (activeHighlights.isNotEmpty) {
+        final hlColor = activeHighlights.first;
+        segStyle = segStyle.copyWith(
+          backgroundColor: AppColors.highlight(hlColor, brightness, isSepia: false).withValues(alpha: 0.35),
+        );
+      }
+      if (activeTts[0]) {
+        final bg = segStyle.backgroundColor ?? Colors.transparent;
+        segStyle = segStyle.copyWith(
+          backgroundColor: Color.lerp(
+            bg,
+            themeProv.accentColor.withValues(alpha: 0.15),
+            1.0,
+          ),
+        );
+      }
+      spans.addAll(_segments(themeProv, text.substring(cursor), segStyle, null));
+    }
+    return spans;
+  }
+
+  /// Split [text] into bionic segments if bionic mode is on, otherwise
+  /// a single TokenSpan. When [hlAltStyle] is provided it replaces the
+  /// bold segment's style for highlighted bionic text (both arms use
+  /// the highlight background).
+  List<TextSpan> _segments(ThemeProvider prov, String text, TextStyle base,
+      TextStyle? hlAltStyle) {
+    if (!prov.bionicReading) {
+      return [TextSpan(text: text, style: hlAltStyle ?? base)];
+    }
+    return BionicText.spans(
+      text,
+      baseStyle: hlAltStyle ?? base,
+      bionicWeight: hlAltStyle?.fontWeight ?? prov.bionicBoldWeight,
+      bionicFraction: prov.bionicBoldFraction,
+    );
   }
 
   double _horizontalPadding(double maxWidth) {
@@ -470,20 +805,46 @@ class _ReaderScreenState extends State<ReaderScreen>
       return;
     }
     try {
-      final snippetsProvider = context.read<SnippetsProvider>();
-      await snippetsProvider.createSnippet(
-        text: _selectedText!.trim(),
-        color: color,
-        sourceTitle: p.book?.title,
-        sourceUrl: p.book?.sourceUrl,
-        bookId: p.book?.id,
-        chapterId: p.currentChapter?.id,
-        tags: const ['highlight'],
-      );
+      final db = context.read<DatabaseService>();
+      final ch = p.currentChapter;
+      final contentStr =
+          ch != null ? TextExtractor.extractFromHtml(ch.content) : '';
+      final selected = _selectedText!.trim();
+      int? startOff;
+      if (ch != null && selected.isNotEmpty) {
+        startOff = contentStr.indexOf(selected);
+      }
+      // Bug 1 fix: save ONLY to the highlights table, NOT to snippets.
+      // Only "Note" (renamed to "Snippet") creates a snippet row.
+      if (p.book != null && ch != null && startOff != null && startOff >= 0) {
+        await db.insertHighlight(Highlight(
+          id: 0,
+          // No snippetId — marks are separate from snippets
+          bookId: p.book!.id,
+          chapterId: ch.id,
+          startOffset: startOff,
+          endOffset: startOff + selected.length,
+          color: color,
+          text: selected,
+        ));
+      }
+      // Bug 1 fix: immediately insert into the local list so the reader
+      // re-renders with the highlight visible.
+      setState(() {
+        _highlights.add(Highlight(
+          id: 0,
+          bookId: p.book?.id ?? 0,
+          chapterId: ch?.id ?? 0,
+          startOffset: startOff ?? 0,
+          endOffset: (startOff ?? 0) + selected.length,
+          color: color,
+          text: selected,
+        ));
+      });
       if (mounted) {
         StashToast.show(
           context,
-          message: 'Highlighted',
+          message: 'Marked',
           icon: Icons.format_color_fill,
         );
       }
@@ -496,7 +857,18 @@ class _ReaderScreenState extends State<ReaderScreen>
         );
       }
     } finally {
+      // Discard the old selection so the next long-press can create
+      // fresh selection handles.
+      // The highlight toolbar just saved — hide it, then increment the
+      // SelectableText key so the widget unmounts/remounts cleanly,
+      // discarding the old selection state.  Next long-press creates
+      // new handles.
       _hideToolbar();
+      _selectedText = null;
+      setState(() => _highlightVersion++);
+      // Dismiss keyboard/selection focus so the next long-press
+      // creates a fresh set of selection handles.
+      FocusScope.of(context).unfocus();
     }
   }
 
@@ -568,14 +940,26 @@ class _ReaderScreenState extends State<ReaderScreen>
     if (saved != true) return;
     try {
       final snippetsProvider = context.read<SnippetsProvider>();
+      final ch = p.currentChapter;
+      final contentStr =
+          ch != null ? TextExtractor.extractFromHtml(ch.content) : '';
+      final selected = _selectedText?.trim() ?? '';
+      int? startOff;
+      if (ch != null && selected.isNotEmpty) {
+        startOff = contentStr.indexOf(selected);
+      }
+      final currPos = _scrollController.hasClients ? _scrollController.offset : null;
       await snippetsProvider.createSnippet(
-        text: _selectedText!.trim(),
+        text: selected,
         note: noteCtrl.text.trim().isNotEmpty ? noteCtrl.text.trim() : null,
         color: themeProv.defaultHighlight,
         sourceTitle: p.book?.title,
         sourceUrl: p.book?.sourceUrl,
         bookId: p.book?.id,
         chapterId: p.currentChapter?.id,
+        scrollPosition: currPos,
+        startOffset: startOff != null && startOff >= 0 ? startOff : null,
+        endOffset: startOff != null && startOff >= 0 ? startOff + selected.length : null,
       );
       if (mounted) {
         StashToast.show(
@@ -592,6 +976,8 @@ class _ReaderScreenState extends State<ReaderScreen>
           icon: Icons.error_outline,
         );
       }
+    } finally {
+      _selectedText = null;
     }
   }
 
@@ -611,5 +997,12 @@ class _ReaderScreenState extends State<ReaderScreen>
       },
     );
   }
+}
 
+// ponytail: simple boundary record for merging highlight + TTS ranges
+class _TextBoundary {
+  final int offset;
+  final bool isStart;
+  final String color;
+  const _TextBoundary(this.offset, this.isStart, this.color);
 }

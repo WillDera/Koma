@@ -8,7 +8,7 @@ class AppDatabase extends GeneratedDatabase {
   AppDatabase(QueryExecutor executor) : super(executor);
 
   @override
-  int get schemaVersion => 2;
+  int get schemaVersion => 7;
 
   @override
   Iterable<TableInfo> get allTables => const [];
@@ -65,6 +65,55 @@ class AppDatabase extends GeneratedDatabase {
             "UPDATE books SET file_extension = 'note' WHERE file_extension = '' AND source = 'manual'"
           );
         } catch (_) {}
+        // v3 → v4: downloaded flag on manga_chapters.
+        try {
+          await customStatement(
+            'ALTER TABLE manga_chapters ADD COLUMN is_downloaded INTEGER NOT NULL DEFAULT 0'
+          );
+        } catch (_) {}
+        // v4 → v5: opened flag on manga_chapters.
+        try {
+          await customStatement(
+            'ALTER TABLE manga_chapters ADD COLUMN is_opened INTEGER NOT NULL DEFAULT 0'
+          );
+        } catch (_) {}
+        // v5 → v6: read_at timestamp on manga_chapters.
+        try {
+          await customStatement(
+            'ALTER TABLE manga_chapters ADD COLUMN read_at TEXT'
+          );
+        } catch (_) {}
+        // v6 → v7: snippet collections.
+        try {
+          await customStatement(
+            'ALTER TABLE snippets ADD COLUMN collection_id INTEGER REFERENCES snippet_collections(id) ON DELETE SET NULL'
+          );
+        } catch (_) {}
+        try {
+          await customStatement('''
+            CREATE TABLE IF NOT EXISTS snippet_collections (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              name TEXT NOT NULL,
+              color TEXT NOT NULL DEFAULT '#FFD700',
+              created_at TEXT NOT NULL DEFAULT (datetime('now')),
+              updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+            )
+          ''');
+        } catch (_) {}
+        // v7 → v8: start_offset / end_offset on snippets.
+        try {
+          await customStatement(
+              'ALTER TABLE snippets ADD COLUMN start_offset INTEGER');
+        } catch (_) {}
+        try {
+          await customStatement(
+              'ALTER TABLE snippets ADD COLUMN end_offset INTEGER');
+        } catch (_) {}
+        // v8 → v9: scroll_position on snippets.
+        try {
+          await customStatement(
+              'ALTER TABLE snippets ADD COLUMN scroll_position REAL');
+        } catch (_) {}
       },
     );
   }
@@ -102,6 +151,41 @@ class AppDatabase extends GeneratedDatabase {
       )
     ''');
     await customStatement('''
+      CREATE TABLE IF NOT EXISTS manga (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL,
+        url TEXT NOT NULL,
+        image_url TEXT,
+        author TEXT,
+        artist TEXT,
+        description TEXT,
+        status INTEGER NOT NULL DEFAULT 0,
+        genre TEXT NOT NULL DEFAULT '',
+        source_id TEXT NOT NULL,
+        in_library INTEGER NOT NULL DEFAULT 0,
+        reading_status INTEGER NOT NULL DEFAULT 0,
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+      )
+    ''');
+    await customStatement('''
+      CREATE TABLE IF NOT EXISTS manga_chapters (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        manga_id INTEGER NOT NULL REFERENCES manga(id) ON DELETE CASCADE,
+        name TEXT NOT NULL,
+        url TEXT NOT NULL,
+        scanlator TEXT,
+        date_upload INTEGER NOT NULL DEFAULT 0,
+        "index" INTEGER NOT NULL,
+        is_read INTEGER NOT NULL DEFAULT 0,
+        last_page_read INTEGER NOT NULL DEFAULT 0,
+        scroll_position REAL NOT NULL DEFAULT 0.0,
+        is_downloaded INTEGER NOT NULL DEFAULT 0,
+        is_opened INTEGER NOT NULL DEFAULT 0,
+        read_at TEXT
+      )
+    ''');
+    await customStatement('''
       CREATE TABLE IF NOT EXISTS snippets (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         content TEXT NOT NULL,
@@ -111,8 +195,32 @@ class AppDatabase extends GeneratedDatabase {
         color TEXT,
         book_id INTEGER REFERENCES books(id) ON DELETE SET NULL,
         chapter_id INTEGER REFERENCES chapters(id) ON DELETE SET NULL,
+        collection_id INTEGER REFERENCES snippet_collections(id) ON DELETE SET NULL,
         created_at TEXT NOT NULL DEFAULT (datetime('now')),
         updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+      )
+    ''');
+    await customStatement('''
+      CREATE TABLE IF NOT EXISTS extension_sources (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        version TEXT NOT NULL,
+        lang TEXT NOT NULL,
+        apk_path TEXT NOT NULL,
+        class_name TEXT NOT NULL,
+        icon_url TEXT,
+        is_installed INTEGER NOT NULL DEFAULT 1,
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+      )
+    ''');
+    await customStatement('''
+      CREATE TABLE IF NOT EXISTS extension_repos (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL,
+        url TEXT NOT NULL UNIQUE,
+        enabled INTEGER NOT NULL DEFAULT 1,
+        created_at TEXT NOT NULL DEFAULT (datetime('now'))
       )
     ''');
     await customStatement('''
@@ -126,6 +234,20 @@ class AppDatabase extends GeneratedDatabase {
         snippet_id INTEGER NOT NULL REFERENCES snippets(id) ON DELETE CASCADE,
         tag_id INTEGER NOT NULL REFERENCES tags(id) ON DELETE CASCADE,
         PRIMARY KEY (snippet_id, tag_id)
+      )
+    ''');
+    await customStatement('''
+      CREATE TABLE IF NOT EXISTS highlights (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        snippet_id INTEGER REFERENCES snippets(id) ON DELETE CASCADE,
+        book_id INTEGER NOT NULL REFERENCES books(id) ON DELETE CASCADE,
+        chapter_id INTEGER NOT NULL REFERENCES chapters(id) ON DELETE CASCADE,
+        start_offset INTEGER NOT NULL,
+        end_offset INTEGER NOT NULL,
+        color TEXT NOT NULL DEFAULT 'yellow',
+        text TEXT NOT NULL,
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        updated_at TEXT NOT NULL DEFAULT (datetime('now'))
       )
     ''');
     await customStatement('''
@@ -166,7 +288,7 @@ class AppDatabase extends GeneratedDatabase {
 
   static Future<AppDatabase> create() async {
     final dir = await getApplicationDocumentsDirectory();
-    final file = File(p.join(dir.path, 'stashreader.db'));
+    final file = File(p.join(dir.path, 'koma.db'));
     final executor = NativeDatabase(file);
     return AppDatabase(executor);
   }

@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
-/// StashReader typography.
+/// Koma typography.
 ///
 /// UI: Inter. Reading: Literata. Mono: JetBrains Mono.
 /// All three come from google_fonts (offline-cached after first use).

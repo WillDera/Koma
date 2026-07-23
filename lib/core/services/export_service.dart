@@ -25,7 +25,7 @@ class ExportService {
         .substring(0, 19);
     final result = await FilePicker.saveFile(
       dialogTitle: 'Save backup',
-      fileName: 'stashreader_backup_$ts.json',
+      fileName: 'koma_backup_$ts.json',
       type: FileType.custom,
       allowedExtensions: ['json'],
       bytes: bytes,

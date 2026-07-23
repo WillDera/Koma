@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import '../../core/services/export_service.dart';
 import '../../core/services/database_service.dart';
 import '../../core/services/stats_service.dart';
+import '../extensions/extensions_screen.dart';
 import '../../core/services/source_service.dart';
 import '../../core/models/source.dart';
 import '../library/library_provider.dart';
@@ -14,149 +15,162 @@ import '../../theme/tokens/app_spacing.dart';
 import '../../widgets/animated_press.dart';
 import '../../widgets/dialog_sheet.dart';
 import '../../widgets/divider_hairline.dart';
+import '../../widgets/library_header.dart';
 import '../../widgets/one_hand_spacer.dart';
 import '../../widgets/reading_streak_card.dart';
+import '../../widgets/screen_chrome.dart';
 import '../../widgets/segmented_control.dart';
 import '../../widgets/settings_section.dart';
 import '../../widgets/text_field.dart';
 import '../../widgets/toast.dart';
 
-class SettingsScreen extends StatefulWidget {
+class SettingsScreen extends StatelessWidget {
   const SettingsScreen({super.key});
 
   @override
-  State<SettingsScreen> createState() => _SettingsScreenState();
-}
-
-class _SettingsScreenState extends State<SettingsScreen> {
-  final ScrollController _scrollCtrl = ScrollController();
-  double _scrollProgress = 0;
-
-  @override
-  void initState() {
-    super.initState();
-    _scrollCtrl.addListener(_onScroll);
-  }
-
-  void _onScroll() {
-    if (!_scrollCtrl.hasClients) return;
-    final max = _scrollCtrl.position.maxScrollExtent;
-    final p = max <= 0 ? 0.0 : (_scrollCtrl.offset / max).clamp(0.0, 1.0);
-    if ((p - _scrollProgress).abs() > 0.01) {
-      setState(() => _scrollProgress = p);
-    }
-  }
-
-  @override
-  void dispose() {
-    _scrollCtrl.removeListener(_onScroll);
-    _scrollCtrl.dispose();
-    super.dispose();
-  }
-
-  bool get _oneHand => context.watch<ThemeProvider>().oneHandMode;
-
-  @override
   Widget build(BuildContext context) {
-    final themeProv = context.watch<ThemeProvider>();
-    return SafeArea(
-      bottom: false,
-      child: ListView(
-        controller: _scrollCtrl,
-        physics: const AlwaysScrollableScrollPhysics(),
-        padding: const EdgeInsets.only(bottom: 100),
-        children: [
-          const OneHandSpacer(),
-          _Heading(
-            title: 'Settings',
-            oneHand: _oneHand,
-            shrinkProgress: _oneHand ? _scrollProgress : 0.0,
-            subtitle: 'Version 2.2.3',
-          ),
-          const SizedBox(height: 4),
-          _AppearanceSection(themeProv: themeProv),
-          const SizedBox(height: 24),
-          const _TypographySection(),
-          const SizedBox(height: 24),
-          const _DataSection(),
-          const SizedBox(height: 24),
-          const _SourcesSection(),
-          const SizedBox(height: 24),
-          _StatsSection(),
-          const SizedBox(height: 24),
-          const _PluginsSection(),
-          const SizedBox(height: 24),
-          const _AboutSection(),
-        ],
+    return ScreenBackdrop(
+      child: SafeArea(
+        bottom: false,
+        child: ListView(
+          physics: const AlwaysScrollableScrollPhysics(),
+          padding: const EdgeInsets.only(bottom: 100),
+          children: [
+            const OneHandSpacer(),
+            const LibraryHeader(
+              title: 'Settings',
+                subtitle: 'Version 2.6.2',
+              padding: EdgeInsets.fromLTRB(24, 20, 20, 12),
+            ),
+            const StaggeredEntrance(
+              index: 0,
+              child: FeaturePanel(
+                icon: Icons.tune_rounded,
+                title: 'Tune the reading room',
+                subtitle:
+                    'Shape the app around your eyes, your thumb, your sources, and your backups.',
+                stats: [
+                  PanelStat(value: 'Local', label: 'Storage'),
+                  PanelStat(value: 'Reader', label: 'Focus'),
+                  PanelStat(value: 'Fast', label: 'Controls'),
+                ],
+              ),
+            ),
+            const SizedBox(height: 8),
+            const StaggeredEntrance(index: 1, child: _SettingsHub()),
+          ],
+        ),
       ),
     );
   }
 }
 
-/// Page heading that animates in one-hand mode.
-class _Heading extends StatelessWidget {
-  final String title;
-  final String? subtitle;
-  final bool oneHand;
-  final double shrinkProgress;
-
-  const _Heading({
-    required this.title,
-    this.subtitle,
-    required this.oneHand,
-    required this.shrinkProgress,
-  });
+class _SettingsHub extends StatelessWidget {
+  const _SettingsHub();
 
   @override
   Widget build(BuildContext context) {
-    final c = context.colors;
-    final p = shrinkProgress.clamp(0.0, 1.0);
-    final fontSize = (oneHand ? 64.0 : 32.0) * (1.0 - 0.5 * p);
-    final opacity = (1.0 - p).clamp(0.0, 1.0);
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(24, 20, 24, 12),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            title,
-            style: TextStyle(
-              color: c.textPrimary,
-              fontSize: fontSize,
-              fontWeight: FontWeight.w600,
-              letterSpacing: -0.5,
-              height: 1.1,
-            ),
-          ),
-          if (subtitle != null)
-            Opacity(
-              opacity: opacity,
-              child: Padding(
-                padding: const EdgeInsets.only(top: 2),
-                child: Text(
-                  subtitle!,
-                  style: TextStyle(
-                    color: c.textSecondary,
-                    fontSize: 13,
-                    fontWeight: FontWeight.w400,
-                  ),
-                ),
-              ),
-            ),
-        ],
+    return SettingsSection(
+      title: 'Settings',
+      showHeader: false,
+      children: [
+        SettingsRow(
+          icon: Icons.palette_outlined,
+          title: 'Appearance',
+          onTap: () => _open(context, 'Appearance', const _AppearanceSection()),
+        ),
+        SettingsRow(
+          icon: Icons.text_fields_rounded,
+          title: 'Typography',
+          onTap: () => _open(context, 'Typography', const _TypographySection()),
+        ),
+        SettingsRow(
+          icon: Icons.storage_outlined,
+          title: 'Data',
+          onTap: () => _open(context, 'Data', const _DataAndStatsPage()),
+        ),
+        SettingsRow(
+          icon: Icons.travel_explore_outlined,
+          title: 'Sources',
+          onTap: () =>
+              _open(context, 'Sources', const _SourcesAndPluginsPage()),
+        ),
+        SettingsRow(
+          icon: Icons.info_outline_rounded,
+          title: 'About',
+          onTap: () => _open(context, 'About', const _AboutSection()),
+        ),
+      ],
+    );
+  }
+
+  void _open(BuildContext context, String title, Widget child) {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => _SettingsDestinationScreen(title: title, child: child),
       ),
+    );
+  }
+}
+
+class _SettingsDestinationScreen extends StatelessWidget {
+  final String title;
+  final Widget child;
+
+  const _SettingsDestinationScreen({required this.title, required this.child});
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      type: MaterialType.transparency,
+      child: ScreenBackdrop(
+        child: SafeArea(
+          bottom: false,
+          child: ListView(
+            padding: const EdgeInsets.only(bottom: 32),
+            children: [
+              const OneHandSpacer(),
+              LibraryHeader(title: title, showBackButton: true),
+              const SizedBox(height: 4),
+              child,
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _DataAndStatsPage extends StatelessWidget {
+  const _DataAndStatsPage();
+
+  @override
+  Widget build(BuildContext context) {
+    return const Column(
+      children: [_DataSection(), SizedBox(height: 24), _StatsSection()],
+    );
+  }
+}
+
+class _SourcesAndPluginsPage extends StatelessWidget {
+  const _SourcesAndPluginsPage();
+
+  @override
+  Widget build(BuildContext context) {
+    return const Column(
+      children: [_SourcesSection(), SizedBox(height: 24), _PluginsSection()],
     );
   }
 }
 
 // ─── Appearance ──────────────────────────────────────────────────────────
 class _AppearanceSection extends StatelessWidget {
-  final ThemeProvider themeProv;
-  const _AppearanceSection({required this.themeProv});
+  const _AppearanceSection();
 
   @override
   Widget build(BuildContext context) {
     final c = context.colors;
+    final themeProv = context.watch<ThemeProvider>();
     return SettingsSection(
       title: 'Appearance',
       children: [
@@ -168,9 +182,10 @@ class _AppearanceSection extends StatelessWidget {
               Text(
                 'Theme',
                 style: TextStyle(
-                    color: c.textPrimary,
-                    fontSize: 14,
-                    fontWeight: FontWeight.w500),
+                  color: c.textPrimary,
+                  fontSize: 14,
+                  fontWeight: FontWeight.w500,
+                ),
               ),
               const SizedBox(height: 10),
               SegmentedControl<ThemeMode>(
@@ -211,32 +226,45 @@ class _AppearanceSection extends StatelessWidget {
               Text(
                 'Accent',
                 style: TextStyle(
-                    color: c.textPrimary,
-                    fontSize: 14,
-                    fontWeight: FontWeight.w500),
+                  color: c.textPrimary,
+                  fontSize: 14,
+                  fontWeight: FontWeight.w500,
+                ),
               ),
               const SizedBox(height: 4),
               Text(
                 'Used for highlights, selections, and the active state.',
-                style:
-                    TextStyle(color: c.textSecondary, fontSize: 12),
+                style: TextStyle(color: c.textSecondary, fontSize: 12),
               ),
               const SizedBox(height: 12),
               Row(
                 children: [
                   for (final entry in const [
-                    (AccentPreset.indigo, AppColors.accentIndigo,
-                        AppColors.accentIndigoDark, 'Indigo'),
-                    (AccentPreset.amber, AppColors.accentAmber,
-                        AppColors.accentAmberDark, 'Amber'),
-                    (AccentPreset.forest, AppColors.accentForest,
-                        AppColors.accentForestDark, 'Forest'),
+                    (
+                      AccentPreset.indigo,
+                      AppColors.accentIndigo,
+                      AppColors.accentIndigoDark,
+                      'Indigo',
+                    ),
+                    (
+                      AccentPreset.amber,
+                      AppColors.accentAmber,
+                      AppColors.accentAmberDark,
+                      'Amber',
+                    ),
+                    (
+                      AccentPreset.forest,
+                      AppColors.accentForest,
+                      AppColors.accentForestDark,
+                      'Forest',
+                    ),
                   ]) ...[
                     _AccentSwatch(
                       light: entry.$2,
                       dark: entry.$3,
                       label: entry.$4,
-                      selected: themeProv.customAccentHex == null &&
+                      selected:
+                          themeProv.customAccentHex == null &&
                           themeProv.accent == entry.$1,
                       onTap: () => themeProv.setAccent(entry.$1),
                     ),
@@ -248,9 +276,10 @@ class _AppearanceSection extends StatelessWidget {
               Text(
                 'Custom hex',
                 style: TextStyle(
-                    color: c.textPrimary,
-                    fontSize: 13,
-                    fontWeight: FontWeight.w500),
+                  color: c.textPrimary,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w500,
+                ),
               ),
               const SizedBox(height: 6),
               _CustomAccentInput(
@@ -272,15 +301,15 @@ class _AppearanceSection extends StatelessWidget {
               Text(
                 'Handedness',
                 style: TextStyle(
-                    color: c.textPrimary,
-                    fontSize: 14,
-                    fontWeight: FontWeight.w500),
+                  color: c.textPrimary,
+                  fontSize: 14,
+                  fontWeight: FontWeight.w500,
+                ),
               ),
               const SizedBox(height: 4),
               Text(
                 'Floating buttons on your preferred side for one-thumb reach.',
-                style:
-                    TextStyle(color: c.textSecondary, fontSize: 12),
+                style: TextStyle(color: c.textSecondary, fontSize: 12),
               ),
               const SizedBox(height: 10),
               SegmentedControl<HandMode>(
@@ -342,20 +371,23 @@ class _AccentSwatch extends StatelessWidget {
               ),
             ),
             child: selected
-                ? Icon(Icons.check,
+                ? Icon(
+                    Icons.check,
                     size: 20,
                     color: color.computeLuminance() > 0.5
                         ? const Color(0xFF1A1815)
-                        : Colors.white)
+                        : Colors.white,
+                  )
                 : null,
           ),
           const SizedBox(height: 4),
           Text(
             label,
             style: TextStyle(
-                color: c.textSecondary,
-                fontSize: 11,
-                fontWeight: FontWeight.w500),
+              color: c.textSecondary,
+              fontSize: 11,
+              fontWeight: FontWeight.w500,
+            ),
           ),
         ],
       ),
@@ -435,8 +467,7 @@ class _CustomAccentInputState extends State<_CustomAccentInput> {
         AnimatedPress(
           onTap: _apply,
           child: Container(
-            padding:
-                const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
             decoration: BoxDecoration(
               color: parsed == null ? c.surfaceMuted : c.accent,
               borderRadius: AppSpacing.brPill,
@@ -444,9 +475,7 @@ class _CustomAccentInputState extends State<_CustomAccentInput> {
             child: Text(
               'Apply',
               style: TextStyle(
-                color: parsed == null
-                    ? c.textTertiary
-                    : c.onAccent,
+                color: parsed == null ? c.textTertiary : c.onAccent,
                 fontSize: 13,
                 fontWeight: FontWeight.w600,
               ),
@@ -484,15 +513,15 @@ class _OneHandToggle extends StatelessWidget {
           Text(
             'One-hand mode',
             style: TextStyle(
-                color: c.textPrimary,
-                fontSize: 14,
-                fontWeight: FontWeight.w500),
+              color: c.textPrimary,
+              fontSize: 14,
+              fontWeight: FontWeight.w500,
+            ),
           ),
           const SizedBox(height: 4),
           Text(
             'Pushes content toward the bottom half of the screen for easier thumb reach. Headers grow larger and shrink as you scroll.',
-            style:
-                TextStyle(color: c.textSecondary, fontSize: 12),
+            style: TextStyle(color: c.textSecondary, fontSize: 12),
           ),
           const SizedBox(height: 10),
           Material(
@@ -671,8 +700,7 @@ class _TypographySection extends StatelessWidget {
                       ),
                     ),
                     if (p.readingFont == f)
-                      Icon(Icons.check,
-                          color: context.colors.accent, size: 20),
+                      Icon(Icons.check, color: context.colors.accent, size: 20),
                   ],
                 ),
               ),
@@ -709,14 +737,10 @@ class _TypographySection extends StatelessWidget {
                 margin: const EdgeInsets.only(bottom: 8),
                 padding: const EdgeInsets.all(16),
                 decoration: BoxDecoration(
-                  color: p.textAlign == o.$1
-                      ? c.accentMuted
-                      : c.surface,
+                  color: p.textAlign == o.$1 ? c.accentMuted : c.surface,
                   borderRadius: AppSpacing.brLg,
                   border: Border.all(
-                    color: p.textAlign == o.$1
-                        ? c.accent
-                        : c.border,
+                    color: p.textAlign == o.$1 ? c.accent : c.border,
                     width: p.textAlign == o.$1 ? 1.2 : 0.5,
                   ),
                 ),
@@ -730,8 +754,7 @@ class _TypographySection extends StatelessWidget {
                         color: c.surfaceMuted,
                         borderRadius: AppSpacing.brSm,
                       ),
-                      child: Icon(o.$3,
-                          size: 20, color: c.textPrimary),
+                      child: Icon(o.$3, size: 20, color: c.textPrimary),
                     ),
                     const SizedBox(width: 14),
                     Expanded(
@@ -760,8 +783,7 @@ class _TypographySection extends StatelessWidget {
                       ),
                     ),
                     if (p.textAlign == o.$1)
-                      Icon(Icons.check,
-                          color: c.accent, size: 20),
+                      Icon(Icons.check, color: c.accent, size: 20),
                   ],
                 ),
               ),
@@ -838,7 +860,10 @@ class _DataSectionState extends State<_DataSection> {
     } catch (e) {
       if (mounted) {
         StashToast.show(
-            context, message: 'Export failed: $e', icon: Icons.error_outline);
+          context,
+          message: 'Export failed: $e',
+          icon: Icons.error_outline,
+        );
       }
     } finally {
       if (mounted) setState(() => _exporting = false);
@@ -858,7 +883,10 @@ class _DataSectionState extends State<_DataSection> {
     } catch (e) {
       if (mounted) {
         StashToast.show(
-            context, message: 'Import failed: $e', icon: Icons.error_outline);
+          context,
+          message: 'Import failed: $e',
+          icon: Icons.error_outline,
+        );
       }
     } finally {
       if (mounted) setState(() => _importing = false);
@@ -907,17 +935,15 @@ class _SourcesSectionState extends State<_SourcesSection> {
       footer:
           'Discover tab searches all enabled sources. Add sources with the correct tag for the scraper to use.',
       children: [
-        ..._sources.map((s) => _SourceRow(
-              source: s,
-              onToggle: (v) => _toggle(s.id, v),
-              onDelete: () => _delete(s.id),
-              onEdit: () => _edit(s),
-            )),
-        SettingsRow(
-          icon: Icons.add,
-          title: 'Add source',
-          onTap: _add,
+        ..._sources.map(
+          (s) => _SourceRow(
+            source: s,
+            onToggle: (v) => _toggle(s.id, v),
+            onDelete: () => _delete(s.id),
+            onEdit: () => _edit(s),
+          ),
         ),
+        SettingsRow(icon: Icons.add, title: 'Add source', onTap: _add),
       ],
     );
   }
@@ -980,20 +1006,29 @@ Future<Source?> _sourceDialog(BuildContext context, Source? existing) async {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(existing == null ? 'Add source' : 'Edit source',
-                  style: TextStyle(
-                      color: c.textPrimary,
-                      fontSize: 16,
-                      fontWeight: FontWeight.w600)),
+              Text(
+                existing == null ? 'Add source' : 'Edit source',
+                style: TextStyle(
+                  color: c.textPrimary,
+                  fontSize: 16,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
               const SizedBox(height: 16),
-              Text('Tag', style: TextStyle(color: c.textTertiary, fontSize: 12)),
+              Text(
+                'Tag',
+                style: TextStyle(color: c.textTertiary, fontSize: 12),
+              ),
               const SizedBox(height: 4),
               DropdownButton<String>(
                 value: tag,
                 isExpanded: true,
                 underline: const SizedBox(),
                 items: const [
-                  DropdownMenuItem(value: 'libgen', child: Text('Library Genesis')),
+                  DropdownMenuItem(
+                    value: 'libgen',
+                    child: Text('Library Genesis'),
+                  ),
                 ],
                 onChanged: (v) {
                   if (v != null) setDlgState(() => tag = v);
@@ -1007,33 +1042,41 @@ Future<Source?> _sourceDialog(BuildContext context, Source? existing) async {
               const SizedBox(height: 12),
               TextField(
                 controller: urlCtrl,
-                decoration:
-                    const InputDecoration(hintText: 'Base URL (e.g. https://libgen.gs/index.php)'),
+                decoration: const InputDecoration(
+                  hintText: 'Base URL (e.g. https://libgen.gs/index.php)',
+                ),
               ),
               const SizedBox(height: 12),
               TextField(
                 controller: langCtrl,
-                decoration:
-                    const InputDecoration(hintText: 'Language filter (e.g. English, French)'),
+                decoration: const InputDecoration(
+                  hintText: 'Language filter (e.g. English, French)',
+                ),
               ),
             ],
           ),
         ),
         actions: [
           TextButton(
-              onPressed: () => Navigator.of(ctx).pop(),
-              child: Text('Cancel', style: TextStyle(color: c.textTertiary))),
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: Text('Cancel', style: TextStyle(color: c.textTertiary)),
+          ),
           TextButton(
             onPressed: () {
-              if (nameCtrl.text.trim().isEmpty || urlCtrl.text.trim().isEmpty) return;
-              Navigator.of(ctx).pop(Source(
-                id: existing?.id ?? 0,
-                name: nameCtrl.text.trim(),
-                tag: tag,
-                baseUrl: urlCtrl.text.trim(),
-                enabled: existing?.enabled ?? true,
-                language: langCtrl.text.trim().isEmpty ? null : langCtrl.text.trim(),
-              ));
+              if (nameCtrl.text.trim().isEmpty || urlCtrl.text.trim().isEmpty)
+                return;
+              Navigator.of(ctx).pop(
+                Source(
+                  id: existing?.id ?? 0,
+                  name: nameCtrl.text.trim(),
+                  tag: tag,
+                  baseUrl: urlCtrl.text.trim(),
+                  enabled: existing?.enabled ?? true,
+                  language: langCtrl.text.trim().isEmpty
+                      ? null
+                      : langCtrl.text.trim(),
+                ),
+              );
             },
             child: Text('Save', style: TextStyle(color: c.accent)),
           ),
@@ -1068,25 +1111,33 @@ class _SourceRow extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(source.name,
-                      style: TextStyle(
-                          color: c.textPrimary,
-                          fontSize: 14,
-                          fontWeight: FontWeight.w500)),
-                  Text(source.tag,
-                      style: TextStyle(color: c.accent, fontSize: 11)),
-                  Text(source.baseUrl,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(color: c.textTertiary, fontSize: 11)),
+                  Text(
+                    source.name,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: c.textPrimary,
+                      fontSize: 14,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                  Text(
+                    source.tag,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(color: c.accent, fontSize: 11),
+                  ),
+                  Text(
+                    source.baseUrl,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(color: c.textTertiary, fontSize: 11),
+                  ),
                 ],
               ),
             ),
           ),
-          Switch(
-            value: source.enabled,
-            onChanged: onToggle,
-          ),
+          Switch(value: source.enabled, onChanged: onToggle),
           IconButton(
             icon: Icon(Icons.delete_outline, size: 18, color: c.textTertiary),
             onPressed: onDelete,
@@ -1141,7 +1192,8 @@ class _StatsSectionState extends State<_StatsSection> {
       _genres = results[0] as Map<String, int>;
       _extensions = results[1] as Map<String, int>;
       _completed = results[2] as int;
-      final streak = results[3] as ({List<int> minutesPerDay, int currentStreak});
+      final streak =
+          results[3] as ({List<int> minutesPerDay, int currentStreak});
       _minutesPerDay = streak.minutesPerDay;
       _streak = streak.currentStreak;
       _loading = false;
@@ -1162,11 +1214,20 @@ class _StatsSectionState extends State<_StatsSection> {
         ),
         _row(c, Icons.menu_book, 'Books completed', _completed),
         if (_genres.isNotEmpty)
-          ..._genres.entries.map((e) => _row(c, Icons.category_outlined, e.key, e.value))
+          ..._genres.entries.map(
+            (e) => _row(c, Icons.category_outlined, e.key, e.value),
+          )
         else
-          _row(c, Icons.category_outlined, 'Genre metadata not available', null),
+          _row(
+            c,
+            Icons.category_outlined,
+            'Genre metadata not available',
+            null,
+          ),
         if (_extensions.isNotEmpty)
-          ..._extensions.entries.map((e) => _row(c, Icons.insert_drive_file_outlined, e.key, e.value))
+          ..._extensions.entries.map(
+            (e) => _row(c, Icons.insert_drive_file_outlined, e.key, e.value),
+          )
         else
           _row(c, Icons.insert_drive_file_outlined, 'Extensions', 0),
       ],
@@ -1182,7 +1243,9 @@ class _StatsSectionState extends State<_StatsSection> {
       final day = now.subtract(Duration(days: i));
       final mins = _minutesPerDay[6 - i];
       total += mins;
-      final label = day.weekday - 1 == now.weekday - 1 ? 'Today' : dayNames[day.weekday - 1];
+      final label = day.weekday - 1 == now.weekday - 1
+          ? 'Today'
+          : dayNames[day.weekday - 1];
       buf.writeln('$label · ${mins}min');
     }
     showDialog(
@@ -1199,31 +1262,50 @@ class _StatsSectionState extends State<_StatsSection> {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text('$_streak day streak',
-                  style: TextStyle(color: c.accent, fontSize: 18, fontWeight: FontWeight.w600)),
+              Text(
+                '$_streak day streak',
+                style: TextStyle(
+                  color: c.accent,
+                  fontSize: 18,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
               const SizedBox(height: 2),
-              Text('$total min this week',
-                  style: TextStyle(color: c.textTertiary, fontSize: 13)),
+              Text(
+                '$total min this week',
+                style: TextStyle(color: c.textTertiary, fontSize: 13),
+              ),
               const SizedBox(height: 12),
-              Text(buf.toString().trim(),
-                  style: TextStyle(color: c.textPrimary, fontSize: 14, height: 1.6)),
+              Text(
+                buf.toString().trim(),
+                style: TextStyle(
+                  color: c.textPrimary,
+                  fontSize: 14,
+                  height: 1.6,
+                ),
+              ),
               const SizedBox(height: 8),
-              Text('Streak resets when a day has 0 min read.',
-                  style: TextStyle(color: c.textTertiary, fontSize: 12)),
+              Text(
+                'Streak resets when a day has 0 min read.',
+                style: TextStyle(color: c.textTertiary, fontSize: 12),
+              ),
             ],
           ),
           actions: [
             TextButton(
-                onPressed: () => Navigator.of(ctx).pop(),
-                child: Text('OK',
-                    style: TextStyle(color: c.accent, fontWeight: FontWeight.w600))),
+              onPressed: () => Navigator.of(ctx).pop(),
+              child: Text(
+                'OK',
+                style: TextStyle(color: c.accent, fontWeight: FontWeight.w600),
+              ),
+            ),
           ],
         );
       },
     );
   }
 
-  Widget _row(StashReaderColors c, IconData icon, String label, int? count) {
+  Widget _row(KomaColors c, IconData icon, String label, int? count) {
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 4, 16, 12),
       child: Row(
@@ -1231,7 +1313,10 @@ class _StatsSectionState extends State<_StatsSection> {
           Icon(icon, size: 18, color: c.textSecondary),
           const SizedBox(width: 14),
           Expanded(
-            child: Text(label, style: TextStyle(color: c.textPrimary, fontSize: 15)),
+            child: Text(
+              label,
+              style: TextStyle(color: c.textPrimary, fontSize: 15),
+            ),
           ),
           const SizedBox(width: 8),
           Text(
@@ -1248,38 +1333,27 @@ class _StatsSectionState extends State<_StatsSection> {
   }
 }
 
-// ─── Plugins (placeholder) ──────────────────────────────────────────────
+// ─── Plugins ───────────────────────────────────────────────────────────
 class _PluginsSection extends StatelessWidget {
   const _PluginsSection();
 
   @override
   Widget build(BuildContext context) {
-    final c = context.colors;
     return SettingsSection(
       title: 'Plugins',
       footer:
-          'Plugins extend StashReader with new sources, parsers, and exporters. The plugin system is being prepared — a small set of official plugins will land in a future release.',
+          'Plugins extend Koma with new sources via Keiyoushi/Mihon extension APKs. Add a repo, fetch its index, and install the ones you want.',
       children: [
         SettingsRow(
           icon: Icons.extension_outlined,
           title: 'Manage plugins',
-          subtitle: 'Browse and enable extensions',
-          trailing: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-            decoration: BoxDecoration(
-              color: c.accentMuted,
-              borderRadius: AppSpacing.brPill,
-            ),
-            child: Text(
-              'Coming soon',
-              style: TextStyle(
-                color: c.accent,
-                fontSize: 10,
-                fontWeight: FontWeight.w600,
-                letterSpacing: 0.4,
-              ),
-            ),
-          ),
+          subtitle: 'Browse, install, and remove extensions',
+          trailing: const Icon(Icons.chevron_right, size: 18),
+          onTap: () {
+            Navigator.of(
+              context,
+            ).push(MaterialPageRoute(builder: (_) => const ExtensionsScreen()));
+          },
         ),
         SettingsRow(
           icon: Icons.code,
@@ -1303,8 +1377,8 @@ class _AboutSection extends StatelessWidget {
       children: [
         SettingsRow(
           icon: Icons.info_outline,
-          title: 'StashReader',
-          subtitle: 'Version 2.4.1 · build 2.4.1+21',
+          title: 'Koma',
+                subtitle: 'Version 2.6.2 · build 2.6.2+95',
         ),
         SettingsRow(
           icon: Icons.favorite_outline,

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../theme/app_theme.dart';
 import '../theme/tokens/app_spacing.dart';
+import 'animated_press.dart';
 import 'divider_hairline.dart';
 
 /// A wrapper used for Settings screen sections. Provides consistent card
@@ -25,6 +26,7 @@ class SettingsSection extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final c = context.colors;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     return Padding(
       padding: padding,
       child: Column(
@@ -45,13 +47,23 @@ class SettingsSection extends StatelessWidget {
             ),
           Container(
             decoration: BoxDecoration(
-              color: c.surface,
-              borderRadius: AppSpacing.brLg,
-              border: Border.all(color: c.border, width: 0.5),
+              color: c.surface.withValues(alpha: isDark ? 0.80 : 0.94),
+              borderRadius: AppSpacing.brXl,
+              border: Border.all(
+                color: c.border.withValues(alpha: isDark ? 0.9 : 0.66),
+                width: 0.5,
+              ),
+              boxShadow: AppSpacing.shadow2(isDark: isDark),
+              gradient: LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: [
+                  c.surface.withValues(alpha: 0.98),
+                  c.surfaceMuted.withValues(alpha: isDark ? 0.30 : 0.44),
+                ],
+              ),
             ),
-            child: Column(
-              children: _withDividers(children),
-            ),
+            child: Column(children: _withDividers(children)),
           ),
           if (footer != null)
             Padding(
@@ -76,10 +88,12 @@ class SettingsSection extends StatelessWidget {
     for (var i = 0; i < items.length; i++) {
       out.add(items[i]);
       if (i != items.length - 1) {
-        out.add(const Padding(
-          padding: EdgeInsets.symmetric(horizontal: 16),
-          child: HairlineDivider(),
-        ));
+        out.add(
+          const Padding(
+            padding: EdgeInsets.symmetric(horizontal: 16),
+            child: HairlineDivider(),
+          ),
+        );
       }
     }
     return out;
@@ -119,7 +133,17 @@ class SettingsRow extends StatelessWidget {
       child: Row(
         children: [
           if (icon != null) ...[
-            Icon(icon, size: 18, color: iconColor),
+            Container(
+              width: 34,
+              height: 34,
+              decoration: BoxDecoration(
+                color: destructive
+                    ? const Color(0xFFC44C4C).withValues(alpha: 0.12)
+                    : c.accentMuted.withValues(alpha: 0.62),
+                borderRadius: AppSpacing.brSm,
+              ),
+              child: Icon(icon, size: 18, color: iconColor),
+            ),
             const SizedBox(width: 14),
           ],
           Expanded(
@@ -153,24 +177,17 @@ class SettingsRow extends StatelessWidget {
             const SizedBox(width: 8),
             trailing!,
           ] else if (onTap != null) ...[
-            Icon(
-              Icons.chevron_right,
-              size: 18,
-              color: c.textTertiary,
-            ),
+            Icon(Icons.chevron_right, size: 18, color: c.textTertiary),
           ],
         ],
       ),
     );
 
     if (onTap == null) return row;
-    return Material(
-      type: MaterialType.transparency,
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: AppSpacing.brLg,
-        child: row,
-      ),
+    return AnimatedPress(
+      onTap: onTap,
+      scaleDown: 0.99,
+      child: Material(type: MaterialType.transparency, child: row),
     );
   }
 }
