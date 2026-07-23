@@ -270,24 +270,29 @@ class _TtsSettingsSheetState extends State<_TtsSettingsSheet> {
                 children: [
                   Text('Voice', style: TextStyle(color: c.textSecondary, fontSize: 13)),
                   const SizedBox(height: 6),
-                  DropdownButton<int>(
-                    value: widget.provider.selectedVoiceIndex >= 0
-                        ? widget.provider.selectedVoiceIndex
-                        : null,
-                    isExpanded: true,
-                    dropdownColor: c.bgElevated,
-                    style: TextStyle(color: c.textPrimary, fontSize: 14),
-                    underline: const SizedBox(),
-                    items: List.generate(widget.provider.voices.length, (i) {
-                      final v = widget.provider.voices[i];
-                      return DropdownMenuItem(
-                        value: i,
-                        child: Text(v.displayName, overflow: TextOverflow.ellipsis),
+                  ListenableBuilder(
+                    listenable: widget.provider,
+                    builder: (context, _) {
+                      return DropdownButton<int>(
+                        value: widget.provider.selectedVoiceIndex >= 0
+                            ? widget.provider.selectedVoiceIndex
+                            : null,
+                        isExpanded: true,
+                        dropdownColor: c.bgElevated,
+                        style: TextStyle(color: c.textPrimary, fontSize: 14),
+                        underline: const SizedBox(),
+                        items: List.generate(widget.provider.voices.length, (i) {
+                          final v = widget.provider.voices[i];
+                          return DropdownMenuItem(
+                            value: i,
+                            child: Text(v.displayName, overflow: TextOverflow.ellipsis),
+                          );
+                        }),
+                        onChanged: (idx) {
+                          if (idx == null) return;
+                          widget.provider.setVoice(widget.provider.voices[idx]);
+                        },
                       );
-                    }),
-                    onChanged: (idx) {
-                      if (idx == null) return;
-                      widget.provider.setVoice(widget.provider.voices[idx]);
                     },
                   ),
                 ],

@@ -2,8 +2,8 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:math';
-import 'dart:typed_data';
 import 'package:crypto/crypto.dart';
+import 'package:flutter/foundation.dart';
 import 'package:just_audio/just_audio.dart';
 import 'tts_engine.dart';
 
@@ -24,10 +24,9 @@ class EdgeTtsEngine implements TtsEngine {
   List<WordTimestamp> _allTimestamps = [];
   String _lastProgressWord = '';
 
-  static const _wssBaseUrl =
-      'wss://speech.platform.bing.com/consumer/speech/synthesize/readaloud/edge/v1';
   static const _trustedClientToken = '6A5AA1D4EAFF4E9FB37E23D68491D6F4';
   static const _chromiumMajor = '143';
+  static const _chromiumFull = '143.0.3650.96';
 
   @override
   List<TtsVoice> get voices => _curatedVoices;
@@ -79,12 +78,15 @@ class EdgeTtsEngine implements TtsEngine {
     _isPaused = false;
 
     try {
-      final audioBytes = await _synthesize(adjusted, startOffset);
-      if (audioBytes.isEmpty) {
+      final chunks = _splitChunks(adjusted, startOffset);
+      if (chunks.isEmpty) {
         _isPlaying = false;
         onComplete();
         return;
       }
+
+      final playlist = ConcatenatingAudioSource(children: []);
+      await _player.setAudioSource(playlist);
 
       _stateSub?.cancel();
       _stateSub = _player.processingStateStream.listen((state) {
@@ -94,68 +96,150 @@ class EdgeTtsEngine implements TtsEngine {
       _posSub?.cancel();
       _posSub = _player.positionStream.listen(_onPosition);
 
-      await _player.setAudioSource(
-        AudioSource.uri(
-            Uri.parse('data:audio/mpeg;base64,${base64Encode(audioBytes)}')),
-      );
-      _player.play();
-    } catch (_) {
+      final audioList = await _synthesizeAll(chunks.map((c) => c.text).toList());
+      bool started = false;
+      for (final audio in audioList) {
+        if (audio.isNotEmpty) {
+          await playlist.add(_BytesAudioSource(audio));
+          if (!started) {
+            started = true;
+            unawaited(_player.play());
+          }
+        }
+      }
+
+      if (!started) {
+        _isPlaying = false;
+        onComplete();
+        return;
+      }
+
+      _resolveCharOffsets(adjusted, startOffset);
+    } catch (e) {
+      debugPrint('edge-tts speak error: $e');
       _isPlaying = false;
       onComplete();
     }
   }
 
-  Future<Uint8List> _synthesize(String text, int baseOffset) async {
-    final connectId = _uuid();
-    final secMsGec = _generateSecMsGec();
-    final muid = _generateMuid();
-    final url = '$_wssBaseUrl?TrustedClientToken=$_trustedClientToken'
-        '&ConnectionId=$connectId'
-        '&Sec-MS-GEC=$secMsGec'
-        '&Sec-MS-GEC-Version=1-$_chromiumMajor.0.3650.75';
-
-    final ws = await WebSocket.connect(url, headers: {
-      'User-Agent':
-          'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+  Future<WebSocket> _connect() async {
+    final wsUrl = _buildWsUrl();
+    final uri = Uri.parse(wsUrl).replace(scheme: 'https');
+    final client = HttpClient();
+    final request = await client.getUrl(uri);
+    request.headers.set('Upgrade', 'websocket');
+    request.headers.set('Connection', 'Upgrade');
+    request.headers.set('Sec-WebSocket-Version', '13');
+    request.headers.set(
+      'Sec-WebSocket-Key',
+      base64Encode(List.generate(16, (_) => Random.secure().nextInt(256))),
+    );
+    request.headers.set(
+      'User-Agent',
+      'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
           ' (KHTML, like Gecko) Chrome/$_chromiumMajor.0.0.0 Safari/537.36'
           ' Edg/$_chromiumMajor.0.0.0',
-      'Pragma': 'no-cache',
-      'Cache-Control': 'no-cache',
-      'Origin': 'chrome-extension://jdiccldimpdaibmpdkjnbmckianbfold',
-      'Sec-WebSocket-Version': '13',
-      'Cookie': 'muid=$muid;',
-    });
+    );
+    request.headers.set(
+      'Origin',
+      'chrome-extension://jdiccldimpdaibmpdkjnbmckianbfold',
+    );
+    final response = await request.close();
+    if (response.statusCode != HttpStatus.switchingProtocols) {
+      final body = await response.transform(utf8.decoder).join();
+      throw WebSocketException(
+        "Connection to '$wsUrl' was not upgraded to websocket, "
+        'HTTP status code: ${response.statusCode} ($body)',
+      );
+    }
+    final socket = await response.detachSocket();
+    return WebSocket.fromUpgradedSocket(
+      socket,
+      serverSide: false,
+      protocol: null,
+    );
+  }
 
-    final chunks = _splitChunks(text, baseOffset);
+  String _buildWsUrl() {
+    final connectId = _connectId();
+    final secMsGec = _generateSecMsGec();
+    return 'wss://speech.platform.bing.com/consumer/speech/synthesize/readaloud/edge/v1'
+        '?TrustedClientToken=$_trustedClientToken'
+        '&Sec-MS-GEC=$secMsGec'
+        '&Sec-MS-GEC-Version=1-$_chromiumFull'
+        '&ConnectionId=$connectId';
+  }
+
+  Future<List<Uint8List>> _synthesizeAll(List<String> texts) async {
+    if (texts.isEmpty) return [];
+    if (texts.length == 1) return [await _synthesizeChunk(texts.first)];
+
+    final ws = await _connect();
+    ws.add(_buildConfigMessage());
+
+    final results = <Uint8List>[];
+    final turnAudio = <int>[];
+    Completer<void>? turnDone;
+
+    final sub = ws.listen(
+      (message) {
+        if (message is String) {
+          if (message.contains('\r\nPath:turn.end') && turnDone != null) {
+            turnDone!.complete();
+            turnDone = null;
+          }
+          _handleTextMessage(message);
+        } else if (message is List<int>) {
+          final audio = _extractAudio(message);
+          if (audio != null) turnAudio.addAll(audio);
+        }
+      },
+      onError: (e) {
+        debugPrint('edge-tts stream error: $e');
+        turnDone?.complete();
+      },
+    );
+
+    for (final text in texts) {
+      turnAudio.clear();
+      turnDone = Completer<void>();
+      ws.add(_buildSsmlMessage(text));
+      await turnDone!.future;
+      results.add(Uint8List.fromList(List.from(turnAudio)));
+    }
+
+    await sub.cancel();
+    await ws.close();
+    return results;
+  }
+
+  Future<Uint8List> _synthesizeChunk(String text) async {
+    final ws = await _connect();
     final allAudio = <int>[];
     final completer = Completer<Uint8List>();
 
     ws.listen(
       (message) {
         if (message is String) {
-          _handleTextMessage(message, ws);
+          _handleTextMessage(message);
         } else if (message is List<int>) {
-          _handleBinaryMessage(message, allAudio);
+          final audio = _extractAudio(message);
+          if (audio != null) allAudio.addAll(audio);
         }
       },
-      onError: (_) {
+      onError: (e) {
+        debugPrint('edge-tts stream error: $e');
         if (!completer.isCompleted) completer.complete(Uint8List.fromList(allAudio));
       },
       onDone: () {
-        _resolveCharOffsets(text, baseOffset);
         if (!completer.isCompleted) {
           completer.complete(Uint8List.fromList(allAudio));
         }
       },
     );
 
-    // send speech.config
     ws.add(_buildConfigMessage());
-
-    // send each chunk as a separate SSML request
-    for (final chunk in chunks) {
-      ws.add(_buildSsmlMessage(chunk.text));
-    }
+    ws.add(_buildSsmlMessage(text));
 
     Timer(const Duration(seconds: 30), () {
       if (!completer.isCompleted) {
@@ -177,7 +261,7 @@ class EdgeTtsEngine implements TtsEngine {
   }
 
   String _buildSsmlMessage(String text) {
-    final requestId = _uuid();
+    final requestId = _connectId();
     final ssml = _buildSsml(text);
     return 'X-RequestId:$requestId\r\n'
         'Content-Type:application/ssml+xml\r\n'
@@ -186,7 +270,7 @@ class EdgeTtsEngine implements TtsEngine {
         '$ssml';
   }
 
-  void _handleTextMessage(String msg, WebSocket ws) {
+  void _handleTextMessage(String msg) {
     final headerEnd = msg.indexOf('\r\n\r\n');
     if (headerEnd < 0) return;
     final headerBlock = msg.substring(0, headerEnd);
@@ -216,17 +300,28 @@ class EdgeTtsEngine implements TtsEngine {
     }
   }
 
-  void _handleBinaryMessage(List<int> data, List<int> allAudio) {
-    if (data.length < 4) return;
-    final headerLength = (data[0] << 8) | data[1];
-    final bodyStart = 2 + headerLength + 2; // 2 len prefix + headers + \r\n
-    if (bodyStart > data.length) return;
+  Uint8List? _extractAudio(List<int> data) {
+    final start = _indexOf(data, _pathAudioNeedle);
+    if (start < 0) return null;
+    return Uint8List.fromList(data.sublist(start + _pathAudioNeedle.length));
+  }
 
-    final headerBytes = data.sublist(2, 2 + headerLength);
-    final headersStr = utf8.decode(headerBytes);
-    if (!headersStr.contains('Path:audio')) return;
+  static const _pathAudioNeedle = <int>[
+    80, 97, 116, 104, 58, 97, 117, 100, 105, 111, 13, 10,
+  ]; // "Path:audio\r\n"
 
-    allAudio.addAll(data.sublist(bodyStart));
+  static int _indexOf(List<int> haystack, List<int> needle) {
+    for (int i = 0; i <= haystack.length - needle.length; i++) {
+      var match = true;
+      for (int j = 0; j < needle.length; j++) {
+        if (haystack[i + j] != needle[j]) {
+          match = false;
+          break;
+        }
+      }
+      if (match) return i;
+    }
+    return -1;
   }
 
   void _onPosition(Duration position) {
@@ -326,45 +421,49 @@ class EdgeTtsEngine implements TtsEngine {
 
   List<_Chunk> _splitChunks(String text, int baseOffset) {
     final chunks = <_Chunk>[];
-    final sentences = text.split(RegExp(r'(?<=[.!?\n])\s*'));
-    final buf = StringBuffer();
+    final paragraphs = text.split(RegExp(r'\n\n+'));
     int totalChars = 0;
 
-    for (final s in sentences) {
-      if (s.isEmpty) continue;
-      if (buf.length + s.length > 4000 && buf.isNotEmpty) {
-        chunks.add(_Chunk(buf.toString(), baseOffset + totalChars - buf.length));
-        buf.clear();
+    for (final p in paragraphs) {
+      if (p.trim().isEmpty) continue;
+      if (p.length <= 1500) {
+        chunks.add(_Chunk(p, baseOffset + totalChars));
+        totalChars += p.length;
+      } else {
+        final sentences = p.split(RegExp(r'(?<=[.!?])\s+'));
+        final buf = StringBuffer();
+        for (final s in sentences) {
+          if (s.isEmpty) continue;
+          if (buf.length + s.length > 1500 && buf.isNotEmpty) {
+            chunks.add(_Chunk(
+                buf.toString(), baseOffset + totalChars - buf.length));
+            buf.clear();
+          }
+          buf.write(s);
+        }
+        if (buf.isNotEmpty) {
+          chunks.add(_Chunk(
+              buf.toString(), baseOffset + totalChars - buf.length));
+        }
+        totalChars += p.length;
       }
-      buf.write(s);
-      totalChars += s.length;
-    }
-    if (buf.isNotEmpty) {
-      chunks.add(_Chunk(buf.toString(), baseOffset + totalChars - buf.length));
     }
     return chunks;
   }
 
   static String _generateSecMsGec() {
-    final now = DateTime.now().toUtc();
-    final ticks = (now.millisecondsSinceEpoch / 1000) + 11644473600;
+    // Match TypeScript msedge-tts: integer arithmetic, no floats.
+    final ticks = (DateTime.now().toUtc().millisecondsSinceEpoch ~/ 1000) + 11644473600;
     final rounded = ticks - (ticks % 300);
-    final ticks100ns = (rounded * 10000000).round();
-    final toHash = '$ticks100ns$_trustedClientToken';
+    final windowsTicks = rounded * 10000000;
+    final toHash = '$windowsTicks$_trustedClientToken';
     final bytes = utf8.encode(toHash);
     final digest = sha256.convert(bytes);
     return digest.toString().toUpperCase();
   }
 
-  static String _generateMuid() {
-    final bytes = List.generate(16, (_) => Random.secure().nextInt(256));
-    return bytes
-        .map((b) => b.toRadixString(16).padLeft(2, '0'))
-        .join()
-        .toUpperCase();
-  }
-
-  static String _uuid() {
+  static String _connectId() {
+    // Match TypeScript msedge-tts: standard UUID with dashes.
     final rand = Random.secure();
     final b = List.generate(16, (_) => rand.nextInt(256));
     b[6] = (b[6] & 0x0F) | 0x40;
@@ -413,4 +512,22 @@ class _Chunk {
   final String text;
   final int baseOffset;
   const _Chunk(this.text, this.baseOffset);
+}
+
+class _BytesAudioSource extends StreamAudioSource {
+  final Uint8List _bytes;
+  _BytesAudioSource(this._bytes) : super(tag: 'edge_tts_chunk');
+
+  @override
+  Future<StreamAudioResponse> request([int? start, int? end]) async {
+    start ??= 0;
+    end ??= _bytes.length;
+    return StreamAudioResponse(
+      sourceLength: _bytes.length,
+      contentLength: end - start,
+      offset: start,
+      stream: Stream.value(_bytes.sublist(start, end)),
+      contentType: 'audio/mpeg',
+    );
+  }
 }

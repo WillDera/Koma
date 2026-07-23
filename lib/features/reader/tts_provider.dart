@@ -33,13 +33,22 @@ class TtsProvider extends ChangeNotifier {
         : 0;
   }
 
-  List<TtsVoice> get voices =>
-      _engineType == TtsEngineType.device
-          ? (_engine as DeviceTtsEngine).voices.where((v) {
-              final l = (v.locale ?? v.id).toLowerCase();
-              return l.startsWith('en');
-            }).toList()
-          : _engine.voices;
+  List<TtsVoice> get voices {
+    if (_engineType == TtsEngineType.device) {
+      final deviceVoices = (_engine as DeviceTtsEngine).voices.where((v) {
+        final l = (v.locale ?? v.id).toLowerCase();
+        return l.startsWith('en');
+      }).toList();
+      if (deviceVoices.isEmpty) {
+        return [
+          const TtsVoice(id: 'default', name: 'System Default',
+              engineType: TtsEngineType.device),
+        ];
+      }
+      return deviceVoices;
+    }
+    return _engine.voices;
+  }
 
   TtsVoice? get selectedVoice => _engine.selectedVoice;
   String get selectedVoiceName => _engine.selectedVoice?.displayName ?? 'Default';
