@@ -374,6 +374,8 @@ class _MangaDetailScreenState extends State<MangaDetailScreen> {
         });
       } else {
         setState(() {
+          // Use network data as fallback if DB load failed
+          _details ??= details;
           _error = null;
           _loading = false;
         });
@@ -1003,8 +1005,19 @@ class _MangaDetailScreenState extends State<MangaDetailScreen> {
               : ListView(
                   padding: EdgeInsets.zero,
                   children: [
-                      _Header(
-                        details: _details!,
+                      if (_details == null)
+                        Center(
+                          child: Padding(
+                            padding: const EdgeInsets.all(32),
+                            child: Text(
+                              'Failed to load manga details',
+                              style: TextStyle(color: c.textTertiary),
+                            ),
+                          ),
+                        )
+                      else
+                        _Header(
+                          details: _details!,
                         c: c,
                         inLibrary: _inLibrary,
                         onAddToLibrary: _addToLibrary,
