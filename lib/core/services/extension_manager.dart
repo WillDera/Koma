@@ -106,17 +106,22 @@ class ExtensionManager {
 
   // -- Install / uninstall ---------------------------------------------
 
-  /// Download an APK, load it via the native bridge, and persist the
-  /// resulting Source descriptor. Returns the installed extension.
+  /// Download an APK, load it via the native bridge, and persist one row per
+  /// source in the sources[] array — matching mangayomi's multi-source pattern.
   ///
-  /// If the APK is already on disk (e.g. user re-installing), pass
-  /// [skipDownload] to skip the fetch.
-  Future<ExtensionSource> install(ExtensionIndexEntry entry, {required String repoUrl}) async {
+  /// Each source gets its own DB row with a unique id ("mihon-{sourceId}").
+  /// Icon URL is derived from the repo URL and package name as mangayomi does:
+  ///   "$repoUrl/icon/${pkg}.png"
+  Future<List<ExtensionSource>> install(
+    ExtensionIndexEntry entry, {
+    required String repoUrl,
+  }) async {
     final dir = await _extensionsDir();
     final apkPath = p.join(dir.path, '${entry.pkg}.apk');
     final baseUrl = repoUrl.replaceFirst(RegExp(r'/[^/]*$'), '');
     final resolved = '$baseUrl/apk/${entry.apkUrl}';
 
+    // Download APK
     final apkFile = File(apkPath);
     if (apkFile.existsSync()) {
       try { await Process.run('chmod', ['+w', apkPath]); } catch (_) {}
@@ -124,29 +129,49 @@ class ExtensionManager {
     }
     await _downloadApk(resolved, apkPath);
 
-    final desc = await _keiyoushi.loadExtension(
+    // Load via native bridge to verify the APK works
+    await _keiyoushi.loadExtension(
       apkPath: apkPath,
       className: entry.className,
     );
-    final id = (desc['id'] as String?) ?? entry.pkg;
-    final src = ExtensionSource(
-      id: id,
-      name: (desc['name'] as String?) ?? entry.name,
-      version: entry.version,
-      lang: (desc['lang'] as String?) ?? entry.lang,
-      apkPath: apkPath,
-      className: (desc['className'] as String?) ?? '',
-      iconUrl: null,
-      isInstalled: true,
-    );
-    await _db.insertExtensionSource(src);
-    return src;
+
+    // Derive icon URL from repo base URL + package name — same as mangayomi
+    final iconUrl = '$baseUrl/icon/${entry.pkg}.png';
+    final sourceCodeUrl = '$baseUrl/apk/${entry.apkUrl}';
+
+    // Create one DB row per source in the sources[] array
+    final sources = <ExtensionSource>[];
+    for (final s in entry.sources) {
+      final sourceId = s['id']?.toString() ?? entry.pkg;
+      final id = 'mihon-$sourceId'; // Same format as mangayomi
+      final src = ExtensionSource(
+        id: id,
+        name: s['name'] as String? ?? entry.name,
+        version: entry.version,
+        lang: s['lang'] as String? ?? entry.lang,
+        apkPath: apkPath,
+        className: s['className'] as String? ?? '',
+        iconUrl: iconUrl,
+        baseUrl: s['baseUrl'] as String?,
+        sourceCodeUrl: sourceCodeUrl,
+        repoUrl: repoUrl,
+      );
+      await _db.insertExtensionSource(src);
+      sources.add(src);
+    }
+    return sources;
   }
 
-  /// Remove a previously installed extension: drop the row, unload the
-  /// native classloader, and delete the APK.
+  /// Remove a previously installed extension and all sources sharing its APK:
+  /// drop the rows, unload the native classloader, and delete the APK.
   Future<void> uninstall(ExtensionSource src) async {
-    await _db.deleteExtensionSource(src.id);
+    // Remove all DB rows that share this APK path
+    final installed = await listInstalled();
+    for (final s in installed) {
+      if (s.apkPath == src.apkPath) {
+        await _db.deleteExtensionSource(s.id);
+      }
+    }
     try {
       await _keiyoushi.unloadExtension(src.id);
     } catch (_) {
@@ -157,6 +182,51 @@ class ExtensionManager {
       if (await f.exists()) await f.delete();
     } catch (_) {
       // Filesystem hiccup — not worth blocking the uninstall.
+    }
+  }
+
+  /// Mark installed sources whose repo no longer lists them as obsolete.
+  /// Ported from mangayomi's checkIfSourceIsObsolete().
+  Future<void> checkForObsoleteSources(
+    List<ExtensionIndexEntry> freshEntries,
+    String repoUrl,
+  ) async {
+    if (freshEntries.isEmpty) return;
+
+    // Build the set of all known source IDs from the fresh index
+    final knownIds = <String>{};
+    for (final entry in freshEntries) {
+      for (final s in entry.sources) {
+        final sourceId = s['id']?.toString() ?? entry.pkg;
+        knownIds.add('mihon-$sourceId');
+      }
+    }
+    if (knownIds.isEmpty) return;
+
+    // Find all installed sources from this repo
+    final installed = await listInstalled();
+    final toUpdate = <ExtensionSource>[];
+    for (final src in installed) {
+      if (src.repoUrl != repoUrl) continue;
+      final isNowObsolete = !knownIds.contains(src.id);
+      if (src.isObsolete != isNowObsolete) {
+        toUpdate.add(ExtensionSource(
+          id: src.id,
+          name: src.name,
+          version: src.version,
+          lang: src.lang,
+          apkPath: src.apkPath,
+          className: src.className,
+          isObsolete: isNowObsolete,
+          isActive: src.isActive,
+          isInstalled: src.isInstalled,
+          isNsfw: src.isNsfw,
+          isPinned: src.isPinned,
+        ));
+      }
+    }
+    for (final s in toUpdate) {
+      await _db.insertExtensionSource(s);
     }
   }
 
