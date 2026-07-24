@@ -2,18 +2,19 @@ import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
 
-/// Redesigned reader bottom bar inspired by mangayomi.
+/// Reader bottom bar with page navigation + specialized quick actions.
 ///
-/// Compact layout with:
-/// - Page slider in a rounded pill container with current/total labels
-/// - Chapter skip buttons
-/// - Quick actions row: reader mode, crop borders, settings
+/// Layout:
+/// - Page slider in a rounded pill container with prev/next buttons
+/// - Chapter skip buttons (skip_previous / skip_next)
+/// - Quick actions row: reading mode, crop borders, settings
 class ReaderBottomBar extends StatelessWidget {
   final ValueListenable<int> pageListenable;
   final int totalPages;
   final bool showNavigator;
   final void Function(int) onPageChanged;
   final VoidCallback onSettings;
+  final VoidCallback? onCropToggle;
   final VoidCallback? onPreviousChapter;
   final VoidCallback? onNextChapter;
   final bool isVisible;
@@ -25,6 +26,7 @@ class ReaderBottomBar extends StatelessWidget {
     required this.showNavigator,
     required this.onPageChanged,
     required this.onSettings,
+    this.onCropToggle,
     this.onPreviousChapter,
     this.onNextChapter,
     required this.isVisible,
@@ -54,7 +56,7 @@ class ReaderBottomBar extends StatelessWidget {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              // Slider section
+              // ── Page slider in a rounded pill ──
               if (showNavigator)
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 12),
@@ -68,23 +70,20 @@ class ReaderBottomBar extends StatelessWidget {
                       valueListenable: pageListenable,
                       builder: (_, page, __) => Row(
                         children: [
-                          // Previous chapter
+                          // Prev page arrow
+                          _PageButton(
+                            icon: Icons.chevron_left,
+                            enabled: page > 0,
+                            onTap: () => onPageChanged(page - 1),
+                          ),
+                          // Prev chapter
                           if (onPreviousChapter != null)
-                            IconButton(
-                              icon: const Icon(
-                                Icons.skip_previous_rounded,
-                                color: Colors.white70,
-                                size: 22,
-                              ),
-                              onPressed: onPreviousChapter,
-                              tooltip: 'Previous chapter',
-                              padding: EdgeInsets.zero,
-                              constraints: const BoxConstraints(
-                                minWidth: 36,
-                                minHeight: 36,
-                              ),
+                            _PageButton(
+                              icon: Icons.skip_previous_rounded,
+                              enabled: true,
+                              onTap: onPreviousChapter!,
                             ),
-                          // Current page label
+                          // Page label
                           SizedBox(
                             width: 44,
                             child: Center(
@@ -145,20 +144,17 @@ class ReaderBottomBar extends StatelessWidget {
                           ),
                           // Next chapter
                           if (onNextChapter != null)
-                            IconButton(
-                              icon: const Icon(
-                                Icons.skip_next_rounded,
-                                color: Colors.white70,
-                                size: 22,
-                              ),
-                              onPressed: onNextChapter,
-                              tooltip: 'Next chapter',
-                              padding: EdgeInsets.zero,
-                              constraints: const BoxConstraints(
-                                minWidth: 36,
-                                minHeight: 36,
-                              ),
+                            _PageButton(
+                              icon: Icons.skip_next_rounded,
+                              enabled: true,
+                              onTap: onNextChapter!,
                             ),
+                          // Next page arrow
+                          _PageButton(
+                            icon: Icons.chevron_right,
+                            enabled: page < totalPages - 1,
+                            onTap: () => onPageChanged(page + 1),
+                          ),
                         ],
                       ),
                     ),
@@ -167,31 +163,60 @@ class ReaderBottomBar extends StatelessWidget {
 
               const SizedBox(height: 6),
 
-              // Quick action buttons
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                children: [
-                  _ActionButton(
-                    icon: Icons.app_settings_alt_outlined,
-                    tooltip: 'Reading mode',
-                    onPressed: onSettings,
-                  ),
-                  _ActionButton(
-                    icon: Icons.crop_outlined,
-                    tooltip: 'Crop borders',
-                    onPressed: onSettings,
-                  ),
-                  _ActionButton(
-                    icon: Icons.settings_rounded,
-                    tooltip: 'Settings',
-                    onPressed: onSettings,
-                  ),
-                ],
+              // ── Quick action buttons ──
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 32),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceAround,
+                  children: [
+                    _ActionButton(
+                      icon: Icons.crop_outlined,
+                      tooltip: 'Crop borders',
+                      onPressed: onCropToggle ?? onSettings,
+                    ),
+                    _ActionButton(
+                      icon: Icons.settings_rounded,
+                      tooltip: 'Settings',
+                      onPressed: onSettings,
+                    ),
+                    _ActionButton(
+                      icon: Icons.app_settings_alt_outlined,
+                      tooltip: 'Reading mode',
+                      onPressed: onSettings,
+                    ),
+                  ],
+                ),
               ),
             ],
           ),
         ),
       ),
+    );
+  }
+}
+
+class _PageButton extends StatelessWidget {
+  final IconData icon;
+  final bool enabled;
+  final VoidCallback onTap;
+
+  const _PageButton({
+    required this.icon,
+    required this.enabled,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return IconButton(
+      icon: Icon(
+        icon,
+        color: enabled ? Colors.white70 : Colors.white24,
+        size: 22,
+      ),
+      onPressed: enabled ? onTap : null,
+      padding: EdgeInsets.zero,
+      constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
     );
   }
 }

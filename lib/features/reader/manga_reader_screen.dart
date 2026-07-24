@@ -19,6 +19,15 @@ import 'widgets/page_indicator.dart';
 import 'widgets/navigation_overlay.dart';
 import 'widgets/chapter_list_dialog.dart';
 
+/// Sentinel placed between chapters to mark the chapter boundary.
+/// [index] is negative to avoid colliding with real page indices.
+class _MangaPageTransition extends MangaPage {
+  final String label;
+  final String? nextChapterName;
+  _MangaPageTransition({required this.label, this.nextChapterName})
+      : super(index: -1, imageUrl: '');
+}
+
 class MangaReaderScreen extends StatefulWidget {
   final int? mangaId;
   final String sourceId;
@@ -53,6 +62,10 @@ class _MangaReaderScreenState extends State<MangaReaderScreen>
   final ValueNotifier<int> _currentPageNotifier = ValueNotifier<int>(0);
   bool _showToolbar = false;
   bool _showNavigationOverlay = false;
+  bool _isBookmarked = false;
+  bool _hasNextChapter = false;
+  bool _hasPrevChapter = false;
+  int _currentChapterPageCount = 0; // pages belonging to the current chapter
   final List<TransformationController> _zoomCtrls = [];
   int? _chapterId;
   Timer? _saveTimer;
@@ -65,6 +78,7 @@ class _MangaReaderScreenState extends State<MangaReaderScreen>
     _db = context.read<DatabaseService>();
     WidgetsBinding.instance.addObserver(this);
     _itemPositionsListener.itemPositions.addListener(_onWebtoonScroll);
+    _loadBookmark();
     _initAsync();
   }
 
@@ -135,8 +149,11 @@ class _MangaReaderScreenState extends State<MangaReaderScreen>
           _pages = pages;
           _zoomCtrls.addAll(List.generate(pages.length, (_) => TransformationController()));
           _loading = false;
+          _currentChapterPageCount = pages.length;
         });
         await _initProgress();
+        _checkChapterAvailability();
+        _preloadNextChapterPages();
         return;
       }
 
@@ -162,8 +179,11 @@ class _MangaReaderScreenState extends State<MangaReaderScreen>
         _zoomCtrls
             .addAll(List.generate(pages.length, (_) => TransformationController()));
         _loading = false;
+        _currentChapterPageCount = pages.length;
       });
       await _initProgress();
+      _checkChapterAvailability();
+      _preloadNextChapterPages();
     } catch (e) {
       if (!mounted) return;
       setState(() {
@@ -232,8 +252,10 @@ class _MangaReaderScreenState extends State<MangaReaderScreen>
   Future<void> _saveProgress() async {
     if (_chapterId == null || _db == null) return;
     final page = _currentPageNotifier.value;
-    await _db!.updateMangaChapterProgress(_chapterId!, page);
-    if (page >= _pages.length - 1) {
+    // Clamp to current chapter pages — ignore preloaded next chapter pages
+    final savePage = page.clamp(0, _currentChapterPageCount - 1);
+    await _db!.updateMangaChapterProgress(_chapterId!, savePage);
+    if (savePage >= _currentChapterPageCount - 1) {
       await _db!.markMangaChapterRead(_chapterId!);
     }
   }
@@ -251,7 +273,13 @@ class _MangaReaderScreenState extends State<MangaReaderScreen>
     if (positions.isEmpty) return;
     final first = positions.first.index;
     if (first != _currentPageNotifier.value) {
-      _schedulePageSave(first);
+      // Don't treat transition pages as real page changes for progress
+      if (first < _pages.length && _pages[first] is _MangaPageTransition) {
+        // Still update the notifier so the page indicator UI reflects it
+        _currentPageNotifier.value = first;
+      } else {
+        _schedulePageSave(first);
+      }
     }
   }
 
@@ -378,6 +406,11 @@ class _MangaReaderScreenState extends State<MangaReaderScreen>
     );
   }
 
+  void _toggleCropBorders() {
+    setState(() => _settings.cropBorders = !_settings.cropBorders);
+    _saveSettings();
+  }
+
   void _showSettings() {
     _showNavigationOverlay = false;
     showModalBottomSheet(
@@ -420,13 +453,145 @@ class _MangaReaderScreenState extends State<MangaReaderScreen>
       ),
     ).then((result) {
       if (result != null && mounted) {
-        // Navigate to selected chapter — in a real app this would
-        // reload the reader with the new chapter. For now just
-        // show the chapter name.
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Navigating to ${result.name}')),
-        );
+        _saveProgress().then((_) {
+          if (mounted) _reloadWithChapter(result);
+        });
       }
+    });
+  }
+
+  void _toggleBookmark() async {
+    setState(() => _isBookmarked = !_isBookmarked);
+    if (widget.mangaId != null) {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setBool('reader_${widget.mangaId}_bookmarked', _isBookmarked);
+    }
+  }
+
+  Future<void> _loadBookmark() async {
+    if (widget.mangaId == null) return;
+    final prefs = await SharedPreferences.getInstance();
+    final saved = prefs.getBool('reader_${widget.mangaId}_bookmarked');
+    if (saved != null && mounted) {
+      setState(() => _isBookmarked = saved);
+    }
+  }
+
+  void _navigateToNextChapter() {
+    if (widget.mangaId == null || !_hasNextChapter) return;
+    // Reload reader with next chapter from DB
+    _db!.getMangaChapters(widget.mangaId!).then((chapters) {
+      if (chapters.isEmpty) return;
+      final currentIdx = chapters.indexWhere(
+        (c) => c.url == widget.chapterUrl,
+      );
+      if (currentIdx < 0 || currentIdx >= chapters.length - 1) return;
+      final next = chapters[currentIdx + 1];
+      if (mounted) _reloadWithChapter(next);
+    });
+  }
+
+  void _navigateToPrevChapter() {
+    if (widget.mangaId == null || !_hasPrevChapter) return;
+    _db!.getMangaChapters(widget.mangaId!).then((chapters) {
+      if (chapters.isEmpty) return;
+      final currentIdx = chapters.indexWhere(
+        (c) => c.url == widget.chapterUrl,
+      );
+      if (currentIdx <= 0) return;
+      final prev = chapters[currentIdx - 1];
+      if (mounted) _reloadWithChapter(prev);
+    });
+  }
+
+  void _reloadWithChapter(MangaChapter chapter) {
+    _saveProgress().then((_) {
+      if (!mounted) return;
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(
+          builder: (_) => MangaReaderScreen(
+            mangaId: widget.mangaId,
+            sourceId: widget.sourceId,
+            mangaUrl: widget.mangaUrl,
+            chapterUrl: chapter.url,
+            chapterName: chapter.name,
+          ),
+        ),
+      );
+    });
+  }
+
+  void _checkChapterAvailability() {
+    if (widget.mangaId == null) return;
+    _db!.getMangaChapters(widget.mangaId!).then((chapters) {
+      if (!mounted) return;
+      final currentIdx = chapters.indexWhere(
+        (c) => c.url == widget.chapterUrl,
+      );
+      setState(() {
+        _hasNextChapter = currentIdx >= 0 && currentIdx < chapters.length - 1;
+        _hasPrevChapter = currentIdx > 0;
+      });
+    });
+  }
+
+  void _preloadNextChapterPages() {
+    if (widget.mangaId == null || !_hasNextChapter) return;
+    _db!.getMangaChapters(widget.mangaId!).then((chapters) {
+      if (!mounted) return;
+      final currentIdx = chapters.indexWhere(
+        (c) => c.url == widget.chapterUrl,
+      );
+      if (currentIdx < 0 || currentIdx >= chapters.length - 1) return;
+      final next = chapters[currentIdx + 1];
+
+      _service.getPageList(
+        sourceId: widget.sourceId,
+        url: next.url,
+      ).then((rawPages) {
+        if (!mounted) return;
+        final nextPages = rawPages.asMap().entries.map((e) {
+          final imgUrl = e.value['imageUrl'] as String?;
+          final rawHeaders = e.value['headers'] as Map?;
+          final headers = rawHeaders?.map(
+            (k, v) => MapEntry(k.toString(), v.toString()),
+          );
+          return MangaPage(
+            index: e.key,
+            imageUrl: imgUrl ?? (e.value['url'] as String? ?? ''),
+            headers: headers,
+          );
+        }).toList();
+
+        if (nextPages.isEmpty) return;
+
+        // Create transition marker and append next chapter pages
+        final transition = _MangaPageTransition(
+          label: 'End of chapter',
+          nextChapterName: next.name,
+        );
+        // Make next chapter pages continue from current count
+        final extended = List<MangaPage>.from(_pages)
+          ..add(transition)
+          ..addAll(nextPages);
+
+        // Extend zoom controllers for the new pages
+        final newZooms = List<TransformationController>.from(_zoomCtrls);
+        for (int i = _pages.length; i < extended.length; i++) {
+          newZooms.add(TransformationController());
+        }
+
+        if (!mounted) return;
+        setState(() {
+          _pages = extended;
+          _zoomCtrls
+            ..clear()
+            ..addAll(newZooms);
+        });
+      }).catchError((_) {
+        // silently fail — next chapter preloading is best-effort
+      });
     });
   }
 
@@ -533,14 +698,14 @@ class _MangaReaderScreenState extends State<MangaReaderScreen>
               // New redesigned ReaderAppBar
               ReaderAppBar(
                 chapterName: widget.chapterName,
-                isBookmarked: false,
+                isBookmarked: _isBookmarked,
                 isVisible: _showToolbar,
                 onClose: () {
                   _saveProgress().then((_) {
                     if (context.mounted) Navigator.of(context).pop();
                   });
                 },
-                onBookmarkToggle: () {},
+                onBookmarkToggle: _toggleBookmark,
                 onChapterList: _showChapterList,
               ),
               // New redesigned ReaderBottomBar
@@ -550,6 +715,9 @@ class _MangaReaderScreenState extends State<MangaReaderScreen>
                 showNavigator: _settings.showPageNavigator,
                 onPageChanged: _goToPage,
                 onSettings: _showSettings,
+                onCropToggle: _toggleCropBorders,
+                onPreviousChapter: _hasPrevChapter ? _navigateToPrevChapter : null,
+                onNextChapter: _hasNextChapter ? _navigateToNextChapter : null,
                 isVisible: _showToolbar,
               ),
               // New PageIndicator (always shown when UI hidden)
@@ -650,6 +818,41 @@ class _MangaReaderScreenState extends State<MangaReaderScreen>
       minCacheExtent: 2000,
       itemBuilder: (context, i) {
         final page = _pages[i];
+        // Render transition markers as a compact black bar
+        if (page is _MangaPageTransition) {
+          return Container(
+            height: 60,
+            color: const Color(0xFF1a1a1a),
+            alignment: Alignment.center,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  '▬ ${page.label} ▬',
+                  style: const TextStyle(
+                    color: Colors.white38,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w500,
+                    letterSpacing: 2,
+                  ),
+                ),
+                if (page.nextChapterName != null)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 4),
+                    child: Text(
+                      page.nextChapterName!,
+                      style: const TextStyle(
+                        color: Colors.white54,
+                        fontSize: 11,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+              ],
+            ),
+          );
+        }
         return Image(
           image: page.localPath != null
               ? FileImage(File(page.localPath!))
