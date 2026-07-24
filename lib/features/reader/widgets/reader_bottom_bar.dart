@@ -179,11 +179,6 @@ class ReaderBottomBar extends StatelessWidget {
                       tooltip: 'Settings',
                       onPressed: onSettings,
                     ),
-                    _ActionButton(
-                      icon: Icons.app_settings_alt_outlined,
-                      tooltip: 'Reading mode',
-                      onPressed: onSettings,
-                    ),
                   ],
                 ),
               ),

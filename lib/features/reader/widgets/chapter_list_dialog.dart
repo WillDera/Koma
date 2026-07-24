@@ -48,7 +48,7 @@ class _ChapterListDialogState extends State<ChapterListDialog> {
     if (mounted) {
       setState(() {
         _manga = manga;
-        _chapters = chapters;
+        _chapters = chapters.reversed.toList(); // newest first, matching detail page
         _loading = false;
       });
     }

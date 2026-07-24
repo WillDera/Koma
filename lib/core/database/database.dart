@@ -114,6 +114,13 @@ class AppDatabase extends GeneratedDatabase {
           await customStatement(
               'ALTER TABLE snippets ADD COLUMN scroll_position REAL');
         } catch (_) {}
+        // v9 → v10: deduplicate manga_chapters (clean up rows created by broken INSERT OR IGNORE).
+        try {
+          await customStatement(
+            'DELETE FROM manga_chapters WHERE id NOT IN '
+            '(SELECT MAX(id) FROM manga_chapters GROUP BY manga_id, url)'
+          );
+        } catch (_) {}
       },
     );
   }
