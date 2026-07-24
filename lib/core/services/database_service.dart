@@ -1155,17 +1155,35 @@ class DatabaseService {
   Future<void> insertExtensionSource(ExtensionSource src) async {
     await _db.customInsert(
       'INSERT OR REPLACE INTO extension_sources '
-      '(id, name, version, lang, apk_path, class_name, icon_url, is_installed, created_at, updated_at) '
-      'VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+      '(id, name, version, version_last, lang, apk_path, class_name, icon_url, base_url, source_code_url, repo_url, is_installed, is_active, is_nsfw, is_pinned, is_obsolete, created_at, updated_at) '
+      'VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
       variables: [
         Variable.withString(src.id),
         Variable.withString(src.name),
         Variable.withString(src.version),
+        src.versionLast != null
+            ? Variable.withString(src.versionLast!)
+            : Variable<Object>(null),
         Variable.withString(src.lang),
         Variable.withString(src.apkPath),
         Variable.withString(src.className),
-        Variable.withString(src.iconUrl ?? ''),
+        src.iconUrl != null
+            ? Variable.withString(src.iconUrl!)
+            : Variable<Object>(null),
+        src.baseUrl != null
+            ? Variable.withString(src.baseUrl!)
+            : Variable<Object>(null),
+        src.sourceCodeUrl != null
+            ? Variable.withString(src.sourceCodeUrl!)
+            : Variable<Object>(null),
+        src.repoUrl != null
+            ? Variable.withString(src.repoUrl!)
+            : Variable<Object>(null),
         Variable.withInt(src.isInstalled ? 1 : 0),
+        Variable.withInt(src.isActive ? 1 : 0),
+        Variable.withInt(src.isNsfw ? 1 : 0),
+        Variable.withInt(src.isPinned ? 1 : 0),
+        Variable.withInt(src.isObsolete ? 1 : 0),
         Variable.withString(src.createdAt.toIso8601String()),
         Variable.withString(DateTime.now().toIso8601String()),
       ],

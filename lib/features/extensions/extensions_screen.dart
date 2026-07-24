@@ -6,10 +6,11 @@ import '../../core/models/extension_source.dart';
 import '../../core/services/database_service.dart';
 import '../../core/services/extension_manager.dart';
 import '../../core/services/keiyoushi_service.dart';
+import '../../core/utils/language.dart';
 import '../../theme/app_theme.dart';
 import '../../theme/tokens/app_spacing.dart';
 import '../../widgets/animated_press.dart';
-import 'source_browse_screen.dart';
+import 'extension_detail_screen.dart';
 
 const _keiyoushiDefaultRepoUrl =
     'https://raw.githubusercontent.com/keiyoushi/extensions/repo/index.min.json';
@@ -80,8 +81,15 @@ class _ExtensionsScreenState extends State<ExtensionsScreen>
     try {
       final entries = await _mgr.fetchIndex(repo);
       if (!mounted) return;
+      // Check for obsolete sources after fetching fresh index (mangayomi pattern)
+      await _mgr.checkForObsoleteSources(entries, repo.url);
+      // Reload installed list since obsolete flags may have changed
+      if (!mounted) return;
+      final installed = await _mgr.listInstalled();
+      if (!mounted) return;
       setState(() {
         _indexCache[repo.id] = entries;
+        _installed = installed;
         _error = null;
       });
     } catch (e) {
@@ -159,10 +167,16 @@ class _ExtensionsScreenState extends State<ExtensionsScreen>
   Future<void> _install(ExtensionIndexEntry entry, ExtensionRepo repo) async {
     final messenger = ScaffoldMessenger.of(context);
     try {
-      await _mgr.install(entry, repoUrl: repo.url);
+      final sources = await _mgr.install(entry, repoUrl: repo.url);
       messenger.showSnackBar(
-        SnackBar(content: Text('Installed ${entry.name}')),
+        SnackBar(
+          content: Text(
+            'Installed ${sources.length} source${sources.length == 1 ? '' : 's'} from ${entry.name}',
+          ),
+        ),
       );
+      // Reload the index to show installed state
+      await _fetchIndex(repo);
       await _refresh();
     } catch (e) {
       messenger.showSnackBar(
@@ -229,9 +243,9 @@ class _ExtensionsScreenState extends State<ExtensionsScreen>
                   onBrowse: (src) => Navigator.push(
                     context,
                     MaterialPageRoute(
-                      builder: (_) => SourceBrowseScreen(
-                        sourceId: src.id,
-                        sourceName: src.name,
+                      builder: (_) => ExtensionDetailScreen(
+                        source: src,
+                        onUninstall: () => _uninstall(src),
                       ),
                     ),
                   ),
@@ -298,7 +312,7 @@ class _InstalledTab extends StatelessWidget {
             ),
             child: Row(
               children: [
-                Icon(Icons.extension, color: c.accent),
+                _buildIcon(src.iconUrl, c),
                 const SizedBox(width: 12),
                 Expanded(
                   child: Column(
@@ -334,7 +348,8 @@ class _InstalledTab extends StatelessWidget {
   }
 }
 
-// ─── Available tab ──────────────────────────────────────────────────────
+// ─── Available tab — mangayomi 3-section layout ──────────────────────
+
 class _AvailableTab extends StatefulWidget {
   final List<ExtensionRepo> repos;
   final Map<int, List<ExtensionIndexEntry>> indexCache;
@@ -361,11 +376,20 @@ class _AvailableTab extends StatefulWidget {
 class _AvailableTabState extends State<_AvailableTab> {
   final _searchCtrl = TextEditingController();
   String _query = '';
+  bool _showNsfw = false;
 
   @override
   void initState() {
     super.initState();
     _searchCtrl.addListener(() => setState(() => _query = _searchCtrl.text));
+    // Auto-fetch repos that haven't been fetched yet (mangayomi pattern)
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      for (final repo in widget.repos) {
+        if (!widget.indexCache.containsKey(repo.id)) {
+          widget.onFetch(repo);
+        }
+      }
+    });
   }
 
   @override
@@ -390,86 +414,210 @@ class _AvailableTabState extends State<_AvailableTab> {
         ),
       );
     }
-    final installedIds = widget.installed.map((s) => s.id).toSet();
-
-    // pony tail: filter by en/all lang only
-    bool _langOk(ExtensionIndexEntry e) {
-      final l = e.lang.toLowerCase();
-      return l == 'en' || l == 'all';
-    }
-
-    bool _queryOk(ExtensionIndexEntry e) =>
-        _query.isEmpty || e.name.toLowerCase().contains(_query.toLowerCase());
 
     final hasAnyFetched =
         widget.repos.any((r) => widget.indexCache.containsKey(r.id));
+
+    // Build a flat list of all index entries across repos
+    final allEntries = <_EntryWithRepo>[];
+    for (final repo in widget.repos) {
+      final entries = widget.indexCache[repo.id];
+      if (entries == null) continue;
+      for (final e in entries) {
+        allEntries.add(_EntryWithRepo(entry: e, repo: repo));
+      }
+    }
+
+    // Filter by query
+    var filtered = _query.isEmpty
+        ? allEntries
+        : allEntries
+            .where((er) =>
+                er.entry.name.toLowerCase().contains(_query.toLowerCase()))
+            .toList();
+
+    // Filter by NSFW
+    if (!_showNsfw) {
+      filtered = filtered.where((er) => !er.entry.isNsfw).toList();
+    }
+
+    // Sort entries: updates first, then installed, then not-installed by lang
+    final updateEntries = <_EntryWithRepo>[];
+    final installedEntries = <_EntryWithRepo>[];
+    final notInstalledEntries = <_EntryWithRepo>[];
+
+    for (final er in filtered) {
+      if (_hasUpdateAvailable(er, widget.installed)) {
+        updateEntries.add(er);
+      } else if (_hasInstalled(er, widget.installed)) {
+        installedEntries.add(er);
+      } else {
+        notInstalledEntries.add(er);
+      }
+    }
 
     return Column(
       children: [
         if (hasAnyFetched)
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
-            child: TextField(
-              controller: _searchCtrl,
-              decoration: InputDecoration(
-                hintText: 'Search extensions…',
-                prefixIcon: const Icon(Icons.search, size: 20),
-                suffixIcon: _query.isNotEmpty
-                    ? IconButton(
-                        icon: const Icon(Icons.clear, size: 18),
-                        onPressed: () => _searchCtrl.clear(),
-                      )
-                    : null,
-                isDense: true,
-                contentPadding:
-                    const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                border: OutlineInputBorder(
-                  borderRadius: AppSpacing.brMd,
-                  borderSide: BorderSide(color: c.border),
-                ),
-              ),
-            ),
-          ),
-        Expanded(
-          child: ListView(
-            padding: const EdgeInsets.all(16),
-            children: [
-              for (final repo in widget.repos) ...[
-                _RepoHeader(
-                  repo: repo,
-                  loading: widget.loading.contains(repo.id),
-                  onFetch: () => widget.onFetch(repo),
-                ),
-                const SizedBox(height: 8),
-                ...?widget.indexCache[repo.id]
-                    ?.where((e) => _langOk(e) && _queryOk(e))
-                    .map(
-                      (e) => Padding(
-                        padding: const EdgeInsets.only(bottom: 6),
-                        child: _ExtensionRow(
-                          entry: e,
-                          installed: installedIds.contains(_entryId(e)),
-                          onInstall: () => widget.onInstall(e, repo),
-                        ),
+            child: Row(
+              children: [
+                Expanded(
+                  child: TextField(
+                    controller: _searchCtrl,
+                    decoration: InputDecoration(
+                      hintText: 'Search extensions…',
+                      prefixIcon: const Icon(Icons.search, size: 20),
+                      suffixIcon: _query.isNotEmpty
+                          ? IconButton(
+                              icon: const Icon(Icons.clear, size: 18),
+                              onPressed: () => _searchCtrl.clear(),
+                            )
+                          : null,
+                      isDense: true,
+                      contentPadding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 10,
                       ),
-                    ),
-                if (widget.indexCache[repo.id] != null &&
-                    widget.indexCache[repo.id]!
-                        .where((e) => _langOk(e) && _queryOk(e))
-                        .isEmpty)
-                  Padding(
-                    padding: const EdgeInsets.only(top: 8),
-                    child: Text(
-                      _query.isEmpty
-                          ? 'No en/all extensions in this repo'
-                          : 'No matches',
-                      style: TextStyle(
-                        color: c.textSecondary,
-                        fontSize: 12,
+                      border: OutlineInputBorder(
+                        borderRadius: AppSpacing.brMd,
+                        borderSide: BorderSide(color: c.border),
                       ),
                     ),
                   ),
+                ),
+                const SizedBox(width: 8),
+                IconButton(
+                  icon: Icon(
+                    _showNsfw ? Icons.eighteen_up_rating : Icons.family_restroom,
+                    color: _showNsfw ? c.accent : c.textSecondary,
+                    size: 20,
+                  ),
+                  onPressed: () => setState(() => _showNsfw = !_showNsfw),
+                  tooltip: _showNsfw ? 'Hide NSFW' : 'Show NSFW',
+                ),
+              ],
+            ),
+          ),
+        Expanded(
+          child: allEntries.isEmpty
+              ? ListView(
+                  padding: const EdgeInsets.all(16),
+                  children: [
+                    for (final repo in widget.repos) ...[
+                      _RepoHeader(
+                        repo: repo,
+                        loading: widget.loading.contains(repo.id),
+                        onFetch: () => widget.onFetch(repo),
+                      ),
+                      const SizedBox(height: 8),
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 16),
+                        child: Text(
+                          'Tap "Fetch" to load extensions from this repo.',
+                          style: TextStyle(
+                            color: c.textSecondary,
+                            fontSize: 12,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ],
+                )
+              : ListView(
+                  padding: const EdgeInsets.all(16),
+                  children: [
+              // ── Updates section ──
+              if (updateEntries.isNotEmpty) ...[
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 8),
+                  child: Row(
+                    children: [
+                      Text(
+                        'Update pending',
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 13,
+                          color: c.textPrimary,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                ...updateEntries.map(
+                  (er) => Padding(
+                    padding: const EdgeInsets.only(bottom: 6),
+                    child: _ExtensionRow(
+                      entry: er.entry,
+                      installed: true,
+                      hasUpdate: true,
+                      installedVersion:
+                          _installedVersionForEntry(er, widget.installed),
+                      onInstall: () => widget.onInstall(er.entry, er.repo),
+                    ),
+                  ),
+                ),
                 const SizedBox(height: 16),
+              ],
+
+              // ── Installed section ──
+              if (installedEntries.isNotEmpty) ...[
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 8),
+                  child: Text(
+                    'Installed',
+                    style: TextStyle(
+                      fontWeight: FontWeight.bold,
+                      fontSize: 13,
+                      color: c.textPrimary,
+                    ),
+                  ),
+                ),
+                ...installedEntries.map(
+                  (er) => Padding(
+                    padding: const EdgeInsets.only(bottom: 6),
+                    child: _ExtensionRow(
+                      entry: er.entry,
+                      installed: true,
+                      hasUpdate: false,
+                      installedVersion:
+                          _installedVersionForEntry(er, widget.installed),
+                      onInstall: () => widget.onInstall(er.entry, er.repo),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 16),
+              ],
+
+              // ── Not installed section (grouped by language) ──
+              if (notInstalledEntries.isNotEmpty) ...[
+                ..._buildLanguageGroups(notInstalledEntries, c),
+              ],
+              // Show a message when nothing matches the current filters
+              if (updateEntries.isEmpty &&
+                  installedEntries.isEmpty &&
+                  notInstalledEntries.isEmpty) ...[
+                Padding(
+                  padding: const EdgeInsets.only(top: 40),
+                  child: Center(
+                    child: Column(
+                      children: [
+                        Icon(Icons.search_off, size: 48, color: c.textTertiary),
+                        const SizedBox(height: 12),
+                        Text(
+                          _query.isNotEmpty
+                              ? 'No extensions match "$_query"'
+                              : !_showNsfw
+                                  ? 'All extensions are NSFW. Enable NSFW to see them.'
+                                  : 'No extensions available',
+                          style: TextStyle(color: c.textSecondary, fontSize: 14),
+                          textAlign: TextAlign.center,
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
               ],
             ],
           ),
@@ -477,13 +625,126 @@ class _AvailableTabState extends State<_AvailableTab> {
       ],
     );
   }
+
+  List<Widget> _buildLanguageGroups(
+    List<_EntryWithRepo> entries,
+    KomaColors c,
+  ) {
+    // Group by language code
+    final groups = <String, List<_EntryWithRepo>>{};
+    for (final er in entries) {
+      final lang = er.entry.lang.toLowerCase();
+      groups.putIfAbsent(lang, () => []);
+      groups[lang]!.add(er);
+    }
+
+    // Sort language keys by their full name
+    final sortedKeys = groups.keys.toList()
+      ..sort((a, b) => completeLanguageName(a).compareTo(completeLanguageName(b)));
+
+    final widgets = <Widget>[];
+    for (final langKey in sortedKeys) {
+      final langName = completeLanguageName(langKey);
+      final group = groups[langKey]!;
+      // Sort entries by name within the group
+      group.sort((a, b) => a.entry.name.compareTo(b.entry.name));
+
+      widgets.add(
+        Padding(
+          padding: const EdgeInsets.only(left: 4, bottom: 8),
+          child: Text(
+            langName,
+            style: TextStyle(
+              fontWeight: FontWeight.bold,
+              fontSize: 13,
+              color: c.textPrimary,
+            ),
+          ),
+        ),
+      );
+      for (final er in group) {
+        widgets.add(
+          Padding(
+            padding: const EdgeInsets.only(bottom: 6),
+            child: _ExtensionRow(
+              entry: er.entry,
+              installed: false,
+              hasUpdate: false,
+              onInstall: () => widget.onInstall(er.entry, er.repo),
+            ),
+          ),
+        );
+      }
+      widgets.add(const SizedBox(height: 8));
+    }
+    return widgets;
+  }
+
+  bool _hasInstalled(_EntryWithRepo er, List<ExtensionSource> installed) {
+    for (final s in er.entry.sources) {
+      final sourceId = s['id']?.toString() ?? er.entry.pkg;
+      if (installed.any((isrc) => isrc.id == 'mihon-$sourceId')) return true;
+    }
+    return false;
+  }
+
+  bool _hasUpdateAvailable(_EntryWithRepo er, List<ExtensionSource> installed) {
+    // Check if any source from this entry is installed AND has a version that
+    // differs from the index entry's version (meaning an update is available).
+    for (final s in er.entry.sources) {
+      final sourceId = s['id']?.toString() ?? er.entry.pkg;
+      final match = installed.firstWhere(
+        (isrc) => isrc.id == 'mihon-$sourceId',
+        orElse: () => ExtensionSource(
+          id: '',
+          name: '',
+          version: '',
+          lang: '',
+          apkPath: '',
+          className: '',
+        ),
+      );
+      // Only report update if the source is actually installed AND versions differ
+      if (match.id.isNotEmpty && match.version != er.entry.version) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  String? _installedVersionForEntry(
+    _EntryWithRepo er,
+    List<ExtensionSource> installed,
+  ) {
+    for (final s in er.entry.sources) {
+      final sourceId = s['id']?.toString() ?? er.entry.pkg;
+      final match = installed.firstWhere(
+        (isrc) => isrc.id == 'mihon-$sourceId',
+        orElse: () => ExtensionSource(
+          id: '',
+          name: '',
+          version: '',
+          lang: '',
+          apkPath: '',
+          className: '',
+        ),
+      );
+      if (match.id.isNotEmpty) return match.version;
+    }
+    return null;
+  }
 }
 
-String _entryId(ExtensionIndexEntry e) {
-  if (e.sources.isNotEmpty && e.sources.first['id'] != null) {
-    return e.sources.first['id'].toString();
-  }
-  return e.pkg;
+class _EntryWithRepo {
+  final ExtensionIndexEntry entry;
+  final ExtensionRepo repo;
+  const _EntryWithRepo({required this.entry, required this.repo});
+}
+
+extension on ExtensionIndexEntry {
+  bool get isNsfw => sources.any(
+    (s) => (s['nsfw'] as int? ?? 0) == 1,
+  );
 }
 
 class _RepoHeader extends StatelessWidget {
@@ -543,59 +804,135 @@ class _RepoHeader extends StatelessWidget {
 class _ExtensionRow extends StatelessWidget {
   final ExtensionIndexEntry entry;
   final bool installed;
+  final bool hasUpdate;
+  final String? installedVersion;
   final VoidCallback onInstall;
 
   const _ExtensionRow({
     required this.entry,
     required this.installed,
+    this.hasUpdate = false,
+    this.installedVersion,
     required this.onInstall,
   });
 
   @override
   Widget build(BuildContext context) {
     final c = context.colors;
+    final iconUrl = _deriveIconUrl(entry, context);
+    final isNsfw = entry.isNsfw;
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
       decoration: BoxDecoration(
-        color: c.surface,
+        color: hasUpdate ? c.accent.withAlpha(15) : c.surface,
         borderRadius: AppSpacing.brMd,
-        border: Border.all(color: c.border),
+        border: Border.all(
+          color: hasUpdate
+              ? c.accent.withAlpha(51)
+              : c.border,
+        ),
       ),
       child: Row(
         children: [
-          Icon(
-            installed ? Icons.check_circle : Icons.extension_outlined,
-            color: installed ? c.accent : c.textSecondary,
-            size: 20,
-          ),
+          _buildIcon(iconUrl, c, size: 28),
           const SizedBox(width: 10),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  entry.name,
-                  style: TextStyle(
-                    color: c.textPrimary,
-                    fontSize: 14,
-                    fontWeight: FontWeight.w500,
-                  ),
+                Row(
+                  children: [
+                    Flexible(
+                      child: Text(
+                        entry.name,
+                        style: TextStyle(
+                          color: c.textPrimary,
+                          fontSize: 14,
+                          fontWeight: FontWeight.w500,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                    if (isNsfw) ...[
+                      const SizedBox(width: 4),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 4,
+                          vertical: 1,
+                        ),
+                        decoration: BoxDecoration(
+                          color: Colors.red.withAlpha(204),
+                          borderRadius: BorderRadius.circular(4),
+                        ),
+                        child: const Text(
+                          'NSFW',
+                          style: TextStyle(
+                            fontSize: 8,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.white,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ],
                 ),
-                Text(
-                  'v${entry.version} · ${entry.lang} · ${entry.sources.length} source${entry.sources.length == 1 ? '' : 's'}',
-                  style: TextStyle(color: c.textSecondary, fontSize: 11),
+                const SizedBox(height: 2),
+                Row(
+                  children: [
+                    Text(
+                      completeLanguageName(entry.lang),
+                      style: TextStyle(
+                        color: c.textSecondary,
+                        fontSize: 11,
+                        fontWeight: FontWeight.w300,
+                      ),
+                    ),
+                    const SizedBox(width: 4),
+                    if (hasUpdate && installedVersion != null)
+                      Text(
+                        '$installedVersion → ${entry.version}',
+                        style: TextStyle(
+                          color: c.accent,
+                          fontSize: 11,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      )
+                    else
+                      Text(
+                        'v${entry.version}',
+                        style: TextStyle(
+                          color: c.textSecondary,
+                          fontSize: 11,
+                          fontWeight: FontWeight.w300,
+                        ),
+                      ),
+                  ],
                 ),
               ],
             ),
           ),
           TextButton(
-            onPressed: installed ? null : onInstall,
-            child: Text(installed ? 'Installed' : 'Install'),
+            onPressed: hasUpdate ? onInstall : (installed ? null : onInstall),
+            child: Text(
+              hasUpdate
+                  ? 'Update'
+                  : installed
+                      ? 'Installed'
+                      : 'Install',
+            ),
           ),
         ],
       ),
     );
   }
+}
+
+/// Derive the icon URL for an [ExtensionIndexEntry] from the repo URL context.
+String? _deriveIconUrl(ExtensionIndexEntry entry, BuildContext context) {
+  // We don't have direct repo URL access here, but the icon path follows
+  // mangayomi's pattern: "$repoUrl/icon/${pkg}.png". Try guacamoly's repo.
+  return 'https://raw.githubusercontent.com/keiyoushi/extensions/repo/icon/${entry.pkg}.png';
 }
 
 // ─── Repos tab ──────────────────────────────────────────────────────────
@@ -735,4 +1072,38 @@ class _EmptyState extends StatelessWidget {
       ),
     );
   }
+}
+
+/// Shared icon widget for extension list tiles — loads the icon from [iconUrl]
+/// with a fallback Material icon, matching mangayomi's extension_list_tile_widget.
+Widget _buildIcon(String? iconUrl, KomaColors c, {double size = 37}) {
+  if (iconUrl == null || iconUrl.isEmpty) {
+    return SizedBox(
+      width: size,
+      height: size,
+      child: Icon(Icons.extension_rounded, color: c.accent, size: size * 0.75),
+    );
+  }
+  return Container(
+    width: size,
+    height: size,
+    decoration: BoxDecoration(
+      color: c.surfaceMuted,
+      borderRadius: BorderRadius.circular(5),
+    ),
+    child: ClipRRect(
+      borderRadius: BorderRadius.circular(5),
+      child: Image.network(
+        iconUrl,
+        fit: BoxFit.contain,
+        width: size,
+        height: size,
+        errorBuilder: (_, __, ___) => SizedBox(
+          width: size,
+          height: size,
+          child: Icon(Icons.extension_rounded, color: c.accent, size: size * 0.75),
+        ),
+      ),
+    ),
+  );
 }
