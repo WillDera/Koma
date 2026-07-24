@@ -14,9 +14,8 @@ class ExtensionLoader(private val context: Context) {
 
     companion object {
         private const val TAG = "ExtLoader"
-        // Keiyoushi extensions encode lib version in versionName: "1.4.35" → 1.4
-        private const val LIB_VERSION_MIN = 1.4
-        private const val LIB_VERSION_MAX = 1.5
+        // Mihon supports extension-lib versions 1.4 and 1.6
+        private val SUPPORTED_LIB_VERSIONS = listOf(1.4, 1.6)
     }
 
     private val loaderByApkPath: MutableMap<String, ClassLoader> = ConcurrentHashMap()
@@ -52,9 +51,10 @@ class ExtensionLoader(private val context: Context) {
             Log.d(TAG, "Extension package: ${pkgInfo.packageName} versionName=$vName versionCode=${pkgInfo.longVersionCode}")
             if (vName != null) {
                 val libVer = vName.substringBeforeLast('.').toDoubleOrNull()
-                if (libVer != null && (libVer < LIB_VERSION_MIN || libVer > LIB_VERSION_MAX)) {
-                    Log.w(TAG, "Lib version $libVer out of range [$LIB_VERSION_MIN, $LIB_VERSION_MAX]")
+                if (libVer != null && libVer !in SUPPORTED_LIB_VERSIONS) {
+                    Log.w(TAG, "Lib version $libVer out of range $SUPPORTED_LIB_VERSIONS")
                 }
+            }
             }
         }
 

@@ -106,13 +106,14 @@ class ExtensionManager {
 
   // -- Install / uninstall ---------------------------------------------
 
-  /// Download an APK, load it via the native bridge, and persist one row per
-  /// source in the sources[] array — matching mangayomi's multi-source pattern.
+  /// Download an APK, load it via the native bridge, and persist a single
+  /// DB row — matching mangayomi's pattern of one row per installed APK.
   ///
-  /// Each source gets its own DB row with a unique id ("mihon-{sourceId}").
-  /// Icon URL is derived from the repo URL and package name as mangayomi does:
-  ///   "$repoUrl/icon/${pkg}.png"
-  Future<List<ExtensionSource>> install(
+  /// The sources[] array in the index JSON represents per-language variants
+  /// that are all handled by a single Kotlin Source class declared in the
+  /// APK manifest. We create one DB row and let the native bridge's single
+  /// Source instance handle all languages internally.
+  Future<ExtensionSource> install(
     ExtensionIndexEntry entry, {
     required String repoUrl,
   }) async {
@@ -129,37 +130,37 @@ class ExtensionManager {
     }
     await _downloadApk(resolved, apkPath);
 
-    // Load via native bridge to verify the APK works
-    await _keiyoushi.loadExtension(
-      apkPath: apkPath,
-      className: entry.className,
-    );
-
     // Derive icon URL from repo base URL + package name — same as mangayomi
     final iconUrl = '$baseUrl/icon/${entry.pkg}.png';
     final sourceCodeUrl = '$baseUrl/apk/${entry.apkUrl}';
 
-    // Create one DB row per source in the sources[] array
-    final sources = <ExtensionSource>[];
-    for (final s in entry.sources) {
-      final sourceId = s['id']?.toString() ?? entry.pkg;
-      final id = 'mihon-$sourceId'; // Same format as mangayomi
-      final src = ExtensionSource(
-        id: id,
-        name: s['name'] as String? ?? entry.name,
-        version: entry.version,
-        lang: s['lang'] as String? ?? entry.lang,
-        apkPath: apkPath,
-        className: s['className'] as String? ?? '',
-        iconUrl: iconUrl,
-        baseUrl: s['baseUrl'] as String?,
-        sourceCodeUrl: sourceCodeUrl,
-        repoUrl: repoUrl,
-      );
-      await _db.insertExtensionSource(src);
-      sources.add(src);
+    // Load into the native bridge using the class name from the APK manifest.
+    // The bridge returns the native MD5-based ID we must use for all calls.
+    final desc = await _keiyoushi.loadExtension(
+      apkPath: apkPath,
+      className: entry.className,
+    );
+    final nativeId = (desc['id'] as String?) ?? '';
+    if (nativeId.isEmpty) {
+      throw Exception('Native bridge returned no ID for ${entry.name}');
     }
-    return sources;
+
+    // Use the first source entry for display metadata
+    final firstSource = entry.sources.isNotEmpty ? entry.sources.first : null;
+    final src = ExtensionSource(
+      id: nativeId,
+      name: (desc['name'] as String?) ?? entry.name,
+      version: entry.version,
+      lang: (desc['lang'] as String?) ?? entry.lang,
+      apkPath: apkPath,
+      className: entry.className ?? '',
+      iconUrl: iconUrl,
+      baseUrl: firstSource?['baseUrl'] as String?,
+      sourceCodeUrl: sourceCodeUrl,
+      repoUrl: repoUrl,
+    );
+    await _db.insertExtensionSource(src);
+    return src;
   }
 
   /// Remove a previously installed extension and all sources sharing its APK:
@@ -185,6 +186,46 @@ class ExtensionManager {
     }
   }
 
+  /// Check for updates to installed sources by comparing versions.
+  /// Sets versionLast on any source where the repo has a newer version.
+  /// Ported from mangayomi's fetchSourcesList else-branch.
+  Future<void> checkForUpdates(
+    List<ExtensionIndexEntry> freshEntries,
+    String repoUrl,
+  ) async {
+    if (freshEntries.isEmpty) return;
+
+    final installed = await listInstalled();
+
+    for (final entry in freshEntries) {
+      for (final s in entry.sources) {
+        final className = s['className'] as String? ?? '';
+        if (className.isEmpty) continue;
+
+        // Find the matching installed source by className (native ID is
+        // the bridge's MD5 hash which we can't predict from Dart).
+        final match = installed.firstWhere(
+          (isrc) => isrc.className == className,
+          orElse: () => ExtensionSource(
+            id: '',
+            name: '',
+            version: '',
+            lang: '',
+            apkPath: '',
+            className: '',
+          ),
+        );
+        if (match.id.isEmpty) continue;
+        if (match.version == entry.version) continue;
+
+        // Store the available version so the UI shows an update badge
+        await _db.insertExtensionSource(match.copyWith(
+          versionLast: entry.version,
+        ));
+      }
+    }
+  }
+
   /// Mark installed sources whose repo no longer lists them as obsolete.
   /// Ported from mangayomi's checkIfSourceIsObsolete().
   Future<void> checkForObsoleteSources(
@@ -193,22 +234,22 @@ class ExtensionManager {
   ) async {
     if (freshEntries.isEmpty) return;
 
-    // Build the set of all known source IDs from the fresh index
-    final knownIds = <String>{};
+    // Build the set of all known source classNames from the fresh index
+    final knownClassNames = <String>{};
     for (final entry in freshEntries) {
       for (final s in entry.sources) {
-        final sourceId = s['id']?.toString() ?? entry.pkg;
-        knownIds.add('mihon-$sourceId');
+        final className = s['className'] as String? ?? '';
+        if (className.isNotEmpty) knownClassNames.add(className);
       }
     }
-    if (knownIds.isEmpty) return;
+    if (knownClassNames.isEmpty) return;
 
     // Find all installed sources from this repo
     final installed = await listInstalled();
     final toUpdate = <ExtensionSource>[];
     for (final src in installed) {
       if (src.repoUrl != repoUrl) continue;
-      final isNowObsolete = !knownIds.contains(src.id);
+      final isNowObsolete = !knownClassNames.contains(src.className);
       if (src.isObsolete != isNowObsolete) {
         toUpdate.add(ExtensionSource(
           id: src.id,
@@ -238,6 +279,9 @@ class ExtensionManager {
 
   /// On app start, re-mount every extension the user previously
   /// installed so the native side has them registered.
+  ///
+  /// Captures the native ID from each descriptor and updates the DB row,
+  /// fixing any rows that were stored with a synthetic (non-native) ID.
   Future<void> reloadAll() async {
     final installed = await listInstalled();
     for (final src in installed) {
@@ -247,10 +291,21 @@ class ExtensionManager {
         continue;
       }
       try {
-        await _keiyoushi.loadExtension(
+        // Load into the bridge using className from DB. Pass null for empty
+        // strings so the native bridge reads it from the APK manifest.
+        final desc = await _keiyoushi.loadExtension(
           apkPath: src.apkPath,
           className: src.className.isEmpty ? null : src.className,
         );
+        final nativeId = (desc['id'] as String?) ?? '';
+        if (nativeId.isEmpty) continue;
+
+        // If the stored ID differs from the native ID, update the DB row
+        if (src.id != nativeId) {
+          // Delete the old row and insert with the correct native ID
+          await _db.deleteExtensionSource(src.id);
+          await _db.insertExtensionSource(src.copyWith(id: nativeId));
+        }
       } catch (_) {
         // APK on disk but the loader rejected it (corrupt / signature
         // mismatch). Leave the row; user can uninstall it from the UI.
