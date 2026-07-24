@@ -25,7 +25,10 @@ fun Call.asObservable(): Observable<Response> = Observable.create { subscriber -
 }
 
 fun Call.asObservableSuccess(): Observable<Response> = asObservable().map { response ->
-    if (!response.isSuccessful) throw HttpException(response)
+    if (!response.isSuccessful) {
+        response.close()
+        throw HttpException(response.code)
+    }
     response
 }
 
@@ -42,4 +45,13 @@ suspend fun Call.await(): Response = suspendCancellableCoroutine { continuation 
     continuation.invokeOnCancellation { cancel() }
 }
 
-class HttpException(val response: Response) : Exception("HTTP ${response.code} ${response.message}")
+suspend fun Call.awaitSuccess(): Response {
+    val response = await()
+    if (!response.isSuccessful) {
+        response.close()
+        throw HttpException(response.code)
+    }
+    return response
+}
+
+class HttpException(val code: Int) : IllegalStateException("HTTP error $code")

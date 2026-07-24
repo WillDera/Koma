@@ -11,6 +11,7 @@ import '../../theme/app_theme.dart';
 import '../../theme/tokens/app_spacing.dart';
 import '../../widgets/animated_press.dart';
 import 'extension_detail_screen.dart';
+import 'source_browse_screen.dart';
 
 const _keiyoushiDefaultRepoUrl =
     'https://raw.githubusercontent.com/keiyoushi/extensions/repo/index.min.json';
@@ -167,13 +168,9 @@ class _ExtensionsScreenState extends State<ExtensionsScreen>
   Future<void> _install(ExtensionIndexEntry entry, ExtensionRepo repo) async {
     final messenger = ScaffoldMessenger.of(context);
     try {
-      final sources = await _mgr.install(entry, repoUrl: repo.url);
+      final src = await _mgr.install(entry, repoUrl: repo.url);
       messenger.showSnackBar(
-        SnackBar(
-          content: Text(
-            'Installed ${sources.length} source${sources.length == 1 ? '' : 's'} from ${entry.name}',
-          ),
-        ),
+        SnackBar(content: Text('Installed ${src.name}')),
       );
       // Reload the index to show installed state
       await _fetchIndex(repo);
@@ -243,9 +240,9 @@ class _ExtensionsScreenState extends State<ExtensionsScreen>
                   onBrowse: (src) => Navigator.push(
                     context,
                     MaterialPageRoute(
-                      builder: (_) => ExtensionDetailScreen(
-                        source: src,
-                        onUninstall: () => _uninstall(src),
+                      builder: (_) => SourceBrowseScreen(
+                        sourceId: src.id,
+                        sourceName: src.name,
                       ),
                     ),
                   ),
@@ -335,6 +332,17 @@ class _InstalledTab extends StatelessWidget {
                   ),
                 ),
                 IconButton(
+                  icon: Icon(Icons.info_outline, color: c.textSecondary, size: 20),
+                  onPressed: () => Navigator.push(context,
+                    MaterialPageRoute(builder: (_) => ExtensionDetailScreen(
+                      source: src,
+                      onUninstall: () => onUninstall(src),
+                    )),
+                  ),
+                  tooltip: 'Info',
+                ),
+                const SizedBox(width: 4),
+                IconButton(
                   icon: Icon(Icons.delete_outline, color: c.textSecondary),
                   onPressed: () => onUninstall(src),
                   tooltip: 'Uninstall',
@@ -376,7 +384,6 @@ class _AvailableTab extends StatefulWidget {
 class _AvailableTabState extends State<_AvailableTab> {
   final _searchCtrl = TextEditingController();
   String _query = '';
-  bool _showNsfw = false;
 
   @override
   void initState() {
@@ -436,11 +443,6 @@ class _AvailableTabState extends State<_AvailableTab> {
                 er.entry.name.toLowerCase().contains(_query.toLowerCase()))
             .toList();
 
-    // Filter by NSFW
-    if (!_showNsfw) {
-      filtered = filtered.where((er) => !er.entry.isNsfw).toList();
-    }
-
     // Sort entries: updates first, then installed, then not-installed by lang
     final updateEntries = <_EntryWithRepo>[];
     final installedEntries = <_EntryWithRepo>[];
@@ -461,43 +463,27 @@ class _AvailableTabState extends State<_AvailableTab> {
         if (hasAnyFetched)
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
-            child: Row(
-              children: [
-                Expanded(
-                  child: TextField(
-                    controller: _searchCtrl,
-                    decoration: InputDecoration(
-                      hintText: 'Search extensions…',
-                      prefixIcon: const Icon(Icons.search, size: 20),
-                      suffixIcon: _query.isNotEmpty
-                          ? IconButton(
-                              icon: const Icon(Icons.clear, size: 18),
-                              onPressed: () => _searchCtrl.clear(),
-                            )
-                          : null,
-                      isDense: true,
-                      contentPadding: const EdgeInsets.symmetric(
-                        horizontal: 12,
-                        vertical: 10,
-                      ),
-                      border: OutlineInputBorder(
-                        borderRadius: AppSpacing.brMd,
-                        borderSide: BorderSide(color: c.border),
-                      ),
-                    ),
-                  ),
+            child: TextField(
+              controller: _searchCtrl,
+              decoration: InputDecoration(
+                hintText: 'Search extensions…',
+                prefixIcon: const Icon(Icons.search, size: 20),
+                suffixIcon: _query.isNotEmpty
+                    ? IconButton(
+                        icon: const Icon(Icons.clear, size: 18),
+                        onPressed: () => _searchCtrl.clear(),
+                      )
+                    : null,
+                isDense: true,
+                contentPadding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 10,
                 ),
-                const SizedBox(width: 8),
-                IconButton(
-                  icon: Icon(
-                    _showNsfw ? Icons.eighteen_up_rating : Icons.family_restroom,
-                    color: _showNsfw ? c.accent : c.textSecondary,
-                    size: 20,
-                  ),
-                  onPressed: () => setState(() => _showNsfw = !_showNsfw),
-                  tooltip: _showNsfw ? 'Hide NSFW' : 'Show NSFW',
+                border: OutlineInputBorder(
+                  borderRadius: AppSpacing.brMd,
+                  borderSide: BorderSide(color: c.border),
                 ),
-              ],
+              ),
             ),
           ),
         Expanded(
@@ -608,9 +594,7 @@ class _AvailableTabState extends State<_AvailableTab> {
                         Text(
                           _query.isNotEmpty
                               ? 'No extensions match "$_query"'
-                              : !_showNsfw
-                                  ? 'All extensions are NSFW. Enable NSFW to see them.'
-                                  : 'No extensions available',
+                              : 'No extensions available',
                           style: TextStyle(color: c.textSecondary, fontSize: 14),
                           textAlign: TextAlign.center,
                         ),
@@ -682,19 +666,21 @@ class _AvailableTabState extends State<_AvailableTab> {
 
   bool _hasInstalled(_EntryWithRepo er, List<ExtensionSource> installed) {
     for (final s in er.entry.sources) {
-      final sourceId = s['id']?.toString() ?? er.entry.pkg;
-      if (installed.any((isrc) => isrc.id == 'mihon-$sourceId')) return true;
+      final className = s['className'] as String? ?? '';
+      if (className.isNotEmpty &&
+          installed.any((isrc) => isrc.className == className)) {
+        return true;
+      }
     }
     return false;
   }
 
   bool _hasUpdateAvailable(_EntryWithRepo er, List<ExtensionSource> installed) {
-    // Check if any source from this entry is installed AND has a version that
-    // differs from the index entry's version (meaning an update is available).
     for (final s in er.entry.sources) {
-      final sourceId = s['id']?.toString() ?? er.entry.pkg;
+      final className = s['className'] as String? ?? '';
+      if (className.isEmpty) continue;
       final match = installed.firstWhere(
-        (isrc) => isrc.id == 'mihon-$sourceId',
+        (isrc) => isrc.className == className,
         orElse: () => ExtensionSource(
           id: '',
           name: '',
@@ -704,7 +690,6 @@ class _AvailableTabState extends State<_AvailableTab> {
           className: '',
         ),
       );
-      // Only report update if the source is actually installed AND versions differ
       if (match.id.isNotEmpty && match.version != er.entry.version) {
         return true;
       }
@@ -717,9 +702,10 @@ class _AvailableTabState extends State<_AvailableTab> {
     List<ExtensionSource> installed,
   ) {
     for (final s in er.entry.sources) {
-      final sourceId = s['id']?.toString() ?? er.entry.pkg;
+      final className = s['className'] as String? ?? '';
+      if (className.isEmpty) continue;
       final match = installed.firstWhere(
-        (isrc) => isrc.id == 'mihon-$sourceId',
+        (isrc) => isrc.className == className,
         orElse: () => ExtensionSource(
           id: '',
           name: '',
