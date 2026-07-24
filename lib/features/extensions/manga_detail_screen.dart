@@ -363,12 +363,21 @@ class _MangaDetailScreenState extends State<MangaDetailScreen> {
       }
 
       if (!mounted) return;
-      setState(() {
-        _details = details;
-        _chapters = chapters.map((ch) => Map<String, dynamic>.from(ch)).toList();
-        _error = null;
-        _loading = false;
-      });
+      // Don't overwrite _details with raw network data if we already have
+      // DB-backed data — use the network response only for the chapter list,
+      // and to update the DB (which we read back from below).
+      if (existing == null) {
+        setState(() {
+          _details = details;
+          _error = null;
+          _loading = false;
+        });
+      } else {
+        setState(() {
+          _error = null;
+          _loading = false;
+        });
+      }
       if (thumb != null && thumb.isNotEmpty) {
         precacheImage(NetworkImage(thumb), context);
       }
@@ -420,7 +429,24 @@ class _MangaDetailScreenState extends State<MangaDetailScreen> {
           };
         }).toList();
         if (!mounted) return;
+
+        // Re-read manga from DB — the DB is the source of truth with all
+        // metadata fields preserved from the initial save, not the raw
+        // network response (which may have empty/missing fields).
+        final dbManga = await db.getMangaByKey(widget.sourceId, widget.url);
+
         setState(() {
+          _details = dbManga != null
+              ? {
+                  'title': dbManga.name,
+                  'thumbnail_url': dbManga.imageUrl,
+                  'author': dbManga.author,
+                  'artist': dbManga.artist,
+                  'description': dbManga.description,
+                  'status': dbManga.status,
+                  'genre': dbManga.genres.join(', '),
+                }
+              : _details;
           _chapters = merged;
           _localChapters = chMap;
           _downloadProgress
@@ -1945,35 +1971,31 @@ class _ChaptersList extends StatelessWidget {
                ),
                child: Row(
                  children: [
+                   // Left colored bar — same as mangayomi's ChapterListTileWidget
+                   Container(
+                     width: 2,
+                     height: 40,
+                     margin: const EdgeInsets.only(right: 12),
+                     decoration: BoxDecoration(
+                       color: isRead
+                           ? c.textTertiary.withAlpha(77)
+                           : c.accent,
+                       borderRadius: BorderRadius.circular(10),
+                     ),
+                   ),
                    Expanded(
                      child: Column(
                        crossAxisAlignment: CrossAxisAlignment.start,
                        children: [
-                         Row(
-                           children: [
-                             if (isOpened)
-                               Container(
-                                 width: 6,
-                                 height: 6,
-                                 margin: const EdgeInsets.only(right: 8),
-                                 decoration: BoxDecoration(
-                                   color: c.accent,
-                                   shape: BoxShape.circle,
-                                 ),
-                               ),
-                             Expanded(
-                               child: Text(
-                                 name,
-                                 maxLines: 1,
-                                 overflow: TextOverflow.ellipsis,
-                                 style: TextStyle(
-                                   color: isRead ? c.textTertiary : c.textPrimary,
-                                   fontSize: 14,
-                                   fontWeight: FontWeight.w500,
-                                 ),
-                               ),
-                             ),
-                           ],
+                         Text(
+                           name,
+                           maxLines: 1,
+                           overflow: TextOverflow.ellipsis,
+                           style: TextStyle(
+                             color: isRead ? c.textTertiary : c.textPrimary,
+                             fontSize: 14,
+                             fontWeight: FontWeight.w500,
+                           ),
                          ),
                         if (!isRead && lastPageRead > 0)
                           Padding(

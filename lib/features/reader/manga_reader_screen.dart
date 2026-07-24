@@ -439,6 +439,17 @@ class _MangaReaderScreenState extends State<MangaReaderScreen>
     final chapterId =
         (page.chapter ?? _currentChapter)!.id;
     await _db!.updateMangaChapterProgress(chapterId, chapterRelativeIndex);
+
+    // Mark chapter as read when user reaches the last page (same as
+    // mangayomi's setPageIndex() does with the isRead check).
+    final ch = page.chapter;
+    if (ch != null) {
+      final chPages = _pages.where((p) =>
+          p.chapter?.id == ch.id && !p.isTransitionPage).length;
+      if (chPages > 0 && chapterRelativeIndex >= chPages - 1) {
+        await _db!.markMangaChapterRead(chapterId);
+      }
+    }
   }
 
   // ── Seamless next-chapter preloading ──
@@ -848,7 +859,7 @@ class _MangaReaderScreenState extends State<MangaReaderScreen>
                   Positioned.fill(child: _buildTapZones()),
 
                 ReaderAppBar(
-                  chapterName: widget.chapterName,
+                  chapterName: _currentChapter?.name ?? widget.chapterName,
                   isBookmarked: _isBookmarked,
                   isVisible: _showToolbar,
                   onClose: () {
