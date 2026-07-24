@@ -55,7 +55,6 @@ class ExtensionLoader(private val context: Context) {
                     Log.w(TAG, "Lib version $libVer out of range $SUPPORTED_LIB_VERSIONS")
                 }
             }
-            }
         }
 
         // Check meta-data for additional source class hints
