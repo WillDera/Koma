@@ -220,18 +220,43 @@ class _MangaReaderScreenState extends State<MangaReaderScreen>
     );
   }
 
-  /// Finds the next chapter in the cached chapter list.
+  /// Returns a reading-order list (oldest chapter first, newest chapter last)
+  /// by sorting the cached chapters by their [MangaChapter.index] descending.
+  ///
+  /// Extensions return chapters newest-first, so lowest index = newest chapter.
+  /// To get reading order we need the reverse: highest index → oldest chapter.
+  /// This is equivalent to mangayomi's getChapterListForReading() which returns
+  /// chapters sorted by parsed chapter number, ascending.
+  List<MangaChapter> get _readingOrderChapters {
+    final sorted = List<MangaChapter>.from(_chapters)
+      ..sort((a, b) => b.index.compareTo(a.index));
+    return sorted;
+  }
+
+  /// Finds the current chapter's position in reading order and returns the
+  /// chapter at [position + 1], or null if this is the last chapter.
+  /// Same pattern as mangayomi's getNextChapter().
   MangaChapter? _findNextChapter(MangaChapter ch) {
-    for (final c in _chapters) {
-      if (c.index == ch.index + 1) return c;
+    final list = _readingOrderChapters;
+    for (int i = 0; i < list.length; i++) {
+      if (list[i].url == ch.url) {
+        if (i + 1 < list.length) return list[i + 1];
+        return null;
+      }
     }
     return null;
   }
 
-  /// Finds the previous chapter in the cached chapter list.
+  /// Finds the current chapter's position in reading order and returns the
+  /// chapter at [position - 1], or null if this is the first chapter.
+  /// Same pattern as mangayomi's getPrevChapter().
   MangaChapter? _findPrevChapter(MangaChapter ch) {
-    for (final c in _chapters) {
-      if (c.index == ch.index - 1) return c;
+    final list = _readingOrderChapters;
+    for (int i = 0; i < list.length; i++) {
+      if (list[i].url == ch.url) {
+        if (i - 1 >= 0) return list[i - 1];
+        return null;
+      }
     }
     return null;
   }
