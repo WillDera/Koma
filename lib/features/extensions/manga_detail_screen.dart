@@ -369,6 +369,7 @@ class _MangaDetailScreenState extends State<MangaDetailScreen> {
       if (existing == null) {
         setState(() {
           _details = details;
+          _chapters = chapters.map((ch) => Map<String, dynamic>.from(ch)).toList();
           _error = null;
           _loading = false;
         });
@@ -376,6 +377,7 @@ class _MangaDetailScreenState extends State<MangaDetailScreen> {
         setState(() {
           // Use network data as fallback if DB load failed
           _details ??= details;
+          _chapters = chapters.map((ch) => Map<String, dynamic>.from(ch)).toList();
           _error = null;
           _loading = false;
         });
