@@ -67,8 +67,8 @@ dependencies {
     implementation("com.squareup.okhttp3:okhttp-brotli:5.4.0")
     implementation("com.squareup.okio:okio:3.9.0")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.7.3")
-    implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.6.3")
-    implementation("org.jetbrains.kotlinx:kotlinx-serialization-json-okio:1.6.3")
+    implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.11.0")
+    implementation("org.jetbrains.kotlinx:kotlinx-serialization-json-okio:1.11.0")
     // RxJava 1 — source-api uses rx.Observable for deprecated fetch* methods
     implementation("io.reactivex:rxjava:1.3.8")
     // AndroidX Preference — needed by ConfigurableSource
