@@ -461,17 +461,20 @@ class _MangaReaderScreenState extends State<MangaReaderScreen>
   }
 
   void _toggleBookmark() async {
-    setState(() => _isBookmarked = !_isBookmarked);
+    if (_chapterId == null || _db == null) return;
+    final newState = !_isBookmarked;
+    setState(() => _isBookmarked = newState);
+    // Persist to SharedPrefs per-chapter so each chapter remembers its bookmark
     if (widget.mangaId != null) {
       final prefs = await SharedPreferences.getInstance();
-      await prefs.setBool('reader_${widget.mangaId}_bookmarked', _isBookmarked);
+      await prefs.setBool('reader_${widget.mangaId}_${widget.chapterUrl}_bk', newState);
     }
   }
 
   Future<void> _loadBookmark() async {
     if (widget.mangaId == null) return;
     final prefs = await SharedPreferences.getInstance();
-    final saved = prefs.getBool('reader_${widget.mangaId}_bookmarked');
+    final saved = prefs.getBool('reader_${widget.mangaId}_${widget.chapterUrl}_bk');
     if (saved != null && mounted) {
       setState(() => _isBookmarked = saved);
     }
@@ -543,6 +546,7 @@ class _MangaReaderScreenState extends State<MangaReaderScreen>
       final currentIdx = chapters.indexWhere(
         (c) => c.url == widget.chapterUrl,
       );
+      // Next in reading order = higher index
       if (currentIdx < 0 || currentIdx >= chapters.length - 1) return;
       final next = chapters[currentIdx + 1];
 
@@ -692,8 +696,17 @@ class _MangaReaderScreenState extends State<MangaReaderScreen>
                   onDismiss: () => setState(() => _showNavigationOverlay = false),
                   navigationLayout: 0,
                 ),
-              // Tap zones for navigation (on TOP of page viewer)
-              if (!_showToolbar && !_showNavigationOverlay)
+              // Tap zones for navigation (on TOP of page viewer).
+              // When toolbar is visible, show a dismiss zone overlay.
+              if (_showToolbar)
+                Positioned.fill(
+                  child: GestureDetector(
+                    onTap: _toggleToolbar,
+                    behavior: HitTestBehavior.translucent,
+                    child: const SizedBox.expand(),
+                  ),
+                )
+              else if (!_showNavigationOverlay)
                 Positioned.fill(child: _buildTapZones()),
               // New redesigned ReaderAppBar
               ReaderAppBar(
