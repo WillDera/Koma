@@ -1381,7 +1381,7 @@ class _AboutSection extends StatelessWidget {
         SettingsRow(
           icon: Icons.info_outline,
           title: 'Koma',
-          subtitle: 'Version 2.18.0 · build 2.18.0+126',
+          subtitle: 'Version 2.18.1 · build 2.18.1+127',
         ),
         SettingsRow(
           icon: Icons.favorite_outline,

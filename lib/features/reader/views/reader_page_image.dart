@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 
+import '../../../core/utils/custom_extended_image_provider.dart';
 import '../models/page_data.dart';
 
 /// Shared image renderer for a single manga page. Used by both the paged
@@ -34,7 +35,12 @@ class ReaderPageImage extends StatelessWidget {
       return Image(
         image: page.localPath != null
             ? FileImage(File(page.localPath!))
-            : NetworkImage(imgUrl, headers: page.headers),
+            : CustomExtendedNetworkImageProvider(
+                imgUrl,
+                headers: page.headers,
+                cacheMaxAge: const Duration(days: 7),
+                imageCacheFolderName: 'cacheimagemanga',
+              ),
         key: ValueKey('p${page.chapter?.id ?? 0}-${page.index}'),
         fit: BoxFit.contain,
         width: double.infinity,
@@ -61,9 +67,13 @@ class ReaderPageImage extends StatelessWidget {
         errorBuilder: (_, _, _) => _retryColumn(),
       );
     }
-    return Image.network(
-      page.imageUrl,
-      headers: page.headers,
+    return Image(
+      image: CustomExtendedNetworkImageProvider(
+        page.imageUrl,
+        headers: page.headers,
+        cacheMaxAge: const Duration(days: 7),
+        imageCacheFolderName: 'cacheimagemanga',
+      ),
       fit: fit,
       width: double.infinity,
       height: double.infinity,

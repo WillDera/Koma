@@ -14,6 +14,7 @@ import '../../core/models/manga.dart';
 import '../../core/models/manga_chapter.dart';
 import '../../core/services/database_service.dart';
 import '../../core/services/keiyoushi_service.dart';
+import '../../core/utils/image_cache.dart';
 import '../../theme/app_theme.dart';
 import '../../theme/tokens/app_spacing.dart';
 import '../library/library_provider.dart';
@@ -404,7 +405,7 @@ class _MangaDetailScreenState extends ConsumerState<MangaDetailScreen> {
         });
       }
       if (thumb != null && thumb.isNotEmpty) {
-        precacheImage(NetworkImage(thumb), context);
+        precacheImage(cachedCover(thumb), context);
       }
 
       // Sync fresh chapters to DB. INSERT OR IGNORE preserves existing
