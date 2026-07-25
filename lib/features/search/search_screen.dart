@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
-import 'package:provider/provider.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../../core/providers.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../core/models/book.dart';
 import '../../core/models/chapter.dart' as ch_model;
@@ -19,14 +20,14 @@ import '../../widgets/text_field.dart';
 import '../../widgets/toast.dart';
 import '../reader/reader_screen.dart';
 
-class SearchScreen extends StatefulWidget {
+class SearchScreen extends ConsumerStatefulWidget {
   const SearchScreen({super.key});
 
   @override
-  State<SearchScreen> createState() => _SearchScreenState();
+  ConsumerState<SearchScreen> createState() => _SearchScreenState();
 }
 
-class _SearchScreenState extends State<SearchScreen> {
+class _SearchScreenState extends ConsumerState<SearchScreen> {
   final _searchController = TextEditingController();
   final _focusNode = FocusNode();
   final ScrollController _scrollCtrl = ScrollController();
@@ -40,7 +41,7 @@ class _SearchScreenState extends State<SearchScreen> {
   @override
   void initState() {
     super.initState();
-    final db = context.read<DatabaseService>();
+    final db = ref.read(databaseServiceProvider);
     _searchService = SearchService(db.db);
     _scrollCtrl.addListener(_onScroll);
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -115,7 +116,7 @@ class _SearchScreenState extends State<SearchScreen> {
     }
   }
 
-  bool get _oneHand => context.watch<ThemeProvider>().oneHandMode;
+  bool get _oneHand => ref.watch(themeProvider).oneHandMode;
 
   @override
   Widget build(BuildContext context) {

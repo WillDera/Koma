@@ -4,9 +4,10 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
-import 'package:provider/provider.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:scrollable_positioned_list/scrollable_positioned_list.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import '../../core/providers.dart';
 import '../../core/services/database_service.dart';
 import '../../core/services/keiyoushi_service.dart';
 import '../../core/models/manga_page.dart';
@@ -23,7 +24,7 @@ import 'widgets/transition_view_paged.dart';
 import 'models/page_data.dart';
 import 'mixins/reader_memory_management.dart';
 
-class MangaReaderScreen extends StatefulWidget {
+class MangaReaderScreen extends ConsumerStatefulWidget {
   final int? mangaId;
   final String sourceId;
   final String mangaUrl;
@@ -40,10 +41,10 @@ class MangaReaderScreen extends StatefulWidget {
   });
 
   @override
-  State<MangaReaderScreen> createState() => _MangaReaderScreenState();
+  ConsumerState<MangaReaderScreen> createState() => _MangaReaderScreenState();
 }
 
-class _MangaReaderScreenState extends State<MangaReaderScreen>
+class _MangaReaderScreenState extends ConsumerState<MangaReaderScreen>
     with WidgetsBindingObserver, ReaderMemoryManagement {
   final _service = KeiyoushiService();
   DatabaseService? _db;
@@ -82,7 +83,7 @@ class _MangaReaderScreenState extends State<MangaReaderScreen>
   @override
   void initState() {
     super.initState();
-    _db = context.read<DatabaseService>();
+    _db = ref.read(databaseServiceProvider);
     WidgetsBinding.instance.addObserver(this);
     _itemPositionsListener.itemPositions.addListener(_onWebtoonScroll);
     _loadBookmark();

@@ -1,7 +1,8 @@
 import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:provider/provider.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../../core/providers.dart';
 import '../../features/snippets/snippets_provider.dart';
 import '../../theme/app_theme.dart';
 import '../../theme/theme_provider.dart';
@@ -25,7 +26,7 @@ import '../../widgets/tts_controls.dart';
 import 'reader_provider.dart';
 import 'tts_provider.dart';
 
-class ReaderScreen extends StatefulWidget {
+class ReaderScreen extends ConsumerStatefulWidget {
   final int bookId;
 
   /// Optional target chapter id and scroll offset for jump-to-snippet
@@ -42,12 +43,12 @@ class ReaderScreen extends StatefulWidget {
   });
 
   @override
-  State<ReaderScreen> createState() => _ReaderScreenState();
+  ConsumerState<ReaderScreen> createState() => _ReaderScreenState();
 }
 
 enum _SwipeDirection { none, next, previous }
 
-class _ReaderScreenState extends State<ReaderScreen>
+class _ReaderScreenState extends ConsumerState<ReaderScreen>
     with TickerProviderStateMixin {
   final ScrollController _scrollController = ScrollController();
   ReaderProvider? _provider;
@@ -101,7 +102,7 @@ class _ReaderScreenState extends State<ReaderScreen>
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    _provider ??= context.read<ReaderProvider>();
+    _provider ??= ref.read(readerProvider);
   }
 
   Future<void> _loadAndRestore() async {
@@ -135,7 +136,7 @@ class _ReaderScreenState extends State<ReaderScreen>
     // Load highlights for this chapter.
     final ch = _provider?.chapters;
     if (ch != null && newIndex >= 0 && newIndex < ch.length) {
-      context.read<DatabaseService>().getHighlightsForChapter(ch[newIndex].id).then((hl) {
+      ref.read(databaseServiceProvider).getHighlightsForChapter(ch[newIndex].id).then((hl) {
         if (mounted) setState(() => _highlights = hl);
       });
     } else {
@@ -344,10 +345,9 @@ class _ReaderScreenState extends State<ReaderScreen>
 
   @override
   Widget build(BuildContext context) {
-    final themeProv = context.watch<ThemeProvider>();
-    return Consumer<ReaderProvider>(
-      builder: (context, provider, _) {
-        _onChapterChanged(provider.currentIndex);
+    final themeProv = ref.watch(themeProvider);
+    final provider = ref.watch(readerProvider);
+    _onChapterChanged(provider.currentIndex);
         if (provider.loading) {
           return Scaffold(
             backgroundColor: themeProv.isSepia
@@ -627,8 +627,6 @@ class _ReaderScreenState extends State<ReaderScreen>
             ),
           ),
         );
-      },
-    );
   }
 
   void _toggleTts() {
@@ -805,7 +803,7 @@ class _ReaderScreenState extends State<ReaderScreen>
       return;
     }
     try {
-      final db = context.read<DatabaseService>();
+      final db = ref.read(databaseServiceProvider);
       final ch = p.currentChapter;
       final contentStr =
           ch != null ? TextExtractor.extractFromHtml(ch.content) : '';
@@ -876,7 +874,7 @@ class _ReaderScreenState extends State<ReaderScreen>
     if (_selectedText == null || _selectedText!.trim().isEmpty) return;
     final p = _provider!;
     final noteCtrl = TextEditingController();
-    final themeProv = context.read<ThemeProvider>();
+    final themeProv = ref.read(themeProvider);
     final saved = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -939,7 +937,7 @@ class _ReaderScreenState extends State<ReaderScreen>
     _hideToolbar();
     if (saved != true) return;
     try {
-      final snippetsProvider = context.read<SnippetsProvider>();
+      final snippetsProv = ref.read(snippetsProvider);
       final ch = p.currentChapter;
       final contentStr =
           ch != null ? TextExtractor.extractFromHtml(ch.content) : '';
@@ -949,7 +947,7 @@ class _ReaderScreenState extends State<ReaderScreen>
         startOff = contentStr.indexOf(selected);
       }
       final currPos = _scrollController.hasClients ? _scrollController.offset : null;
-      await snippetsProvider.createSnippet(
+      await snippetsProv.createSnippet(
         text: selected,
         note: noteCtrl.text.trim().isNotEmpty ? noteCtrl.text.trim() : null,
         color: themeProv.defaultHighlight,
