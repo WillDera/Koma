@@ -381,6 +381,9 @@ class _AvailableTab extends StatefulWidget {
   State<_AvailableTab> createState() => _AvailableTabState();
 }
 
+/// Languages to show in the extension browser.
+const _allowedLanguages = {'all', 'en', 'es', 'fr', 'it', 'la', 'nl'};
+
 class _AvailableTabState extends State<_AvailableTab> {
   final _searchCtrl = TextEditingController();
   String _query = '';
@@ -443,17 +446,20 @@ class _AvailableTabState extends State<_AvailableTab> {
                 er.entry.name.toLowerCase().contains(_query.toLowerCase()))
             .toList();
 
-    // Sort entries: updates first, then installed, then not-installed by lang
+    // Sort entries: updates first, then installed, then not-installed
     final updateEntries = <_EntryWithRepo>[];
     final installedEntries = <_EntryWithRepo>[];
     final notInstalledEntries = <_EntryWithRepo>[];
 
     for (final er in filtered) {
-      if (_hasUpdateAvailable(er, widget.installed)) {
+      final isInstalled = _hasInstalled(er, widget.installed);
+      if (isInstalled && _hasUpdateAvailable(er, widget.installed)) {
         updateEntries.add(er);
-      } else if (_hasInstalled(er, widget.installed)) {
+      } else if (isInstalled) {
         installedEntries.add(er);
       } else {
+        // Apply language whitelist for not-installed entries
+        if (!_allowedLanguages.contains(er.entry.lang.toLowerCase())) continue;
         notInstalledEntries.add(er);
       }
     }
@@ -576,9 +582,9 @@ class _AvailableTabState extends State<_AvailableTab> {
                 const SizedBox(height: 16),
               ],
 
-              // ── Not installed section (grouped by language) ──
+              // ── Not installed section (grouped by repo/source) ──
               if (notInstalledEntries.isNotEmpty) ...[
-                ..._buildLanguageGroups(notInstalledEntries, c),
+                ..._buildRepoSections(notInstalledEntries, c),
               ],
               // Show a message when nothing matches the current filters
               if (updateEntries.isEmpty &&
@@ -610,45 +616,36 @@ class _AvailableTabState extends State<_AvailableTab> {
     );
   }
 
-  List<Widget> _buildLanguageGroups(
+  List<Widget> _buildRepoSections(
     List<_EntryWithRepo> entries,
     KomaColors c,
   ) {
-    // Group by language code
-    final groups = <String, List<_EntryWithRepo>>{};
+    // Group by repo
+    final groups = <int, List<_EntryWithRepo>>{}; // repo id -> entries
     for (final er in entries) {
-      final lang = er.entry.lang.toLowerCase();
-      groups.putIfAbsent(lang, () => []);
-      groups[lang]!.add(er);
+      groups.putIfAbsent(er.repo.id, () => []);
+      groups[er.repo.id]!.add(er);
     }
 
-    // Sort language keys by their full name
-    final sortedKeys = groups.keys.toList()
-      ..sort((a, b) => completeLanguageName(a).compareTo(completeLanguageName(b)));
+    // Sort repos by name
+    final sortedIds = groups.keys.toList()
+      ..sort((a, b) {
+        final repoA = widget.repos.firstWhere((r) => r.id == a);
+        final repoB = widget.repos.firstWhere((r) => r.id == b);
+        return repoA.name.compareTo(repoB.name);
+      });
 
     final widgets = <Widget>[];
-    for (final langKey in sortedKeys) {
-      final langName = completeLanguageName(langKey);
-      final group = groups[langKey]!;
-      // Sort entries by name within the group
+    for (final repoId in sortedIds) {
+      final repo = widget.repos.firstWhere((r) => r.id == repoId);
+      final group = groups[repoId]!;
       group.sort((a, b) => a.entry.name.compareTo(b.entry.name));
 
       widgets.add(
-        Padding(
-          padding: const EdgeInsets.only(left: 4, bottom: 8),
-          child: Text(
-            langName,
-            style: TextStyle(
-              fontWeight: FontWeight.bold,
-              fontSize: 13,
-              color: c.textPrimary,
-            ),
-          ),
-        ),
-      );
-      for (final er in group) {
-        widgets.add(
-          Padding(
+        _CollapsibleRepoGroup(
+          repoName: repo.name,
+          count: group.length,
+          children: group.map((er) => Padding(
             padding: const EdgeInsets.only(bottom: 6),
             child: _ExtensionRow(
               entry: er.entry,
@@ -656,9 +653,9 @@ class _AvailableTabState extends State<_AvailableTab> {
               hasUpdate: false,
               onInstall: () => widget.onInstall(er.entry, er.repo),
             ),
-          ),
-        );
-      }
+          )).toList(),
+        ),
+      );
       widgets.add(const SizedBox(height: 8));
     }
     return widgets;
@@ -1092,4 +1089,78 @@ Widget _buildIcon(String? iconUrl, KomaColors c, {double size = 37}) {
       ),
     ),
   );
+}
+
+/// Collapsible repo group header — tapping toggles visibility of extensions
+/// from a specific repo.
+class _CollapsibleRepoGroup extends StatefulWidget {
+  final String repoName;
+  final int count;
+  final List<Widget> children;
+
+  const _CollapsibleRepoGroup({
+    required this.repoName,
+    required this.count,
+    required this.children,
+  });
+
+  @override
+  State<_CollapsibleRepoGroup> createState() => _CollapsibleRepoGroupState();
+}
+
+class _CollapsibleRepoGroupState extends State<_CollapsibleRepoGroup> {
+  bool _expanded = true;
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.colors;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        InkWell(
+          onTap: () => setState(() => _expanded = !_expanded),
+          child: Padding(
+            padding: const EdgeInsets.only(left: 4, bottom: 4, top: 4),
+            child: Row(
+              children: [
+                Icon(
+                  _expanded ? Icons.expand_more : Icons.chevron_right,
+                  size: 18,
+                  color: c.textSecondary,
+                ),
+                const SizedBox(width: 4),
+                Icon(Icons.cloud_outlined, size: 14, color: c.accent),
+                const SizedBox(width: 6),
+                Text(
+                  widget.repoName,
+                  style: TextStyle(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 13,
+                    color: c.textPrimary,
+                  ),
+                ),
+                const SizedBox(width: 6),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+                  decoration: BoxDecoration(
+                    color: c.surfaceMuted,
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Text(
+                    '${widget.count}',
+                    style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600,
+                      color: c.textSecondary,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+        if (_expanded) ...widget.children,
+      ],
+    );
+  }
 }
