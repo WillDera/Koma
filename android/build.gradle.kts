@@ -28,6 +28,15 @@ subprojects {
 // subprojects blocks above have already evaluated the projects.
 allprojects {
     plugins.withId("com.android.library") {
+        // AGP 8.x rejects `package=""` in AndroidManifest.xml; strip it.
+        val manifestFile = project.projectDir.resolve("src/main/AndroidManifest.xml")
+        if (manifestFile.exists()) {
+            val text = manifestFile.readText()
+            if (text.contains(Regex("""\spackage=""""))) {
+                manifestFile.writeText(text.replace(Regex("""\s+package="[^"]+""""), ""))
+            }
+        }
+        // Set a fallback namespace for plugins that don't declare one.
         extensions.findByName("android")?.let { ext ->
             val getter = ext.javaClass.methods.firstOrNull { it.name == "getNamespace" }
             val currentNamespace = getter?.invoke(ext) as? String
