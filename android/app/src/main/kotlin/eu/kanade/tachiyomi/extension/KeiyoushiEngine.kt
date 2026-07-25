@@ -4,6 +4,7 @@ import android.app.Application
 import android.content.Context
 import android.util.Log
 import eu.kanade.tachiyomi.network.NetworkHelper
+import eu.kanade.tachiyomi.network.defaultClient
 import eu.kanade.tachiyomi.source.CatalogueSource
 import eu.kanade.tachiyomi.source.Source
 import eu.kanade.tachiyomi.source.model.FilterList
@@ -46,10 +47,7 @@ class KeiyoushiEngine(
                 override fun InjektRegistrar.registerInjectables() {
                     addSingleton(app)
                     addSingletonFactory {
-                        OkHttpClient.Builder()
-                            .connectTimeout(30, java.util.concurrent.TimeUnit.SECONDS)
-                            .readTimeout(30, java.util.concurrent.TimeUnit.SECONDS)
-                            .build()
+                        defaultClient()
                     }
                     addSingletonFactory {
                         Json { ignoreUnknownKeys = true; explicitNulls = false; isLenient = true }
