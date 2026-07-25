@@ -1,5 +1,9 @@
 package eu.kanade.tachiyomi.network
 
+import android.content.Context
+import eu.kanade.tachiyomi.network.interceptor.CloudflareInterceptor
+import eu.kanade.tachiyomi.network.interceptor.UncaughtExceptionInterceptor
+import eu.kanade.tachiyomi.network.interceptor.UserAgentInterceptor
 import okhttp3.Headers
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
@@ -12,11 +16,25 @@ open class NetworkHelper(val client: OkHttpClient) {
     open fun defaultUserAgentProvider(): String = "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36"
 }
 
-fun defaultClient(): OkHttpClient = OkHttpClient.Builder()
-    .connectTimeout(20, TimeUnit.SECONDS)
-    .readTimeout(30, TimeUnit.SECONDS)
-    .writeTimeout(20, TimeUnit.SECONDS)
-    .build()
+fun defaultClient(context: Context? = null): OkHttpClient {
+    val cookieJar = AndroidCookieJar()
+    val builder = OkHttpClient.Builder()
+        .cookieJar(cookieJar)
+        .connectTimeout(30, TimeUnit.SECONDS)
+        .readTimeout(30, TimeUnit.SECONDS)
+        .writeTimeout(30, TimeUnit.SECONDS)
+        .callTimeout(2, TimeUnit.MINUTES)
+        .addInterceptor(UncaughtExceptionInterceptor())
+        .addInterceptor(UserAgentInterceptor { "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36" })
+
+    if (context != null) {
+        builder.addInterceptor(
+            CloudflareInterceptor(context, cookieJar) { "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36" },
+        )
+    }
+
+    return builder.build()
+}
 
 fun GET(url: String, headers: Headers? = null, cache: Boolean = true): Request {
     val builder = Request.Builder().url(url)

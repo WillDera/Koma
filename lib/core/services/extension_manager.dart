@@ -106,17 +106,23 @@ class ExtensionManager {
 
   // -- Install / uninstall ---------------------------------------------
 
-  /// Download an APK, load it via the native bridge, and persist the
-  /// resulting Source descriptor. Returns the installed extension.
+  /// Download an APK, load it via the native bridge, and persist a single
+  /// DB row — matching mangayomi's pattern of one row per installed APK.
   ///
-  /// If the APK is already on disk (e.g. user re-installing), pass
-  /// [skipDownload] to skip the fetch.
-  Future<ExtensionSource> install(ExtensionIndexEntry entry, {required String repoUrl}) async {
+  /// The sources[] array in the index JSON represents per-language variants
+  /// that are all handled by a single Kotlin Source class declared in the
+  /// APK manifest. We create one DB row and let the native bridge's single
+  /// Source instance handle all languages internally.
+  Future<ExtensionSource> install(
+    ExtensionIndexEntry entry, {
+    required String repoUrl,
+  }) async {
     final dir = await _extensionsDir();
     final apkPath = p.join(dir.path, '${entry.pkg}.apk');
     final baseUrl = repoUrl.replaceFirst(RegExp(r'/[^/]*$'), '');
     final resolved = '$baseUrl/apk/${entry.apkUrl}';
 
+    // Download APK
     final apkFile = File(apkPath);
     if (apkFile.existsSync()) {
       try { await Process.run('chmod', ['+w', apkPath]); } catch (_) {}
@@ -124,29 +130,49 @@ class ExtensionManager {
     }
     await _downloadApk(resolved, apkPath);
 
+    // Derive icon URL from repo base URL + package name — same as mangayomi
+    final iconUrl = '$baseUrl/icon/${entry.pkg}.png';
+    final sourceCodeUrl = '$baseUrl/apk/${entry.apkUrl}';
+
+    // Load into the native bridge using the class name from the APK manifest.
+    // The bridge returns the native MD5-based ID we must use for all calls.
     final desc = await _keiyoushi.loadExtension(
       apkPath: apkPath,
       className: entry.className,
     );
-    final id = (desc['id'] as String?) ?? entry.pkg;
+    final nativeId = (desc['id'] as String?) ?? '';
+    if (nativeId.isEmpty) {
+      throw Exception('Native bridge returned no ID for ${entry.name}');
+    }
+
+    // Use the first source entry for display metadata
+    final firstSource = entry.sources.isNotEmpty ? entry.sources.first : null;
     final src = ExtensionSource(
-      id: id,
+      id: nativeId,
       name: (desc['name'] as String?) ?? entry.name,
       version: entry.version,
       lang: (desc['lang'] as String?) ?? entry.lang,
       apkPath: apkPath,
-      className: (desc['className'] as String?) ?? '',
-      iconUrl: null,
-      isInstalled: true,
+      className: entry.className ?? '',
+      iconUrl: iconUrl,
+      baseUrl: firstSource?['baseUrl'] as String?,
+      sourceCodeUrl: sourceCodeUrl,
+      repoUrl: repoUrl,
     );
     await _db.insertExtensionSource(src);
     return src;
   }
 
-  /// Remove a previously installed extension: drop the row, unload the
-  /// native classloader, and delete the APK.
+  /// Remove a previously installed extension and all sources sharing its APK:
+  /// drop the rows, unload the native classloader, and delete the APK.
   Future<void> uninstall(ExtensionSource src) async {
-    await _db.deleteExtensionSource(src.id);
+    // Remove all DB rows that share this APK path
+    final installed = await listInstalled();
+    for (final s in installed) {
+      if (s.apkPath == src.apkPath) {
+        await _db.deleteExtensionSource(s.id);
+      }
+    }
     try {
       await _keiyoushi.unloadExtension(src.id);
     } catch (_) {
@@ -160,6 +186,91 @@ class ExtensionManager {
     }
   }
 
+  /// Check for updates to installed sources by comparing versions.
+  /// Sets versionLast on any source where the repo has a newer version.
+  /// Ported from mangayomi's fetchSourcesList else-branch.
+  Future<void> checkForUpdates(
+    List<ExtensionIndexEntry> freshEntries,
+    String repoUrl,
+  ) async {
+    if (freshEntries.isEmpty) return;
+
+    final installed = await listInstalled();
+
+    for (final entry in freshEntries) {
+      for (final s in entry.sources) {
+        final className = s['className'] as String? ?? '';
+        if (className.isEmpty) continue;
+
+        // Find the matching installed source by className (native ID is
+        // the bridge's MD5 hash which we can't predict from Dart).
+        final match = installed.firstWhere(
+          (isrc) => isrc.className == className,
+          orElse: () => ExtensionSource(
+            id: '',
+            name: '',
+            version: '',
+            lang: '',
+            apkPath: '',
+            className: '',
+          ),
+        );
+        if (match.id.isEmpty) continue;
+        if (match.version == entry.version) continue;
+
+        // Store the available version so the UI shows an update badge
+        await _db.insertExtensionSource(match.copyWith(
+          versionLast: entry.version,
+        ));
+      }
+    }
+  }
+
+  /// Mark installed sources whose repo no longer lists them as obsolete.
+  /// Ported from mangayomi's checkIfSourceIsObsolete().
+  Future<void> checkForObsoleteSources(
+    List<ExtensionIndexEntry> freshEntries,
+    String repoUrl,
+  ) async {
+    if (freshEntries.isEmpty) return;
+
+    // Build the set of all known source classNames from the fresh index
+    final knownClassNames = <String>{};
+    for (final entry in freshEntries) {
+      for (final s in entry.sources) {
+        final className = s['className'] as String? ?? '';
+        if (className.isNotEmpty) knownClassNames.add(className);
+      }
+    }
+    if (knownClassNames.isEmpty) return;
+
+    // Find all installed sources from this repo
+    final installed = await listInstalled();
+    final toUpdate = <ExtensionSource>[];
+    for (final src in installed) {
+      if (src.repoUrl != repoUrl) continue;
+      final isNowObsolete = !knownClassNames.contains(src.className);
+      if (src.isObsolete != isNowObsolete) {
+        toUpdate.add(ExtensionSource(
+          id: src.id,
+          name: src.name,
+          version: src.version,
+          lang: src.lang,
+          apkPath: src.apkPath,
+          className: src.className,
+          isObsolete: isNowObsolete,
+          isActive: src.isActive,
+          isInstalled: src.isInstalled,
+          isNsfw: src.isNsfw,
+          isPinned: src.isPinned,
+        ));
+      }
+    }
+    for (final s in toUpdate) {
+      await _db.insertExtensionSource(s);
+    }
+  }
+
   // -- Listing installed ------------------------------------------------
 
   Future<List<ExtensionSource>> listInstalled() => _db.getInstalledExtensions();
@@ -168,6 +279,9 @@ class ExtensionManager {
 
   /// On app start, re-mount every extension the user previously
   /// installed so the native side has them registered.
+  ///
+  /// Captures the native ID from each descriptor and updates the DB row,
+  /// fixing any rows that were stored with a synthetic (non-native) ID.
   Future<void> reloadAll() async {
     final installed = await listInstalled();
     for (final src in installed) {
@@ -177,10 +291,21 @@ class ExtensionManager {
         continue;
       }
       try {
-        await _keiyoushi.loadExtension(
+        // Load into the bridge using className from DB. Pass null for empty
+        // strings so the native bridge reads it from the APK manifest.
+        final desc = await _keiyoushi.loadExtension(
           apkPath: src.apkPath,
           className: src.className.isEmpty ? null : src.className,
         );
+        final nativeId = (desc['id'] as String?) ?? '';
+        if (nativeId.isEmpty) continue;
+
+        // If the stored ID differs from the native ID, update the DB row
+        if (src.id != nativeId) {
+          // Delete the old row and insert with the correct native ID
+          await _db.deleteExtensionSource(src.id);
+          await _db.insertExtensionSource(src.copyWith(id: nativeId));
+        }
       } catch (_) {
         // APK on disk but the loader rejected it (corrupt / signature
         // mismatch). Leave the row; user can uninstall it from the UI.

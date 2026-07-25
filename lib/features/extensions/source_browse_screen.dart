@@ -20,30 +20,48 @@ class SourceBrowseScreen extends StatefulWidget {
   State<SourceBrowseScreen> createState() => _SourceBrowseScreenState();
 }
 
-class _SourceBrowseScreenState extends State<SourceBrowseScreen> {
+class _SourceBrowseScreenState extends State<SourceBrowseScreen>
+    with SingleTickerProviderStateMixin {
   final _service = KeiyoushiService();
   final _scrollCtrl = ScrollController();
-  final _searchCtrl = TextEditingController();
+
+  late final TabController _tabCtrl;
 
   List<Map<String, dynamic>> _mangas = [];
   bool _loading = false;
   bool _hasNext = true;
   int _page = 1;
-  String _query = '';
   String? _error;
+  String _tab = 'popular';
 
   @override
   void initState() {
     super.initState();
+    _tabCtrl = TabController(length: 2, vsync: this);
     _scrollCtrl.addListener(_onScroll);
+    _tabCtrl.addListener(() {
+      if (!_tabCtrl.indexIsChanging) {
+        final tabs = ['popular', 'latest'];
+        if (_tab != tabs[_tabCtrl.index]) {
+          setState(() {
+            _tab = tabs[_tabCtrl.index];
+            _mangas = [];
+            _page = 1;
+            _hasNext = true;
+            _error = null;
+          });
+          _loadPage();
+        }
+      }
+    });
     _loadPage();
   }
 
   @override
   void dispose() {
+    _tabCtrl.dispose();
     _scrollCtrl.removeListener(_onScroll);
     _scrollCtrl.dispose();
-    _searchCtrl.dispose();
     super.dispose();
   }
 
@@ -60,11 +78,12 @@ class _SourceBrowseScreenState extends State<SourceBrowseScreen> {
     if (_loading) return;
     setState(() => _loading = true);
     try {
-      final result = _query.isEmpty
-          ? await _service.getPopularManga(
-              sourceId: widget.sourceId, page: _page)
-          : await _service.searchManga(
-              sourceId: widget.sourceId, query: _query, page: _page);
+      final result = switch (_tab) {
+        'latest' => await _service.getLatestUpdates(
+            sourceId: widget.sourceId, page: _page),
+        _ => await _service.getPopularManga(
+            sourceId: widget.sourceId, page: _page),
+      };
       if (!mounted) return;
       setState(() {
         _mangas.addAll(result.mangas);
@@ -90,66 +109,43 @@ class _SourceBrowseScreenState extends State<SourceBrowseScreen> {
     await _loadPage();
   }
 
-  void _onSearchChanged(String value) {
-    _query = value;
-    setState(() {
-      _mangas = [];
-      _page = 1;
-      _hasNext = true;
-      _error = null;
-    });
-    _loadPage();
-  }
-
   @override
   Widget build(BuildContext context) {
     final c = context.colors;
     return Scaffold(
       backgroundColor: c.bg,
       appBar: AppBar(
+        backgroundColor: c.bg,
         title: Text(widget.sourceName),
-        bottom: PreferredSize(
-          preferredSize: const Size.fromHeight(56),
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
-            child: TextField(
-              controller: _searchCtrl,
-              onChanged: _onSearchChanged,
-              decoration: InputDecoration(
-                hintText: 'Search ${widget.sourceName}…',
-                prefixIcon: const Icon(Icons.search, size: 20),
-                suffixIcon: _searchCtrl.text.isNotEmpty
-                    ? IconButton(
-                        icon: const Icon(Icons.clear, size: 18),
-                        onPressed: () {
-                          _searchCtrl.clear();
-                          _onSearchChanged('');
-                        },
-                      )
-                    : null,
-              ),
-            ),
-          ),
+        bottom: TabBar(
+          controller: _tabCtrl,
+          indicatorColor: c.accent,
+          labelColor: c.accent,
+          unselectedLabelColor: c.textSecondary,
+          tabs: const [
+            Tab(text: 'Popular'),
+            Tab(text: 'Latest'),
+          ],
         ),
       ),
-      body: RefreshIndicator(
-        onRefresh: _refresh,
-        child: _mangas.isEmpty && !_loading
-            ? ListView(
-                children: [
-                  if (_error != null)
-                    Padding(
-                      padding: const EdgeInsets.all(16),
-                      child: Text(
-                        _error!,
-                        style: TextStyle(color: c.accent, fontSize: 12),
-                      ),
+      body: _mangas.isEmpty && !_loading && _error == null
+          ? ListView(
+              children: [
+                if (_error != null)
+                  Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: Text(
+                      _error!,
+                      style: TextStyle(color: c.accent, fontSize: 12),
                     ),
-                  const SizedBox(height: 120),
-                  const Center(child: Text('Nothing found')),
-                ],
-              )
-            : GridView.builder(
+                  ),
+                const SizedBox(height: 120),
+                const Center(child: Text('Nothing found')),
+              ],
+            )
+          : RefreshIndicator(
+              onRefresh: _refresh,
+              child: GridView.builder(
                 controller: _scrollCtrl,
                 padding: const EdgeInsets.all(16),
                 gridDelegate:
@@ -188,7 +184,7 @@ class _SourceBrowseScreenState extends State<SourceBrowseScreen> {
                   );
                 },
               ),
-      ),
+            ),
     );
   }
 }
