@@ -170,6 +170,24 @@ class KeiyoushiMethodChannel(
                         )
                     }
                 }
+                "getLatestUpdates" -> {
+                    val sourceId = call.argument<String>("sourceId")
+                    if (sourceId == null) {
+                        Log.e(TAG, "getLatestUpdates: sourceId missing")
+                        result.error("ARG", "sourceId missing", null)
+                        return
+                    }
+                    val page = call.argument<Int>("page") ?: 1
+                    Log.d(TAG, "getLatestUpdates: sourceId=$sourceId page=$page")
+                    bg({ engine.getLatestUpdates(sourceId, page) }, result) { mangasPage ->
+                        result.success(
+                            mapOf(
+                                "mangas" to mangasPage.mangas.map { it.toMap() },
+                                "hasNextPage" to mangasPage.hasNextPage,
+                            )
+                        )
+                    }
+                }
                 "getMangaDetails" -> {
                     val sourceId = call.argument<String>("sourceId")
                     val url = call.argument<String>("url")
@@ -187,6 +205,19 @@ class KeiyoushiMethodChannel(
                     bg({ engine.getMangaDetails(sourceId, url) }, result) { manga ->
                         result.success(manga.toMap())
                     }
+                }
+                "getMangaUpdate" -> {
+                    val sourceId = call.argument<String>("sourceId")
+                    val url = call.argument<String>("url")
+                    if (sourceId == null || url == null) {
+                        result.error("ARG", "sourceId or url missing", null)
+                        return
+                    }
+                    Log.d(TAG, "getMangaUpdate: sourceId=$sourceId url=$url")
+                    bg({
+                        val (manga, chapters) = engine.getMangaUpdateCombined(sourceId, url)
+                        mapOf("manga" to manga.toMap(), "chapters" to chapters.map { it.toMap() })
+                    }, result) { data -> result.success(data) }
                 }
                 "getChapterList" -> {
                     val sourceId = call.argument<String>("sourceId")

@@ -4,6 +4,7 @@ import android.app.Application
 import android.content.Context
 import android.util.Log
 import eu.kanade.tachiyomi.network.NetworkHelper
+import eu.kanade.tachiyomi.network.defaultClient
 import eu.kanade.tachiyomi.source.CatalogueSource
 import eu.kanade.tachiyomi.source.Source
 import eu.kanade.tachiyomi.source.model.FilterList
@@ -46,10 +47,7 @@ class KeiyoushiEngine(
                 override fun InjektRegistrar.registerInjectables() {
                     addSingleton(app)
                     addSingletonFactory {
-                        OkHttpClient.Builder()
-                            .connectTimeout(30, java.util.concurrent.TimeUnit.SECONDS)
-                            .readTimeout(30, java.util.concurrent.TimeUnit.SECONDS)
-                            .build()
+                        defaultClient(context)
                     }
                     addSingletonFactory {
                         Json { ignoreUnknownKeys = true; explicitNulls = false; isLenient = true }
@@ -124,7 +122,27 @@ class KeiyoushiEngine(
         val result = runBlocking {
             src.getMangaUpdate(manga, emptyList(), fetchDetails = false, fetchChapters = true)
         }
+        // Log raw chapter data to check for music/audio/duration fields
+        for ((i, ch) in result.chapters.withIndex()) {
+            val chapterInfo = """
+                [Chapter $i]
+                url=${ch.url}
+                name=${ch.name}
+                chapter_number=${ch.chapter_number}
+                scanlator=${ch.scanlator}
+                date_upload=${ch.date_upload}
+                memo=${ch.memo}
+            """.trimIndent()
+            Log.d(TAG, chapterInfo)
+        }
         return result.chapters
+    }
+
+    fun getMangaUpdateCombined(sourceId: String, url: String): Pair<SManga, List<SChapter>> {
+        // Sequential: details first, then chapters — avoids concurrent getMangaUpdate errors
+        val details = getMangaDetails(sourceId, url)
+        val chapters = getChapterList(sourceId, url)
+        return Pair(details, chapters)
     }
 
     fun getPageList(sourceId: String, url: String): List<Map<String, Any?>> {

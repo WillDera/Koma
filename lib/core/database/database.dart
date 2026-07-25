@@ -8,7 +8,7 @@ class AppDatabase extends GeneratedDatabase {
   AppDatabase(QueryExecutor executor) : super(executor);
 
   @override
-  int get schemaVersion => 7;
+  int get schemaVersion => 8;
 
   @override
   Iterable<TableInfo> get allTables => const [];
@@ -114,6 +114,54 @@ class AppDatabase extends GeneratedDatabase {
           await customStatement(
               'ALTER TABLE snippets ADD COLUMN scroll_position REAL');
         } catch (_) {}
+        // v9 → v10: deduplicate manga_chapters (clean up rows created by broken INSERT OR IGNORE).
+        try {
+          await customStatement(
+            'DELETE FROM manga_chapters WHERE id NOT IN '
+            '(SELECT MAX(id) FROM manga_chapters GROUP BY manga_id, url)'
+          );
+        } catch (_) {}
+        // v10 → v11: new extension_source columns.
+        try {
+          await customStatement(
+            'ALTER TABLE extension_sources ADD COLUMN version_last TEXT'
+          );
+        } catch (_) {}
+        try {
+          await customStatement(
+            'ALTER TABLE extension_sources ADD COLUMN base_url TEXT'
+          );
+        } catch (_) {}
+        try {
+          await customStatement(
+            'ALTER TABLE extension_sources ADD COLUMN source_code_url TEXT'
+          );
+        } catch (_) {}
+        try {
+          await customStatement(
+            'ALTER TABLE extension_sources ADD COLUMN repo_url TEXT'
+          );
+        } catch (_) {}
+        try {
+          await customStatement(
+            'ALTER TABLE extension_sources ADD COLUMN is_active INTEGER NOT NULL DEFAULT 1'
+          );
+        } catch (_) {}
+        try {
+          await customStatement(
+            'ALTER TABLE extension_sources ADD COLUMN is_nsfw INTEGER NOT NULL DEFAULT 0'
+          );
+        } catch (_) {}
+        try {
+          await customStatement(
+            'ALTER TABLE extension_sources ADD COLUMN is_pinned INTEGER NOT NULL DEFAULT 0'
+          );
+        } catch (_) {}
+        try {
+          await customStatement(
+            'ALTER TABLE extension_sources ADD COLUMN is_obsolete INTEGER NOT NULL DEFAULT 0'
+          );
+        } catch (_) {}
       },
     );
   }
@@ -205,11 +253,19 @@ class AppDatabase extends GeneratedDatabase {
         id TEXT PRIMARY KEY,
         name TEXT NOT NULL,
         version TEXT NOT NULL,
+        version_last TEXT,
         lang TEXT NOT NULL,
         apk_path TEXT NOT NULL,
         class_name TEXT NOT NULL,
         icon_url TEXT,
+        base_url TEXT,
+        source_code_url TEXT,
+        repo_url TEXT,
         is_installed INTEGER NOT NULL DEFAULT 1,
+        is_active INTEGER NOT NULL DEFAULT 1,
+        is_nsfw INTEGER NOT NULL DEFAULT 0,
+        is_pinned INTEGER NOT NULL DEFAULT 0,
+        is_obsolete INTEGER NOT NULL DEFAULT 0,
         created_at TEXT NOT NULL DEFAULT (datetime('now')),
         updated_at TEXT NOT NULL DEFAULT (datetime('now'))
       )

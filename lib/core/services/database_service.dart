@@ -993,10 +993,13 @@ class DatabaseService {
   // -- Manga chapters ----------------------------------------------------
 
   Future<List<MangaChapter>> getMangaChapters(int mangaId) async {
-    final rows = await _db
-        .customSelect('SELECT * FROM manga_chapters WHERE manga_id = ? ORDER BY "index" ASC',
-            variables: [Variable.withInt(mangaId)])
-        .get();
+    // Deduplicate by url, keeping the row with the most recent progress
+    final rows = await _db.customSelect(
+      'SELECT * FROM manga_chapters WHERE manga_id = ? AND id IN '
+      '(SELECT MAX(id) FROM manga_chapters WHERE manga_id = ? GROUP BY url) '
+      'ORDER BY "index" ASC',
+      variables: [Variable.withInt(mangaId), Variable.withInt(mangaId)],
+    ).get();
     return rows.map((r) => MangaChapter.fromJson(r.data)).toList();
   }
 
@@ -1010,23 +1013,46 @@ class DatabaseService {
   Future<void> insertMangaChapters(int mangaId, List<MangaChapter> chapters) async {
     await _db.transaction(() async {
       for (final ch in chapters) {
-        await _db.customInsert(
-          'INSERT OR IGNORE INTO manga_chapters (manga_id, name, url, scanlator, date_upload, "index", is_downloaded, is_opened, read_at) '
-          'VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
-          variables: [
-            Variable.withInt(mangaId),
-            Variable.withString(ch.name),
-            Variable.withString(ch.url),
-            Variable.withString(ch.scanlator ?? ''),
-            Variable.withInt(ch.dateUpload),
-            Variable.withInt(ch.index),
-            Variable.withInt(ch.isDownloaded ? 1 : 0),
-            Variable.withInt(ch.isOpened ? 1 : 0),
-            ch.readAt != null
-                ? Variable.withString(ch.readAt!.toIso8601String())
-                : Variable<Object>(null),
-          ],
-        );
+        // Check if row already exists (by manga_id + url)
+        final existing = await _db.customSelect(
+          'SELECT id, is_read, last_page_read, scroll_position, is_downloaded, is_opened, read_at '
+          'FROM manga_chapters WHERE manga_id = ? AND url = ?',
+          variables: [Variable.withInt(mangaId), Variable.withString(ch.url)],
+        ).get();
+
+        if (existing.isNotEmpty) {
+          // Preserve progress fields, update metadata
+          final row = existing.first.data;
+          await _db.customUpdate(
+            'UPDATE manga_chapters SET name=?, scanlator=?, date_upload=?, "index"=? '
+            'WHERE id=?',
+            variables: [
+              Variable.withString(ch.name),
+              Variable.withString(ch.scanlator ?? ''),
+              Variable.withInt(ch.dateUpload),
+              Variable.withInt(ch.index),
+              Variable.withInt(row['id'] as int? ?? 0),
+            ],
+          );
+        } else {
+          await _db.customInsert(
+            'INSERT INTO manga_chapters (manga_id, name, url, scanlator, date_upload, "index", is_downloaded, is_opened, read_at) '
+            'VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+            variables: [
+              Variable.withInt(mangaId),
+              Variable.withString(ch.name),
+              Variable.withString(ch.url),
+              Variable.withString(ch.scanlator ?? ''),
+              Variable.withInt(ch.dateUpload),
+              Variable.withInt(ch.index),
+              Variable.withInt(ch.isDownloaded ? 1 : 0),
+              Variable.withInt(ch.isOpened ? 1 : 0),
+              ch.readAt != null
+                  ? Variable.withString(ch.readAt!.toIso8601String())
+                  : Variable<Object>(null),
+            ],
+          );
+        }
       }
     });
   }
@@ -1129,17 +1155,35 @@ class DatabaseService {
   Future<void> insertExtensionSource(ExtensionSource src) async {
     await _db.customInsert(
       'INSERT OR REPLACE INTO extension_sources '
-      '(id, name, version, lang, apk_path, class_name, icon_url, is_installed, created_at, updated_at) '
-      'VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+      '(id, name, version, version_last, lang, apk_path, class_name, icon_url, base_url, source_code_url, repo_url, is_installed, is_active, is_nsfw, is_pinned, is_obsolete, created_at, updated_at) '
+      'VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
       variables: [
         Variable.withString(src.id),
         Variable.withString(src.name),
         Variable.withString(src.version),
+        src.versionLast != null
+            ? Variable.withString(src.versionLast!)
+            : Variable<Object>(null),
         Variable.withString(src.lang),
         Variable.withString(src.apkPath),
         Variable.withString(src.className),
-        Variable.withString(src.iconUrl ?? ''),
+        src.iconUrl != null
+            ? Variable.withString(src.iconUrl!)
+            : Variable<Object>(null),
+        src.baseUrl != null
+            ? Variable.withString(src.baseUrl!)
+            : Variable<Object>(null),
+        src.sourceCodeUrl != null
+            ? Variable.withString(src.sourceCodeUrl!)
+            : Variable<Object>(null),
+        src.repoUrl != null
+            ? Variable.withString(src.repoUrl!)
+            : Variable<Object>(null),
         Variable.withInt(src.isInstalled ? 1 : 0),
+        Variable.withInt(src.isActive ? 1 : 0),
+        Variable.withInt(src.isNsfw ? 1 : 0),
+        Variable.withInt(src.isPinned ? 1 : 0),
+        Variable.withInt(src.isObsolete ? 1 : 0),
         Variable.withString(src.createdAt.toIso8601String()),
         Variable.withString(DateTime.now().toIso8601String()),
       ],
