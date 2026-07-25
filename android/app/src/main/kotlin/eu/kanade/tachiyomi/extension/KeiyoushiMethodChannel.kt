@@ -206,6 +206,19 @@ class KeiyoushiMethodChannel(
                         result.success(manga.toMap())
                     }
                 }
+                "getMangaUpdate" -> {
+                    val sourceId = call.argument<String>("sourceId")
+                    val url = call.argument<String>("url")
+                    if (sourceId == null || url == null) {
+                        result.error("ARG", "sourceId or url missing", null)
+                        return
+                    }
+                    Log.d(TAG, "getMangaUpdate: sourceId=$sourceId url=$url")
+                    bg({
+                        val (manga, chapters) = engine.getMangaUpdateCombined(sourceId, url)
+                        mapOf("manga" to manga.toMap(), "chapters" to chapters.map { it.toMap() })
+                    }, result) { data -> result.success(data) }
+                }
                 "getChapterList" -> {
                     val sourceId = call.argument<String>("sourceId")
                     val url = call.argument<String>("url")
