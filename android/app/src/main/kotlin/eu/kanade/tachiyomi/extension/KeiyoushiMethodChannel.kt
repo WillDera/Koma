@@ -170,6 +170,24 @@ class KeiyoushiMethodChannel(
                         )
                     }
                 }
+                "getLatestUpdates" -> {
+                    val sourceId = call.argument<String>("sourceId")
+                    if (sourceId == null) {
+                        Log.e(TAG, "getLatestUpdates: sourceId missing")
+                        result.error("ARG", "sourceId missing", null)
+                        return
+                    }
+                    val page = call.argument<Int>("page") ?: 1
+                    Log.d(TAG, "getLatestUpdates: sourceId=$sourceId page=$page")
+                    bg({ engine.getLatestUpdates(sourceId, page) }, result) { mangasPage ->
+                        result.success(
+                            mapOf(
+                                "mangas" to mangasPage.mangas.map { it.toMap() },
+                                "hasNextPage" to mangasPage.hasNextPage,
+                            )
+                        )
+                    }
+                }
                 "getMangaDetails" -> {
                     val sourceId = call.argument<String>("sourceId")
                     val url = call.argument<String>("url")
