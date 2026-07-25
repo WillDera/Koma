@@ -12,6 +12,7 @@ import '../../core/services/database_service.dart';
 import '../../core/services/ebook_service.dart';
 import '../../core/services/web_scraper_service.dart';
 import '../../core/services/cache_service.dart';
+import '../../core/utils/image_cache.dart';
 import '../../theme/app_theme.dart';
 import '../../theme/theme_provider.dart';
 import '../../theme/tokens/app_spacing.dart';
@@ -809,6 +810,7 @@ class _LibraryScreenState extends State<LibraryScreen> with RouteAware {
           sourceId: manga.sourceId,
           url: manga.url,
           title: manga.name,
+          manga: manga, // Pass full Manga object for instant first frame
         ),
       ),
     );
@@ -1487,8 +1489,8 @@ class _MangaLibraryCard extends StatelessWidget {
                             errorBuilder: (_, __, ___) => _placeholder(c),
                           )
                         : manga.imageUrl != null && manga.imageUrl!.isNotEmpty
-                            ? Image.network(
-                                manga.imageUrl!,
+                            ? Image(
+                                image: cachedCover(manga.imageUrl!),
                                 width: double.infinity,
                                 fit: BoxFit.cover,
                                 errorBuilder: (_, __, ___) => _placeholder(c),
