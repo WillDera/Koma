@@ -1,9 +1,13 @@
 package eu.kanade.tachiyomi.util.system
 
 import dalvik.system.PathClassLoader
+import java.io.IOException
+import java.io.InputStream
+import java.net.URL
+import java.util.Enumeration
 
 /**
- * Parent-last classloader matching Mihon's approach.
+ * Parent-last classloader matching Mihon's approach exactly.
  * Order: system → child (APK) → parent (app).
  */
 class ChildFirstPathClassLoader(
@@ -12,14 +16,19 @@ class ChildFirstPathClassLoader(
     parent: ClassLoader,
 ) : PathClassLoader(dexPath, librarySearchPath, parent) {
 
+    private val systemClassLoader: ClassLoader? = getSystemClassLoader()
+
     override fun loadClass(name: String?, resolve: Boolean): Class<*> {
         var c = findLoadedClass(name)
 
+        if (c == null && systemClassLoader != null) {
+            try {
+                c = systemClassLoader.loadClass(name)
+            } catch (_: ClassNotFoundException) {}
+        }
+
         if (c == null) {
             if (name != null && name.startsWith("uy.kohesive.injekt.")) {
-                // Injekt must come from the host app so our Injekt.importModule
-                // registrations (Application, OkHttpClient, NetworkHelper, etc.)
-                // are visible to extension code.
                 try {
                     c = super.loadClass(name, resolve)
                 } catch (_: ClassNotFoundException) {
@@ -39,5 +48,41 @@ class ChildFirstPathClassLoader(
         }
 
         return c
+    }
+
+    override fun getResource(name: String?): URL? {
+        return systemClassLoader?.getResource(name)
+            ?: findResource(name)
+            ?: super.getResource(name)
+    }
+
+    override fun getResources(name: String?): Enumeration<URL> {
+        val systemUrls = systemClassLoader?.getResources(name)
+        val localUrls = findResources(name)
+        val parentUrls = parent?.getResources(name)
+        val urls = buildList {
+            while (systemUrls?.hasMoreElements() == true) {
+                add(systemUrls.nextElement())
+            }
+            while (localUrls?.hasMoreElements() == true) {
+                add(localUrls.nextElement())
+            }
+            while (parentUrls?.hasMoreElements() == true) {
+                add(parentUrls.nextElement())
+            }
+        }
+        return object : Enumeration<URL> {
+            val iterator = urls.iterator()
+            override fun hasMoreElements() = iterator.hasNext()
+            override fun nextElement() = iterator.next()
+        }
+    }
+
+    override fun getResourceAsStream(name: String?): InputStream? {
+        return try {
+            getResource(name)?.openStream()
+        } catch (_: IOException) {
+            return null
+        }
     }
 }

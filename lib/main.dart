@@ -28,10 +28,12 @@ void main() async {
 
   // Re-mount any extensions the user previously installed so the
   // native Keiyoushi bridge has them loaded for this session.
-  // Fire-and-forget — failures don't block the UI.
   final keiyoushiService = KeiyoushiService();
   final extensionManager = ExtensionManager(dbService, keiyoushiService);
-  unawaited(extensionManager.reloadAll());
+  unawaited(extensionManager.reloadAll().then((_) {
+    // Check for extension updates on start (mangayomi pattern).
+    unawaited(_checkExtensionUpdates(extensionManager));
+  }));
 
   WidgetsBinding widgetsBinding = WidgetsFlutterBinding.ensureInitialized();
   FlutterNativeSplash.preserve(widgetsBinding: widgetsBinding);
@@ -54,4 +56,22 @@ void main() async {
 
   // whenever your initialization is completed, remove the splash screen:
   FlutterNativeSplash.remove();
+}
+
+/// Check all repos for extension updates and store versionLast flags.
+/// Ported from mangayomi's fetchItemSourcesListProvider on app start.
+Future<void> _checkExtensionUpdates(ExtensionManager mgr) async {
+  try {
+    final repos = await mgr.listRepos();
+    for (final repo in repos) {
+      if (!repo.enabled) continue;
+      try {
+        final entries = await mgr.fetchIndex(repo);
+        await mgr.checkForUpdates(entries, repo.url);
+        await mgr.checkForObsoleteSources(entries, repo.url);
+      } catch (_) {
+        // One repo failing shouldn't block the others (mangayomi pattern).
+      }
+    }
+  } catch (_) {}
 }
