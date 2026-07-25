@@ -7,6 +7,7 @@ import 'package:intl/intl.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:go_router/go_router.dart';
 
 import '../../core/providers.dart';
 import '../../core/models/manga.dart';
@@ -16,7 +17,7 @@ import '../../core/services/keiyoushi_service.dart';
 import '../../theme/app_theme.dart';
 import '../../theme/tokens/app_spacing.dart';
 import '../library/library_provider.dart';
-import '../reader/manga_reader_screen.dart';
+import '../../router/router.dart';
 import '../../widgets/animated_press.dart';
 import '../../widgets/icon_button_round.dart';
 
@@ -1072,16 +1073,14 @@ class _MangaDetailScreenState extends ConsumerState<MangaDetailScreen> {
                               await db.markMangaChapterOpened(existing.id);
                             }
                           }
-                          await Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (_) => MangaReaderScreen(
-                                mangaId: _mangaId,
-                                sourceId: widget.sourceId,
-                                mangaUrl: widget.url,
-                                chapterUrl: ch['url'] as String? ?? '',
-                                chapterName: ch['name'] as String? ?? '',
-                              ),
+                          await context.pushNamed(
+                            Routes.mangaReader,
+                            extra: (
+                              mangaId: _mangaId,
+                              sourceId: widget.sourceId,
+                              mangaUrl: widget.url,
+                              chapterUrl: ch['url'] as String? ?? '',
+                              chapterName: ch['name'] as String? ?? '',
                             ),
                           );
                           if (_mangaId != null && mounted) {

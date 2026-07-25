@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import '../../core/providers.dart';
 import '../../core/models/book.dart';
 import '../../core/services/database_service.dart';
@@ -15,8 +16,7 @@ import '../../widgets/library_header.dart';
 import '../../widgets/one_hand_spacer.dart';
 import '../../widgets/progress_ring.dart';
 import '../../widgets/screen_chrome.dart';
-import '../extensions/manga_detail_screen.dart';
-import '../reader/reader_screen.dart';
+import '../../router/router.dart';
 
 class HistoryScreen extends ConsumerStatefulWidget {
   const HistoryScreen({super.key});
@@ -202,11 +202,13 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> with RouteAware {
       child: Padding(
         padding: const EdgeInsets.fromLTRB(20, 0, 20, 0),
         child: AnimatedPress(
-          onTap: () => Navigator.push(
-            context,
-            MaterialPageRoute(
-              builder: (_) => ReaderScreen(bookId: book.id),
-            ),
+          onTap: () => context.pushNamed(
+            Routes.reader,
+            extra: (
+              bookId: book.id,
+              snippetChapterId: null,
+              snippetScrollOffset: null,
+            ) as ReaderArgs,
           ),
           child: Container(
             padding: const EdgeInsets.all(12),
@@ -321,15 +323,14 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> with RouteAware {
       child: Padding(
         padding: const EdgeInsets.fromLTRB(20, 0, 20, 0),
         child: AnimatedPress(
-          onTap: () => Navigator.push(
-            context,
-            MaterialPageRoute(
-              builder: (_) => MangaDetailScreen(
-                sourceId: sourceId,
-                url: url,
-                title: name,
-              ),
-            ),
+          onTap: () => context.pushNamed(
+            Routes.mangaDetail,
+            extra: (
+              sourceId: sourceId,
+              url: url,
+              title: name,
+              manga: null,
+            ) as MangaDetailArgs,
           ),
           child: Container(
             padding: const EdgeInsets.all(12),

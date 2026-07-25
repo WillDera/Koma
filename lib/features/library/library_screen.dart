@@ -3,7 +3,9 @@ import 'dart:io';
 import 'package:crypto/crypto.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import '../../core/providers.dart';
+import '../../router/router.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:path_provider/path_provider.dart';
 import '../../core/models/book.dart';
@@ -32,8 +34,6 @@ import '../../widgets/premium_button.dart';
 import '../../widgets/screen_chrome.dart';
 import '../../widgets/segmented_control.dart';
 import '../../widgets/toast.dart';
-import '../extensions/manga_detail_screen.dart';
-import '../reader/reader_screen.dart';
 import '../snippets/snippets_provider.dart';
 import 'library_provider.dart';
 
@@ -794,23 +794,22 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> with RouteAware {
   }
 
   void _openReader(BuildContext context, int bookId) {
-    Navigator.push(
-      context,
-      MaterialPageRoute(builder: (_) => ReaderScreen(bookId: bookId)),
+    context.pushNamed(
+      Routes.reader,
+      extra: (bookId: bookId, snippetChapterId: null, snippetScrollOffset: null)
+          as ReaderArgs,
     );
   }
 
   void _openManga(BuildContext context, Manga manga) {
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (_) => MangaDetailScreen(
-          sourceId: manga.sourceId,
-          url: manga.url,
-          title: manga.name,
-          manga: manga, // Pass full Manga object for instant first frame
-        ),
-      ),
+    context.pushNamed(
+      Routes.mangaDetail,
+      extra: (
+        sourceId: manga.sourceId,
+        url: manga.url,
+        title: manga.name,
+        manga: manga, // Pass full Manga object for instant first frame
+      ) as MangaDetailArgs,
     );
   }
 }
