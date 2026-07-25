@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import 'package:collection/collection.dart';
 import '../../core/models/snippet.dart';
 import '../../core/models/snippet_collection.dart';
@@ -18,7 +19,7 @@ import '../../widgets/snippet_detail_sheet.dart';
 import '../../widgets/dialog_sheet.dart';
 import '../../widgets/tag_filter_bar.dart';
 import '../../widgets/toast.dart';
-import '../reader/reader_screen.dart';
+import '../../router/router.dart';
 import 'snippets_provider.dart';
 
 class SnippetsScreen extends ConsumerStatefulWidget {
@@ -329,14 +330,12 @@ class _SnippetsScreenState extends ConsumerState<SnippetsScreen> {
 
   void _openBookReader(BuildContext context, int bookId,
       {int? chapterId, double? scrollOffset}) {
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (_) => ReaderScreen(
-          bookId: bookId,
-          snippetChapterId: chapterId,
-          snippetScrollOffset: scrollOffset,
-        ),
+    context.pushNamed(
+      Routes.reader,
+      extra: (
+        bookId: bookId,
+        snippetChapterId: chapterId,
+        snippetScrollOffset: scrollOffset,
       ),
     );
   }

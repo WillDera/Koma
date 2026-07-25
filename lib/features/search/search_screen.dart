@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import '../../core/providers.dart';
+import '../../router/router.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../core/models/book.dart';
 import '../../core/models/chapter.dart' as ch_model;
@@ -18,7 +20,6 @@ import '../../widgets/one_hand_spacer.dart';
 import '../../widgets/search_result_row.dart';
 import '../../widgets/text_field.dart';
 import '../../widgets/toast.dart';
-import '../reader/reader_screen.dart';
 
 class SearchScreen extends ConsumerStatefulWidget {
   const SearchScreen({super.key});
@@ -370,9 +371,10 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
 
   void _openReader(int bookId) {
     if (bookId == 0) return;
-    Navigator.push(
-      context,
-      MaterialPageRoute(builder: (_) => ReaderScreen(bookId: bookId)),
+    context.pushNamed(
+      Routes.reader,
+      extra: (bookId: bookId, snippetChapterId: null, snippetScrollOffset: null)
+          as ReaderArgs,
     );
   }
 }
