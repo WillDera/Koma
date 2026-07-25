@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
-import 'package:provider/provider.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../../core/providers.dart';
 import '../../core/services/export_service.dart';
 import '../../core/services/database_service.dart';
 import '../../core/services/stats_service.dart';
@@ -39,7 +40,7 @@ class SettingsScreen extends StatelessWidget {
             const OneHandSpacer(),
             const LibraryHeader(
               title: 'Settings',
-              subtitle: 'Version 2.15.4',
+              subtitle: 'Version 2.16.0',
               padding: EdgeInsets.fromLTRB(24, 20, 20, 12),
             ),
             const StaggeredEntrance(
@@ -164,13 +165,13 @@ class _SourcesAndPluginsPage extends StatelessWidget {
 }
 
 // ─── Appearance ──────────────────────────────────────────────────────────
-class _AppearanceSection extends StatelessWidget {
+class _AppearanceSection extends ConsumerWidget {
   const _AppearanceSection();
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final c = context.colors;
-    final themeProv = context.watch<ThemeProvider>();
+    final themeProv = ref.watch(themeProvider);
     return SettingsSection(
       title: 'Appearance',
       children: [
@@ -498,12 +499,12 @@ class _CustomAccentInputState extends State<_CustomAccentInput> {
   }
 }
 
-class _OneHandToggle extends StatelessWidget {
+class _OneHandToggle extends ConsumerWidget {
   const _OneHandToggle();
 
   @override
-  Widget build(BuildContext context) {
-    final themeProv = context.watch<ThemeProvider>();
+  Widget build(BuildContext context, WidgetRef ref) {
+    final themeProv = ref.watch(themeProvider);
     final c = context.colors;
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 16, 16, 16),
@@ -540,12 +541,12 @@ class _OneHandToggle extends StatelessWidget {
 }
 
 // ─── Typography ──────────────────────────────────────────────────────────
-class _TypographySection extends StatelessWidget {
+class _TypographySection extends ConsumerWidget {
   const _TypographySection();
 
   @override
-  Widget build(BuildContext context) {
-    final p = context.watch<ThemeProvider>();
+  Widget build(BuildContext context, WidgetRef ref) {
+    final p = ref.watch(themeProvider);
     return SettingsSection(
       title: 'Typography',
       children: [
@@ -796,14 +797,14 @@ class _TypographySection extends StatelessWidget {
 }
 
 // ─── Data ────────────────────────────────────────────────────────────────
-class _DataSection extends StatefulWidget {
+class _DataSection extends ConsumerStatefulWidget {
   const _DataSection();
 
   @override
-  State<_DataSection> createState() => _DataSectionState();
+  ConsumerState<_DataSection> createState() => _DataSectionState();
 }
 
-class _DataSectionState extends State<_DataSection> {
+class _DataSectionState extends ConsumerState<_DataSection> {
   bool _importing = false;
   bool _exporting = false;
 
@@ -847,7 +848,7 @@ class _DataSectionState extends State<_DataSection> {
   Future<void> _export() async {
     setState(() => _exporting = true);
     try {
-      final db = context.read<DatabaseService>();
+      final db = ref.read(databaseServiceProvider);
       final svc = ExportService(db);
       final message = await svc.exportToJson();
       if (mounted) {
@@ -873,11 +874,11 @@ class _DataSectionState extends State<_DataSection> {
   Future<void> _import() async {
     setState(() => _importing = true);
     try {
-      final db = context.read<DatabaseService>();
+      final db = ref.read(databaseServiceProvider);
       final svc = ExportService(db);
       final result = await svc.importFromJson();
       if (mounted) {
-        context.read<LibraryProvider>().loadBooks();
+        ref.read(libraryProvider).loadBooks();
         StashToast.show(context, message: result, icon: Icons.check);
       }
     } catch (e) {
@@ -895,13 +896,13 @@ class _DataSectionState extends State<_DataSection> {
 }
 
 // ─── Sources ─────────────────────────────────────────────────────────
-class _SourcesSection extends StatefulWidget {
+class _SourcesSection extends ConsumerStatefulWidget {
   const _SourcesSection();
   @override
-  State<_SourcesSection> createState() => _SourcesSectionState();
+  ConsumerState<_SourcesSection> createState() => _SourcesSectionState();
 }
 
-class _SourcesSectionState extends State<_SourcesSection> {
+class _SourcesSectionState extends ConsumerState<_SourcesSection> {
   List<Source> _sources = [];
   bool _loading = true;
 
@@ -912,7 +913,7 @@ class _SourcesSectionState extends State<_SourcesSection> {
   }
 
   Future<void> _load() async {
-    final db = context.read<DatabaseService>();
+    final db = ref.read(databaseServiceProvider);
     final sources = await db.getSources();
     if (sources.isEmpty) {
       for (final s in SourceService.defaultSources()) {
@@ -949,7 +950,7 @@ class _SourcesSectionState extends State<_SourcesSection> {
   }
 
   Future<void> _toggle(int id, bool enabled) async {
-    final db = context.read<DatabaseService>();
+    final db = ref.read(databaseServiceProvider);
     final idx = _sources.indexWhere((s) => s.id == id);
     if (idx < 0) return;
     _sources[idx] = _sources[idx].copyWith(enabled: enabled);
@@ -958,7 +959,7 @@ class _SourcesSectionState extends State<_SourcesSection> {
   }
 
   Future<void> _delete(int id) async {
-    final db = context.read<DatabaseService>();
+    final db = ref.read(databaseServiceProvider);
     await db.deleteSource(id);
     _sources.removeWhere((s) => s.id == id);
     setState(() {});
@@ -967,7 +968,7 @@ class _SourcesSectionState extends State<_SourcesSection> {
   Future<void> _add() async {
     final result = await _sourceDialog(context, null);
     if (result == null) return;
-    final db = context.read<DatabaseService>();
+    final db = ref.read(databaseServiceProvider);
     final id = await db.insertSource(result);
     _sources.add(result.copyWith(id: id));
     setState(() {});
@@ -976,7 +977,7 @@ class _SourcesSectionState extends State<_SourcesSection> {
   Future<void> _edit(Source source) async {
     final result = await _sourceDialog(context, source);
     if (result == null) return;
-    final db = context.read<DatabaseService>();
+    final db = ref.read(databaseServiceProvider);
     await db.updateSource(result);
     final idx = _sources.indexWhere((s) => s.id == result.id);
     if (idx >= 0) _sources[idx] = result;
@@ -1151,14 +1152,14 @@ class _SourceRow extends StatelessWidget {
 }
 
 // ─── Stats ────────────────────────────────────────────────────────────
-class _StatsSection extends StatefulWidget {
+class _StatsSection extends ConsumerStatefulWidget {
   const _StatsSection();
 
   @override
-  State<_StatsSection> createState() => _StatsSectionState();
+  ConsumerState<_StatsSection> createState() => _StatsSectionState();
 }
 
-class _StatsSectionState extends State<_StatsSection> {
+class _StatsSectionState extends ConsumerState<_StatsSection> {
   Map<String, int> _genres = {};
   Map<String, int> _extensions = {};
   int _completed = 0;
@@ -1179,7 +1180,7 @@ class _StatsSectionState extends State<_StatsSection> {
   }
 
   Future<void> _load() async {
-    final db = context.read<DatabaseService>();
+    final db = ref.read(databaseServiceProvider);
     final statsSvc = StatsService(db);
     final results = await Future.wait([
       db.getGenreCounts(),
@@ -1378,7 +1379,7 @@ class _AboutSection extends StatelessWidget {
         SettingsRow(
           icon: Icons.info_outline,
           title: 'Koma',
-          subtitle: 'Version 2.15.4 · build 2.15.4+120',
+          subtitle: 'Version 2.16.0 · build 2.16.0+124',
         ),
         SettingsRow(
           icon: Icons.favorite_outline,

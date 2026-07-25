@@ -2,7 +2,8 @@ import 'dart:convert';
 import 'dart:io';
 import 'package:crypto/crypto.dart';
 import 'package:flutter/material.dart';
-import 'package:provider/provider.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../../core/providers.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:path_provider/path_provider.dart';
 import '../../core/models/book.dart';
@@ -36,14 +37,14 @@ import '../reader/reader_screen.dart';
 import '../snippets/snippets_provider.dart';
 import 'library_provider.dart';
 
-class LibraryScreen extends StatefulWidget {
+class LibraryScreen extends ConsumerStatefulWidget {
   const LibraryScreen({super.key});
 
   @override
-  State<LibraryScreen> createState() => _LibraryScreenState();
+  ConsumerState<LibraryScreen> createState() => _LibraryScreenState();
 }
 
-class _LibraryScreenState extends State<LibraryScreen> with RouteAware {
+class _LibraryScreenState extends ConsumerState<LibraryScreen> with RouteAware {
   final ScrollController _scrollCtrl = ScrollController();
   final TextEditingController _bookSearchCtrl = TextEditingController();
   final TextEditingController _mangaSearchCtrl = TextEditingController();
@@ -61,7 +62,7 @@ class _LibraryScreenState extends State<LibraryScreen> with RouteAware {
     super.initState();
     _scrollCtrl.addListener(_onScroll);
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      context.read<LibraryProvider>().loadBooks();
+      ref.read(libraryProvider).loadBooks();
       _loadThumbnails();
     });
   }
@@ -71,7 +72,7 @@ class _LibraryScreenState extends State<LibraryScreen> with RouteAware {
       final appDir = await getApplicationDocumentsDirectory();
       final thumbDir = Directory('${appDir.path}/thumbnails');
       if (!await thumbDir.exists()) return;
-      final provider = context.read<LibraryProvider>();
+      final provider = ref.read(libraryProvider);
       final paths = <int, String?>{};
       for (final manga in provider.mangas) {
         if (manga.imageUrl != null && manga.imageUrl!.isNotEmpty) {
@@ -116,94 +117,91 @@ class _LibraryScreenState extends State<LibraryScreen> with RouteAware {
     // A pushed route (e.g. reader) was popped and we're visible again.
     // Reload data — this is the Mihon-equivalent of Room Flow
     // reacting to an onPause write.
-    context.read<LibraryProvider>().loadBooks();
+    ref.read(libraryProvider).loadBooks();
   }
 
-  bool get _oneHand => context.watch<ThemeProvider>().oneHandMode;
+  bool get _oneHand => ref.watch(themeProvider).oneHandMode;
 
   @override
   Widget build(BuildContext context) {
-    final leftHanded = context.watch<ThemeProvider>().handMode == HandMode.left;
+    final leftHanded = ref.watch(themeProvider).handMode == HandMode.left;
     final navClearance = MediaQuery.paddingOf(context).bottom + 84;
-    return Consumer<LibraryProvider>(
-      builder: (context, provider, _) {
-        return ScreenBackdrop(
-          child: Stack(
-            children: [
-              SafeArea(bottom: false, child: _body(context, provider)),
-              if (!provider.loading &&
-                  !provider.selectionMode &&
-                  (provider.books.isNotEmpty || provider.mangas.isNotEmpty))
-                Positioned(
-                  left: leftHanded ? 20 : null,
-                  right: leftHanded ? null : 20,
-                  bottom: navClearance,
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      IconButtonRound(
-                        icon: provider.isGridView
-                            ? Icons.list
-                            : Icons.grid_view_rounded,
-                        size: 44,
-                        variant: IconButtonVariant.filled,
-                        backgroundColor: context.colors.surfaceMuted,
-                        iconColor: context.colors.textPrimary,
-                        onPressed: provider.toggleLayout,
-                      ),
-                      const SizedBox(height: 10),
-                      IconButtonRound(
-                        icon: Icons.add,
-                        size: 52,
-                        variant: IconButtonVariant.filled,
-                        backgroundColor: context.colors.accent,
-                        iconColor: context.colors.onAccent,
-                        onPressed: () => _showImportOptions(context),
-                      ),
-                    ],
+    final provider = ref.watch(libraryProvider);
+    return ScreenBackdrop(
+      child: Stack(
+        children: [
+          SafeArea(bottom: false, child: _body(context, provider)),
+          if (!provider.loading &&
+              !provider.selectionMode &&
+              (provider.books.isNotEmpty || provider.mangas.isNotEmpty))
+            Positioned(
+              left: leftHanded ? 20 : null,
+              right: leftHanded ? null : 20,
+              bottom: navClearance,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  IconButtonRound(
+                    icon: provider.isGridView
+                        ? Icons.list
+                        : Icons.grid_view_rounded,
+                    size: 44,
+                    variant: IconButtonVariant.filled,
+                    backgroundColor: context.colors.surfaceMuted,
+                    iconColor: context.colors.textPrimary,
+                    onPressed: provider.toggleLayout,
                   ),
-                ),
-              if (_importingFile)
-                Positioned.fill(
-                  child: AbsorbPointer(
-                    child: ColoredBox(
-                      color: Colors.black38,
-                      child: Center(
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 20,
-                            vertical: 18,
+                  const SizedBox(height: 10),
+                  IconButtonRound(
+                    icon: Icons.add,
+                    size: 52,
+                    variant: IconButtonVariant.filled,
+                    backgroundColor: context.colors.accent,
+                    iconColor: context.colors.onAccent,
+                    onPressed: () => _showImportOptions(context),
+                  ),
+                ],
+              ),
+            ),
+          if (_importingFile)
+            Positioned.fill(
+              child: AbsorbPointer(
+                child: ColoredBox(
+                  color: Colors.black38,
+                  child: Center(
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 20,
+                        vertical: 18,
+                      ),
+                      decoration: BoxDecoration(
+                        color: context.colors.surface,
+                        borderRadius: BorderRadius.circular(18),
+                      ),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          CircularProgressIndicator(
+                            color: context.colors.accent,
                           ),
-                          decoration: BoxDecoration(
-                            color: context.colors.surface,
-                            borderRadius: BorderRadius.circular(18),
+                          const SizedBox(height: 14),
+                          Text(
+                            'Preparing MOBI...',
+                            style: TextStyle(
+                              color: context.colors.textPrimary,
+                              fontSize: 14,
+                              fontWeight: FontWeight.w600,
+                            ),
                           ),
-                          child: Column(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              CircularProgressIndicator(
-                                color: context.colors.accent,
-                              ),
-                              const SizedBox(height: 14),
-                              Text(
-                                'Preparing MOBI...',
-                                style: TextStyle(
-                                  color: context.colors.textPrimary,
-                                  fontSize: 14,
-                                  fontWeight: FontWeight.w600,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
+                        ],
                       ),
                     ),
                   ),
                 ),
-            ],
-          ),
-        );
-      },
+              ),
+            ),
+        ],
+      ),
     );
   }
 
@@ -274,7 +272,7 @@ class _LibraryScreenState extends State<LibraryScreen> with RouteAware {
   Widget _empty(BuildContext context) {
     return Column(
       children: [
-        _header(context, context.read<LibraryProvider>()),
+        _header(context, ref.read(libraryProvider)),
         Expanded(
           child: EmptyState(
             icon: Icons.auto_stories_outlined,
@@ -592,8 +590,8 @@ class _LibraryScreenState extends State<LibraryScreen> with RouteAware {
       if (showMobiLoader && mounted) {
         setState(() => _importingFile = true);
       }
-      final db = context.read<DatabaseService>();
-      final provider = context.read<LibraryProvider>();
+      final db = ref.read(databaseServiceProvider);
+      final provider = ref.read(libraryProvider);
       final ebookSvc = EbookService();
       final parsed = await ebookSvc.parse(filePath);
       if (parsed == null) throw Exception('Unsupported format');
@@ -660,12 +658,12 @@ class _LibraryScreenState extends State<LibraryScreen> with RouteAware {
       final scraper = WebScraperService();
       final result = await scraper.fetchContent(url);
       if (!context.mounted) return;
-      final db = context.read<DatabaseService>();
+      final db = ref.read(databaseServiceProvider);
       final cache = CacheService(db.db);
       final cached = await cache.getCached(url);
       if (cached != null) {
         if (context.mounted) {
-          final provider = context.read<LibraryProvider>();
+          final provider = ref.read(libraryProvider);
           final book = Book(
             id: 0,
             title: cached.title,
@@ -685,7 +683,7 @@ class _LibraryScreenState extends State<LibraryScreen> with RouteAware {
         }
         return;
       }
-      final provider = context.read<LibraryProvider>();
+      final provider = ref.read(libraryProvider);
       final book = Book(
         id: 0,
         title: result.title,
@@ -776,7 +774,7 @@ class _LibraryScreenState extends State<LibraryScreen> with RouteAware {
     if (title.isEmpty || content.isEmpty) return;
     if (!context.mounted) return;
     try {
-      await context.read<SnippetsProvider>().createSnippet(
+      await ref.read(snippetsProvider).createSnippet(
         text: content,
         sourceTitle: title,
         tags: ['note'],

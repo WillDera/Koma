@@ -5,9 +5,10 @@ import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:intl/intl.dart';
 import 'package:path_provider/path_provider.dart';
-import 'package:provider/provider.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../../core/providers.dart';
 import '../../core/models/manga.dart';
 import '../../core/models/manga_chapter.dart';
 import '../../core/services/database_service.dart';
@@ -27,7 +28,7 @@ enum _SortMode { nameAsc, nameDesc, dateAsc, dateDesc, chapterAsc, chapterDesc }
 /// Normalize a chapter URL for consistent key matching between DB and network.
 String _normalizeUrl(String url) => url.trim().replaceAll(RegExp(r'^/+'), '');
 
-class MangaDetailScreen extends StatefulWidget {
+class MangaDetailScreen extends ConsumerStatefulWidget {
   final String sourceId;
   final String url;
   final String title;
@@ -43,10 +44,10 @@ class MangaDetailScreen extends StatefulWidget {
   });
 
   @override
-  State<MangaDetailScreen> createState() => _MangaDetailScreenState();
+  ConsumerState<MangaDetailScreen> createState() => _MangaDetailScreenState();
 }
 
-class _MangaDetailScreenState extends State<MangaDetailScreen> {
+class _MangaDetailScreenState extends ConsumerState<MangaDetailScreen> {
   final _service = KeiyoushiService();
   Map<String, dynamic>? _details;
   List<Map<String, dynamic>> _chapters = [];
@@ -289,12 +290,12 @@ class _MangaDetailScreenState extends State<MangaDetailScreen> {
         _loading = false;
       });
       // Load chapters from DB
-      final db = context.read<DatabaseService>();
+      final db = ref.read(databaseServiceProvider);
       _loadChaptersFromDb(db, m.id);
       return;
     }
 
-    final db = context.read<DatabaseService>();
+    final db = ref.read(databaseServiceProvider);
     final existing = await db.getMangaByKey(widget.sourceId, widget.url);
 
     if (_sourceName.isEmpty) {
@@ -362,7 +363,7 @@ class _MangaDetailScreenState extends State<MangaDetailScreen> {
 
   /// Fetches fresh data from the extension source — runs after first frame.
   Future<void> _refreshFromNetwork() async {
-    final db = context.read<DatabaseService>();
+    final db = ref.read(databaseServiceProvider);
     final existing = await db.getMangaByKey(widget.sourceId, widget.url);
     if (mounted) await _refreshFromSource(db, existing);
   }
@@ -495,7 +496,7 @@ class _MangaDetailScreenState extends State<MangaDetailScreen> {
   Future<void> _addToLibrary() async {
     final d = _details;
     if (d == null) return;
-    final db = context.read<DatabaseService>();
+    final db = ref.read(databaseServiceProvider);
     final manga = Manga(
       id: 0,
       name: d['title'] as String? ?? widget.title,
@@ -535,7 +536,7 @@ class _MangaDetailScreenState extends State<MangaDetailScreen> {
       _mangaId = id;
     });
     // Refresh library in case user goes back
-    if (mounted) context.read<LibraryProvider>().loadBooks();
+    if (mounted) ref.read(libraryProvider).loadBooks();
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(content: Text('Added to library')),
@@ -544,9 +545,9 @@ class _MangaDetailScreenState extends State<MangaDetailScreen> {
 
   Future<void> _removeFromLibrary() async {
     if (_mangaId == null) return;
-    final db = context.read<DatabaseService>();
+    final db = ref.read(databaseServiceProvider);
     await db.setMangaInLibrary(_mangaId!, false);
-    if (mounted) context.read<LibraryProvider>().loadBooks();
+    if (mounted) ref.read(libraryProvider).loadBooks();
     if (!mounted) return;
     setState(() {
       _inLibrary = false;
@@ -841,7 +842,7 @@ class _MangaDetailScreenState extends State<MangaDetailScreen> {
         chapters: targets,
       );
       if (!mounted) return;
-      final db = context.read<DatabaseService>();
+      final db = ref.read(databaseServiceProvider);
       for (final t in targets) {
         final url = t['url'] as String? ?? '';
         final done = result.containsKey(url);
@@ -900,7 +901,7 @@ class _MangaDetailScreenState extends State<MangaDetailScreen> {
       if (!mounted) return;
       final done = result.containsKey(url);
       if (_mangaId != null && done) {
-        final db = context.read<DatabaseService>();
+        final db = ref.read(databaseServiceProvider);
         final existing = await db.getMangaChapterByUrl(_mangaId!, url);
         if (existing != null) {
           await db.markMangaChapterDownloaded(existing.id, true);
@@ -1065,7 +1066,7 @@ class _MangaDetailScreenState extends State<MangaDetailScreen> {
                         onChapterTap: (ch) async {
                           final url = ch['url'] as String? ?? '';
                           if (_mangaId != null && url.isNotEmpty && mounted) {
-                            final db = context.read<DatabaseService>();
+                            final db = ref.read(databaseServiceProvider);
                             final existing = await db.getMangaChapterByUrl(_mangaId!, url);
                             if (existing != null) {
                               await db.markMangaChapterOpened(existing.id);
@@ -1084,7 +1085,7 @@ class _MangaDetailScreenState extends State<MangaDetailScreen> {
                             ),
                           );
                           if (_mangaId != null && mounted) {
-                            final db = context.read<DatabaseService>();
+                            final db = ref.read(databaseServiceProvider);
                             final localChs = await db.getMangaChapters(_mangaId!);
                             final chMap = <String, Map<String, dynamic>>{};
                             for (final lc in localChs) {

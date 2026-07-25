@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:provider/provider.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../../../core/providers.dart';
 import '../../../core/models/manga_chapter.dart';
 import '../../../core/models/manga.dart';
 import '../../../core/services/database_service.dart';
@@ -9,7 +10,7 @@ import '../../../core/services/database_service.dart';
 ///
 /// Inspired by mangayomi's chapter list dialog. Shows chapters grouped
 /// with read status, current chapter highlighted, and bookmark indicators.
-class ChapterListDialog extends StatefulWidget {
+class ChapterListDialog extends ConsumerStatefulWidget {
   final int mangaId;
   final String sourceId;
   final String mangaUrl;
@@ -24,10 +25,10 @@ class ChapterListDialog extends StatefulWidget {
   });
 
   @override
-  State<ChapterListDialog> createState() => _ChapterListDialogState();
+  ConsumerState<ChapterListDialog> createState() => _ChapterListDialogState();
 }
 
-class _ChapterListDialogState extends State<ChapterListDialog> {
+class _ChapterListDialogState extends ConsumerState<ChapterListDialog> {
   List<MangaChapter>? _chapters;
   Manga? _manga;
   bool _loading = true;
@@ -39,7 +40,7 @@ class _ChapterListDialogState extends State<ChapterListDialog> {
   }
 
   Future<void> _load() async {
-    final db = context.read<DatabaseService>();
+    final db = ref.read(databaseServiceProvider);
     final manga = await db.getMangaByKey(
       widget.sourceId,
       widget.mangaUrl,

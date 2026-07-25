@@ -1,7 +1,7 @@
 name: koma
 description: "A hybrid reader + knowledge snippet manager."
 publish_to: 'none'
-version: 2.15.4+120
+version: 2.16.0+124
 
 environment:
   sdk: ^3.12.2
@@ -23,8 +23,7 @@ dependencies:
   html: ^0.15.5
   file_picker: ^11.0.2
   shared_preferences: ^2.5.3
-  # State: Provider is being retired in favor of Riverpod — see PHASE 2.
-  provider: ^6.1.5
+  # State: Riverpod (migrated off Provider in PHASE 2).
   flutter_riverpod: ^3.1.0
   riverpod_annotation: ^4.0.0
   intl: ^0.20.2

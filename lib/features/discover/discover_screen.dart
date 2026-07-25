@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
-import 'package:provider/provider.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../../core/providers.dart';
 import '../../core/services/source_service.dart';
 import '../../core/services/database_service.dart';
 import '../../core/services/ebook_service.dart';
@@ -18,14 +19,14 @@ import '../../widgets/screen_chrome.dart';
 import '../../widgets/segmented_control.dart';
 import '../../widgets/toast.dart';
 
-class DiscoverScreen extends StatefulWidget {
+class DiscoverScreen extends ConsumerStatefulWidget {
   const DiscoverScreen({super.key});
 
   @override
-  State<DiscoverScreen> createState() => _DiscoverScreenState();
+  ConsumerState<DiscoverScreen> createState() => _DiscoverScreenState();
 }
 
-class _DiscoverScreenState extends State<DiscoverScreen> {
+class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
   final _ctrl = TextEditingController();
   final _scrollCtrl = ScrollController();
   List<SourceSearchResult> _results = [];
@@ -36,7 +37,7 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
   _DiscoverSection _section = _DiscoverSection.books;
   double _scrollProgress = 0;
   final Map<String, double> _downloading = {};
-  bool get _oneHand => context.watch<ThemeProvider>().oneHandMode;
+  bool get _oneHand => ref.watch(themeProvider).oneHandMode;
   final _mangaService = KeiyoushiService();
 
   @override
@@ -61,7 +62,7 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
   }
 
   SourceService _svc() =>
-      SourceService(context.read<DatabaseService>(), EbookService());
+      SourceService(ref.read(databaseServiceProvider), EbookService());
 
   Future<void> _search() async {
     final q = _ctrl.text.trim();
@@ -276,7 +277,7 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
     if (!mounted) return;
     setState(() => _downloading.remove(title));
     if (ok) {
-      context.read<LibraryProvider>().loadBooks();
+      ref.read(libraryProvider).loadBooks();
       StashToast.show(
         context,
         message: '$title added to library',

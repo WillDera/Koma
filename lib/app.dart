@@ -1,23 +1,23 @@
 import 'package:flutter/material.dart';
-import 'package:provider/provider.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'core/providers.dart';
 import 'features/discover/discover_screen.dart';
 import 'features/history/history_screen.dart';
 import 'features/library/library_screen.dart';
 import 'features/search/search_screen.dart';
 import 'features/settings/settings_screen.dart';
 import 'features/snippets/snippets_screen.dart';
-import 'theme/theme_provider.dart';
 import 'theme/tokens/app_motion.dart';
 import 'widgets/glass_pill_nav.dart';
 
 final RouteObserver<ModalRoute<void>> routeObserver = RouteObserver<ModalRoute<void>>();
 
-class KomaApp extends StatelessWidget {
+class KomaApp extends ConsumerWidget {
   const KomaApp({super.key});
 
   @override
-  Widget build(BuildContext context) {
-    final themeProv = context.watch<ThemeProvider>();
+  Widget build(BuildContext context, WidgetRef ref) {
+    final themeProv = ref.watch(themeProvider);
 
     return MaterialApp(
       title: 'Koma',
@@ -32,14 +32,14 @@ class KomaApp extends StatelessWidget {
   }
 }
 
-class MainShell extends StatefulWidget {
+class MainShell extends ConsumerStatefulWidget {
   const MainShell({super.key});
 
   @override
-  State<MainShell> createState() => _MainShellState();
+  ConsumerState<MainShell> createState() => _MainShellState();
 }
 
-class _MainShellState extends State<MainShell> {
+class _MainShellState extends ConsumerState<MainShell> {
   int _currentIndex = 0;
 
   final List<Widget> _screens = [
@@ -91,7 +91,7 @@ class _MainShellState extends State<MainShell> {
 
   @override
   Widget build(BuildContext context) {
-    final themeProv = context.watch<ThemeProvider>();
+    final themeProv = ref.watch(themeProvider);
     return Scaffold(
       extendBody: true,
       backgroundColor: themeProv.bgColor,
