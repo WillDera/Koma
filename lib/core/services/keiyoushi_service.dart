@@ -69,6 +69,23 @@ class KeiyoushiService {
     return _parseMangasPage(res);
   }
 
+  /// Fetch manga details + chapters in a single call.
+  /// Uses getMangaUpdate on the native side to avoid concurrency issues
+  /// with extensions that forbid simultaneous getMangaUpdate calls.
+  Future<({Map<String, dynamic> details, List<Map<String, dynamic>> chapters})>
+      getMangaUpdate({required String sourceId, required String url}) async {
+    final res = await _channel.invokeMapMethod<String, dynamic>(
+      'getMangaUpdate',
+      {'sourceId': sourceId, 'url': url},
+    );
+    final details = Map<String, dynamic>.from(res?['manga'] ?? {});
+    final chapters = (res?['chapters'] as List? ?? [])
+        .cast<Map>()
+        .map((e) => Map<String, dynamic>.from(e))
+        .toList(growable: false);
+    return (details: details, chapters: chapters);
+  }
+
   /// Fetch full manga metadata (description, author, genre, etc.).
   Future<Map<String, dynamic>> getMangaDetails({
     required String sourceId,

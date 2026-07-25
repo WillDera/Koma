@@ -138,6 +138,13 @@ class KeiyoushiEngine(
         return result.chapters
     }
 
+    fun getMangaUpdateCombined(sourceId: String, url: String): Pair<SManga, List<SChapter>> {
+        // Sequential: details first, then chapters — avoids concurrent getMangaUpdate errors
+        val details = getMangaDetails(sourceId, url)
+        val chapters = getChapterList(sourceId, url)
+        return Pair(details, chapters)
+    }
+
     fun getPageList(sourceId: String, url: String): List<Map<String, Any?>> {
         val src = requireHttpSource(sourceId)
         val chapter = SChapter.create().apply { this.url = url }
