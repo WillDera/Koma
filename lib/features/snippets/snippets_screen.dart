@@ -1,8 +1,9 @@
 import 'package:flutter/material.dart';
-import 'package:provider/provider.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:collection/collection.dart';
 import '../../core/models/snippet.dart';
 import '../../core/models/snippet_collection.dart';
+import '../../core/providers.dart';
 import '../../theme/app_theme.dart';
 import '../../theme/theme_provider.dart';
 import '../../widgets/empty_state.dart';
@@ -20,14 +21,14 @@ import '../../widgets/toast.dart';
 import '../reader/reader_screen.dart';
 import 'snippets_provider.dart';
 
-class SnippetsScreen extends StatefulWidget {
+class SnippetsScreen extends ConsumerStatefulWidget {
   const SnippetsScreen({super.key});
 
   @override
-  State<SnippetsScreen> createState() => _SnippetsScreenState();
+  ConsumerState<SnippetsScreen> createState() => _SnippetsScreenState();
 }
 
-class _SnippetsScreenState extends State<SnippetsScreen> {
+class _SnippetsScreenState extends ConsumerState<SnippetsScreen> {
   final ScrollController _scrollCtrl = ScrollController();
   double _scrollProgress = 0;
 
@@ -36,7 +37,7 @@ class _SnippetsScreenState extends State<SnippetsScreen> {
     super.initState();
     _scrollCtrl.addListener(_onScroll);
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      context.read<SnippetsProvider>().loadSnippets();
+      ref.read(snippetsProvider).loadSnippets();
     });
   }
 
@@ -56,36 +57,35 @@ class _SnippetsScreenState extends State<SnippetsScreen> {
     super.dispose();
   }
 
-  bool get _oneHand => context.watch<ThemeProvider>().oneHandMode;
+  bool get _oneHand => ref.watch(themeProvider).oneHandMode;
 
   @override
   Widget build(BuildContext context) {
-    final leftHanded = context.watch<ThemeProvider>().handMode == HandMode.left;
+    final leftHanded = ref.watch(themeProvider).handMode == HandMode.left;
+    final p = ref.watch(snippetsProvider);
     final navClearance = MediaQuery.paddingOf(context).bottom + 84;
     return ScreenBackdrop(
-      child: Consumer<SnippetsProvider>(
-        builder: (context, p, _) => Stack(
-          children: [
-            SafeArea(
-              bottom: false,
-              child: _body(context, p),
-            ),
-            if (!p.selectionMode)
-              Positioned(
-                left: leftHanded ? 20 : null,
-                right: leftHanded ? null : 20,
-                bottom: navClearance,
-                child: IconButtonRound(
-                  icon: Icons.add,
-                  size: 52,
-                  variant: IconButtonVariant.filled,
-                  backgroundColor: context.colors.accent,
-                  iconColor: context.colors.onAccent,
-                  onPressed: () => _createSnippet(context),
-                ),
+      child: Stack(
+        children: [
+          SafeArea(
+            bottom: false,
+            child: _body(context, p),
+          ),
+          if (!p.selectionMode)
+            Positioned(
+              left: leftHanded ? 20 : null,
+              right: leftHanded ? null : 20,
+              bottom: navClearance,
+              child: IconButtonRound(
+                icon: Icons.add,
+                size: 52,
+                variant: IconButtonVariant.filled,
+                backgroundColor: context.colors.accent,
+                iconColor: context.colors.onAccent,
+                onPressed: () => _createSnippet(context),
               ),
-          ],
-        ),
+            ),
+        ],
       ),
     );
   }
@@ -347,7 +347,7 @@ class _SnippetsScreenState extends State<SnippetsScreen> {
       creating: true,
       onSave: (s) async {
         try {
-          await context.read<SnippetsProvider>().createSnippet(
+          await ref.read(snippetsProvider).createSnippet(
             text: s.text,
             note: s.note,
             sourceTitle: s.sourceTitle,
@@ -402,7 +402,7 @@ class _SnippetsScreenState extends State<SnippetsScreen> {
   }
 
   Future<void> _confirmDelete() async {
-    final p = context.read<SnippetsProvider>();
+    final p = ref.read(snippetsProvider);
     final ctx = context;
     final confirmed = await StashDialog.show<bool>(
       ctx,

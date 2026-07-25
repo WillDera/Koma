@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
-import 'package:provider/provider.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../../core/providers.dart';
 import '../../core/models/book.dart';
 import '../../core/services/database_service.dart';
 import '../../theme/app_theme.dart';
@@ -17,14 +18,14 @@ import '../../widgets/screen_chrome.dart';
 import '../extensions/manga_detail_screen.dart';
 import '../reader/reader_screen.dart';
 
-class HistoryScreen extends StatefulWidget {
+class HistoryScreen extends ConsumerStatefulWidget {
   const HistoryScreen({super.key});
 
   @override
-  State<HistoryScreen> createState() => _HistoryScreenState();
+  ConsumerState<HistoryScreen> createState() => _HistoryScreenState();
 }
 
-class _HistoryScreenState extends State<HistoryScreen> with RouteAware {
+class _HistoryScreenState extends ConsumerState<HistoryScreen> with RouteAware {
   final ScrollController _scrollCtrl = ScrollController();
   double _scrollProgress = 0;
   List<Book> _books = [];
@@ -66,11 +67,11 @@ class _HistoryScreenState extends State<HistoryScreen> with RouteAware {
     _load();
   }
 
-  bool get _oneHand => context.watch<ThemeProvider>().oneHandMode;
+  bool get _oneHand => ref.watch(themeProvider).oneHandMode;
 
   Future<void> _load() async {
     setState(() => _loading = true);
-    final db = context.read<DatabaseService>();
+    final db = ref.read(databaseServiceProvider);
     final results = await Future.wait([
       db.getInProgressBooks(),
       db.getInProgressManga(),
@@ -99,7 +100,7 @@ class _HistoryScreenState extends State<HistoryScreen> with RouteAware {
       ],
     );
     if (confirmed != true) return;
-    final db = context.read<DatabaseService>();
+    final db = ref.read(databaseServiceProvider);
     await db.clearProgress(book.id);
     await _load();
   }
@@ -448,7 +449,7 @@ class _HistoryScreenState extends State<HistoryScreen> with RouteAware {
       ],
     );
     if (confirmed != true) return;
-    final db = context.read<DatabaseService>();
+    final db = ref.read(databaseServiceProvider);
     await db.clearMangaChapterHistory(mangaRow['id'] as int);
     await _load();
   }

@@ -1,16 +1,16 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
-import 'package:provider/provider.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'app.dart';
+import 'core/isar/isar.dart';
 import 'core/isar/migration/drift_isar_migration.dart';
+import 'core/providers.dart';
 import 'core/services/database_service.dart';
 import 'core/services/extension_manager.dart';
 import 'core/services/keiyoushi_service.dart';
 import 'core/services/stats_service.dart';
 import 'features/library/library_provider.dart';
-import 'features/reader/reader_provider.dart';
-import 'features/snippets/snippets_provider.dart';
 import 'package:flutter_native_splash/flutter_native_splash.dart';
 import 'theme/theme_provider.dart';
 
@@ -18,28 +18,29 @@ void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
   final dbService = await DatabaseService.getInstance();
-  // One-time Drift→Isar migration. Runs silently on first launch after
-  // the user upgrades to a build that includes Isar (PHASE 1b). No-op
-  // on subsequent launches (gated by SharedPreferences flag). Errors
-  // are non-fatal — the app falls back to Drift until PHASE 1c lands.
+
+  // Open Isar (PHASE 1) and run the one-time Drift→Isar migration. Runs
+  // silently on first launch after the user upgrades to a build that
+  // includes Isar. No-op on subsequent launches (gated by a
+  // SharedPreferences flag). Errors are non-fatal — the app still works.
+  final isar = await openIsar();
   try {
-    final report = await migrateDriftToIsar(dbService);
+    final report = await migrateDriftToIsar(dbService, isar: isar);
     assert(() {
       // ignore: avoid_print
       print('Isar migration: $report');
       return true;
     }());
   } catch (_) {
-    // Migration failed — log and continue. The app still works on Drift.
+    // Migration failed — log and continue.
   }
-  final statsService = StatsService(dbService);
-  final themeProvider = ThemeProvider();
-  await themeProvider.init();
 
-  final libraryProvider = LibraryProvider(dbService);
-  await libraryProvider.init();
-  final readerProvider = ReaderProvider(dbService, statsService);
-  final snippetsProvider = SnippetsProvider(dbService, statsService);
+  final statsService = StatsService(dbService);
+  final themeProv = ThemeProvider();
+  await themeProv.init();
+
+  final libraryProv = LibraryProvider(dbService);
+  await libraryProv.init();
 
   // Re-mount any extensions the user previously installed so the
   // native Keiyoushi bridge has them loaded for this session.
@@ -54,16 +55,19 @@ void main() async {
   FlutterNativeSplash.preserve(widgetsBinding: widgetsBinding);
 
   runApp(
-    MultiProvider(
-      providers: [
-        Provider<DatabaseService>.value(value: dbService),
-        Provider<StatsService>.value(value: statsService),
-        Provider<KeiyoushiService>.value(value: keiyoushiService),
-        Provider<ExtensionManager>.value(value: extensionManager),
-        ChangeNotifierProvider<ThemeProvider>.value(value: themeProvider),
-        ChangeNotifierProvider<LibraryProvider>.value(value: libraryProvider),
-        ChangeNotifierProvider<ReaderProvider>.value(value: readerProvider),
-        ChangeNotifierProvider<SnippetsProvider>.value(value: snippetsProvider),
+    ProviderScope(
+      overrides: [
+        // Heavy singletons created once at startup are injected here so
+        // the whole provider graph shares one instance. ThemeProvider and
+        // LibraryProvider are pre-initialized (init() awaited above) so
+        // their persisted prefs are ready before first paint.
+        isarProvider.overrideWithValue(isar),
+        databaseServiceProvider.overrideWithValue(dbService),
+        statsServiceProvider.overrideWithValue(statsService),
+        keiyoushiServiceProvider.overrideWithValue(keiyoushiService),
+        extensionManagerProvider.overrideWithValue(extensionManager),
+        themeProvider.overrideWith((ref) => themeProv),
+        libraryProvider.overrideWith((ref) => libraryProv),
       ],
       child: const KomaApp(),
     ),
