@@ -38,9 +38,6 @@ android {
     }
 
     buildTypes {
-        debug {
-            signingConfig = signingConfigs.getByName("koma")
-        }
         release {
             signingConfig = signingConfigs.getByName("koma")
         }
