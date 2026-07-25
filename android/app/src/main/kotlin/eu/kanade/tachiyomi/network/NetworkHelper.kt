@@ -1,5 +1,7 @@
 package eu.kanade.tachiyomi.network
 
+import android.content.Context
+import eu.kanade.tachiyomi.network.interceptor.CloudflareInterceptor
 import eu.kanade.tachiyomi.network.interceptor.UncaughtExceptionInterceptor
 import eu.kanade.tachiyomi.network.interceptor.UserAgentInterceptor
 import okhttp3.Headers
@@ -10,29 +12,29 @@ import okhttp3.RequestBody
 import okhttp3.RequestBody.Companion.toRequestBody
 import java.util.concurrent.TimeUnit
 
-/**
- * Minimal NetworkHelper matching Mihon's extension-facing interface.
- *
- * The UncaughtExceptionInterceptor is required because extensions compiled against
- * extension-lib 1.5+ expect it as the first interceptor in the chain.
- */
 open class NetworkHelper(val client: OkHttpClient) {
     open fun defaultUserAgentProvider(): String = "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36"
 }
 
-/**
- * Builds a default OkHttpClient matching Mihon's production setup.
- * Extensions expect UncaughtExceptionInterceptor and UserAgentInterceptor in the chain.
- */
-fun defaultClient(): OkHttpClient = OkHttpClient.Builder()
-    .cookieJar(AndroidCookieJar())
-    .connectTimeout(30, TimeUnit.SECONDS)
-    .readTimeout(30, TimeUnit.SECONDS)
-    .writeTimeout(30, TimeUnit.SECONDS)
-    .callTimeout(2, TimeUnit.MINUTES)
-    .addInterceptor(UncaughtExceptionInterceptor())
-    .addInterceptor(UserAgentInterceptor { "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36" })
-    .build()
+fun defaultClient(context: Context? = null): OkHttpClient {
+    val cookieJar = AndroidCookieJar()
+    val builder = OkHttpClient.Builder()
+        .cookieJar(cookieJar)
+        .connectTimeout(30, TimeUnit.SECONDS)
+        .readTimeout(30, TimeUnit.SECONDS)
+        .writeTimeout(30, TimeUnit.SECONDS)
+        .callTimeout(2, TimeUnit.MINUTES)
+        .addInterceptor(UncaughtExceptionInterceptor())
+        .addInterceptor(UserAgentInterceptor { "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36" })
+
+    if (context != null) {
+        builder.addInterceptor(
+            CloudflareInterceptor(context, cookieJar) { "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36" },
+        )
+    }
+
+    return builder.build()
+}
 
 fun GET(url: String, headers: Headers? = null, cache: Boolean = true): Request {
     val builder = Request.Builder().url(url)

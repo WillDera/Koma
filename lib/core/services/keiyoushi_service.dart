@@ -49,6 +49,16 @@ class KeiyoushiService {
     return _parseMangasPage(res);
   }
 
+  /// Fetch latest updates from a loaded source.
+  Future<({List<Map<String, dynamic>> mangas, bool hasNextPage})>
+      getLatestUpdates({required String sourceId, int page = 1}) async {
+    final res = await _channel.invokeMapMethod<String, dynamic>(
+      'getLatestUpdates',
+      {'sourceId': sourceId, 'page': page},
+    );
+    return _parseMangasPage(res);
+  }
+
   /// Search a loaded source.
   Future<({List<Map<String, dynamic>> mangas, bool hasNextPage})>
       searchManga({required String sourceId, String query = '', int page = 1}) async {
