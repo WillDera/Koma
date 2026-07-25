@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'app.dart';
+import 'core/isar/migration/drift_isar_migration.dart';
 import 'core/services/database_service.dart';
 import 'core/services/extension_manager.dart';
 import 'core/services/keiyoushi_service.dart';
@@ -17,6 +18,20 @@ void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
   final dbService = await DatabaseService.getInstance();
+  // One-time Drift→Isar migration. Runs silently on first launch after
+  // the user upgrades to a build that includes Isar (PHASE 1b). No-op
+  // on subsequent launches (gated by SharedPreferences flag). Errors
+  // are non-fatal — the app falls back to Drift until PHASE 1c lands.
+  try {
+    final report = await migrateDriftToIsar(dbService);
+    assert(() {
+      // ignore: avoid_print
+      print('Isar migration: $report');
+      return true;
+    }());
+  } catch (_) {
+    // Migration failed — log and continue. The app still works on Drift.
+  }
   final statsService = StatsService(dbService);
   final themeProvider = ThemeProvider();
   await themeProvider.init();
