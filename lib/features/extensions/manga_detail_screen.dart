@@ -344,19 +344,13 @@ class _MangaDetailScreenState extends State<MangaDetailScreen> {
 
   Future<void> _refreshFromSource(DatabaseService db, Manga? existing) async {
     try {
-      final results = await Future.wait([
-        _service.getMangaDetails(
-          sourceId: widget.sourceId,
-          url: widget.url,
-        ),
-        _service.getChapterList(
-          sourceId: widget.sourceId,
-          url: widget.url,
-        ),
-      ]);
+      final result = await _service.getMangaUpdate(
+        sourceId: widget.sourceId,
+        url: widget.url,
+      );
       if (!mounted) return;
-      final details = results[0] as Map<String, dynamic>;
-      final chapters = results[1] as List<Map<String, dynamic>>;
+      final details = result.details;
+      final chapters = result.chapters;
       final thumb = details['thumbnail_url'] as String?;
       if (thumb != null && thumb.isNotEmpty) {
         _cacheThumbnail(thumb);
