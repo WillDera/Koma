@@ -167,6 +167,32 @@ class _ExtensionsScreenState extends State<ExtensionsScreen>
 
   Future<void> _install(ExtensionIndexEntry entry, ExtensionRepo repo) async {
     final messenger = ScaffoldMessenger.of(context);
+    // Confirm install — matching Mihon's pattern
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) {
+        final c = ctx.colors;
+        return AlertDialog(
+          backgroundColor: c.surface,
+          title: Text('Install extension', style: TextStyle(color: c.textPrimary)),
+          content: Text(
+            'Install ${entry.name} v${entry.version}?',
+            style: TextStyle(color: c.textSecondary),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: Text('Cancel', style: TextStyle(color: c.textSecondary)),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('Install'),
+            ),
+          ],
+        );
+      },
+    );
+    if (confirmed != true) return;
     try {
       final src = await _mgr.install(entry, repoUrl: repo.url);
       messenger.showSnackBar(

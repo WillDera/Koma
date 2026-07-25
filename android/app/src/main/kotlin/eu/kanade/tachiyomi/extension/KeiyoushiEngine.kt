@@ -47,7 +47,7 @@ class KeiyoushiEngine(
                 override fun InjektRegistrar.registerInjectables() {
                     addSingleton(app)
                     addSingletonFactory {
-                        defaultClient()
+                        defaultClient(context)
                     }
                     addSingletonFactory {
                         Json { ignoreUnknownKeys = true; explicitNulls = false; isLenient = true }
@@ -121,6 +121,19 @@ class KeiyoushiEngine(
         val manga = SManga.create().apply { this.url = url }
         val result = runBlocking {
             src.getMangaUpdate(manga, emptyList(), fetchDetails = false, fetchChapters = true)
+        }
+        // Log raw chapter data to check for music/audio/duration fields
+        for ((i, ch) in result.chapters.withIndex()) {
+            val chapterInfo = """
+                [Chapter $i]
+                url=${ch.url}
+                name=${ch.name}
+                chapter_number=${ch.chapter_number}
+                scanlator=${ch.scanlator}
+                date_upload=${ch.date_upload}
+                memo=${ch.memo}
+            """.trimIndent()
+            Log.d(TAG, chapterInfo)
         }
         return result.chapters
     }
