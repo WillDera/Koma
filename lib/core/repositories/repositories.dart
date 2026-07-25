@@ -11,9 +11,11 @@
 /// final repos = await Repositories.open();
 /// ```
 ///
-/// Phase 2's Riverpod providers will hold a single [Repositories]
-/// instance via a Provider and expose individual repositories through
-/// select() — see PHASE 2 todo.
+/// Held by `repositoriesProvider` in `lib/core/providers.dart`, which
+/// constructs a single instance from the shared `isarProvider`. Screens
+/// reach individual repositories via `ref.watch(repositoriesProvider).books`
+/// etc. — the reactive `watch*` streams are wired into the UI as each
+/// feature is migrated off [DatabaseService] (PHASE 3+).
 library;
 
 import 'package:isar_community/isar.dart';

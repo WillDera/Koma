@@ -1,10 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import '../../core/providers.dart';
 import '../../core/services/export_service.dart';
 import '../../core/services/database_service.dart';
 import '../../core/services/stats_service.dart';
-import '../extensions/extensions_screen.dart';
+import '../../router/router.dart';
 import '../../core/services/source_service.dart';
 import '../../core/models/source.dart';
 import '../library/library_provider.dart';
@@ -40,7 +41,7 @@ class SettingsScreen extends StatelessWidget {
             const OneHandSpacer(),
             const LibraryHeader(
               title: 'Settings',
-              subtitle: 'Version 2.16.0',
+              subtitle: 'Version 2.17.0',
               padding: EdgeInsets.fromLTRB(24, 20, 20, 12),
             ),
             const StaggeredEntrance(
@@ -106,7 +107,10 @@ class _SettingsHub extends StatelessWidget {
   }
 
   void _open(BuildContext context, String title, Widget child) {
-    Navigator.of(context).push(
+    // rootNavigator: true so the settings sub-page covers the bottom nav,
+    // matching pre-go_router full-screen behavior (the Settings tab now
+    // has its own nested Navigator under the StatefulShellRoute).
+    Navigator.of(context, rootNavigator: true).push(
       MaterialPageRoute(
         builder: (_) => _SettingsDestinationScreen(title: title, child: child),
       ),
@@ -1351,9 +1355,7 @@ class _PluginsSection extends StatelessWidget {
           subtitle: 'Browse, install, and remove extensions',
           trailing: const Icon(Icons.chevron_right, size: 18),
           onTap: () {
-            Navigator.of(
-              context,
-            ).push(MaterialPageRoute(builder: (_) => const ExtensionsScreen()));
+            context.pushNamed(Routes.extensions);
           },
         ),
         SettingsRow(
@@ -1379,7 +1381,7 @@ class _AboutSection extends StatelessWidget {
         SettingsRow(
           icon: Icons.info_outline,
           title: 'Koma',
-          subtitle: 'Version 2.16.0 · build 2.16.0+124',
+          subtitle: 'Version 2.18.0 · build 2.18.0+126',
         ),
         SettingsRow(
           icon: Icons.favorite_outline,

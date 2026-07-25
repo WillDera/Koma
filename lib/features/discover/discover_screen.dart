@@ -1,12 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import '../../core/providers.dart';
 import '../../core/services/source_service.dart';
 import '../../core/services/database_service.dart';
 import '../../core/services/ebook_service.dart';
 import '../../core/services/keiyoushi_service.dart';
-import '../extensions/manga_detail_screen.dart';
 import '../library/library_provider.dart';
+import '../../router/router.dart';
 import '../../theme/app_theme.dart';
 import '../../theme/theme_provider.dart';
 
@@ -426,15 +427,14 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
                     : _DiscoverMangaResults(
                         key: const ValueKey('discover-manga'),
                         sourceResults: _mangaResults,
-                        onTap: (srcResult, manga) => Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (_) => MangaDetailScreen(
-                              sourceId: srcResult['sourceId'] as String? ?? '',
-                              url: manga['url'] as String? ?? '',
-                              title: manga['title'] as String? ?? '',
-                            ),
-                          ),
+                        onTap: (srcResult, manga) => context.pushNamed(
+                          Routes.mangaDetail,
+                          extra: (
+                            sourceId: srcResult['sourceId'] as String? ?? '',
+                            url: manga['url'] as String? ?? '',
+                            title: manga['title'] as String? ?? '',
+                            manga: null,
+                          ) as MangaDetailArgs,
                         ),
                       ),
               ),
