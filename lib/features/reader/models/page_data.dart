@@ -33,6 +33,13 @@ class PageData {
   /// Cached image file path for downloaded pages.
   String? localPath;
 
+  /// Resolved file path set by [SubsamplingScaleImageView] when it has
+  /// located the on-disk cache file for a network page (Phase 6 cache).
+  /// Re-used on subsequent _loadFromProvider() calls so we skip the cache
+  /// scan + ImageProvider resolution. Mirrors mangayomi's
+  /// UChapDataPreload.resolvedFilePath seam.
+  String? resolvedFilePath;
+
   PageData({
     this.mangaPage,
     this.chapter,

@@ -1,8 +1,11 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 
+import '../../../core/utils/custom_extended_image_provider.dart';
 import '../reader_settings_sheet.dart';
+import '../subsampling_scale_image_view/subsampling_scale_image_view.dart';
 import '../widgets/transition_view_paged.dart';
-import 'reader_page_image.dart';
 import 'reader_view_props.dart';
 
 /// Paged reader (default L2R, right-to-left, and landscape book/spread mode).
@@ -82,44 +85,52 @@ class MangaImageViewPaged extends StatelessWidget {
       );
     }
 
-    final zc = index < props.zoomControllers.length
-        ? props.zoomControllers[index]
-        : TransformationController();
+    // ── Build the image provider / path for the subsampling viewer ──────
+    // If the page is a downloaded local file, pass the path directly to
+    // bypass the ImageProvider resolution pipeline. Otherwise pass the
+    // CustomExtendedNetworkImageProvider — the viewer's internal
+    // _loadFromProvider() will find the MD5-keyed cached file in the
+    // cacheimagemanga/ folder (Phase 6 disk cache) and feed it to the FFI
+    // decoder for region-decoded tiling. This is the exact flow mangayomi
+    // uses in its image_view_paged.dart.
+    final ImageProvider imageProvider;
+    final String? resolvedFilePath;
+    if (page.localPath != null) {
+      imageProvider = FileImage(File(page.localPath!));
+      resolvedFilePath = page.localPath;
+    } else if (page.imageUrl.isNotEmpty) {
+      imageProvider = CustomExtendedNetworkImageProvider(
+        page.imageUrl,
+        headers: page.headers,
+        cacheMaxAge: const Duration(days: 7),
+        imageCacheFolderName: 'cacheimagemanga',
+      );
+      resolvedFilePath = null;
+    } else {
+      // No image URL and no local path — broken page
+      return _BrokenPage(onRetry: () => props.onRetryPage(index));
+    }
+
     final padding = settings.sidePadding;
     final hPad = (MediaQuery.of(context).size.width * padding) / 2;
     final vPad = (MediaQuery.of(context).size.height * padding) / 2;
 
-    final imageWidget = ReaderPageImage(
-      page: page,
-      cropBorders: settings.cropBorders,
-      onRetry: () => props.onRetryPage(index),
-    );
-
-    if (settings.disableDoubleTap && settings.disableZoomOut) {
-      return Padding(
-        padding: EdgeInsets.symmetric(horizontal: hPad, vertical: vPad),
-        child: imageWidget,
-      );
-    }
-    return GestureDetector(
-      onDoubleTap: settings.disableDoubleTap
-          ? null
-          : () {
-              final matrix = zc.value;
-              if (matrix.getMaxScaleOnAxis() > 1.1) {
-                zc.value = Matrix4.identity();
-              } else {
-                zc.value = Matrix4.identity()..scale(2.0);
-              }
-            },
-      child: InteractiveViewer(
-        transformationController: zc,
-        minScale: settings.disableZoomOut ? 1.0 : 0.5,
-        maxScale: 5.0,
-        child: Padding(
-          padding: EdgeInsets.symmetric(horizontal: hPad, vertical: vPad),
-          child: imageWidget,
-        ),
+    return Padding(
+      padding: EdgeInsets.symmetric(horizontal: hPad, vertical: vPad),
+      child: SubsamplingScaleImageView(
+        image: imageProvider,
+        resolvedFilePath: resolvedFilePath,
+        preloadData: page,
+        cropBorders: settings.cropBorders,
+        fit: BoxFit.contain,
+        panEnabled: !settings.disableDoubleTap || !settings.disableZoomOut,
+        zoomEnabled: !settings.disableZoomOut,
+        doubleTapZoomScale: settings.disableDoubleTap ? 1.0 : null,
+        pageController: pageController,
+        onError: (msg) {
+          // Surface the error so the parent can offer retry
+          if (settings.disableDoubleTap) props.onRetryPage(index);
+        },
       ),
     );
   }
@@ -255,4 +266,32 @@ class _BottomRightClipper extends CustomClipper<Path> {
     ..close();
   @override
   bool shouldReclip(_) => false;
+}
+
+/// Fallback shown when a page has no image (no URL and no local file).
+/// Mirrors the broken-image placeholder used by [ReaderPageImage].
+class _BrokenPage extends StatelessWidget {
+  final VoidCallback onRetry;
+  const _BrokenPage({required this.onRetry});
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Icon(Icons.broken_image, color: Colors.white38, size: 48),
+          const SizedBox(height: 8),
+          TextButton.icon(
+            onPressed: onRetry,
+            icon: const Icon(Icons.refresh, color: Colors.white54),
+            label: const Text(
+              'Retry',
+              style: TextStyle(color: Colors.white54),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 }
