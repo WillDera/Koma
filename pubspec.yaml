@@ -1,7 +1,7 @@
 name: koma
 description: "A hybrid reader + knowledge snippet manager."
 publish_to: 'none'
-version: 2.18.1+127
+version: 2.18.2+128
 
 environment:
   sdk: ^3.12.2
@@ -46,6 +46,13 @@ dependencies:
     git:
       url: https://github.com/kodjodevf/flutter_qjs.git
       ref: main
+  # Native C++ build hook (PHASE 5 spike — verifies native_toolchain_c works
+  # on our pinned JDK 25 / AGP 8.7.3 toolchain before the full
+  # subsampling_scale_image_view port).
+  code_assets: ^1.2.1
+  hooks: ^2.0.2
+  native_toolchain_c: ^0.19.2
+  ffi: ^2.1.5
   # Immutable model classes for Isar/riverpod models (mangayomi parity).
   freezed_annotation: ^3.1.0
 
