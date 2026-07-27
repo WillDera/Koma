@@ -232,9 +232,10 @@ class _MangaDetailScreenState extends ConsumerState<MangaDetailScreen> {
       // Library manga or pre-inserted from source browse
       await _ensureIsarManga(m);
       await _loadFromIsarById(m.id);
-      // Pre-inserted from source browse: chapters aren't in Isar yet.
-      // Fetch them in background while the UI shows cached metadata.
-      if (!m.inLibrary) _refreshFromSource();
+      // Fetch fresh data + chapters in background. Mirrors mangayomi's
+      // updateMangaDetailProvider(mangaId, isInit: true): skips network
+      // fetch if chapters are already cached (checked inside).
+      _refreshFromSource();
     } else if (m != null) {
       // Source browse / non-library: pre-populate from passed metadata,
       // no DB write needed — show instantly, fetch fresh data in background.
@@ -308,6 +309,34 @@ class _MangaDetailScreenState extends ConsumerState<MangaDetailScreen> {
       })
       ..setMangaId(m.id)
       ..setLoading(false);
+
+    final chapters = await repos.manga.getMangaChapters(mangaId);
+    if (chapters.isNotEmpty && mounted) {
+      final chList = chapters.map((c) => <String, dynamic>{
+        'url': c.url,
+        'name': c.name,
+        'chapter_number': c.index.toDouble(),
+        'scanlator': c.scanlator,
+        'date_upload': c.dateUpload,
+        'is_read': c.isRead,
+        'last_page_read': c.lastPageRead,
+        'is_opened': c.isOpened,
+        'is_downloaded': c.isDownloaded,
+        if (c.readAt != null) 'read_at': c.readAt!.toIso8601String(),
+      }).toList();
+      notifier
+        ..setChapters(chList)
+        ..setLocalChapters({
+          for (final c in chapters)
+            c.url: {
+              'is_read': c.isRead,
+              'last_page_read': c.lastPageRead,
+              'is_downloaded': c.isDownloaded,
+              'is_opened': c.isOpened,
+              'read_at': c.readAt?.toIso8601String(),
+            },
+        });
+    }
   }
 
   /// Look up manga by sourceId + url in Isar, then delegate to
@@ -365,9 +394,14 @@ class _MangaDetailScreenState extends ConsumerState<MangaDetailScreen> {
   /// [mangaChaptersStreamProvider] re-emit automatically — the UI updates
   /// reactively via [_syncManga] / [_syncChapters].
   Future<void> _refreshFromSource() async {
-    // Always fetch via KeiyoushiService.getMangaUpdate (the proven path).
-    // If _mangaId is set, also persist to Isar so chapters survive relaunch
-    // and the reactive streams pick them up.
+    // Mirrors mangayomi's updateMangaDetailProvider: if chapters already
+    // exist in Isar (cached), skip the network fetch. The Isar reactive
+    // streams already have the data.
+    if (_mangaId != null) {
+      final repos = ref.read(repositoriesProvider);
+      final existing = await repos.manga.getMangaChapters(_mangaId!);
+      if (existing.isNotEmpty) return;
+    }
     try {
       final result = await _service.getMangaUpdate(
         sourceId: widget.sourceId,
@@ -414,25 +448,41 @@ class _MangaDetailScreenState extends ConsumerState<MangaDetailScreen> {
         genres: (details['genre'] as String? ?? '').split(',').map((g) => g.trim()).where((g) => g.isNotEmpty).toList(),
       ));
     }
-    if (chapters.isNotEmpty) {
-      await repos.manga.deleteMangaChapters(mangaId);
-      await repos.manga.insertMangaChapters(
-        mangaId,
-        chapters.asMap().entries.map((e) {
-          final ch = e.value;
-          final url = (ch['url'] as String? ?? '').trim();
-          return MangaChapter(
-            id: 0,
-            mangaId: mangaId,
-            name: ch['name'] as String? ?? '',
-            url: url,
-            scanlator: ch['scanlator'] as String?,
-            dateUpload: ch['date_upload'] as int? ?? 0,
-            index: e.key,
-          );
-        }).toList(),
-      );
+    if (chapters.isEmpty) return;
+
+    final existingChapters = await repos.manga.getMangaChapters(mangaId);
+    final existingByUrl = <String, MangaChapter>{
+      for (final c in existingChapters)
+        if (c.url.isNotEmpty) c.url.trim(): c,
+    };
+
+    final merged = <MangaChapter>[];
+    for (var i = 0; i < chapters.length; i++) {
+      final ch = chapters[i];
+      final url = (ch['url'] as String? ?? '').trim();
+      if (url.isEmpty) continue;
+      final existing = existingByUrl[url];
+      if (existing != null) {
+        merged.add(existing.copyWith(
+          name: ch['name'] as String? ?? existing.name,
+          scanlator: ch['scanlator'] as String? ?? existing.scanlator,
+          dateUpload: ch['date_upload'] as int? ?? existing.dateUpload,
+          index: i,
+        ));
+      } else {
+        merged.add(MangaChapter(
+          id: 0,
+          mangaId: mangaId,
+          name: ch['name'] as String? ?? '',
+          url: url,
+          scanlator: ch['scanlator'] as String?,
+          dateUpload: ch['date_upload'] as int? ?? 0,
+          index: i,
+        ));
+      }
     }
+    await repos.manga.deleteMangaChapters(mangaId);
+    await repos.manga.insertMangaChapters(mangaId, merged);
   }
 
   /// Applies manga metadata to local state during build (called from
@@ -456,9 +506,9 @@ class _MangaDetailScreenState extends ConsumerState<MangaDetailScreen> {
     if (mounted) setState(() => _inLibrary = manga.inLibrary);
   }
 
-  /// Applies chapter list to local state during build (called from
-  /// whenData inside ref.watch). No setState needed — ref.watch triggers
-  /// the rebuild automatically.
+  /// Merges chapter progress from Isar stream into the display chapter maps.
+  /// Also updates localChapters and downloadProgress. Called from whenData
+  /// on the mangaChaptersStreamProvider watch.
   void _applyChapters(List<MangaChapter> chapters) {
     final chMap = <String, Map<String, dynamic>>{};
     final downloadProgress = <String, String>{};
@@ -473,75 +523,121 @@ class _MangaDetailScreenState extends ConsumerState<MangaDetailScreen> {
       if (lc.isDownloaded) downloadProgress[lc.url] = 'done';
     }
     final notifier = ref.read(mangaDetailProvider.notifier);
+    final existing = notifier.state.chapters;
+    List<Map<String, dynamic>> merged;
+    if (existing.isEmpty) {
+      merged = chapters.map((c) => <String, dynamic>{
+        'url': c.url,
+        'name': c.name,
+        'chapter_number': c.index.toDouble(),
+        'scanlator': c.scanlator,
+        'date_upload': c.dateUpload,
+        'is_read': c.isRead,
+        'last_page_read': c.lastPageRead,
+        'is_opened': c.isOpened,
+        'is_downloaded': c.isDownloaded,
+        if (c.readAt != null) 'read_at': c.readAt!.toIso8601String(),
+      }).toList();
+    } else {
+      merged = existing.map((ch) {
+        final local = chMap[_normalizeUrl(ch['url'] as String? ?? '')];
+        if (local == null) return ch;
+        return {
+          ...ch,
+          'is_read': local['is_read'],
+          'last_page_read': local['last_page_read'],
+          'is_downloaded': local['is_downloaded'],
+          'is_opened': local['is_opened'],
+          'read_at': local['read_at'],
+        };
+      }).toList();
+    }
     notifier
+      ..setChapters(merged)
       ..setLocalChapters(chMap)
       ..setDownloadProgress(downloadProgress);
   }
 
   Future<void> _addToLibrary() async {
-    final detail = ref.read(mangaDetailProvider);
-    final d = detail.details;
-    if (d == null) return;
     final repos = ref.read(repositoriesProvider);
 
     if (_mangaId != null) {
-      // Already in Isar: flip flag + update metadata. Chapters are already
-      // saved by the background fetch — no need to delete/reinsert.
+      // Ensure chapters are in Isar before marking as library
+      final existingChapters = await repos.manga.getMangaChapters(_mangaId!);
+      if (existingChapters.isEmpty) {
+        final detail = ref.read(mangaDetailProvider);
+        if (detail.chapters.isNotEmpty) {
+          final chapterModels = detail.chapters.asMap().entries.map((e) {
+            final url = e.value['url'] as String? ?? '';
+            final local = detail.localChapters[url];
+            return MangaChapter(
+              id: 0, mangaId: _mangaId!,
+              name: e.value['name'] as String? ?? '', url: url,
+              scanlator: e.value['scanlator'] as String?,
+              dateUpload: e.value['date_upload'] as int? ?? 0, index: e.key,
+              isRead: local?['is_read'] as bool? ?? false,
+              lastPageRead: local?['last_page_read'] as int? ?? 0,
+              isDownloaded: detail.downloadProgress[url] == 'done',
+              isOpened: local?['is_opened'] as bool? ?? false,
+            );
+          }).toList();
+          await repos.manga.deleteMangaChapters(_mangaId!);
+          await repos.manga.insertMangaChapters(_mangaId!, chapterModels);
+        } else {
+          await _refreshFromSource();
+        }
+      }
       await repos.manga.setMangaInLibrary(_mangaId!, true);
-      final manga = await repos.manga.getMangaById(_mangaId!);
-      if (manga != null) {
-        await repos.manga.updateManga(manga.copyWith(
-          name: d['title'] as String? ?? widget.title,
-          imageUrl: d['thumbnail_url'] as String?,
-          author: d['author'] as String?,
-          artist: d['artist'] as String?,
-          description: d['description'] as String?,
-          status: d['status'] as int? ?? 0,
-          genres: (d['genre'] as String? ?? '').split(',').map((g) => g.trim()).where((g) => g.isNotEmpty).toList(),
+      final m = await repos.manga.getMangaById(_mangaId!);
+      if (m != null) {
+        final d = ref.read(mangaDetailProvider).details;
+        await repos.manga.updateManga(m.copyWith(
+          name: d?['title'] as String? ?? widget.title,
+          imageUrl: d?['thumbnail_url'] as String?,
+          author: d?['author'] as String?, artist: d?['artist'] as String?,
+          description: d?['description'] as String?,
+          status: d?['status'] as int? ?? 0,
+          genres: (d?['genre'] as String? ?? '').split(',').map((g) => g.trim()).where((g) => g.isNotEmpty).toList(),
         ));
       }
       if (!mounted) return;
       setState(() => _inLibrary = true);
     } else {
-      // First time: insert new manga row
+      // First time insertion — ensure chapters exist before creating manga row
+      var detail = ref.read(mangaDetailProvider);
+      if (detail.chapters.isEmpty) {
+        await _refreshFromSource();
+        detail = ref.read(mangaDetailProvider);
+      }
+      final d = detail.details ?? {};
       final manga = Manga(
-        id: 0,
-        name: d['title'] as String? ?? widget.title,
-        url: widget.url,
-        imageUrl: d['thumbnail_url'] as String?,
-        author: d['author'] as String?,
-        artist: d['artist'] as String?,
-        description: d['description'] as String?,
+        id: 0, name: d['title'] as String? ?? widget.title, url: widget.url,
+        imageUrl: d['thumbnail_url'] as String?, author: d['author'] as String?,
+        artist: d['artist'] as String?, description: d['description'] as String?,
         status: d['status'] as int? ?? 0,
         genres: (d['genre'] as String? ?? '').split(',').map((g) => g.trim()).where((g) => g.isNotEmpty).toList(),
-        sourceId: widget.sourceId,
-        inLibrary: true,
+        sourceId: widget.sourceId, inLibrary: true,
       );
       final id = await repos.manga.insertManga(manga);
       await repos.manga.deleteMangaChapters(id);
       final chapterModels = detail.chapters.asMap().entries.map((e) {
         final url = e.value['url'] as String? ?? '';
-        final existing = detail.localChapters[url];
+        final local = detail.localChapters[url];
         return MangaChapter(
-          id: 0,
-          mangaId: id,
-          name: e.value['name'] as String? ?? '',
-          url: url,
+          id: 0, mangaId: id,
+          name: e.value['name'] as String? ?? '', url: url,
           scanlator: e.value['scanlator'] as String?,
-          dateUpload: e.value['date_upload'] as int? ?? 0,
-          index: e.key,
+          dateUpload: e.value['date_upload'] as int? ?? 0, index: e.key,
+          isRead: local?['is_read'] as bool? ?? false,
+          lastPageRead: local?['last_page_read'] as int? ?? 0,
           isDownloaded: detail.downloadProgress[url] == 'done',
-          isOpened: existing != null && (existing['is_opened'] as bool? ?? false),
+          isOpened: local?['is_opened'] as bool? ?? false,
         );
       }).toList();
       await repos.manga.insertMangaChapters(id, chapterModels);
       if (!mounted) return;
-      setState(() {
-        _inLibrary = true;
-        _mangaId = id;
-      });
+      setState(() { _inLibrary = true; _mangaId = id; });
       ref.read(mangaDetailProvider.notifier).setMangaId(id);
-      // Refresh library in case user goes back
       if (mounted) ref.read(libraryProvider.notifier).loadBooks();
     }
     if (!mounted) return;
