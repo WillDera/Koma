@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'package:crypto/crypto.dart';
@@ -33,6 +34,7 @@ import '../../widgets/premium_button.dart';
 import '../../widgets/screen_chrome.dart';
 import '../../widgets/segmented_control.dart';
 import '../../widgets/toast.dart';
+import '../../core/utils/benchmark_logger.dart';
 import 'library_provider.dart';
 
 class LibraryScreen extends ConsumerStatefulWidget {
@@ -46,7 +48,6 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> with RouteAware {
   final ScrollController _scrollCtrl = ScrollController();
   final TextEditingController _bookSearchCtrl = TextEditingController();
   final TextEditingController _mangaSearchCtrl = TextEditingController();
-  double _scrollProgress = 0;
   bool _importingFile = false;
   _LibrarySection _section = _LibrarySection.books;
   _LibrarySort _sort = _LibrarySort.alphabetical;
@@ -58,7 +59,6 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> with RouteAware {
   @override
   void initState() {
     super.initState();
-    _scrollCtrl.addListener(_onScroll);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       ref.read(libraryProvider.notifier).loadBooks();
       _loadThumbnails();
@@ -85,18 +85,8 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> with RouteAware {
     }
   }
 
-  void _onScroll() {
-    if (!_scrollCtrl.hasClients) return;
-    final max = _scrollCtrl.position.maxScrollExtent;
-    final p = max <= 0 ? 0.0 : (_scrollCtrl.offset / max).clamp(0.0, 1.0);
-    if ((p - _scrollProgress).abs() > 0.01) {
-      setState(() => _scrollProgress = p);
-    }
-  }
-
   @override
   void dispose() {
-    _scrollCtrl.removeListener(_onScroll);
     _scrollCtrl.dispose();
     _bookSearchCtrl.dispose();
     _mangaSearchCtrl.dispose();
@@ -300,7 +290,15 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> with RouteAware {
         physics: const AlwaysScrollableScrollPhysics(),
         children: [
           const OneHandSpacer(),
-          _header(context, provider, _oneHand),
+          _LibraryHeaderController(
+            scrollController: _scrollCtrl,
+            oneHand: _oneHand,
+            selectionMode: provider.selectionMode,
+            selectedCount: provider.selectedIds.length,
+            onSelectAll: () => ref.read(libraryProvider.notifier).selectAll,
+            onDeleteSelected: () => _confirmDelete(context, provider),
+            onClearSelection: () => ref.read(libraryProvider.notifier).clearSelection,
+          ),
           if (!provider.selectionMode)
             StaggeredEntrance(
               index: 0,
@@ -372,11 +370,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> with RouteAware {
 
   // ── Header ──────────────────────────────────────────────────────────
 
-  Widget _header(
-    BuildContext context,
-    LibraryState provider, [
-    bool oneHand = false,
-  ]) {
+  Widget _header(BuildContext context, LibraryState provider) {
     if (provider.selectionMode) {
       return LibraryHeader(
         title: '${provider.selectedIds.length} selected',
@@ -410,7 +404,6 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> with RouteAware {
     return LibraryHeader(
       title: 'Library',
       titleSize: _oneHand ? 64 : 32,
-      shrinkProgress: _oneHand ? _scrollProgress : 0.0,
     );
   }
 
@@ -811,6 +804,122 @@ final bookId = await provider.addBook(book);
         title: manga.name,
         manga: manga, // Pass full Manga object for instant first frame
       ) as MangaDetailArgs,
+    );
+  }
+}
+
+class _LibraryHeaderController extends StatefulWidget {
+  final ScrollController scrollController;
+  final bool oneHand;
+  final bool selectionMode;
+  final int selectedCount;
+  final VoidCallback? onSelectAll;
+  final VoidCallback? onDeleteSelected;
+  final VoidCallback? onClearSelection;
+
+  const _LibraryHeaderController({
+    required this.scrollController,
+    required this.oneHand,
+    required this.selectionMode,
+    required this.selectedCount,
+    this.onSelectAll,
+    this.onDeleteSelected,
+    this.onClearSelection,
+  });
+
+  @override
+  State<_LibraryHeaderController> createState() =>
+      _LibraryHeaderControllerState();
+}
+
+class _LibraryHeaderControllerState extends State<_LibraryHeaderController> {
+  double _scrollProgress = 0;
+  int _bmCalls = 0;
+  Timer? _bmTimer;
+  DateTime? _lastSetState;
+
+  @override
+  void initState() {
+    super.initState();
+    widget.scrollController.addListener(_onScroll);
+    _bmTimer = Timer.periodic(const Duration(seconds: 2), (_) {
+      if (_bmCalls > 0 && mounted) {
+        BenchmarkLogger.log('lib_scroll_setstate',
+            'calls=$_bmCalls elapsed=2s');
+        _bmCalls = 0;
+      }
+    });
+  }
+
+  @override
+  void didUpdateWidget(covariant _LibraryHeaderController oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.scrollController != widget.scrollController) {
+      oldWidget.scrollController.removeListener(_onScroll);
+      widget.scrollController.addListener(_onScroll);
+    }
+  }
+
+  void _onScroll() {
+    _bmCalls++;
+    final max = widget.scrollController.position.maxScrollExtent;
+    final p =
+        max <= 0 ? 0.0 : (widget.scrollController.offset / max).clamp(0.0, 1.0);
+    final now = DateTime.now();
+    final minTime = _lastSetState == null ||
+        now.difference(_lastSetState!) > const Duration(milliseconds: 50);
+    if (minTime && (p - _scrollProgress).abs() > 0.015) {
+      _lastSetState = now;
+      setState(() => _scrollProgress = p);
+    }
+  }
+
+  @override
+  void dispose() {
+    _bmTimer?.cancel();
+    widget.scrollController.removeListener(_onScroll);
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (widget.selectionMode) {
+      return LibraryHeader(
+        title: '${widget.selectedCount} selected',
+        actions: [
+          if (widget.onSelectAll != null)
+            IconButtonRound(
+              icon: Icons.select_all_rounded,
+              size: 40,
+              variant: IconButtonVariant.tonal,
+              iconColor: context.colors.textSecondary,
+              onPressed: widget.onSelectAll,
+            ),
+          const SizedBox(width: 8),
+          if (widget.onDeleteSelected != null)
+            IconButtonRound(
+              icon: Icons.delete_outline,
+              size: 40,
+              variant: IconButtonVariant.tonal,
+              iconColor: const Color(0xFFC44C4C),
+              onPressed: widget.onDeleteSelected,
+            ),
+          const SizedBox(width: 8),
+          if (widget.onClearSelection != null)
+            IconButtonRound(
+              icon: Icons.close,
+              size: 40,
+              variant: IconButtonVariant.tonal,
+              onPressed: widget.onClearSelection,
+            ),
+          const SizedBox(width: 8),
+        ],
+      );
+    }
+    return LibraryHeader(
+      title: 'Library',
+      titleSize: widget.oneHand ? 64 : 32,
+      shrinkProgress: widget.oneHand ? _scrollProgress : 0.0,
     );
   }
 }
@@ -1290,8 +1399,9 @@ class _BookShelf extends StatelessWidget {
         ),
       );
     }
+    final sw = Stopwatch()..start();
     if (provider.isGridView) {
-      return Padding(
+      final result = Padding(
         padding: const EdgeInsets.symmetric(horizontal: 20),
         child: GridView.builder(
           shrinkWrap: true,
@@ -1319,8 +1429,11 @@ class _BookShelf extends StatelessWidget {
           ),
         ),
       );
+      BenchmarkLogger.log('book_shelf_build',
+          'variant=grid count=${books.length} elapsed=${sw.elapsedMicroseconds}us');
+      return result;
     }
-    return Column(
+    final result = Column(
       children: [
         for (final entry in books.indexed)
           Padding(
@@ -1342,6 +1455,9 @@ class _BookShelf extends StatelessWidget {
           ),
       ],
     );
+    BenchmarkLogger.log('book_shelf_build',
+        'variant=list count=${books.length} elapsed=${sw.elapsedMicroseconds}us');
+    return result;
   }
 }
 
@@ -1379,8 +1495,9 @@ class _MangaShelf extends StatelessWidget {
         ),
       );
     }
+    final sw = Stopwatch()..start();
     if (gridView) {
-      return Padding(
+      final result = Padding(
         padding: const EdgeInsets.symmetric(horizontal: 20),
         child: GridView.builder(
           shrinkWrap: true,
@@ -1412,8 +1529,11 @@ class _MangaShelf extends StatelessWidget {
           },
         ),
       );
+      BenchmarkLogger.log('manga_shelf_build',
+          'variant=grid count=${mangas.length} elapsed=${sw.elapsedMicroseconds}us');
+      return result;
     }
-    return Column(
+    Widget result = Column(
       children: [
         for (final entry in mangas.indexed)
           StaggeredEntrance(
@@ -1436,6 +1556,9 @@ class _MangaShelf extends StatelessWidget {
           ),
       ],
     );
+    BenchmarkLogger.log('manga_shelf_build',
+        'variant=list count=${mangas.length} elapsed=${sw.elapsedMicroseconds}us');
+    return result;
   }
 }
 
