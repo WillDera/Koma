@@ -1,11 +1,11 @@
 import 'package:flutter/material.dart';
-import 'package:provider/provider.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
+import '../../core/providers.dart';
 import '../../core/services/source_service.dart';
-import '../../core/services/database_service.dart';
 import '../../core/services/ebook_service.dart';
 import '../../core/services/keiyoushi_service.dart';
-import '../extensions/manga_detail_screen.dart';
-import '../library/library_provider.dart';
+import '../../router/router.dart';
 import '../../theme/app_theme.dart';
 import '../../theme/theme_provider.dart';
 
@@ -17,15 +17,16 @@ import '../../widgets/one_hand_spacer.dart';
 import '../../widgets/screen_chrome.dart';
 import '../../widgets/segmented_control.dart';
 import '../../widgets/toast.dart';
+import '../../core/utils/image_cache.dart';
 
-class DiscoverScreen extends StatefulWidget {
+class DiscoverScreen extends ConsumerStatefulWidget {
   const DiscoverScreen({super.key});
 
   @override
-  State<DiscoverScreen> createState() => _DiscoverScreenState();
+  ConsumerState<DiscoverScreen> createState() => _DiscoverScreenState();
 }
 
-class _DiscoverScreenState extends State<DiscoverScreen> {
+class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
   final _ctrl = TextEditingController();
   final _scrollCtrl = ScrollController();
   List<SourceSearchResult> _results = [];
@@ -35,8 +36,9 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
   bool _gridView = false;
   _DiscoverSection _section = _DiscoverSection.books;
   double _scrollProgress = 0;
+  DateTime? _lastScroll;
   final Map<String, double> _downloading = {};
-  bool get _oneHand => context.watch<ThemeProvider>().oneHandMode;
+  bool get _oneHand => ref.watch(themeProvider).oneHandMode;
   final _mangaService = KeiyoushiService();
 
   @override
@@ -55,13 +57,17 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
 
   void _onScroll() {
     final p = (_scrollCtrl.offset / 60).clamp(0.0, 1.0);
-    if (p != _scrollProgress) {
+    final now = DateTime.now();
+    final minTime = _lastScroll == null ||
+        now.difference(_lastScroll!) > const Duration(milliseconds: 120);
+    final delta = (p - _scrollProgress).abs();
+    if (minTime && delta > 0.02) {
+      _lastScroll = now;
       setState(() => _scrollProgress = p);
     }
   }
 
-  SourceService _svc() =>
-      SourceService(context.read<DatabaseService>(), EbookService());
+  SourceService _svc() => ref.read(sourceServiceProvider);
 
   Future<void> _search() async {
     final q = _ctrl.text.trim();
@@ -276,7 +282,7 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
     if (!mounted) return;
     setState(() => _downloading.remove(title));
     if (ok) {
-      context.read<LibraryProvider>().loadBooks();
+      ref.read(libraryProvider.notifier).loadBooks();
       StashToast.show(
         context,
         message: '$title added to library',
@@ -425,15 +431,14 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
                     : _DiscoverMangaResults(
                         key: const ValueKey('discover-manga'),
                         sourceResults: _mangaResults,
-                        onTap: (srcResult, manga) => Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (_) => MangaDetailScreen(
-                              sourceId: srcResult['sourceId'] as String? ?? '',
-                              url: manga['url'] as String? ?? '',
-                              title: manga['title'] as String? ?? '',
-                            ),
-                          ),
+                        onTap: (srcResult, manga) => context.pushNamed(
+                          Routes.mangaDetail,
+                          extra: (
+                            sourceId: srcResult['sourceId'] as String? ?? '',
+                            url: manga['url'] as String? ?? '',
+                            title: manga['title'] as String? ?? '',
+                            manga: null,
+                          ) as MangaDetailArgs,
                         ),
                       ),
               ),
@@ -561,18 +566,20 @@ class _DiscoverBookResults extends StatelessWidget {
         ),
       );
     }
-    return Column(
-      children: [
-        for (final entry in results.indexed)
-          StaggeredEntrance(
-            index: entry.$1 + 1,
-            child: _ResultCard(
-              result: entry.$2,
-              downloadProgress: downloading[entry.$2.title],
-              onTap: () => onTap(entry.$2),
-            ),
-          ),
-      ],
+        return ListView.separated(
+      shrinkWrap: true,
+      physics: const NeverScrollableScrollPhysics(),
+      padding: const EdgeInsets.symmetric(horizontal: 20),
+      itemCount: results.length,
+      separatorBuilder: (_, _) => const SizedBox(height: 8),
+      itemBuilder: (_, i) => StaggeredEntrance(
+        index: i + 1,
+        child: _ResultCard(
+          result: results[i],
+          downloadProgress: downloading[results[i].title],
+          onTap: () => onTap(results[i]),
+        ),
+      ),
     );
   }
 }
@@ -608,10 +615,20 @@ class _DiscoverMangaResults extends StatelessWidget {
         ),
       );
     }
-    return Column(
-      children: [
-        for (final srcResult in sourceResults)
-          if ((srcResult['mangas'] as List?)?.isNotEmpty ?? false) ...[
+        final sections = sourceResults.where(
+      (src) => (src['mangas'] as List?)?.isNotEmpty ?? false,
+    );
+    return ListView.separated(
+      shrinkWrap: true,
+      physics: const NeverScrollableScrollPhysics(),
+      padding: EdgeInsets.zero,
+      itemCount: sections.length,
+      separatorBuilder: (_, _) => const SizedBox(height: 16),
+      itemBuilder: (_, si) {
+        final srcResult = sections.elementAt(si);
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
             Padding(
               padding: const EdgeInsets.fromLTRB(20, 12, 20, 8),
               child: Align(
@@ -653,7 +670,8 @@ class _DiscoverMangaResults extends StatelessWidget {
               ),
             ),
           ],
-      ],
+        );
+      },
     );
   }
 }
@@ -691,9 +709,9 @@ class _ResultCard extends StatelessWidget {
                   children: [
                     ClipRRect(
                       borderRadius: BorderRadius.circular(6),
-                      child: result.poster != null
-                          ? Image.network(
-                              result.poster!,
+                                            child: result.poster != null
+                          ? Image(
+                              image: cachedCover(result.poster!),
                               width: 48,
                               height: 64,
                               fit: BoxFit.cover,
@@ -839,9 +857,9 @@ class _GridResultCard extends StatelessWidget {
                 borderRadius: const BorderRadius.vertical(
                   top: Radius.circular(18),
                 ),
-                child: result.poster != null
-                    ? Image.network(
-                        result.poster!,
+                                child: result.poster != null
+                    ? Image(
+                        image: cachedCover(result.poster!),
                         width: double.infinity,
                         fit: BoxFit.cover,
                         errorBuilder: (_, _, _) => _posterPlaceholder(c),
@@ -965,9 +983,9 @@ class _MangaCard extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Expanded(
-              child: thumb != null && thumb.isNotEmpty
-                  ? Image.network(
-                      thumb,
+                            child: thumb != null && thumb.isNotEmpty
+                  ? Image(
+                      image: cachedCover(thumb),
                       width: double.infinity,
                       fit: BoxFit.cover,
                       errorBuilder: (_, _, _) => _placeholder(c),

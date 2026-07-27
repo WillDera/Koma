@@ -4,26 +4,32 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
-import 'package:provider/provider.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:scrollable_positioned_list/scrollable_positioned_list.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import '../../core/services/database_service.dart';
+import 'package:go_router/go_router.dart';
+import '../../core/providers.dart';
 import '../../core/services/keiyoushi_service.dart';
+import '../../core/repositories/repositories.dart';
 import '../../core/models/manga_page.dart';
 import '../../core/models/manga_chapter.dart';
 import '../../theme/app_theme.dart';
+import '../../router/router.dart';
 import 'reader_settings_sheet.dart';
 import 'widgets/reader_app_bar.dart';
 import 'widgets/reader_bottom_bar.dart';
 import 'widgets/page_indicator.dart';
 import 'widgets/navigation_overlay.dart';
 import 'widgets/chapter_list_dialog.dart';
-import 'widgets/transition_view_vertical.dart';
-import 'widgets/transition_view_paged.dart';
+import 'widgets/image_actions_dialog.dart';
+import 'widgets/color_filter_widget.dart';
 import 'models/page_data.dart';
 import 'mixins/reader_memory_management.dart';
+import 'views/manga_image_view_paged.dart';
+import 'views/manga_image_view_webtoon.dart';
+import 'views/reader_view_props.dart';
 
-class MangaReaderScreen extends StatefulWidget {
+class MangaReaderScreen extends ConsumerStatefulWidget {
   final int? mangaId;
   final String sourceId;
   final String mangaUrl;
@@ -40,13 +46,13 @@ class MangaReaderScreen extends StatefulWidget {
   });
 
   @override
-  State<MangaReaderScreen> createState() => _MangaReaderScreenState();
+  ConsumerState<MangaReaderScreen> createState() => _MangaReaderScreenState();
 }
 
-class _MangaReaderScreenState extends State<MangaReaderScreen>
+class _MangaReaderScreenState extends ConsumerState<MangaReaderScreen>
     with WidgetsBindingObserver, ReaderMemoryManagement {
   final _service = KeiyoushiService();
-  DatabaseService? _db;
+  Repositories? _repos;
   bool _loading = true;
   String? _error;
   final _pageCtrl = PageController();
@@ -82,7 +88,7 @@ class _MangaReaderScreenState extends State<MangaReaderScreen>
   @override
   void initState() {
     super.initState();
-    _db = context.read<DatabaseService>();
+    _repos = ref.read(repositoriesProvider);
     WidgetsBinding.instance.addObserver(this);
     _itemPositionsListener.itemPositions.addListener(_onWebtoonScroll);
     _loadBookmark();
@@ -91,17 +97,18 @@ class _MangaReaderScreenState extends State<MangaReaderScreen>
 
   Future<void> _initAsync() async {
     await _loadSettings();
-    if (widget.mangaId != null && _db != null) {
-      final ch = await _db!.getMangaChapterByUrl(
+    if (widget.mangaId != null && _repos != null) {
+      final ch = await _repos!.manga.getMangaChapterByUrl(
         widget.mangaId!,
         widget.chapterUrl,
       );
       if (ch != null && mounted) {
         _currentChapter = ch;
-        if (!ch.isOpened) _db!.markMangaChapterOpened(ch.id);
+        if (!ch.isOpened) {
+          await _repos!.manga.markMangaChapterOpened(ch.id);
+        }
       }
-      // Cache the full chapter list for navigation lookups
-      _chapters = await _db!.getMangaChapters(widget.mangaId!);
+      _chapters = await _repos!.manga.getMangaChapters(widget.mangaId!);
     }
     if (mounted) _load();
   }
@@ -430,24 +437,21 @@ class _MangaReaderScreenState extends State<MangaReaderScreen>
   /// Saves the chapter-relative page index (not the flat list index),
   /// same as mangayomi's setPageIndex().
   Future<void> _saveProgress() async {
-    if (_currentChapter == null || _db == null) return;
+    if (_currentChapter == null || _repos == null) return;
     final flatIdx = _currentPageNotifier.value;
     if (flatIdx >= _pages.length) return;
     final page = _pages[flatIdx];
-    // Save the chapter-relative page index
     final chapterRelativeIndex = page.index;
     final chapterId =
         (page.chapter ?? _currentChapter)!.id;
-    await _db!.updateMangaChapterProgress(chapterId, chapterRelativeIndex);
+    await _repos!.manga.updateMangaChapterProgress(chapterId, chapterRelativeIndex);
 
-    // Mark chapter as read when user reaches the last page (same as
-    // mangayomi's setPageIndex() does with the isRead check).
     final ch = page.chapter;
     if (ch != null) {
       final chPages = _pages.where((p) =>
           p.chapter?.id == ch.id && !p.isTransitionPage).length;
       if (chPages > 0 && chapterRelativeIndex >= chPages - 1) {
-        await _db!.markMangaChapterRead(chapterId);
+        await _repos!.manga.markMangaChapterRead(chapterId);
       }
     }
   }
@@ -578,16 +582,14 @@ class _MangaReaderScreenState extends State<MangaReaderScreen>
   void _reloadWithChapter(MangaChapter chapter) {
     _saveProgress().then((_) {
       if (!mounted) return;
-      Navigator.pushReplacement(
-        context,
-        MaterialPageRoute(
-          builder: (_) => MangaReaderScreen(
-            mangaId: widget.mangaId,
-            sourceId: widget.sourceId,
-            mangaUrl: widget.mangaUrl,
-            chapterUrl: chapter.url,
-            chapterName: chapter.name,
-          ),
+      context.pushReplacementNamed(
+        Routes.mangaReader,
+        extra: (
+          mangaId: widget.mangaId,
+          sourceId: widget.sourceId,
+          mangaUrl: widget.mangaUrl,
+          chapterUrl: chapter.url,
+          chapterName: chapter.name,
         ),
       );
     });
@@ -720,44 +722,32 @@ class _MangaReaderScreenState extends State<MangaReaderScreen>
 
   void _showLongPressMenu() {
     if (!_settings.showActionsOnLongTap) return;
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: context.colors.surface,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
-      ),
-      builder: (ctx) => SafeArea(
-        child: Column(mainAxisSize: MainAxisSize.min, children: [
-          ListTile(
-            leading: const Icon(Icons.download_outlined),
-            title: const Text('Save page'),
-            onTap: () {
-              Navigator.pop(ctx);
-              _saveCurrentPage();
-            },
-          ),
-          ListTile(
-            leading: const Icon(Icons.share_outlined),
-            title: const Text('Share page'),
-            onTap: () {
-              Navigator.pop(ctx);
-              _shareCurrentPage();
-            },
-          ),
-          ListTile(
-            leading: const Icon(Icons.content_copy),
-            title: const Text('Copy page URL'),
-            onTap: () {
-              Navigator.pop(ctx);
-              _copyCurrentPage();
-            },
-          ),
-        ]),
-      ),
+    final page = _currentPageNotifier.value < _pages.length
+        ? _pages[_currentPageNotifier.value]
+        : null;
+    ImageActionsDialog.show(
+      context,
+      imageUrl: page?.imageUrl,
+      localPath: page?.localPath,
+      onSave: _saveCurrentPage,
+      onShare: _shareCurrentPage,
+      onCopyUrl: _copyCurrentPage,
     );
   }
 
   // ── Build ──
+
+  ReaderViewProps _viewProps() => ReaderViewProps(
+        pages: _pages,
+        settings: _settings,
+        currentPage: _currentPageNotifier,
+        zoomControllers: _zoomCtrls,
+        onPageChanged: _onPageChanged,
+        onGoToPage: _goToPage,
+        onToggleToolbar: _toggleToolbar,
+        onLongPress: _showLongPressMenu,
+        onRetryPage: _retryPage,
+      );
 
   @override
   Widget build(BuildContext context) {
@@ -825,20 +815,29 @@ class _MangaReaderScreenState extends State<MangaReaderScreen>
           builder: (context, orientation) {
             final showBookMode =
                 _settings.bookMode && orientation == Orientation.landscape;
+            final props = _viewProps();
             return Stack(
               children: [
-                isContinuous
-                    ? _buildContinuousPages()
-                    : showBookMode
-                        ? _buildBookModePages(axis, reverse)
-                        : PageView.builder(
-                            controller: _pageCtrl,
-                            scrollDirection: axis,
-                            reverse: reverse,
-                            itemCount: _pages.length,
-                            onPageChanged: _onPageChanged,
-                            itemBuilder: (_, i) => _buildPage(i),
-                          ),
+                ColorFilterWidget(
+                  brightness: _settings.brightness,
+                  contrast: _settings.contrast,
+                  saturation: _settings.saturation,
+                  tint: _settings.tintColor,
+                  tintOpacity: _settings.tintOpacity,
+                  child: isContinuous
+                      ? MangaImageViewWebtoon(
+                          props: props,
+                          itemScrollController: _itemScrollCtrl,
+                          itemPositionsListener: _itemPositionsListener,
+                        )
+                      : MangaImageViewPaged(
+                          props: props,
+                          pageController: _pageCtrl,
+                          axis: axis,
+                          reverse: reverse,
+                          bookMode: showBookMode,
+                        ),
+                ),
 
                 if (_showNavigationOverlay)
                   NavigationOverlay(
@@ -856,7 +855,16 @@ class _MangaReaderScreenState extends State<MangaReaderScreen>
                     ),
                   )
                 else if (!_showNavigationOverlay)
-                  Positioned.fill(child: _buildTapZones()),
+                  Positioned.fill(
+                    child: isContinuous
+                        ? GestureDetector(
+                            onTap: _toggleToolbar,
+                            onLongPress: _showLongPressMenu,
+                            behavior: HitTestBehavior.translucent,
+                            child: const SizedBox.expand(),
+                          )
+                        : ReaderTapZones(props: props),
+                  ),
 
                 ReaderAppBar(
                   chapterName: _currentChapter?.name ?? widget.chapterName,
@@ -896,327 +904,4 @@ class _MangaReaderScreenState extends State<MangaReaderScreen>
       ),
     );
   }
-
-  Widget _buildTapZones() {
-    switch (_settings.tapZones) {
-      case TapZoneMode.leftTopRightBottom:
-        return LayoutBuilder(
-          builder: (_, constraints) => Stack(
-            children: [
-              Positioned.fill(
-                child: ClipPath(
-                  clipper: const _TopLeftClipper(),
-                  child: GestureDetector(
-                    onTap: () =>
-                        _goToPage(_currentPageNotifier.value - 1),
-                    onLongPress: _showLongPressMenu,
-                    behavior: HitTestBehavior.translucent,
-                  ),
-                ),
-              ),
-              Positioned.fill(
-                child: ClipPath(
-                  clipper: const _BottomRightClipper(),
-                  child: GestureDetector(
-                    onTap: () =>
-                        _goToPage(_currentPageNotifier.value + 1),
-                    onLongPress: _showLongPressMenu,
-                    behavior: HitTestBehavior.translucent,
-                  ),
-                ),
-              ),
-            ],
-          ),
-        );
-      case TapZoneMode.leftRight:
-        return Row(
-          children: [
-            Expanded(
-              child: GestureDetector(
-                onTap: () => _goToPage(_currentPageNotifier.value - 1),
-                onLongPress: _showLongPressMenu,
-                behavior: HitTestBehavior.translucent,
-                child: const SizedBox.expand(),
-              ),
-            ),
-            Expanded(
-              child: GestureDetector(
-                onTap: _toggleToolbar,
-                onLongPress: _showLongPressMenu,
-                behavior: HitTestBehavior.translucent,
-                child: const SizedBox.expand(),
-              ),
-            ),
-            Expanded(
-              child: GestureDetector(
-                onTap: () => _goToPage(_currentPageNotifier.value + 1),
-                onLongPress: _showLongPressMenu,
-                behavior: HitTestBehavior.translucent,
-                child: const SizedBox.expand(),
-              ),
-            ),
-          ],
-        );
-      case TapZoneMode.leftCenterRight:
-        return Row(
-          children: [
-            Expanded(
-              flex: 2,
-              child: GestureDetector(
-                onTap: () => _goToPage(_currentPageNotifier.value - 1),
-                onLongPress: _showLongPressMenu,
-                behavior: HitTestBehavior.translucent,
-                child: const SizedBox.expand(),
-              ),
-            ),
-            Expanded(
-              flex: 6,
-              child: GestureDetector(
-                onTap: _toggleToolbar,
-                onLongPress: _showLongPressMenu,
-                behavior: HitTestBehavior.translucent,
-                child: const SizedBox.expand(),
-              ),
-            ),
-            Expanded(
-              flex: 2,
-              child: GestureDetector(
-                onTap: () => _goToPage(_currentPageNotifier.value + 1),
-                onLongPress: _showLongPressMenu,
-                behavior: HitTestBehavior.translucent,
-                child: const SizedBox.expand(),
-              ),
-            ),
-          ],
-        );
-    }
-  }
-
-  /// Builds the continuous scroll view (webtoon/long strip modes) with
-  /// transition pages rendered between chapters — exactly like mangayomi's
-  /// ImageViewWebtoon pattern.
-  Widget _buildContinuousPages() {
-    final isWebtoon = _settings.readingMode == ReadingMode.webtoon;
-
-    return ScrollablePositionedList.builder(
-      itemScrollController: _itemScrollCtrl,
-      itemPositionsListener: _itemPositionsListener,
-      scrollDirection: Axis.vertical,
-      itemCount: _pages.length + 1, // +1 for bottom spacer
-      minCacheExtent: 2000,
-      itemBuilder: (context, index) {
-        if (index >= _pages.length) {
-          return const SizedBox(height: 200); // bottom spacer
-        }
-        return _buildContinuousItem(index, isWebtoon);
-      },
-    );
-  }
-
-  Widget _buildContinuousItem(int index, bool isWebtoon) {
-    final page = _pages[index];
-
-    // Render transition pages as full-viewport ChapterTransitionPage widgets
-    if (page.isTransitionPage) {
-      return TransitionViewVertical(
-        data: page,
-        readerMode: _settings.readingMode,
-      );
-    }
-
-    return _buildWebtoonImage(page);
-  }
-
-  Widget _buildWebtoonImage(PageData page) {
-    final imgUrl = page.imageUrl;
-    if (imgUrl.isEmpty) {
-      return const AspectRatio(
-        aspectRatio: 16 / 9,
-        child: Center(
-          child: Icon(Icons.broken_image, color: Colors.white38, size: 48),
-        ),
-      );
-    }
-
-    return Image(
-      image: page.localPath != null
-          ? FileImage(File(page.localPath!))
-          : NetworkImage(imgUrl, headers: page.headers),
-      key: ValueKey('p${page.chapter?.id ?? 0}-${page.index}'),
-      fit: BoxFit.contain,
-      width: double.infinity,
-      loadingBuilder: (_, child, progress) =>
-          progress != null
-              ? const AspectRatio(
-                  aspectRatio: 16 / 9,
-                  child: Center(
-                    child: CircularProgressIndicator(color: Colors.white54),
-                  ),
-                )
-              : child,
-      errorBuilder: (_, __, ___) => const AspectRatio(
-        aspectRatio: 16 / 9,
-        child: Center(
-          child: Icon(Icons.broken_image, color: Colors.white38, size: 48),
-        ),
-      ),
-    );
-  }
-
-  /// Builds a single page for paged modes — renders transition pages as
-  /// [TransitionViewPaged] when applicable.
-  Widget _buildPage(int index) {
-    if (index >= _pages.length) return const SizedBox();
-    final page = _pages[index];
-
-    // Render transition pages for paged modes
-    if (page.isTransitionPage) {
-      return TransitionViewPaged(
-        data: page,
-        readerMode: _settings.readingMode,
-      );
-    }
-
-    final zc = index < _zoomCtrls.length
-        ? _zoomCtrls[index]
-        : TransformationController();
-    final padding = _settings.sidePadding;
-    final hPad = (MediaQuery.of(context).size.width * padding) / 2;
-    final vPad = (MediaQuery.of(context).size.height * padding) / 2;
-
-    Widget imageWidget = page.localPath != null
-        ? Image.file(
-            File(page.localPath!),
-            fit: _settings.cropBorders ? BoxFit.cover : BoxFit.contain,
-            width: double.infinity,
-            height: double.infinity,
-            errorBuilder: (_, _, _) => Center(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  const Icon(Icons.broken_image,
-                      color: Colors.white38, size: 48),
-                  const SizedBox(height: 8),
-                  TextButton.icon(
-                    onPressed: () => _retryPage(index),
-                    icon: const Icon(Icons.refresh, color: Colors.white54),
-                    label: const Text('Retry',
-                        style: TextStyle(color: Colors.white54)),
-                  ),
-                ],
-              ),
-            ),
-          )
-        : Image.network(
-            page.imageUrl,
-            headers: page.headers,
-            fit: _settings.cropBorders ? BoxFit.cover : BoxFit.contain,
-            width: double.infinity,
-            height: double.infinity,
-            loadingBuilder: (_, child, progress) =>
-                progress != null
-                    ? const Center(
-                        child:
-                            CircularProgressIndicator(color: Colors.white54))
-                    : child,
-            errorBuilder: (_, _, _) => Center(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  const Icon(Icons.broken_image,
-                      color: Colors.white38, size: 48),
-                  const SizedBox(height: 8),
-                  TextButton.icon(
-                    onPressed: () => _retryPage(index),
-                    icon: const Icon(Icons.refresh, color: Colors.white54),
-                    label: const Text('Retry',
-                        style: TextStyle(color: Colors.white54)),
-                  ),
-                ],
-              ),
-            ),
-          );
-
-    if (_settings.disableDoubleTap && _settings.disableZoomOut) {
-      return Padding(
-        padding:
-            EdgeInsets.symmetric(horizontal: hPad, vertical: vPad),
-        child: imageWidget,
-      );
-    }
-    return GestureDetector(
-      onDoubleTap: _settings.disableDoubleTap
-          ? null
-          : () {
-              final matrix = zc.value;
-              if (matrix.getMaxScaleOnAxis() > 1.1) {
-                zc.value = Matrix4.identity();
-              } else {
-                zc.value = Matrix4.identity()..scale(2.0);
-              }
-            },
-      child: InteractiveViewer(
-        transformationController: zc,
-        minScale: _settings.disableZoomOut ? 1.0 : 0.5,
-        maxScale: 5.0,
-        child: Padding(
-          padding:
-              EdgeInsets.symmetric(horizontal: hPad, vertical: vPad),
-          child: imageWidget,
-        ),
-      ),
-    );
-  }
-
-  Widget _buildBookModePages(Axis axis, bool reverse) {
-    return PageView.builder(
-      controller: _pageCtrl,
-      scrollDirection: axis,
-      reverse: reverse,
-      itemCount: (_pages.length / 2).ceil(),
-      onPageChanged: (i) => _onPageChanged(i * 2),
-      itemBuilder: (_, spreadIndex) {
-        final leftIdx = spreadIndex * 2;
-        final rightIdx = leftIdx + 1;
-        return Row(
-          children: [
-            Expanded(
-              child:
-                  leftIdx < _pages.length ? _buildPage(leftIdx) : const SizedBox(),
-            ),
-            Container(width: 1, color: Colors.white12),
-            Expanded(
-              child: rightIdx < _pages.length
-                  ? _buildPage(rightIdx)
-                  : const SizedBox(),
-            ),
-          ],
-        );
-      },
-    );
-  }
-}
-
-class _TopLeftClipper extends CustomClipper<Path> {
-  const _TopLeftClipper();
-  @override
-  Path getClip(Size size) => Path()
-    ..moveTo(0, 0)
-    ..lineTo(size.width, 0)
-    ..lineTo(0, size.height)
-    ..close();
-  @override
-  bool shouldReclip(_) => false;
-}
-
-class _BottomRightClipper extends CustomClipper<Path> {
-  const _BottomRightClipper();
-  @override
-  Path getClip(Size size) => Path()
-    ..moveTo(size.width, 0)
-    ..lineTo(size.width, size.height)
-    ..lineTo(0, size.height)
-    ..close();
-  @override
-  bool shouldReclip(_) => false;
 }

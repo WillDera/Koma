@@ -1,7 +1,7 @@
 name: koma
 description: "A hybrid reader + knowledge snippet manager."
 publish_to: 'none'
-version: 2.15.3+119
+version: 2.19.12+142
 
 environment:
   sdk: ^3.12.2
@@ -11,9 +11,7 @@ dependencies:
     sdk: flutter
   scrollable_positioned_list: ^0.3.8
   cupertino_icons: ^1.0.8
-  # Data layer (Drift is being retired in favor of Isar — see PHASE 1).
-  drift: ^2.26.0
-  sqlite3_flutter_libs: ^0.5.42
+  # Data layer (Isar — Drift retired, see PHASE 11).
   isar_community: ^3.3.2
   isar_community_flutter_libs: ^3.3.2
   path_provider: ^2.1.5
@@ -23,13 +21,13 @@ dependencies:
   html: ^0.15.5
   file_picker: ^11.0.2
   shared_preferences: ^2.5.3
-  # State: Provider is being retired in favor of Riverpod — see PHASE 2.
-  provider: ^6.1.5
+  # State: Riverpod (migrated off Provider in PHASE 2).
   flutter_riverpod: ^3.1.0
   riverpod_annotation: ^4.0.0
   intl: ^0.20.2
   uuid: ^4.5.1
   crypto: ^3.0.6
+  encrypt: ^5.0.3
   collection: ^1.19.1
   flutter_markdown: ^0.7.6
   google_fonts: ^8.1.0
@@ -47,13 +45,19 @@ dependencies:
     git:
       url: https://github.com/kodjodevf/flutter_qjs.git
       ref: main
+  # Native C++ build hook (PHASE 5 spike — verifies native_toolchain_c works
+  # on our pinned JDK 25 / AGP 8.7.3 toolchain before the full
+  # subsampling_scale_image_view port).
+  code_assets: ^1.2.1
+  hooks: ^2.0.2
+  native_toolchain_c: ^0.19.2
+  ffi: ^2.1.5
   # Immutable model classes for Isar/riverpod models (mangayomi parity).
   freezed_annotation: ^3.1.0
 
 dev_dependencies:
   flutter_test:
     sdk: flutter
-  drift_dev: ^2.26.0
   build_runner: ^2.4.15
   flutter_lints: ^6.0.0
   riverpod_generator: ^4.0.0+1

@@ -50,10 +50,6 @@ const List<CollectionSchema<dynamic>> komaIsarSchemas = [
 ];
 
 /// Open (or create) the Koma Isar instance in the app documents dir.
-///
-/// The file is named `koma.isar` next to the existing `koma.db` Drift
-/// file — both coexist during PHASE 1b's one-time migration, after which
-/// Drift is retired (PHASE 11).
 Future<Isar> openIsar({String? directory, String? file}) async {
   final dir = directory ?? (await getApplicationDocumentsDirectory()).path;
   return Isar.open(
