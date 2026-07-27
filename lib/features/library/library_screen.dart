@@ -1751,8 +1751,8 @@ class _MangaLibraryRow extends StatelessWidget {
                             errorBuilder: (_, __, ___) => _placeholder(c, 48, 64),
                           )
                         : manga.imageUrl != null && manga.imageUrl!.isNotEmpty
-                            ? Image.network(
-                                manga.imageUrl!,
+                            ? Image(
+                                image: cachedCover(manga.imageUrl!, width: 48, height: 64),
                                 width: 48,
                                 height: 64,
                                 fit: BoxFit.cover,

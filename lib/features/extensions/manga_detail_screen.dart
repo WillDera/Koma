@@ -1095,6 +1095,12 @@ class _MangaDetailScreenState extends ConsumerState<MangaDetailScreen> {
     final c = context.colors;
     final appBarHeight = MediaQuery.of(context).padding.top + kToolbarHeight;
 
+    final filteredChapters = _sortedChapters(
+      detail.chapters.where(
+        (ch) => _chapterMatchesFilter(ch, detail.filterModes, detail.localChapters),
+      ).toList(),
+    );
+
     String lastChapterDate = '';
     int latestDate = 0;
     for (final ch in detail.chapters) {
@@ -1147,21 +1153,17 @@ class _MangaDetailScreenState extends ConsumerState<MangaDetailScreen> {
                     child: Text(detail.error!, style: TextStyle(color: c.accent)),
                   ),
                 )
-              : ListView(
-                  padding: EdgeInsets.zero,
-                  children: [
+              : CustomScrollView(
+                  slivers: [
                       if (detail.details == null)
-                        Center(
-                          child: Padding(
-                            padding: const EdgeInsets.all(32),
-                            child: Text(
-                              'Failed to load manga details',
-                              style: TextStyle(color: c.textTertiary),
-                            ),
+                        const SliverFillRemaining(
+                          child: Center(
+                            child: Text('Failed to load manga details'),
                           ),
                         )
-                      else
-                      _Header(
+                      else ...[
+                      SliverToBoxAdapter(
+                        child: _Header(
                         details: detail.details!,
                       c: c,
                       inLibrary: _inLibrary,
@@ -1176,87 +1178,331 @@ class _MangaDetailScreenState extends ConsumerState<MangaDetailScreen> {
                       expanded: detail.expanded,
                       onExpandedChanged: (v) => ref.read(mangaDetailProvider.notifier).setExpanded(v),
                     ),
-                    const SizedBox(height: 24),
-                    Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 16),
-                      child: _ChaptersList(
-                        chapters: _sortedChapters(detail.chapters.where((ch) => _chapterMatchesFilter(ch, detail.filterModes, detail.localChapters)).toList()),
-                        localChapters: detail.localChapters,
-                        downloadProgress: detail.downloadProgress,
-                        offlineMode: detail.offlineMode,
-                        c: c,
-                        sourceId: widget.sourceId,
-                        sortMode: detail.sortMode,
-                        onSortChanged: _showSortSheet,
-                          onChapterTap: (ch) async {
-                            final url = ch['url'] as String? ?? '';
-                            if (detail.mangaId != null && url.isNotEmpty && mounted) {
-                              final repos = ref.read(repositoriesProvider);
-                              final existing = await repos.manga.getMangaChapterByUrl(detail.mangaId!, url);
-                              if (existing != null) {
-                                await repos.manga.markMangaChapterOpened(existing.id);
-                              }
-                            }
-                            await context.pushNamed(
-                              Routes.mangaReader,
-                              extra: (
-                                mangaId: detail.mangaId,
-                                sourceId: widget.sourceId,
-                                mangaUrl: widget.url,
-                                chapterUrl: ch['url'] as String? ?? '',
-                                chapterName: ch['name'] as String? ?? '',
-                              ),
-                            );
-                            if (detail.mangaId != null && mounted) {
-                              final repos = ref.read(repositoriesProvider);
-                              final localChs = await repos.manga.getMangaChapters(detail.mangaId!);
-                            final chMap = <String, Map<String, dynamic>>{};
-                            for (final lc in localChs) {
-                              chMap[lc.url] = {
-                                'is_read': lc.isRead,
-                                'last_page_read': lc.lastPageRead,
-                                'is_downloaded': lc.isDownloaded,
-                                'is_opened': lc.isOpened,
-                              };
-                            }
-                            // Re-merge progress into _chapters using normalized URLs
-                            final chMapNorm = <String, Map<String, dynamic>>{};
-                            for (final lc in localChs) {
-                              chMapNorm[_normalizeUrl(lc.url)] = {
-                                'is_read': lc.isRead,
-                                'last_page_read': lc.lastPageRead,
-                                'is_downloaded': lc.isDownloaded,
-                                'is_opened': lc.isOpened,
-                              };
-                            }
-                            final merged = detail.chapters.map((ch) {
-                              final url = _normalizeUrl(ch['url'] as String? ?? '');
-                              final local = chMapNorm[url];
-                              final cleaned = Map<String, dynamic>.from(ch)
-                                ..remove('is_read')
-                                ..remove('last_page_read')
-                                ..remove('is_downloaded')
-                                ..remove('is_opened')
-                                ..remove('read_at');
-                              if (local != null) cleaned.addAll(local);
-                              return cleaned;
-                            }).toList();
-                            // Also rebuild _localChapters in case something reads from it
-                            final chMapRebuilt = <String, Map<String, dynamic>>{};
-                            for (final lc in localChs) {
-                              chMapRebuilt[lc.url] = chMapNorm[_normalizeUrl(lc.url)]!;
-                            }
-                            final notifier = ref.read(mangaDetailProvider.notifier);
-                            notifier
-                              ..setChapters(merged)
-                              ..setLocalChapters(chMapRebuilt);
-                          }
-                        },
-                        onDownloadTap: (ch) => _downloadSingleChapter(ch),
                       ),
-                    ),
+                      SliverToBoxAdapter(child: const SizedBox(height: 24)),
+                      // Chapter header
+                      SliverToBoxAdapter(
+                        child: Padding(
+                          padding: const EdgeInsets.only(bottom: 12),
+                          child: Row(
+                            children: [
+                              Expanded(
+                                child: Row(
+                                  children: [
+                                    Text(
+                                      'Chapters',
+                                      style: TextStyle(
+                                        color: c.textPrimary,
+                                        fontSize: 16,
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    ),
+                                    const SizedBox(width: 10),
+                                    Container(
+                                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
+                                      decoration: BoxDecoration(
+                                        color: c.surfaceMuted,
+                                        borderRadius: AppSpacing.brPill,
+                                      ),
+                                      child: Text(
+                                        '${filteredChapters.length}',
+                                        style: TextStyle(
+                                          color: c.textSecondary,
+                                          fontSize: 12,
+                                          fontWeight: FontWeight.w600,
+                                        ),
+                                      ),
+                                    ),
+                                    if (detail.offlineMode) ...[
+                                      const SizedBox(width: 8),
+                                      Container(
+                                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                                        decoration: BoxDecoration(
+                                          color: Colors.orange.withAlpha(30),
+                                          borderRadius: AppSpacing.brPill,
+                                          border: Border.all(color: Colors.orange.withAlpha(80)),
+                                        ),
+                                        child: Text(
+                                          'Offline',
+                                          style: TextStyle(
+                                            color: Colors.orange.shade300,
+                                            fontSize: 11,
+                                            fontWeight: FontWeight.w600,
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  ],
+                                ),
+                              ),
+                              IconButton(
+                                icon: Icon(
+                                  switch (detail.sortMode) {
+                                    SortMode.nameAsc => Icons.sort_by_alpha,
+                                    SortMode.nameDesc => Icons.sort_by_alpha,
+                                    SortMode.dateAsc => Icons.sort,
+                                    SortMode.dateDesc => Icons.sort,
+                                    SortMode.chapterAsc => Icons.swap_vert,
+                                    SortMode.chapterDesc => Icons.swap_vert,
+                                  },
+                                  size: 20,
+                                  color: c.textSecondary,
+                                ),
+                                tooltip: 'Sort chapters',
+                                onPressed: _showSortSheet,
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                      // Chapter items
+                      filteredChapters.isEmpty
+                        ? SliverFillRemaining(
+                            child: Center(
+                              child: Text(
+                                detail.offlineMode ? 'No downloaded chapters' : 'No chapters',
+                                style: TextStyle(color: c.textTertiary, fontSize: 14),
+                              ),
+                            ),
+                          )
+                        : SliverList.builder(
+                            itemCount: filteredChapters.length,
+                            itemBuilder: (context, index) {
+                              final ch = filteredChapters[index];
+                              return _buildChapterItem(
+                                ch: ch,
+                                c: c,
+                                downloadProgress: detail.downloadProgress,
+                                offlineMode: detail.offlineMode,
+                                onChapterTap: (ch) async {
+                                final url = ch['url'] as String? ?? '';
+                                if (detail.mangaId != null && url.isNotEmpty && mounted) {
+                                  final repos = ref.read(repositoriesProvider);
+                                  final existing = await repos.manga.getMangaChapterByUrl(detail.mangaId!, url);
+                                  if (existing != null) {
+                                    await repos.manga.markMangaChapterOpened(existing.id);
+                                  }
+                                }
+                                await context.pushNamed(
+                                  Routes.mangaReader,
+                                  extra: (
+                                    mangaId: detail.mangaId,
+                                    sourceId: widget.sourceId,
+                                    mangaUrl: widget.url,
+                                    chapterUrl: ch['url'] as String? ?? '',
+                                    chapterName: ch['name'] as String? ?? '',
+                                  ),
+                                );
+                                if (detail.mangaId != null && mounted) {
+                                  final repos = ref.read(repositoriesProvider);
+                                  final localChs = await repos.manga.getMangaChapters(detail.mangaId!);
+                                final chMap = <String, Map<String, dynamic>>{};
+                                for (final lc in localChs) {
+                                  chMap[lc.url] = {
+                                    'is_read': lc.isRead,
+                                    'last_page_read': lc.lastPageRead,
+                                    'is_downloaded': lc.isDownloaded,
+                                    'is_opened': lc.isOpened,
+                                  };
+                                }
+                                final chMapNorm = <String, Map<String, dynamic>>{};
+                                for (final lc in localChs) {
+                                  chMapNorm[_normalizeUrl(lc.url)] = {
+                                    'is_read': lc.isRead,
+                                    'last_page_read': lc.lastPageRead,
+                                    'is_downloaded': lc.isDownloaded,
+                                    'is_opened': lc.isOpened,
+                                  };
+                                }
+                                final merged = detail.chapters.map((ch) {
+                                  final url = _normalizeUrl(ch['url'] as String? ?? '');
+                                  final local = chMapNorm[url];
+                                  final cleaned = Map<String, dynamic>.from(ch)
+                                    ..remove('is_read')
+                                    ..remove('last_page_read')
+                                    ..remove('is_downloaded')
+                                    ..remove('is_opened')
+                                    ..remove('read_at');
+                                  if (local != null) cleaned.addAll(local);
+                                  return cleaned;
+                                }).toList();
+                                final chMapRebuilt = <String, Map<String, dynamic>>{};
+                                for (final lc in localChs) {
+                                  chMapRebuilt[lc.url] = chMapNorm[_normalizeUrl(lc.url)]!;
+                                }
+                                final notifier = ref.read(mangaDetailProvider.notifier);
+                                notifier
+                                  ..setChapters(merged)
+                                  ..setLocalChapters(chMapRebuilt);
+                              }
+                                },
+                                onDownloadTap: (ch) => _downloadSingleChapter(ch),
+                              );
+                            },
+                          ),
+                    ],
                   ],
                 ),
+    );
+  }
+
+  Widget _buildChapterItem({
+    required Map<String, dynamic> ch,
+    required KomaColors c,
+    required Map<String, String> downloadProgress,
+    required bool offlineMode,
+    required void Function(Map<String, dynamic> ch) onChapterTap,
+    required void Function(Map<String, dynamic> ch)? onDownloadTap,
+  }) {
+    final url = ch['url'] as String? ?? '';
+    final isRead = ch['is_read'] as bool? ?? false;
+    final lastPageRead = ch['last_page_read'] as int? ?? 0;
+    final name = ch['name'] as String? ?? '';
+    final chNum = ch['chapter_number'] as num?;
+    final scanlator = ch['scanlator'] as String?;
+    final dateUpload = ch['date_upload'] as int? ?? 0;
+
+    final dateStr = dateUpload > 0
+        ? DateFormat.yMMMd().format(
+            DateTime.fromMillisecondsSinceEpoch(dateUpload),
+          )
+        : '';
+
+    return AnimatedPress(
+      onTap: () => onChapterTap(ch),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        decoration: BoxDecoration(
+          border: Border(bottom: BorderSide(color: c.border, width: 0.3)),
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 2,
+              height: 40,
+              margin: const EdgeInsets.only(right: 12),
+              decoration: BoxDecoration(
+                color: isRead
+                    ? c.textTertiary.withAlpha(77)
+                    : c.accent,
+                borderRadius: BorderRadius.circular(10),
+              ),
+            ),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    name,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: isRead ? c.textTertiary : c.textPrimary,
+                      fontSize: 14,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                  if (!isRead && lastPageRead > 0)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 2),
+                      child: Text(
+                        'Page ${lastPageRead + 1}',
+                        style: TextStyle(
+                          color: c.textTertiary,
+                          fontSize: 11,
+                        ),
+                      ),
+                    ),
+                  const SizedBox(height: 4),
+                  Row(
+                    children: [
+                      if (chNum != null)
+                        Text(
+                          'Ch. ${chNum.toStringAsFixed(chNum == chNum.truncateToDouble() ? 0 : 1)}',
+                          style: TextStyle(
+                            color: c.textTertiary,
+                            fontSize: 12,
+                          ),
+                        ),
+                      if (chNum != null && dateStr.isNotEmpty)
+                        Text(
+                          ' · ',
+                          style: TextStyle(
+                            color: c.textTertiary,
+                            fontSize: 12,
+                          ),
+                        ),
+                      if (dateStr.isNotEmpty)
+                        Text(
+                          dateStr,
+                          style: TextStyle(
+                            color: c.textTertiary,
+                            fontSize: 12,
+                          ),
+                        ),
+                      if (dateStr.isNotEmpty && scanlator != null)
+                        Text(
+                          ' · ',
+                          style: TextStyle(
+                            color: c.textTertiary,
+                            fontSize: 12,
+                          ),
+                        ),
+                      if (scanlator != null)
+                        Text(
+                          scanlator,
+                          style: TextStyle(
+                            color: c.textTertiary,
+                            fontSize: 12,
+                          ),
+                        ),
+                    ],
+                  ),
+                  if (downloadProgress[url] == 'queued')
+                    Padding(
+                      padding: const EdgeInsets.only(top: 6),
+                      child: LinearProgressIndicator(
+                        backgroundColor: c.surfaceMuted,
+                        color: c.accent,
+                        minHeight: 2,
+                      ),
+                    ),
+                ],
+              ),
+            ),
+            if (downloadProgress[url] == 'done')
+              IconButtonRound(
+                icon: Icons.check_circle_outline,
+                size: 32,
+                iconColor: Colors.green,
+                onPressed: null,
+              )
+            else if (downloadProgress[url] == 'error')
+              IconButtonRound(
+                icon: Icons.error_outline,
+                size: 32,
+                iconColor: Colors.redAccent,
+                onPressed: () => onDownloadTap?.call(ch),
+              )
+            else if (downloadProgress[url] == 'queued')
+              const Padding(
+                padding: EdgeInsets.all(4),
+                child: SizedBox(
+                  width: 24, height: 24,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                ),
+              )
+            else if (!offlineMode)
+              IconButtonRound(
+                icon: Icons.download_rounded,
+                size: 32,
+                onPressed: onDownloadTap == null
+                    ? null
+                    : () => onDownloadTap!(ch),
+              ),
+          ],
+        ),
+      ),
     );
   }
 }
@@ -1845,7 +2091,7 @@ class _HeroSection extends StatelessWidget {
       );
     }
         return Image(
-      image: cachedCover(thumb, width: width.toInt(), height: height.toInt()),
+      image: cachedCover(thumb, width: width?.toInt(), height: height?.toInt()),
       width: width,
       height: height,
       fit: fit,
@@ -1994,275 +2240,4 @@ class _HeroSection extends StatelessWidget {
   }
 }
 
-class _ChaptersList extends StatelessWidget {
-  final List<Map<String, dynamic>> chapters;
-  final Map<String, Map<String, dynamic>> localChapters;
-  final Map<String, String> downloadProgress;
-  final bool offlineMode;
-  final KomaColors c;
-  final String sourceId;
-  final void Function(Map<String, dynamic> ch) onChapterTap;
-  final void Function(Map<String, dynamic> ch)? onDownloadTap;
-  final SortMode sortMode;
-  final VoidCallback? onSortChanged;
 
-  const _ChaptersList({
-    required this.chapters,
-    required this.localChapters,
-    required this.downloadProgress,
-    required this.offlineMode,
-    required this.c,
-    required this.sourceId,
-    required this.onChapterTap,
-    this.onDownloadTap,
-    this.sortMode = SortMode.chapterAsc,
-    this.onSortChanged,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    if (chapters.isEmpty) {
-      return Center(
-        child: Text(
-          offlineMode ? 'No downloaded chapters' : 'No chapters',
-          style: TextStyle(color: c.textTertiary, fontSize: 14),
-        ),
-      );
-    }
-    return ListView.builder(
-      shrinkWrap: true,
-      physics: const NeverScrollableScrollPhysics(),
-      itemCount: chapters.length + 1,
-      itemBuilder: (context, index) {
-        if (index == 0) {
-          return Padding(
-            padding: const EdgeInsets.only(bottom: 12),
-            child: Row(
-              children: [
-                Expanded(
-                  child: Row(
-                    children: [
-                      Text(
-                        'Chapters',
-                        style: TextStyle(
-                          color: c.textPrimary,
-                          fontSize: 16,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                      const SizedBox(width: 10),
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
-                        decoration: BoxDecoration(
-                          color: c.surfaceMuted,
-                          borderRadius: AppSpacing.brPill,
-                        ),
-                        child: Text(
-                          '${chapters.length}',
-                          style: TextStyle(
-                            color: c.textSecondary,
-                            fontSize: 12,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                      ),
-                      if (offlineMode) ...[
-                        const SizedBox(width: 8),
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                          decoration: BoxDecoration(
-                            color: Colors.orange.withAlpha(30),
-                            borderRadius: AppSpacing.brPill,
-                            border: Border.all(color: Colors.orange.withAlpha(80)),
-                          ),
-                          child: Text(
-                            'Offline',
-                            style: TextStyle(
-                              color: Colors.orange.shade300,
-                              fontSize: 11,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ],
-                  ),
-                ),
-                IconButton(
-                  icon: Icon(
-                    switch (sortMode) {
-                      SortMode.nameAsc => Icons.sort_by_alpha,
-                      SortMode.nameDesc => Icons.sort_by_alpha,
-                      SortMode.dateAsc => Icons.sort,
-                      SortMode.dateDesc => Icons.sort,
-                      SortMode.chapterAsc => Icons.swap_vert,
-                      SortMode.chapterDesc => Icons.swap_vert,
-                    },
-                    size: 20,
-                    color: c.textSecondary,
-                  ),
-                  tooltip: 'Sort chapters',
-                  onPressed: onSortChanged,
-                ),
-              ],
-            ),
-          );
-        }
-
-        final ch = chapters[index - 1];
-        final url = ch['url'] as String? ?? '';
-        final isOpened = ch['is_opened'] as bool? ?? false;
-        final isRead = ch['is_read'] as bool? ?? false;
-        final lastPageRead = ch['last_page_read'] as int? ?? 0;
-        final name = ch['name'] as String? ?? '';
-        final chNum = ch['chapter_number'] as num?;
-        final scanlator = ch['scanlator'] as String?;
-        final dateUpload = ch['date_upload'] as int? ?? 0;
-
-        final dateStr = dateUpload > 0
-            ? DateFormat.yMMMd().format(
-                DateTime.fromMillisecondsSinceEpoch(dateUpload),
-              )
-            : '';
-
-        return AnimatedPress(
-          onTap: () => onChapterTap(ch),
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-            decoration: BoxDecoration(
-              border: Border(bottom: BorderSide(color: c.border, width: 0.3)),
-            ),
-            child: Row(
-              children: [
-                // Left colored bar
-                Container(
-                  width: 2,
-                  height: 40,
-                  margin: const EdgeInsets.only(right: 12),
-                  decoration: BoxDecoration(
-                    color: isRead
-                        ? c.textTertiary.withAlpha(77)
-                        : c.accent,
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                ),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        name,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          color: isRead ? c.textTertiary : c.textPrimary,
-                          fontSize: 14,
-                          fontWeight: FontWeight.w500,
-                        ),
-                      ),
-                     if (!isRead && lastPageRead > 0)
-                       Padding(
-                         padding: const EdgeInsets.only(top: 2),
-                         child: Text(
-                           'Page ${lastPageRead + 1}',
-                           style: TextStyle(
-                             color: c.textTertiary,
-                             fontSize: 11,
-                           ),
-                         ),
-                       ),
-                     const SizedBox(height: 4),
-                     Row(
-                       children: [
-                         if (chNum != null)
-                           Text(
-                             'Ch. ${chNum.toStringAsFixed(chNum == chNum.truncateToDouble() ? 0 : 1)}',
-                             style: TextStyle(
-                               color: c.textTertiary,
-                               fontSize: 12,
-                             ),
-                           ),
-                         if (chNum != null && dateStr.isNotEmpty)
-                           Text(
-                             ' · ',
-                             style: TextStyle(
-                               color: c.textTertiary,
-                               fontSize: 12,
-                             ),
-                           ),
-                         if (dateStr.isNotEmpty)
-                           Text(
-                             dateStr,
-                             style: TextStyle(
-                               color: c.textTertiary,
-                               fontSize: 12,
-                             ),
-                           ),
-                         if (dateStr.isNotEmpty && scanlator != null)
-                           Text(
-                             ' · ',
-                             style: TextStyle(
-                               color: c.textTertiary,
-                               fontSize: 12,
-                             ),
-                           ),
-                         if (scanlator != null)
-                           Text(
-                             scanlator,
-                             style: TextStyle(
-                               color: c.textTertiary,
-                               fontSize: 12,
-                             ),
-                           ),
-                       ],
-                     ),
-                     if (downloadProgress[url] == 'queued')
-                       Padding(
-                         padding: const EdgeInsets.only(top: 6),
-                         child: LinearProgressIndicator(
-                           backgroundColor: c.surfaceMuted,
-                           color: c.accent,
-                           minHeight: 2,
-                         ),
-                       ),
-                   ],
-                 ),
-               ),
-               if (downloadProgress[url] == 'done')
-                 IconButtonRound(
-                   icon: Icons.check_circle_outline,
-                   size: 32,
-                   iconColor: Colors.green,
-                   onPressed: null,
-                 )
-               else if (downloadProgress[url] == 'error')
-                 IconButtonRound(
-                   icon: Icons.error_outline,
-                   size: 32,
-                   iconColor: Colors.redAccent,
-                   onPressed: () => onDownloadTap?.call(ch),
-                 )
-               else if (downloadProgress[url] == 'queued')
-                 const Padding(
-                   padding: EdgeInsets.all(4),
-                   child: SizedBox(
-                     width: 24, height: 24,
-                     child: CircularProgressIndicator(strokeWidth: 2),
-                   ),
-                 )
-               else if (!offlineMode)
-                 IconButtonRound(
-                   icon: Icons.download_rounded,
-                   size: 32,
-                   onPressed: onDownloadTap == null
-                       ? null
-                       : () => onDownloadTap!(ch),
-                 ),
-             ],
-           ),
-         ),
-       );
-     },
-    );
-  }
-}
