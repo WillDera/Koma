@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
-import 'package:provider/provider.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import 'package:collection/collection.dart';
 import '../../core/models/snippet.dart';
 import '../../core/models/snippet_collection.dart';
+import '../../core/providers.dart';
 import '../../theme/app_theme.dart';
 import '../../theme/theme_provider.dart';
 import '../../widgets/empty_state.dart';
@@ -17,17 +19,17 @@ import '../../widgets/snippet_detail_sheet.dart';
 import '../../widgets/dialog_sheet.dart';
 import '../../widgets/tag_filter_bar.dart';
 import '../../widgets/toast.dart';
-import '../reader/reader_screen.dart';
+import '../../router/router.dart';
 import 'snippets_provider.dart';
 
-class SnippetsScreen extends StatefulWidget {
+class SnippetsScreen extends ConsumerStatefulWidget {
   const SnippetsScreen({super.key});
 
   @override
-  State<SnippetsScreen> createState() => _SnippetsScreenState();
+  ConsumerState<SnippetsScreen> createState() => _SnippetsScreenState();
 }
 
-class _SnippetsScreenState extends State<SnippetsScreen> {
+class _SnippetsScreenState extends ConsumerState<SnippetsScreen> {
   final ScrollController _scrollCtrl = ScrollController();
   double _scrollProgress = 0;
 
@@ -36,7 +38,7 @@ class _SnippetsScreenState extends State<SnippetsScreen> {
     super.initState();
     _scrollCtrl.addListener(_onScroll);
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      context.read<SnippetsProvider>().loadSnippets();
+      ref.read(snippetsProvider.notifier).loadSnippets();
     });
   }
 
@@ -56,41 +58,40 @@ class _SnippetsScreenState extends State<SnippetsScreen> {
     super.dispose();
   }
 
-  bool get _oneHand => context.watch<ThemeProvider>().oneHandMode;
+  bool get _oneHand => ref.watch(themeProvider).oneHandMode;
 
   @override
   Widget build(BuildContext context) {
-    final leftHanded = context.watch<ThemeProvider>().handMode == HandMode.left;
+    final leftHanded = ref.watch(themeProvider).handMode == HandMode.left;
+    final p = ref.watch(snippetsProvider);
     final navClearance = MediaQuery.paddingOf(context).bottom + 84;
     return ScreenBackdrop(
-      child: Consumer<SnippetsProvider>(
-        builder: (context, p, _) => Stack(
-          children: [
-            SafeArea(
-              bottom: false,
-              child: _body(context, p),
-            ),
-            if (!p.selectionMode)
-              Positioned(
-                left: leftHanded ? 20 : null,
-                right: leftHanded ? null : 20,
-                bottom: navClearance,
-                child: IconButtonRound(
-                  icon: Icons.add,
-                  size: 52,
-                  variant: IconButtonVariant.filled,
-                  backgroundColor: context.colors.accent,
-                  iconColor: context.colors.onAccent,
-                  onPressed: () => _createSnippet(context),
-                ),
+      child: Stack(
+        children: [
+          SafeArea(
+            bottom: false,
+            child: _body(context, p),
+          ),
+          if (!p.selectionMode)
+            Positioned(
+              left: leftHanded ? 20 : null,
+              right: leftHanded ? null : 20,
+              bottom: navClearance,
+              child: IconButtonRound(
+                icon: Icons.add,
+                size: 52,
+                variant: IconButtonVariant.filled,
+                backgroundColor: context.colors.accent,
+                iconColor: context.colors.onAccent,
+                onPressed: () => _createSnippet(context),
               ),
-          ],
-        ),
+            ),
+        ],
       ),
     );
   }
 
-  Widget _body(BuildContext context, SnippetsProvider p) {
+  Widget _body(BuildContext context, SnippetsState p) {
     if (p.loading && p.snippets.isEmpty) return _loading();
     if (p.error != null) {
       return ListView(
@@ -109,7 +110,7 @@ class _SnippetsScreenState extends State<SnippetsScreen> {
             title: 'Could not load snippets',
             subtitle: p.error!,
             primaryActionLabel: 'Try again',
-            onPrimaryAction: () => p.loadSnippets(),
+            onPrimaryAction: () => ref.read(snippetsProvider.notifier).loadSnippets(),
           ),
         ],
       );
@@ -169,13 +170,13 @@ class _SnippetsScreenState extends State<SnippetsScreen> {
           _CollectionFilterBar(
             collections: p.collections,
             selectedId: p.filterCollectionId,
-            onSelected: p.setFilterCollection,
+            onSelected: ref.read(snippetsProvider.notifier).setFilterCollection,
           ),
           if (p.allTags.isNotEmpty)
             TagFilterBar(
               tags: p.allTags,
               selected: p.filterTag,
-              onChanged: p.setFilterTag,
+              onChanged: ref.read(snippetsProvider.notifier).setFilterTag,
             ),
         ],
         if (items.isEmpty)
@@ -203,14 +204,14 @@ class _SnippetsScreenState extends State<SnippetsScreen> {
                   selectionMode: p.selectionMode,
                   onTap: () {
                     if (p.selectionMode) {
-                      p.toggleSelection(entry.$2.id);
+                      ref.read(snippetsProvider.notifier).toggleSelection(entry.$2.id);
                     } else {
                       _editSnippet(context, entry.$2, p);
                     }
                   },
                   onLongPress: () {
                     if (!p.selectionMode) {
-                      p.toggleSelection(entry.$2.id);
+                      ref.read(snippetsProvider.notifier).toggleSelection(entry.$2.id);
                     }
                   },
                   onOpenSource: entry.$2.bookId != null
@@ -230,7 +231,7 @@ class _SnippetsScreenState extends State<SnippetsScreen> {
     );
   }
 
-  String _sectionTitle(SnippetsProvider p) {
+  String _sectionTitle(SnippetsState p) {
     final colId = p.filterCollectionId;
     if (colId == -1) return 'All snippets';
     if (colId == null) return 'Uncollected';
@@ -238,7 +239,8 @@ class _SnippetsScreenState extends State<SnippetsScreen> {
     return col?.name ?? 'Collection';
   }
 
-  Widget _buildHeader(SnippetsProvider p) {
+  Widget _buildHeader(SnippetsState p) {
+    final sn = ref.read(snippetsProvider.notifier);
     if (p.selectionMode) {
       return LibraryHeader(
         title: '${p.selectedIds.length} selected',
@@ -251,8 +253,8 @@ class _SnippetsScreenState extends State<SnippetsScreen> {
             iconColor: context.colors.textSecondary,
             tooltip: 'Select All',
             onPressed: p.selectedIds.length == p.snippets.length && p.snippets.isNotEmpty
-                ? p.clearSelection
-                : p.selectAll,
+                ? sn.clearSelection
+                : sn.selectAll,
           ),
           const SizedBox(width: 4),
           IconButtonRound(
@@ -261,7 +263,7 @@ class _SnippetsScreenState extends State<SnippetsScreen> {
             variant: IconButtonVariant.tonal,
             iconColor: context.colors.textSecondary,
             tooltip: 'Inverse',
-            onPressed: p.inverseSelection,
+            onPressed: sn.inverseSelection,
           ),
           const SizedBox(width: 4),
           IconButtonRound(
@@ -288,7 +290,7 @@ class _SnippetsScreenState extends State<SnippetsScreen> {
             variant: IconButtonVariant.tonal,
             iconColor: context.colors.textSecondary,
             tooltip: 'Done',
-            onPressed: p.clearSelection,
+            onPressed: sn.clearSelection,
           ),
         ],
       );
@@ -304,7 +306,7 @@ class _SnippetsScreenState extends State<SnippetsScreen> {
           variant: IconButtonVariant.tonal,
           iconColor: context.colors.textSecondary,
           tooltip: 'Select',
-          onPressed: () => p.selectAll(),
+          onPressed: () => sn.selectAll(),
         ),
       ],
     );
@@ -329,14 +331,12 @@ class _SnippetsScreenState extends State<SnippetsScreen> {
 
   void _openBookReader(BuildContext context, int bookId,
       {int? chapterId, double? scrollOffset}) {
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (_) => ReaderScreen(
-          bookId: bookId,
-          snippetChapterId: chapterId,
-          snippetScrollOffset: scrollOffset,
-        ),
+    context.pushNamed(
+      Routes.reader,
+      extra: (
+        bookId: bookId,
+        snippetChapterId: chapterId,
+        snippetScrollOffset: scrollOffset,
       ),
     );
   }
@@ -347,7 +347,7 @@ class _SnippetsScreenState extends State<SnippetsScreen> {
       creating: true,
       onSave: (s) async {
         try {
-          await context.read<SnippetsProvider>().createSnippet(
+          await ref.read(snippetsProvider.notifier).createSnippet(
             text: s.text,
             note: s.note,
             sourceTitle: s.sourceTitle,
@@ -374,12 +374,13 @@ class _SnippetsScreenState extends State<SnippetsScreen> {
     );
   }
 
-  void _editSnippet(BuildContext context, Snippet snippet, SnippetsProvider p) {
+  void _editSnippet(BuildContext context, Snippet snippet, SnippetsState p) {
+    final sn = ref.read(snippetsProvider.notifier);
     SnippetDetailSheet.show(
       context,
       snippet: snippet,
       onSave: (s) async {
-        await p.updateSnippet(s);
+        await sn.updateSnippet(s);
         if (context.mounted) {
           StashToast.show(
             context,
@@ -389,7 +390,7 @@ class _SnippetsScreenState extends State<SnippetsScreen> {
         }
       },
       onDelete: (id) async {
-        await p.deleteSnippet(id);
+        await sn.deleteSnippet(id);
         if (context.mounted) {
           StashToast.show(
             context,
@@ -402,7 +403,8 @@ class _SnippetsScreenState extends State<SnippetsScreen> {
   }
 
   Future<void> _confirmDelete() async {
-    final p = context.read<SnippetsProvider>();
+    final p = ref.read(snippetsProvider);
+    final sn = ref.read(snippetsProvider.notifier);
     final ctx = context;
     final confirmed = await StashDialog.show<bool>(
       ctx,
@@ -426,7 +428,7 @@ class _SnippetsScreenState extends State<SnippetsScreen> {
       ],
     );
     if (confirmed == true) {
-      await p.deleteSelected();
+      await sn.deleteSelected();
       if (ctx.mounted) {
         StashToast.show(
           ctx,
@@ -437,7 +439,8 @@ class _SnippetsScreenState extends State<SnippetsScreen> {
     }
   }
 
-  Future<void> _groupSelected(BuildContext context, SnippetsProvider p) async {
+  Future<void> _groupSelected(BuildContext context, SnippetsState p) async {
+    final sn = ref.read(snippetsProvider.notifier);
     final result = await showModalBottomSheet<int?>(
       context: context,
       isScrollControlled: true,
@@ -530,7 +533,7 @@ class _SnippetsScreenState extends State<SnippetsScreen> {
                   };
                   if (confirmed == true && nameController.text.trim().isNotEmpty) {
                     final hex = keyToHex[selectedColor] ?? '#FFE8A8';
-                    final id = await p.createCollection(nameController.text.trim(), color: hex);
+                    final id = await sn.createCollection(nameController.text.trim(), color: hex);
                     if (ctx.mounted) {
                       Navigator.pop(ctx, id);
                     }
@@ -544,12 +547,12 @@ class _SnippetsScreenState extends State<SnippetsScreen> {
     );
 
     if (result == null) {
-      await p.moveSnippetsToCollection(p.selectedIds.toList(), null);
+      await sn.moveSnippetsToCollection(p.selectedIds.toList(), null);
     } else if (result > 0) {
-      await p.moveSnippetsToCollection(p.selectedIds.toList(), result);
+      await sn.moveSnippetsToCollection(p.selectedIds.toList(), result);
     }
     if (context.mounted) {
-      p.clearSelection();
+      sn.clearSelection();
     }
   }
 

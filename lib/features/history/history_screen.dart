@@ -1,7 +1,10 @@
 import 'package:flutter/material.dart';
-import 'package:provider/provider.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
+import '../../core/providers.dart';
 import '../../core/models/book.dart';
-import '../../core/services/database_service.dart';
+import '../../core/models/manga.dart';
+import '../../core/repositories/manga_repository.dart';
 import '../../theme/app_theme.dart';
 import '../../theme/theme_provider.dart';
 import '../../theme/tokens/app_spacing.dart';
@@ -14,21 +17,20 @@ import '../../widgets/library_header.dart';
 import '../../widgets/one_hand_spacer.dart';
 import '../../widgets/progress_ring.dart';
 import '../../widgets/screen_chrome.dart';
-import '../extensions/manga_detail_screen.dart';
-import '../reader/reader_screen.dart';
+import '../../router/router.dart';
 
-class HistoryScreen extends StatefulWidget {
+class HistoryScreen extends ConsumerStatefulWidget {
   const HistoryScreen({super.key});
 
   @override
-  State<HistoryScreen> createState() => _HistoryScreenState();
+  ConsumerState<HistoryScreen> createState() => _HistoryScreenState();
 }
 
-class _HistoryScreenState extends State<HistoryScreen> with RouteAware {
+class _HistoryScreenState extends ConsumerState<HistoryScreen> with RouteAware {
   final ScrollController _scrollCtrl = ScrollController();
   double _scrollProgress = 0;
   List<Book> _books = [];
-  List<Map<String, dynamic>> _mangaRows = [];
+  List<InProgressManga> _mangaRows = [];
   bool _loading = true;
 
   @override
@@ -66,17 +68,17 @@ class _HistoryScreenState extends State<HistoryScreen> with RouteAware {
     _load();
   }
 
-  bool get _oneHand => context.watch<ThemeProvider>().oneHandMode;
+  bool get _oneHand => ref.watch(themeProvider).oneHandMode;
 
   Future<void> _load() async {
     setState(() => _loading = true);
-    final db = context.read<DatabaseService>();
+    final repos = ref.read(repositoriesProvider);
     final results = await Future.wait([
-      db.getInProgressBooks(),
-      db.getInProgressManga(),
+      repos.books.getInProgressBooks(),
+      repos.manga.getInProgressManga(),
     ]);
     _books = results[0] as List<Book>;
-    _mangaRows = results[1] as List<Map<String, dynamic>>;
+    _mangaRows = results[1] as List<InProgressManga>;
     if (mounted) setState(() => _loading = false);
   }
 
@@ -99,8 +101,8 @@ class _HistoryScreenState extends State<HistoryScreen> with RouteAware {
       ],
     );
     if (confirmed != true) return;
-    final db = context.read<DatabaseService>();
-    await db.clearProgress(book.id);
+    final repos = ref.read(repositoriesProvider);
+    await repos.books.clearProgress(book.id);
     await _load();
   }
 
@@ -201,11 +203,13 @@ class _HistoryScreenState extends State<HistoryScreen> with RouteAware {
       child: Padding(
         padding: const EdgeInsets.fromLTRB(20, 0, 20, 0),
         child: AnimatedPress(
-          onTap: () => Navigator.push(
-            context,
-            MaterialPageRoute(
-              builder: (_) => ReaderScreen(bookId: book.id),
-            ),
+          onTap: () => context.pushNamed(
+            Routes.reader,
+            extra: (
+              bookId: book.id,
+              snippetChapterId: null,
+              snippetScrollOffset: null,
+            ) as ReaderArgs,
           ),
           child: Container(
             padding: const EdgeInsets.all(12),
@@ -304,14 +308,15 @@ class _HistoryScreenState extends State<HistoryScreen> with RouteAware {
 
   Widget _mangaTile(KomaColors c, int i) {
     final row = _mangaRows[i];
-    final name = row['name'] as String? ?? '';
-    final author = row['author'] as String?;
-    final imageUrl = row['image_url'] as String?;
-    final id = row['id'] as int;
-    final sourceId = row['source_id'] as String? ?? '';
-    final url = row['url'] as String? ?? '';
-    final readCount = row['read_count'] as int? ?? 0;
-    final totalChapters = row['total_chapters'] as int? ?? 0;
+    final manga = row.manga;
+    final name = manga.name;
+    final author = manga.author;
+    final imageUrl = manga.imageUrl;
+    final id = manga.id;
+    final sourceId = manga.sourceId;
+    final url = manga.url;
+    final readCount = row.readCount;
+    final totalChapters = row.totalChapters;
     final progress = totalChapters > 0 ? readCount / totalChapters : 0.0;
     final pct = (progress * 100).toInt();
 
@@ -320,15 +325,14 @@ class _HistoryScreenState extends State<HistoryScreen> with RouteAware {
       child: Padding(
         padding: const EdgeInsets.fromLTRB(20, 0, 20, 0),
         child: AnimatedPress(
-          onTap: () => Navigator.push(
-            context,
-            MaterialPageRoute(
-              builder: (_) => MangaDetailScreen(
-                sourceId: sourceId,
-                url: url,
-                title: name,
-              ),
-            ),
+          onTap: () => context.pushNamed(
+            Routes.mangaDetail,
+            extra: (
+              sourceId: sourceId,
+              url: url,
+              title: name,
+              manga: null,
+            ) as MangaDetailArgs,
           ),
           child: Container(
             padding: const EdgeInsets.all(12),
@@ -428,8 +432,8 @@ class _HistoryScreenState extends State<HistoryScreen> with RouteAware {
     );
   }
 
-  Future<void> _clearMangaProgress(Map<String, dynamic> mangaRow) async {
-    final name = mangaRow['name'] as String? ?? '';
+  Future<void> _clearMangaProgress(InProgressManga mangaRow) async {
+    final name = mangaRow.manga.name;
     final confirmed = await StashDialog.show<bool>(
       context,
       title: 'Clear reading history?',
@@ -448,8 +452,8 @@ class _HistoryScreenState extends State<HistoryScreen> with RouteAware {
       ],
     );
     if (confirmed != true) return;
-    final db = context.read<DatabaseService>();
-    await db.clearMangaChapterHistory(mangaRow['id'] as int);
+    final repos = ref.read(repositoriesProvider);
+    await repos.manga.clearMangaChapterHistory(mangaRow.manga.id);
     await _load();
   }
 }

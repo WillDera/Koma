@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
-import 'package:provider/provider.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../core/providers.dart';
 import '../../core/models/extension_source.dart';
-import '../../core/services/database_service.dart';
 import '../../core/utils/language.dart';
 import '../../theme/app_theme.dart';
 import '../../theme/tokens/app_spacing.dart';
@@ -15,15 +15,14 @@ import 'source_browse_screen.dart';
 ///   1. Last Used (sources previously tapped)
 ///   2. Pinned (user-pinned sources)
 ///   3. By Language (all remaining sources grouped by language)
-class SourcesScreen extends StatefulWidget {
+class SourcesScreen extends ConsumerStatefulWidget {
   const SourcesScreen({super.key});
 
   @override
-  State<SourcesScreen> createState() => _SourcesScreenState();
+  ConsumerState<SourcesScreen> createState() => _SourcesScreenState();
 }
 
-class _SourcesScreenState extends State<SourcesScreen> {
-  DatabaseService? _db;
+class _SourcesScreenState extends ConsumerState<SourcesScreen> {
   List<ExtensionSource> _sources = [];
   bool _loading = true;
   String? _lastUsedId;
@@ -35,9 +34,8 @@ class _SourcesScreenState extends State<SourcesScreen> {
   }
 
   Future<void> _load() async {
-    final db = context.read<DatabaseService>();
-    _db = db;
-    final sources = await db.getInstalledExtensions();
+    final repos = ref.watch(repositoriesProvider);
+    final sources = await repos.extensions.getInstalledExtensions();
     if (!mounted) return;
     setState(() {
       _sources = sources;
@@ -75,12 +73,12 @@ class _SourcesScreenState extends State<SourcesScreen> {
   }
 
   Future<void> _togglePin(ExtensionSource src) async {
-    if (_db == null) return;
+    final repos = ref.watch(repositoriesProvider);
     final updated = src.copyWith(
       isPinned: !src.isPinned,
       updatedAt: DateTime.now(),
     );
-    await _db!.insertExtensionSource(updated);
+    await repos.extensions.insertExtensionSource(updated);
     setState(() {
       _sources = _sources.map((s) => s.id == src.id ? updated : s).toList();
     });

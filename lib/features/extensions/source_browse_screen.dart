@@ -1,12 +1,18 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../core/services/keiyoushi_service.dart';
+import '../../core/providers.dart';
+import '../../core/models/manga.dart';
+import '../../eval/dispatch_service.dart';
+import '../../eval/models/m_manga.dart';
+import '../../eval/models/m_source.dart';
 import '../../theme/app_theme.dart';
 import '../../theme/tokens/app_spacing.dart';
 import '../../widgets/animated_press.dart';
+import '../../core/utils/image_cache.dart';
 import 'manga_detail_screen.dart';
 
-class SourceBrowseScreen extends StatefulWidget {
+class SourceBrowseScreen extends ConsumerStatefulWidget {
   final String sourceId;
   final String sourceName;
 
@@ -17,17 +23,18 @@ class SourceBrowseScreen extends StatefulWidget {
   });
 
   @override
-  State<SourceBrowseScreen> createState() => _SourceBrowseScreenState();
+  ConsumerState<SourceBrowseScreen> createState() => _SourceBrowseScreenState();
 }
 
-class _SourceBrowseScreenState extends State<SourceBrowseScreen>
+class _SourceBrowseScreenState extends ConsumerState<SourceBrowseScreen>
     with SingleTickerProviderStateMixin {
-  final _service = KeiyoushiService();
+  late final ExtensionDispatchService _service;
+  late final MSource _source;
   final _scrollCtrl = ScrollController();
 
   late final TabController _tabCtrl;
 
-  List<Map<String, dynamic>> _mangas = [];
+  List<MManga> _mangas = [];
   bool _loading = false;
   bool _hasNext = true;
   int _page = 1;
@@ -37,6 +44,14 @@ class _SourceBrowseScreenState extends State<SourceBrowseScreen>
   @override
   void initState() {
     super.initState();
+    _service = ref.read(extensionServiceProvider);
+    _source = MSource(
+      id: widget.sourceId,
+      name: widget.sourceName,
+      lang: 'en',
+      baseUrl: '',
+      sourceType: SourceType.mihon,
+    );
     _tabCtrl = TabController(length: 2, vsync: this);
     _scrollCtrl.addListener(_onScroll);
     _tabCtrl.addListener(() {
@@ -80,14 +95,14 @@ class _SourceBrowseScreenState extends State<SourceBrowseScreen>
     try {
       final result = switch (_tab) {
         'latest' => await _service.getLatestUpdates(
-            sourceId: widget.sourceId, page: _page),
-        _ => await _service.getPopularManga(
-            sourceId: widget.sourceId, page: _page),
+            _page, source: _source),
+        _ => await _service.getPopular(
+            _page, source: _source),
       };
       if (!mounted) return;
       setState(() {
-        _mangas.addAll(result.mangas);
-        _hasNext = result.hasNextPage;
+        _mangas.addAll(result);
+        _hasNext = result.length >= 25;
         _page++;
         _error = null;
       });
@@ -171,16 +186,37 @@ class _SourceBrowseScreenState extends State<SourceBrowseScreen>
                   final m = _mangas[i];
                   return _MangaGridCard(
                     manga: m,
-                    onTap: () => Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) => MangaDetailScreen(
-                          sourceId: widget.sourceId,
-                          url: m['url'] as String? ?? '',
-                          title: m['title'] as String? ?? '',
+                    onTap: () async {
+                      final repos = ref.read(repositoriesProvider);
+                      final manga = Manga(
+                        id: 0,
+                        name: m.title,
+                        url: m.url,
+                        imageUrl: m.thumbnailUrl,
+                        author: m.author,
+                        artist: m.artist,
+                        description: m.description,
+                        status: m.status,
+                        genres: m.genres,
+                        sourceId: widget.sourceId,
+                      );
+                      // Pre-insert into Isar so the detail screen can
+                      // read reactively from a stream, matching mangayomi's
+                      // pushToMangaReaderDetail pattern — no loading spinner.
+                      final id = await repos.manga.insertManga(manga);
+                      if (!context.mounted) return;
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => MangaDetailScreen(
+                            sourceId: widget.sourceId,
+                            url: m.url,
+                            title: m.title,
+                            manga: manga.copyWith(id: id),
+                          ),
                         ),
-                      ),
-                    ),
+                      );
+                    },
                   );
                 },
               ),
@@ -190,7 +226,7 @@ class _SourceBrowseScreenState extends State<SourceBrowseScreen>
 }
 
 class _MangaGridCard extends StatelessWidget {
-  final Map<String, dynamic> manga;
+  final MManga manga;
   final VoidCallback onTap;
 
   const _MangaGridCard({required this.manga, required this.onTap});
@@ -198,8 +234,8 @@ class _MangaGridCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final c = context.colors;
-    final title = manga['title'] as String? ?? '';
-    final thumb = manga['thumbnail_url'] as String?;
+    final title = manga.title;
+    final thumb = manga.thumbnailUrl;
     return AnimatedPress(
       onTap: onTap,
       child: Container(
@@ -213,9 +249,9 @@ class _MangaGridCard extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Expanded(
-              child: thumb != null && thumb.isNotEmpty
-                  ? Image.network(
-                      thumb,
+                            child: thumb != null && thumb.isNotEmpty
+                  ? Image(
+                      image: cachedCover(thumb),
                       width: double.infinity,
                       fit: BoxFit.cover,
                       errorBuilder: (_, _, _) => _placeholder(c),
