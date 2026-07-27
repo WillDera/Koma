@@ -1844,8 +1844,8 @@ class _HeroSection extends StatelessWidget {
         ),
       );
     }
-    return Image.network(
-      thumb,
+        return Image(
+      image: cachedCover(thumb, width: width.toInt(), height: height.toInt()),
       width: width,
       height: height,
       fit: fit,

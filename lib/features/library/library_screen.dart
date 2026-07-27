@@ -1433,27 +1433,26 @@ class _BookShelf extends StatelessWidget {
           'variant=grid count=${books.length} elapsed=${sw.elapsedMicroseconds}us');
       return result;
     }
-    final result = Column(
-      children: [
-        for (final entry in books.indexed)
-          Padding(
-            padding: const EdgeInsets.fromLTRB(20, 0, 20, 4),
-            child: StaggeredEntrance(
-              index: entry.$1 + 1,
-              child: LibraryBookCard(
-                book: entry.$2,
-                variant: LibraryCardVariant.list,
-                selected: provider.selectedIds.contains('b:${entry.$2.id}'),
-                selectionMode: provider.selectionMode,
-                showSourcePills: provider.showSourcePills,
-                onTap: () => provider.selectionMode
-                    ? notifier.toggleSelection('b:${entry.$2.id}')
-                    : onOpen(entry.$2.id),
-                onLongPress: () => notifier.toggleSelection('b:${entry.$2.id}'),
-              ),
-            ),
-          ),
-      ],
+        final result = ListView.separated(
+      shrinkWrap: true,
+      physics: const NeverScrollableScrollPhysics(),
+      padding: const EdgeInsets.symmetric(horizontal: 20),
+      itemCount: books.length,
+      separatorBuilder: (_, _) => const SizedBox(height: 4),
+      itemBuilder: (ctx, i) => StaggeredEntrance(
+        index: i + 1,
+        child: LibraryBookCard(
+          book: books[i],
+          variant: LibraryCardVariant.list,
+          selected: provider.selectedIds.contains('b:${books[i].id}'),
+          selectionMode: provider.selectionMode,
+          showSourcePills: provider.showSourcePills,
+          onTap: () => provider.selectionMode
+              ? notifier.toggleSelection('b:${books[i].id}')
+              : onOpen(books[i].id),
+          onLongPress: () => notifier.toggleSelection('b:${books[i].id}'),
+        ),
+      ),
     );
     BenchmarkLogger.log('book_shelf_build',
         'variant=list count=${books.length} elapsed=${sw.elapsedMicroseconds}us');
@@ -1533,28 +1532,30 @@ class _MangaShelf extends StatelessWidget {
           'variant=grid count=${mangas.length} elapsed=${sw.elapsedMicroseconds}us');
       return result;
     }
-    Widget result = Column(
-      children: [
-        for (final entry in mangas.indexed)
-          StaggeredEntrance(
-            index: entry.$1 + 1,
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 20),
-              child: _MangaLibraryRow(
-                manga: entry.$2,
-                localImagePath: mangaThumbnails[entry.$2.id],
-                selected: provider.selectedIds.contains('m:${entry.$2.id}'),
-                selectionMode: provider.selectionMode,
-                extensionName: extensionNames[entry.$2.sourceId] ?? entry.$2.sourceId,
-                showSourcePills: showSourcePills,
-                onTap: () => provider.selectionMode
-                    ? notifier.toggleSelection('m:${entry.$2.id}')
-                    : onOpen(entry.$2),
-                onLongPress: () => notifier.toggleSelection('m:${entry.$2.id}'),
-              ),
-            ),
+        Widget result = ListView.separated(
+      shrinkWrap: true,
+      physics: const NeverScrollableScrollPhysics(),
+      padding: const EdgeInsets.symmetric(horizontal: 20),
+      itemCount: mangas.length,
+      separatorBuilder: (_, _) => const SizedBox(height: 8),
+      itemBuilder: (ctx, i) {
+        final manga = mangas[i];
+        return StaggeredEntrance(
+          index: i + 1,
+          child: _MangaLibraryRow(
+            manga: manga,
+            localImagePath: mangaThumbnails[manga.id],
+            selected: provider.selectedIds.contains('m:${manga.id}'),
+            selectionMode: provider.selectionMode,
+            extensionName: extensionNames[manga.sourceId] ?? manga.sourceId,
+            showSourcePills: showSourcePills,
+            onTap: () => provider.selectionMode
+                ? notifier.toggleSelection('m:${manga.id}')
+                : onOpen(manga),
+            onLongPress: () => notifier.toggleSelection('m:${manga.id}'),
           ),
-      ],
+        );
+      },
     );
     BenchmarkLogger.log('manga_shelf_build',
         'variant=list count=${mangas.length} elapsed=${sw.elapsedMicroseconds}us');
