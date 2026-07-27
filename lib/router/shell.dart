@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
-import '../core/providers.dart';
+import '../theme/theme_provider.dart';
 import '../widgets/glass_pill_nav.dart';
 
 /// The bottom-nav shell. Wraps go_router's [StatefulNavigationShell]
@@ -62,10 +62,10 @@ class MainShell extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final themeProv = ref.watch(themeProvider);
+    final theme = ref.watch(themeProvider);
     return Scaffold(
       extendBody: true,
-      backgroundColor: themeProv.bgColor,
+      backgroundColor: theme.bgColor,
       body: navigationShell,
       bottomNavigationBar: GlassPillNav(
         items: _navItems,

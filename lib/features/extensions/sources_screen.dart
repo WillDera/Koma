@@ -3,7 +3,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/providers.dart';
 import '../../core/models/extension_source.dart';
-import '../../core/services/database_service.dart';
 import '../../core/utils/language.dart';
 import '../../theme/app_theme.dart';
 import '../../theme/tokens/app_spacing.dart';
@@ -24,7 +23,6 @@ class SourcesScreen extends ConsumerStatefulWidget {
 }
 
 class _SourcesScreenState extends ConsumerState<SourcesScreen> {
-  DatabaseService? _db;
   List<ExtensionSource> _sources = [];
   bool _loading = true;
   String? _lastUsedId;
@@ -36,9 +34,8 @@ class _SourcesScreenState extends ConsumerState<SourcesScreen> {
   }
 
   Future<void> _load() async {
-    final db = ref.read(databaseServiceProvider);
-    _db = db;
-    final sources = await db.getInstalledExtensions();
+    final repos = ref.watch(repositoriesProvider);
+    final sources = await repos.extensions.getInstalledExtensions();
     if (!mounted) return;
     setState(() {
       _sources = sources;
@@ -76,12 +73,12 @@ class _SourcesScreenState extends ConsumerState<SourcesScreen> {
   }
 
   Future<void> _togglePin(ExtensionSource src) async {
-    if (_db == null) return;
+    final repos = ref.watch(repositoriesProvider);
     final updated = src.copyWith(
       isPinned: !src.isPinned,
       updatedAt: DateTime.now(),
     );
-    await _db!.insertExtensionSource(updated);
+    await repos.extensions.insertExtensionSource(updated);
     setState(() {
       _sources = _sources.map((s) => s.id == src.id ? updated : s).toList();
     });

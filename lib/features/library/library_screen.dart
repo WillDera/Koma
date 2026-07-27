@@ -11,7 +11,6 @@ import 'package:path_provider/path_provider.dart';
 import '../../core/models/book.dart';
 import '../../core/models/chapter.dart';
 import '../../core/models/manga.dart';
-import '../../core/services/database_service.dart';
 import '../../core/services/ebook_service.dart';
 import '../../core/services/web_scraper_service.dart';
 import '../../core/services/cache_service.dart';
@@ -34,7 +33,6 @@ import '../../widgets/premium_button.dart';
 import '../../widgets/screen_chrome.dart';
 import '../../widgets/segmented_control.dart';
 import '../../widgets/toast.dart';
-import '../snippets/snippets_provider.dart';
 import 'library_provider.dart';
 
 class LibraryScreen extends ConsumerStatefulWidget {
@@ -62,7 +60,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> with RouteAware {
     super.initState();
     _scrollCtrl.addListener(_onScroll);
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      ref.read(libraryProvider).loadBooks();
+      ref.read(libraryProvider.notifier).loadBooks();
       _loadThumbnails();
     });
   }
@@ -117,7 +115,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> with RouteAware {
     // A pushed route (e.g. reader) was popped and we're visible again.
     // Reload data — this is the Mihon-equivalent of Room Flow
     // reacting to an onPause write.
-    ref.read(libraryProvider).loadBooks();
+    ref.read(libraryProvider.notifier).loadBooks();
   }
 
   bool get _oneHand => ref.watch(themeProvider).oneHandMode;
@@ -127,6 +125,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> with RouteAware {
     final leftHanded = ref.watch(themeProvider).handMode == HandMode.left;
     final navClearance = MediaQuery.paddingOf(context).bottom + 84;
     final provider = ref.watch(libraryProvider);
+    final ln = ref.read(libraryProvider.notifier);
     return ScreenBackdrop(
       child: Stack(
         children: [
@@ -149,7 +148,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> with RouteAware {
                     variant: IconButtonVariant.filled,
                     backgroundColor: context.colors.surfaceMuted,
                     iconColor: context.colors.textPrimary,
-                    onPressed: provider.toggleLayout,
+                    onPressed: ln.toggleLayout,
                   ),
                   const SizedBox(height: 10),
                   IconButtonRound(
@@ -207,7 +206,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> with RouteAware {
 
   // ── Body dispatcher ─────────────────────────────────────────────────
 
-  Widget _body(BuildContext context, LibraryProvider provider) {
+  Widget _body(BuildContext context, LibraryState provider) {
     if (provider.loading && provider.books.isEmpty && provider.mangas.isEmpty)
       return _loading(context);
     if (provider.error != null) return _error(context, provider);
@@ -251,7 +250,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> with RouteAware {
     );
   }
 
-  Widget _error(BuildContext context, LibraryProvider provider) {
+  Widget _error(BuildContext context, LibraryState provider) {
     return Column(
       children: [
         _header(context, provider),
@@ -262,7 +261,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> with RouteAware {
             subtitle: provider.error!,
             primaryActionLabel: 'Try again',
             primaryActionIcon: Icons.refresh,
-            onPrimaryAction: () => provider.loadBooks(),
+            onPrimaryAction: () => ref.read(libraryProvider.notifier).loadBooks(),
           ),
         ),
       ],
@@ -290,11 +289,11 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> with RouteAware {
 
   // ── Normal content (scrolling includes spacer → header → grid/list) ──
 
-  Widget _combined(BuildContext context, LibraryProvider provider) {
+  Widget _combined(BuildContext context, LibraryState provider) {
     return RefreshIndicator(
       color: context.colors.accent,
       backgroundColor: context.colors.surface,
-      onRefresh: () => provider.loadBooks(),
+      onRefresh: () => ref.read(libraryProvider.notifier).loadBooks(),
       child: ListView(
         controller: _scrollCtrl,
         padding: const EdgeInsets.only(bottom: 100),
@@ -338,7 +337,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> with RouteAware {
             onQueryChanged: (_) => setState(() {}),
             showSourcePills: provider.showSourcePills,
             onShowSourcePillsChanged: (value) {
-              provider.setShowSourcePills(value);
+              ref.read(libraryProvider.notifier).setShowSourcePills(value);
             },
           ),
           AnimatedSwitcher(
@@ -350,6 +349,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> with RouteAware {
                     key: const ValueKey('books-shelf'),
                     books: _visibleBooks(provider.books),
                     provider: provider,
+                    notifier: ref.read(libraryProvider.notifier),
                     showSourcePills: provider.showSourcePills,
                     onOpen: (id) => _openReader(context, id),
                   )
@@ -358,6 +358,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> with RouteAware {
                     mangas: _visibleMangas(provider.mangas),
                     gridView: provider.isGridView,
                     provider: provider,
+                    notifier: ref.read(libraryProvider.notifier),
                     extensionNames: provider.extensionNames,
                     mangaThumbnails: _mangaThumbnails,
                     showSourcePills: provider.showSourcePills,
@@ -373,7 +374,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> with RouteAware {
 
   Widget _header(
     BuildContext context,
-    LibraryProvider provider, [
+    LibraryState provider, [
     bool oneHand = false,
   ]) {
     if (provider.selectionMode) {
@@ -385,7 +386,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> with RouteAware {
             size: 40,
             variant: IconButtonVariant.tonal,
             iconColor: context.colors.textSecondary,
-            onPressed: provider.selectAll,
+            onPressed: ref.read(libraryProvider.notifier).selectAll,
           ),
           const SizedBox(width: 8),
           IconButtonRound(
@@ -400,7 +401,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> with RouteAware {
             icon: Icons.close,
             size: 40,
             variant: IconButtonVariant.tonal,
-            onPressed: provider.clearSelection,
+            onPressed: ref.read(libraryProvider.notifier).clearSelection,
           ),
           const SizedBox(width: 8),
         ],
@@ -507,7 +508,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> with RouteAware {
 
   // ── Dialogs / import ────────────────────────────────────────────────
 
-  void _confirmDelete(BuildContext context, LibraryProvider provider) async {
+  void _confirmDelete(BuildContext context, LibraryState provider) async {
     final confirmed = await StashDialog.show<bool>(
       context,
       title: 'Remove titles?',
@@ -530,7 +531,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> with RouteAware {
         ),
       ],
     );
-    if (confirmed == true) await provider.deleteSelected();
+    if (confirmed == true) await ref.read(libraryProvider.notifier).deleteSelected();
   }
 
   void _showImportOptions(BuildContext context) {
@@ -590,13 +591,13 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> with RouteAware {
       if (showMobiLoader && mounted) {
         setState(() => _importingFile = true);
       }
-      final db = ref.read(databaseServiceProvider);
-      final provider = ref.read(libraryProvider);
+      final repos = ref.read(repositoriesProvider);
+      final ln = ref.read(libraryProvider.notifier);
       final ebookSvc = EbookService();
       final parsed = await ebookSvc.parse(filePath);
       if (parsed == null) throw Exception('Unsupported format');
       if (!context.mounted) return;
-      final existing = await db.findLocalBook(
+      final existing = await repos.books.findLocalBook(
         parsed.book.title,
         parsed.book.author,
       );
@@ -611,9 +612,9 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> with RouteAware {
         }
         return;
       }
-      final bookId = await provider.addBook(parsed.book);
+      final bookId = await ln.addBook(parsed.book);
       for (final ch in parsed.chapters) {
-        await db.insertChapter(ch.copyWith(bookId: bookId));
+        await repos.books.insertChapter(ch.copyWith(bookId: bookId));
       }
       if (context.mounted) {
         StashToast.show(
@@ -658,12 +659,12 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> with RouteAware {
       final scraper = WebScraperService();
       final result = await scraper.fetchContent(url);
       if (!context.mounted) return;
-      final db = ref.read(databaseServiceProvider);
-      final cache = CacheService(db.db);
+      final repos = ref.read(repositoriesProvider);
+      final cache = CacheService(repos);
       final cached = await cache.getCached(url);
       if (cached != null) {
         if (context.mounted) {
-          final provider = ref.read(libraryProvider);
+          final provider = ref.read(libraryProvider.notifier);
           final book = Book(
             id: 0,
             title: cached.title,
@@ -672,7 +673,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> with RouteAware {
             totalChapters: 1,
           );
           final bookId = await provider.addBook(book);
-          await db.insertChapter(cached.copyWith(bookId: bookId));
+          await repos.books.insertChapter(cached.copyWith(bookId: bookId));
           if (context.mounted) {
             StashToast.show(
               context,
@@ -683,7 +684,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> with RouteAware {
         }
         return;
       }
-      final provider = ref.read(libraryProvider);
+      final provider = ref.read(libraryProvider.notifier);
       final book = Book(
         id: 0,
         title: result.title,
@@ -692,10 +693,10 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> with RouteAware {
         sourceUrl: url,
         totalChapters: 1,
       );
-      final bookId = await provider.addBook(book);
-      await db.insertChapter(
-        Chapter(
-          id: 0,
+final bookId = await provider.addBook(book);
+       await repos.books.insertChapter(
+         Chapter(
+           id: 0,
           bookId: bookId,
           title: result.title,
           content: result.contentHtml,
@@ -774,7 +775,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> with RouteAware {
     if (title.isEmpty || content.isEmpty) return;
     if (!context.mounted) return;
     try {
-      await ref.read(snippetsProvider).createSnippet(
+      await ref.read(snippetsProvider.notifier).createSnippet(
         text: content,
         sourceTitle: title,
         tags: ['note'],
@@ -1263,7 +1264,8 @@ class _TriStateGlyph extends StatelessWidget {
 
 class _BookShelf extends StatelessWidget {
   final List<Book> books;
-  final LibraryProvider provider;
+  final LibraryState provider;
+  final LibraryNotifier notifier;
   final ValueChanged<int> onOpen;
   final bool showSourcePills;
 
@@ -1271,6 +1273,7 @@ class _BookShelf extends StatelessWidget {
     super.key,
     required this.books,
     required this.provider,
+    required this.notifier,
     required this.onOpen,
     this.showSourcePills = true,
   });
@@ -1309,9 +1312,9 @@ class _BookShelf extends StatelessWidget {
               selectionMode: provider.selectionMode,
               showSourcePills: provider.showSourcePills,
               onTap: () => provider.selectionMode
-                  ? provider.toggleSelection('b:${books[i].id}')
+                  ? notifier.toggleSelection('b:${books[i].id}')
                   : onOpen(books[i].id),
-              onLongPress: () => provider.toggleSelection('b:${books[i].id}'),
+              onLongPress: () => notifier.toggleSelection('b:${books[i].id}'),
             ),
           ),
         ),
@@ -1331,9 +1334,9 @@ class _BookShelf extends StatelessWidget {
                 selectionMode: provider.selectionMode,
                 showSourcePills: provider.showSourcePills,
                 onTap: () => provider.selectionMode
-                    ? provider.toggleSelection('b:${entry.$2.id}')
+                    ? notifier.toggleSelection('b:${entry.$2.id}')
                     : onOpen(entry.$2.id),
-                onLongPress: () => provider.toggleSelection('b:${entry.$2.id}'),
+                onLongPress: () => notifier.toggleSelection('b:${entry.$2.id}'),
               ),
             ),
           ),
@@ -1345,7 +1348,8 @@ class _BookShelf extends StatelessWidget {
 class _MangaShelf extends StatelessWidget {
   final List<Manga> mangas;
   final bool gridView;
-  final LibraryProvider provider;
+  final LibraryState provider;
+  final LibraryNotifier notifier;
   final ValueChanged<Manga> onOpen;
   final Map<int, String?> mangaThumbnails;
   final Map<String, String> extensionNames;
@@ -1356,6 +1360,7 @@ class _MangaShelf extends StatelessWidget {
     required this.mangas,
     required this.gridView,
     required this.provider,
+    required this.notifier,
     required this.onOpen,
     this.mangaThumbnails = const {},
     this.extensionNames = const {},
@@ -1399,9 +1404,9 @@ class _MangaShelf extends StatelessWidget {
                 extensionName: extensionNames[manga.sourceId] ?? manga.sourceId,
                 showSourcePills: showSourcePills,
                 onTap: () => provider.selectionMode
-                    ? provider.toggleSelection('m:${manga.id}')
+                    ? notifier.toggleSelection('m:${manga.id}')
                     : onOpen(manga),
-                onLongPress: () => provider.toggleSelection('m:${manga.id}'),
+                onLongPress: () => notifier.toggleSelection('m:${manga.id}'),
               ),
             );
           },
@@ -1423,9 +1428,9 @@ class _MangaShelf extends StatelessWidget {
                 extensionName: extensionNames[entry.$2.sourceId] ?? entry.$2.sourceId,
                 showSourcePills: showSourcePills,
                 onTap: () => provider.selectionMode
-                    ? provider.toggleSelection('m:${entry.$2.id}')
+                    ? notifier.toggleSelection('m:${entry.$2.id}')
                     : onOpen(entry.$2),
-                onLongPress: () => provider.toggleSelection('m:${entry.$2.id}'),
+                onLongPress: () => notifier.toggleSelection('m:${entry.$2.id}'),
               ),
             ),
           ),
