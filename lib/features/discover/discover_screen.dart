@@ -17,6 +17,7 @@ import '../../widgets/one_hand_spacer.dart';
 import '../../widgets/screen_chrome.dart';
 import '../../widgets/segmented_control.dart';
 import '../../widgets/toast.dart';
+import '../../core/utils/image_cache.dart';
 
 class DiscoverScreen extends ConsumerStatefulWidget {
   const DiscoverScreen({super.key});
@@ -565,18 +566,20 @@ class _DiscoverBookResults extends StatelessWidget {
         ),
       );
     }
-    return Column(
-      children: [
-        for (final entry in results.indexed)
-          StaggeredEntrance(
-            index: entry.$1 + 1,
-            child: _ResultCard(
-              result: entry.$2,
-              downloadProgress: downloading[entry.$2.title],
-              onTap: () => onTap(entry.$2),
-            ),
-          ),
-      ],
+        return ListView.separated(
+      shrinkWrap: true,
+      physics: const NeverScrollableScrollPhysics(),
+      padding: const EdgeInsets.symmetric(horizontal: 20),
+      itemCount: results.length,
+      separatorBuilder: (_, _) => const SizedBox(height: 8),
+      itemBuilder: (_, i) => StaggeredEntrance(
+        index: i + 1,
+        child: _ResultCard(
+          result: results[i],
+          downloadProgress: downloading[results[i].title],
+          onTap: () => onTap(results[i]),
+        ),
+      ),
     );
   }
 }
@@ -612,10 +615,20 @@ class _DiscoverMangaResults extends StatelessWidget {
         ),
       );
     }
-    return Column(
-      children: [
-        for (final srcResult in sourceResults)
-          if ((srcResult['mangas'] as List?)?.isNotEmpty ?? false) ...[
+        final sections = sourceResults.where(
+      (src) => (src['mangas'] as List?)?.isNotEmpty ?? false,
+    );
+    return ListView.separated(
+      shrinkWrap: true,
+      physics: const NeverScrollableScrollPhysics(),
+      padding: EdgeInsets.zero,
+      itemCount: sections.length,
+      separatorBuilder: (_, _) => const SizedBox(height: 16),
+      itemBuilder: (_, si) {
+        final srcResult = sections.elementAt(si);
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
             Padding(
               padding: const EdgeInsets.fromLTRB(20, 12, 20, 8),
               child: Align(
@@ -657,7 +670,8 @@ class _DiscoverMangaResults extends StatelessWidget {
               ),
             ),
           ],
-      ],
+        );
+      },
     );
   }
 }
@@ -695,9 +709,9 @@ class _ResultCard extends StatelessWidget {
                   children: [
                     ClipRRect(
                       borderRadius: BorderRadius.circular(6),
-                      child: result.poster != null
-                          ? Image.network(
-                              result.poster!,
+                                            child: result.poster != null
+                          ? Image(
+                              image: cachedCover(result.poster!),
                               width: 48,
                               height: 64,
                               fit: BoxFit.cover,
@@ -843,9 +857,9 @@ class _GridResultCard extends StatelessWidget {
                 borderRadius: const BorderRadius.vertical(
                   top: Radius.circular(18),
                 ),
-                child: result.poster != null
-                    ? Image.network(
-                        result.poster!,
+                                child: result.poster != null
+                    ? Image(
+                        image: cachedCover(result.poster!),
                         width: double.infinity,
                         fit: BoxFit.cover,
                         errorBuilder: (_, _, _) => _posterPlaceholder(c),
@@ -969,9 +983,9 @@ class _MangaCard extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Expanded(
-              child: thumb != null && thumb.isNotEmpty
-                  ? Image.network(
-                      thumb,
+                            child: thumb != null && thumb.isNotEmpty
+                  ? Image(
+                      image: cachedCover(thumb),
                       width: double.infinity,
                       fit: BoxFit.cover,
                       errorBuilder: (_, _, _) => _placeholder(c),
