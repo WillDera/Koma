@@ -278,20 +278,6 @@ class KeiyoushiEngine(
         return result
     }
 
-    /**
-     * Return the set of chapter directory names (SHA256 hashes, first 16 chars)
-     * that exist on disk for the given manga. One call instead of N per-chapter checks.
-     */
-    fun getDownloadedChapterKeys(sourceId: String, mangaUrl: String): List<String> {
-        val mangaKey = sha256(mangaUrl).take(16)
-        val dir = File(context.filesDir, "manga/$sourceId/$mangaKey")
-        if (!dir.isDirectory) return emptyList()
-        return dir.listFiles()
-            ?.filter { it.isDirectory }
-            ?.map { it.name }
-            ?: emptyList()
-    }
-
     private fun sha256(input: String): String =
         MessageDigest.getInstance("SHA-256")
             .digest(input.toByteArray())

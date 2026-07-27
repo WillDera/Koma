@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
-import 'package:provider/provider.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../core/providers.dart';
 import '../../core/models/extension_repo.dart';
 import '../../core/models/extension_source.dart';
-import '../../core/services/database_service.dart';
 import '../../core/services/extension_manager.dart';
 import '../../core/services/keiyoushi_service.dart';
 import '../../core/utils/language.dart';
@@ -17,14 +17,14 @@ const _keiyoushiDefaultRepoUrl =
     'https://raw.githubusercontent.com/keiyoushi/extensions/repo/index.min.json';
 const _keiyoushiDefaultRepoName = 'Keiyoushi (official)';
 
-class ExtensionsScreen extends StatefulWidget {
+class ExtensionsScreen extends ConsumerStatefulWidget {
   const ExtensionsScreen({super.key});
 
   @override
-  State<ExtensionsScreen> createState() => _ExtensionsScreenState();
+  ConsumerState<ExtensionsScreen> createState() => _ExtensionsScreenState();
 }
 
-class _ExtensionsScreenState extends State<ExtensionsScreen>
+class _ExtensionsScreenState extends ConsumerState<ExtensionsScreen>
     with SingleTickerProviderStateMixin {
   late final TabController _tabs;
   late final ExtensionManager _mgr;
@@ -40,9 +40,13 @@ class _ExtensionsScreenState extends State<ExtensionsScreen>
   void initState() {
     super.initState();
     _tabs = TabController(length: 3, vsync: this);
-    final db = context.read<DatabaseService>();
-    _mgr = ExtensionManager(db, KeiyoushiService());
-    _refresh();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        final repos = ref.watch(repositoriesProvider);
+        _mgr = ExtensionManager(repos, KeiyoushiService());
+        _refresh();
+      }
+    });
   }
 
   @override

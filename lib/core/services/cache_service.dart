@@ -1,56 +1,56 @@
-import 'package:drift/drift.dart';
-import '../database/database.dart';
+import 'package:isar_community/isar.dart';
+
+import '../repositories/repositories.dart';
 import '../models/chapter.dart';
+import '../isar/collections/web_cache.dart';
 
 class CacheService {
-  final AppDatabase _db;
+  final Repositories _repos;
 
-  CacheService(this._db);
+  CacheService(this._repos);
 
   Future<bool> isCached(String url) async {
     final hash = _urlHash(url);
-    final rows = await _db.customSelect(
-      'SELECT id FROM web_cache WHERE url_hash = ?',
-      variables: [Variable.withString(hash)],
-    ).get();
-    return rows.isNotEmpty;
+    final row = await _repos.isar.webCaches
+        .where()
+        .urlHashEqualTo(hash)
+        .findFirst();
+    return row != null;
   }
 
   Future<Chapter?> getCached(String url) async {
     final hash = _urlHash(url);
-    final rows = await _db.customSelect(
-      'SELECT * FROM web_cache WHERE url_hash = ?',
-      variables: [Variable.withString(hash)],
-    ).get();
-    if (rows.isEmpty) return null;
-    final row = rows.first.data;
+    final row = await _repos.isar.webCaches
+        .where()
+        .urlHashEqualTo(hash)
+        .findFirst();
+    if (row == null) return null;
     return Chapter(
-      id: row['id'] as int,
+      id: row.id ?? 0,
       bookId: 0,
-      title: row['title'] as String,
-      content: row['content'] as String,
+      title: row.title,
+      content: row.content,
       index: 0,
     );
   }
 
   Future<void> cacheContent(String url, String title, String htmlContent) async {
     final hash = _urlHash(url);
-    await _db.customInsert(
-      'INSERT OR REPLACE INTO web_cache (url_hash, url, title, content) VALUES (?, ?, ?, ?)',
-      variables: [
-        Variable.withString(hash),
-        Variable.withString(url),
-        Variable.withString(title),
-        Variable.withString(htmlContent),
-      ],
-    );
+    await _repos.isar.writeTxn(() async {
+      await _repos.isar.webCaches.put(WebCache(
+        urlHash: hash,
+        url: url,
+        title: title,
+        content: htmlContent,
+        cachedAt: DateTime.now(),
+      ));
+    });
   }
 
   Future<void> clearCache() async {
-    await _db.customUpdate('DELETE FROM web_cache');
+    await _repos.isar.writeTxn(() => _repos.isar.webCaches.where().deleteAll());
   }
 
-  // ponytail: url.hashCode is 32-bit, collision probability negligible for personal use
   String _urlHash(String url) {
     return 'cache:${url.hashCode}';
   }

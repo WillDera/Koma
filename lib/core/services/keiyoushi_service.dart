@@ -180,17 +180,6 @@ class KeiyoushiService {
   }
 
   /// Return the set of chapter key hashes that have downloaded files on disk.
-  Future<Set<String>> getDownloadedChapterKeys({
-    required String sourceId,
-    required String mangaUrl,
-  }) async {
-    final res = await _channel.invokeListMethod<String>('getDownloadedChapterKeys', {
-      'sourceId': sourceId,
-      'mangaUrl': mangaUrl,
-    });
-    return (res ?? const []).toSet();
-  }
-
   ({List<Map<String, dynamic>> mangas, bool hasNextPage}) _parseMangasPage(
     Map<String, dynamic>? raw,
   ) {

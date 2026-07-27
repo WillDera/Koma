@@ -6,7 +6,7 @@ import 'package:html/parser.dart' as html_parser;
 
 import 'package:path_provider/path_provider.dart';
 import '../models/source.dart';
-import 'database_service.dart';
+import '../repositories/repositories.dart';
 import 'ebook_service.dart';
 
 class SourceSearchResult {
@@ -38,10 +38,10 @@ class SourceSearchResult {
 }
 
 class SourceService {
-  final DatabaseService _db;
+  final Repositories _repos;
   final EbookService _ebook;
 
-  SourceService(this._db, this._ebook);
+  SourceService(this._repos, this._ebook);
 
   http_io.IOClient _client() {
     return http_io.IOClient(HttpClient());
@@ -65,12 +65,12 @@ class SourceService {
 
   Future<List<SourceSearchResult>> search(String query) async {
     if (query.trim().isEmpty) return [];
-    var sources = await _db.getSources();
+    var sources = await _repos.stats.getSources();
     if (sources.isEmpty) {
       for (final s in defaultSources()) {
-        await _db.insertSource(s);
+        await _repos.stats.insertSource(s);
       }
-      sources = await _db.getSources();
+      sources = await _repos.stats.getSources();
     }
     final active = sources.where((s) => s.enabled).toList();
     final all = <SourceSearchResult>[];
@@ -136,7 +136,6 @@ class SourceService {
         final size = cols.length > 7 ? cols[7].text.trim() : '';
         final ext = cols.length > 8 ? cols[8].text.trim() : '';
 
-        // Find download URL: try multiple selectors in order of specificity
         String? downloadUrl;
         downloadUrl = row.querySelector('a[title="libgen.is"]')?.attributes['href'];
         if (downloadUrl == null || downloadUrl.isEmpty) {
@@ -242,9 +241,9 @@ class SourceService {
         final result = await _ebook.parse(file.path);
         if (result == null) return false;
 
-        final bookId = await _db.insertBook(result.book);
+        final bookId = await _repos.books.insertBook(result.book);
         for (final ch in result.chapters) {
-          await _db.insertChapter(ch.copyWith(bookId: bookId));
+          await _repos.books.insertChapter(ch.copyWith(bookId: bookId));
         }
         return true;
       } finally {
