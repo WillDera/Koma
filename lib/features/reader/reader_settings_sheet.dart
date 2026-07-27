@@ -391,7 +391,7 @@ class _DisplayTab extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _section('Rotation', [
+          _section(context, 'Rotation', [
             SegmentedButton<RotationMode>(
               segments: const [
                 ButtonSegment(value: RotationMode.portrait, label: Text('Portrait')),
@@ -427,7 +427,7 @@ class _DisplayTab extends StatelessWidget {
             ),
           ]),
           const SizedBox(height: 16),
-          _section('UI Options', [
+          _section(context, 'UI Options', [
             SwitchListTile(
               title: const Text('Fullscreen'),
               subtitle: const Text('Hide system bars'),
@@ -460,7 +460,7 @@ class _DisplayTab extends StatelessWidget {
     );
   }
 
-  Widget _section(String title, List<Widget> children) {
+  Widget _section(BuildContext context, String title, List<Widget> children) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -489,7 +489,7 @@ class _FilterTab extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
       child: Column(
         children: [
-          _slider('Brightness', settings.brightness, 0.5, 1.5, (v) => onChanged(ReaderSettings(
+          _slider(context, 'Brightness', settings.brightness, 0.5, 1.5, (v) => onChanged(ReaderSettings(
             readingMode: settings.readingMode,
             rotationMode: settings.rotationMode,
             tapZones: settings.tapZones,
@@ -511,7 +511,7 @@ class _FilterTab extends StatelessWidget {
             tintColor: settings.tintColor,
             tintOpacity: settings.tintOpacity,
           ))),
-          _slider('Contrast', settings.contrast, 0.5, 1.5, (v) => onChanged(ReaderSettings(
+          _slider(context, 'Contrast', settings.contrast, 0.5, 1.5, (v) => onChanged(ReaderSettings(
             readingMode: settings.readingMode,
             rotationMode: settings.rotationMode,
             tapZones: settings.tapZones,
@@ -533,7 +533,7 @@ class _FilterTab extends StatelessWidget {
             tintColor: settings.tintColor,
             tintOpacity: settings.tintOpacity,
           ))),
-          _slider('Saturation', settings.saturation, 0.0, 2.0, (v) => onChanged(ReaderSettings(
+          _slider(context, 'Saturation', settings.saturation, 0.0, 2.0, (v) => onChanged(ReaderSettings(
             readingMode: settings.readingMode,
             rotationMode: settings.rotationMode,
             tapZones: settings.tapZones,
@@ -560,7 +560,7 @@ class _FilterTab extends StatelessWidget {
     );
   }
 
-  Widget _slider(String label, double value, double min, double max, ValueChanged<double> onChanged) {
+  Widget _slider(BuildContext context, String label, double value, double min, double max, ValueChanged<double> onChanged) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
