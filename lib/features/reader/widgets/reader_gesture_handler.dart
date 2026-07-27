@@ -1,4 +1,6 @@
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+import '../reader_gestures.dart';
 
 typedef ReaderGestureCallback = void Function();
 typedef ReaderSwipeCallback = void Function(double velocity);
@@ -11,6 +13,8 @@ class ReaderGestureHandler extends StatelessWidget {
   final ReaderSwipeCallback? onHorizontalSwipe;
   final ReaderSwipeCallback? onVerticalSwipe;
   final double swipeThreshold;
+  final ReaderGestureConfig gestureConfig;
+  final TapZoneLayout tapLayout;
 
   const ReaderGestureHandler({
     super.key,
@@ -21,6 +25,8 @@ class ReaderGestureHandler extends StatelessWidget {
     this.onHorizontalSwipe,
     this.onVerticalSwipe,
     this.swipeThreshold = 50.0,
+    this.gestureConfig = const ReaderGestureConfig(),
+    this.tapLayout = TapZoneLayout.leftRight,
   });
 
   @override
@@ -31,17 +37,17 @@ class ReaderGestureHandler extends StatelessWidget {
       onLongPress: onLongPress,
       onHorizontalDragEnd: onHorizontalSwipe != null
           ? (details) {
-              final velocity = details.velocity.pixelsPerSecond.dx;
-              if (velocity.abs() > swipeThreshold * 10) {
-                onHorizontalSwipe!(velocity);
+              final v = details.velocity.pixelsPerSecond.dx;
+              if (v.abs() > gestureConfig.swipeVelocityThreshold) {
+                onHorizontalSwipe!(v);
               }
             }
           : null,
       onVerticalDragEnd: onVerticalSwipe != null
           ? (details) {
-              final velocity = details.velocity.pixelsPerSecond.dy;
-              if (velocity.abs() > swipeThreshold * 10) {
-                onVerticalSwipe!(velocity);
+              final v = details.velocity.pixelsPerSecond.dy;
+              if (v.abs() > gestureConfig.swipeVelocityThreshold) {
+                onVerticalSwipe!(v);
               }
             }
           : null,

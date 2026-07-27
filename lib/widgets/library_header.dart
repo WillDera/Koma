@@ -1,5 +1,3 @@
-import 'package:flutter/foundation.dart';
-
 import 'package:flutter/material.dart';
 import '../theme/app_theme.dart';
 import 'icon_button_round.dart';
@@ -79,27 +77,14 @@ class LibraryHeader extends StatelessWidget {
                 ),
                 if (subtitle != null) ...[
                   const SizedBox(height: 4),
-                  if (BenchmarkLogger.headerA11yPatch)
-                    Text(
-                      subtitle!,
-                      style: TextStyle(
-                        color: c.textSecondary.withValues(alpha: subtitleOpacity),
-                        fontSize: 14,
-                        fontWeight: FontWeight.w400,
-                      ),
-                    )
-                  else
-                    Opacity(
-                      opacity: subtitleOpacity,
-                      child: Text(
-                        subtitle!,
-                        style: TextStyle(
-                          color: c.textSecondary,
-                          fontSize: 14,
-                          fontWeight: FontWeight.w400,
-                        ),
-                      ),
+                  Text(
+                    subtitle!,
+                    style: TextStyle(
+                      color: c.textSecondary.withValues(alpha: subtitleOpacity),
+                      fontSize: 14,
+                      fontWeight: FontWeight.w400,
                     ),
+                  ),
                 ],
               ],
             ),
@@ -110,8 +95,7 @@ class LibraryHeader extends StatelessWidget {
     );
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (BenchmarkLogger.enabled) {
-        BenchmarkLogger.log('header_build',
-            'elapsed=${sw.elapsedMicroseconds}us patch=${BenchmarkLogger.headerA11yPatch}');
+        BenchmarkLogger.log('header_build', 'elapsed=${sw.elapsedMicroseconds}us');
       }
     });
     return result;

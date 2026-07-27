@@ -41,7 +41,7 @@ class SettingsScreen extends StatelessWidget {
             const OneHandSpacer(),
             const LibraryHeader(
               title: 'Settings',
-              subtitle: 'Version 2.19.10',
+              subtitle: 'Version 2.19.11',
               padding: EdgeInsets.fromLTRB(24, 20, 20, 12),
             ),
             const StaggeredEntrance(
@@ -1109,8 +1109,9 @@ Future<Source?> _sourceDialog(BuildContext context, Source? existing) async {
           ),
           TextButton(
             onPressed: () {
-              if (nameCtrl.text.trim().isEmpty || urlCtrl.text.trim().isEmpty)
+              if (nameCtrl.text.trim().isEmpty || urlCtrl.text.trim().isEmpty) {
                 return;
+              }
               Navigator.of(ctx).pop(
                 Source(
                   id: existing?.id ?? 0,

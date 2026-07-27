@@ -867,8 +867,8 @@ class _LibraryHeaderControllerState extends State<_LibraryHeaderController> {
         max <= 0 ? 0.0 : (widget.scrollController.offset / max).clamp(0.0, 1.0);
     final now = DateTime.now();
     final minTime = _lastSetState == null ||
-        now.difference(_lastSetState!) > const Duration(milliseconds: 50);
-    if (minTime && (p - _scrollProgress).abs() > 0.015) {
+        now.difference(_lastSetState!) > const Duration(milliseconds: 100);
+    if (minTime && (p - _scrollProgress).abs() > 0.02) {
       _lastSetState = now;
       setState(() => _scrollProgress = p);
     }

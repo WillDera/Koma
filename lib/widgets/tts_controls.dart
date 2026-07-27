@@ -359,7 +359,7 @@ class _TtsSettingsSheetState extends State<_TtsSettingsSheet> {
                   style: FilledButton.styleFrom(backgroundColor: c.accent),
                   onPressed: () async {
                     await widget.provider.setGoogleApiKey(_apiCtrl.text.trim());
-                    if (mounted) {
+                    if (context.mounted) {
                       ScaffoldMessenger.of(context).showSnackBar(
                         SnackBar(
                           content: const Text('API key saved'),
