@@ -1,6 +1,9 @@
+import 'package:flutter/foundation.dart';
+
 import 'package:flutter/material.dart';
 import '../theme/app_theme.dart';
 import 'icon_button_round.dart';
+import '../../core/utils/benchmark_logger.dart';
 
 /// A page header used by Library, Snippets, Search, Settings.
 /// Title (displayMedium), optional subtitle (small, secondary), optional
@@ -39,7 +42,8 @@ class LibraryHeader extends StatelessWidget {
     final p = shrinkProgress.clamp(0.0, 1.0);
     final fontSize = titleSize * (1.0 - 0.5 * p);
     final subtitleOpacity = (1.0 - p).clamp(0.0, 1.0);
-    return Padding(
+    final sw = Stopwatch()..start();
+    Widget result = Padding(
       padding: padding,
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.center,
@@ -75,17 +79,27 @@ class LibraryHeader extends StatelessWidget {
                 ),
                 if (subtitle != null) ...[
                   const SizedBox(height: 4),
-                  Opacity(
-                    opacity: subtitleOpacity,
-                    child: Text(
+                  if (BenchmarkLogger.headerA11yPatch)
+                    Text(
                       subtitle!,
                       style: TextStyle(
-                        color: c.textSecondary,
+                        color: c.textSecondary.withValues(alpha: subtitleOpacity),
                         fontSize: 14,
                         fontWeight: FontWeight.w400,
                       ),
+                    )
+                  else
+                    Opacity(
+                      opacity: subtitleOpacity,
+                      child: Text(
+                        subtitle!,
+                        style: TextStyle(
+                          color: c.textSecondary,
+                          fontSize: 14,
+                          fontWeight: FontWeight.w400,
+                        ),
+                      ),
                     ),
-                  ),
                 ],
               ],
             ),
@@ -94,5 +108,12 @@ class LibraryHeader extends StatelessWidget {
         ],
       ),
     );
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (BenchmarkLogger.enabled) {
+        BenchmarkLogger.log('header_build',
+            'elapsed=${sw.elapsedMicroseconds}us patch=${BenchmarkLogger.headerA11yPatch}');
+      }
+    });
+    return result;
   }
 }
