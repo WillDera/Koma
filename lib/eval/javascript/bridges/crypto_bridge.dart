@@ -1,7 +1,9 @@
 import 'dart:convert';
 import 'dart:async';
 import 'dart:typed_data';
+import 'package:encrypt/encrypt.dart' as enc;
 import 'package:flutter_qjs/flutter_qjs.dart';
+import '../../../utils/js_unpacker.dart';
 
 const cryptoBridgeCode = '''
 var __cryptoCallbacks = {};
@@ -69,6 +71,46 @@ CryptoJS.AES = {
     });
   }
 };
+
+function cryptoHandler(text, iv, secretKeyString, encrypt) {
+  var id = __cryptoCallbackId++;
+  return new Promise(function(resolve, reject) {
+    __cryptoCallbacks[id] = { resolve: resolve, reject: reject };
+    sendMessage('CryptoHandler', JSON.stringify({
+      text: text,
+      iv: iv,
+      key: secretKeyString,
+      encrypt: encrypt,
+      callbackId: id
+    }));
+  });
+}
+
+function decryptAESGCM(encrypted, keyHex, ivHex, tagHex) {
+  tagHex = tagHex || "";
+  var id = __cryptoCallbackId++;
+  return new Promise(function(resolve, reject) {
+    __cryptoCallbacks[id] = { resolve: resolve, reject: reject };
+    sendMessage('DecryptAESGCM', JSON.stringify({
+      encrypted: encrypted,
+      keyHex: keyHex,
+      ivHex: ivHex,
+      tagHex: tagHex,
+      callbackId: id
+    }));
+  });
+}
+
+function unpackJsAndCombine(scriptBlock) {
+  var id = __cryptoCallbackId++;
+  return new Promise(function(resolve, reject) {
+    __cryptoCallbacks[id] = { resolve: resolve, reject: reject };
+    sendMessage('UnpackJsAndCombine', JSON.stringify({
+      scriptBlock: scriptBlock,
+      callbackId: id
+    }));
+  });
+}
 ''';
 
 Future<void> injectCryptoBridge(QuickJsRuntime2 engine) async {
@@ -84,6 +126,30 @@ Future<void> injectCryptoBridge(QuickJsRuntime2 engine) async {
     final key = args['key'] as String? ?? '';
     final callbackId = args['callbackId'] as int? ?? 0;
     unawaited(_aesDecrypt(engine, ciphertext, key, callbackId));
+  });
+
+  engine.setupBridge('CryptoHandler', (args) {
+    final text = args['text'] as String? ?? '';
+    final iv = args['iv'] as String? ?? '';
+    final key = args['key'] as String? ?? '';
+    final doEncrypt = args['encrypt'] as bool? ?? false;
+    final callbackId = args['callbackId'] as int? ?? 0;
+    unawaited(_cryptoHandler(engine, text, iv, key, doEncrypt, callbackId));
+  });
+
+  engine.setupBridge('DecryptAESGCM', (args) {
+    final encrypted = args['encrypted'] as String? ?? '';
+    final keyHex = args['keyHex'] as String? ?? '';
+    final ivHex = args['ivHex'] as String? ?? '';
+    final tagHex = args['tagHex'] as String? ?? '';
+    final callbackId = args['callbackId'] as int? ?? 0;
+    unawaited(_decryptAESGCM(engine, encrypted, keyHex, ivHex, tagHex, callbackId));
+  });
+
+  engine.setupBridge('UnpackJsAndCombine', (args) {
+    final scriptBlock = args['scriptBlock'] as String? ?? '';
+    final callbackId = args['callbackId'] as int? ?? 0;
+    _unpackJsAndCombine(engine, scriptBlock, callbackId);
   });
 
   engine.evaluate(cryptoBridgeCode);
@@ -301,4 +367,56 @@ class AesCrypt {
     0xA0, 0xE0, 0x3B, 0x4D, 0xAE, 0x2A, 0xF5, 0xB0, 0xC8, 0xEB, 0xBB, 0x3C, 0x83, 0x53, 0x99, 0x61,
     0x17, 0x2B, 0x04, 0x7E, 0xBA, 0x77, 0xD6, 0x26, 0xE1, 0x69, 0x14, 0x63, 0x55, 0x21, 0x0C, 0x7D,
   ];
+}
+
+Future<void> _cryptoHandler(QuickJsRuntime2 engine, String text, String iv,
+    String key, bool doEncrypt, int callbackId) async {
+  try {
+    final encKey = enc.Key.fromUtf8(key.padRight(32).substring(0, 32));
+    final encIv = enc.IV.fromUtf8(iv.padRight(16).substring(0, 16));
+    final encrypter = enc.Encrypter(enc.AES(encKey, mode: enc.AESMode.cbc));
+    final result = doEncrypt
+        ? encrypter.encrypt(text, iv: encIv).base64
+        : encrypter.decrypt64(text, iv: encIv);
+    final escaped = result.replaceAll('"', '\\"').replaceAll('\n', '\\n');
+    engine.evaluate('__cryptoCallbacks[$callbackId].resolve("$escaped")');
+  } catch (e) {
+    final errMsg = e.toString().replaceAll('"', '\\"').replaceAll("'", "\\'");
+    engine.evaluate('__cryptoCallbacks[$callbackId].reject("$errMsg")');
+  }
+}
+
+Future<void> _decryptAESGCM(QuickJsRuntime2 engine, String encrypted,
+    String keyHex, String ivHex, String tagHex, int callbackId) async {
+  try {
+    final keyBytes = _hexDecode(keyHex);
+    final ivBytes = _hexDecode(ivHex);
+    final cipherBytes = base64Decode(encrypted);
+    final tagBytes = tagHex.isNotEmpty ? _hexDecode(tagHex) : <int>[];
+    final dataWithTag = Uint8List.fromList([...cipherBytes, ...tagBytes]);
+    final encKey = enc.Key(Uint8List.fromList(keyBytes));
+    final encIv = enc.IV(Uint8List.fromList(ivBytes));
+    final encrypter = enc.Encrypter(enc.AES(encKey, mode: enc.AESMode.gcm));
+    final result = encrypter.decrypt(enc.Encrypted(dataWithTag), iv: encIv);
+    final escaped = result.replaceAll('"', '\\"').replaceAll('\n', '\\n');
+    engine.evaluate('__cryptoCallbacks[$callbackId].resolve("$escaped")');
+  } catch (e) {
+    final escaped = encrypted.replaceAll('"', '\\"');
+    engine.evaluate('__cryptoCallbacks[$callbackId].resolve("$escaped")');
+  }
+}
+
+void _unpackJsAndCombine(
+    QuickJsRuntime2 engine, String scriptBlock, int callbackId) {
+  final result = JsUnpacker.unpackAndCombine(scriptBlock) ?? '';
+  final escaped = result.replaceAll('"', '\\"').replaceAll('\n', '\\n');
+  engine.evaluate('__cryptoCallbacks[$callbackId].resolve("$escaped")');
+}
+
+List<int> _hexDecode(String hex) {
+  final result = <int>[];
+  for (var i = 0; i < hex.length - 1; i += 2) {
+    result.add(int.parse(hex.substring(i, i + 2), radix: 16));
+  }
+  return result;
 }

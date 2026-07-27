@@ -38,6 +38,37 @@ String.prototype.trim = function() {
   return this.replace(/^\\s+|\\s+\$/g, "");
 };
 
+String.prototype.substringAfter = function(pattern) {
+  var startIndex = this.indexOf(pattern);
+  if (startIndex === -1) return this.substring(0);
+  return this.substring(startIndex + pattern.length);
+};
+
+String.prototype.substringAfterLast = function(pattern) {
+  return this.split(pattern).pop();
+};
+
+String.prototype.substringBefore = function(pattern) {
+  var endIndex = this.indexOf(pattern);
+  if (endIndex === -1) return this.substring(0);
+  return this.substring(0, endIndex);
+};
+
+String.prototype.substringBeforeLast = function(pattern) {
+  var endIndex = this.lastIndexOf(pattern);
+  if (endIndex === -1) return this.substring(0);
+  return this.substring(0, endIndex);
+};
+
+String.prototype.substringBetween = function(left, right) {
+  var index = this.indexOf(left);
+  if (index === -1) return "";
+  var leftIndex = index + left.length;
+  var rightIndex = this.indexOf(right, leftIndex);
+  if (rightIndex === -1) return "";
+  return this.substring(leftIndex, rightIndex);
+};
+
 var __base64Callbacks = {};
 var __base64CallbackId = 0;
 
