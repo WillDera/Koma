@@ -155,6 +155,29 @@ class BookRepository {
     return rows.map(_chapterToModel).toList(growable: false);
   }
 
+  Future<List<Book>> searchBooks(String term) async {
+    final lower = term.toLowerCase();
+    final rows = await _isar.books
+        .filter()
+        .titleContains(lower, caseSensitive: false)
+        .or()
+        .authorContains(lower, caseSensitive: false)
+        .findAll();
+    return rows.map(_toModel).toList(growable: false);
+  }
+
+  Future<List<Chapter>> searchChapters(String term) async {
+    final lower = term.toLowerCase();
+    final rows = await _isar.chapters
+        .filter()
+        .titleContains(lower, caseSensitive: false)
+        .or()
+        .contentContains(lower, caseSensitive: false)
+        .sortByIndex()
+        .findAll();
+    return rows.map(_chapterToModel).toList(growable: false);
+  }
+
   Future<Chapter?> getChapter(int id) async {
     final row = await _isar.chapters.get(id);
     return row == null ? null : _chapterToModel(row);
@@ -194,6 +217,15 @@ class BookRepository {
       final row = await _isar.chapters.get(chapterId);
       if (row == null) return;
       row.scrollPosition = position;
+      await _isar.chapters.put(row);
+    });
+  }
+
+  Future<void> updateChapterReadAt(int chapterId, DateTime readAt) async {
+    await _isar.writeTxn(() async {
+      final row = await _isar.chapters.get(chapterId);
+      if (row == null) return;
+      row.readAt = readAt;
       await _isar.chapters.put(row);
     });
   }

@@ -4,76 +4,55 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'app.dart';
 import 'core/isar/isar.dart';
-import 'core/isar/migration/drift_isar_migration.dart';
 import 'core/providers.dart';
-import 'core/services/database_service.dart';
+import 'core/repositories/repositories.dart';
 import 'core/services/extension_manager.dart';
 import 'core/services/keiyoushi_service.dart';
 import 'core/services/stats_service.dart';
-import 'features/library/library_provider.dart';
-import 'package:flutter_native_splash/flutter_native_splash.dart';
 import 'theme/theme_provider.dart';
+import 'package:flutter_native_splash/flutter_native_splash.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  final dbService = await DatabaseService.getInstance();
-
-  // Open Isar (PHASE 1) and run the one-time Drift→Isar migration. Runs
-  // silently on first launch after the user upgrades to a build that
-  // includes Isar. No-op on subsequent launches (gated by a
-  // SharedPreferences flag). Errors are non-fatal — the app still works.
   final isar = await openIsar();
-  try {
-    final report = await migrateDriftToIsar(dbService, isar: isar);
-    assert(() {
-      // ignore: avoid_print
-      print('Isar migration: $report');
-      return true;
-    }());
-  } catch (_) {
-    // Migration failed — log and continue.
-  }
 
-  final statsService = StatsService(dbService);
-  final themeProv = ThemeProvider();
-  await themeProv.init();
+  final statsService = StatsService(Repositories(isar));
 
-  final libraryProv = LibraryProvider(dbService);
-  await libraryProv.init();
-
-  // Re-mount any extensions the user previously installed so the
-  // native Keiyoushi bridge has them loaded for this session.
   final keiyoushiService = KeiyoushiService();
-  final extensionManager = ExtensionManager(dbService, keiyoushiService);
+  final extensionManager = ExtensionManager(
+    Repositories(isar),
+    keiyoushiService,
+  );
   unawaited(extensionManager.reloadAll().then((_) {
-    // Check for extension updates on start (mangayomi pattern).
     unawaited(_checkExtensionUpdates(extensionManager));
   }));
 
   WidgetsBinding widgetsBinding = WidgetsFlutterBinding.ensureInitialized();
   FlutterNativeSplash.preserve(widgetsBinding: widgetsBinding);
 
+  final container = ProviderContainer(
+    overrides: [
+      isarProvider.overrideWithValue(isar),
+      statsServiceProvider.overrideWithValue(statsService),
+      keiyoushiServiceProvider.overrideWithValue(keiyoushiService),
+      extensionManagerProvider.overrideWithValue(extensionManager),
+    ],
+  );
+
+  // Initialize Notifiers that need SharedPreferences loaded before
+  // first paint. The Notifier instances are created by the container
+  // automatically — we just call their init() methods.
+  await container.read(themeProvider.notifier).init();
+  await container.read(libraryProvider.notifier).init();
+
   runApp(
-    ProviderScope(
-      overrides: [
-        // Heavy singletons created once at startup are injected here so
-        // the whole provider graph shares one instance. ThemeProvider and
-        // LibraryProvider are pre-initialized (init() awaited above) so
-        // their persisted prefs are ready before first paint.
-        isarProvider.overrideWithValue(isar),
-        databaseServiceProvider.overrideWithValue(dbService),
-        statsServiceProvider.overrideWithValue(statsService),
-        keiyoushiServiceProvider.overrideWithValue(keiyoushiService),
-        extensionManagerProvider.overrideWithValue(extensionManager),
-        themeProvider.overrideWith((ref) => themeProv),
-        libraryProvider.overrideWith((ref) => libraryProv),
-      ],
+    UncontrolledProviderScope(
+      container: container,
       child: const KomaApp(),
     ),
   );
 
-  // whenever your initialization is completed, remove the splash screen:
   FlutterNativeSplash.remove();
 }
 

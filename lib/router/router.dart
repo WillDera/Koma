@@ -73,20 +73,21 @@ final GlobalKey<NavigatorState> rootNavigatorKey =
 /// pushed above the shell (covering the bottom nav).
 final GoRouter appRouter = GoRouter(
   navigatorKey: rootNavigatorKey,
+  observers: [routeObserver],
   initialLocation: '/library',
   routes: [
     StatefulShellRoute.indexedStack(
       builder: (context, state, navigationShell) =>
           MainShell(navigationShell: navigationShell),
       branches: [
-        StatefulShellBranch(observers: [routeObserver], routes: [
+        StatefulShellBranch(routes: [
           GoRoute(
             path: '/library',
             name: Routes.library,
             builder: (context, state) => const LibraryScreen(),
           ),
         ]),
-        StatefulShellBranch(observers: [routeObserver], routes: [
+        StatefulShellBranch(routes: [
           GoRoute(
             path: '/history',
             name: Routes.history,

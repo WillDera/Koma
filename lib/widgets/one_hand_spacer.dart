@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import '../core/providers.dart';
+import '../theme/theme_provider.dart';
 
 /// When one-hand mode is on, this takes up 50 % of the usable screen
 /// height.  Place it as the first child inside a scrollable widget so

@@ -24,6 +24,20 @@ class SnippetRepository {
     return rows.map(_toModel).toList(growable: false);
   }
 
+  Future<List<Snippet>> searchSnippets(String term) async {
+    final lower = term.toLowerCase();
+    final rows = await _isar.snippets
+        .filter()
+        .textContains(lower, caseSensitive: false)
+        .or()
+        .noteContains(lower, caseSensitive: false)
+        .or()
+        .sourceTitleContains(lower, caseSensitive: false)
+        .sortByCreatedAtDesc()
+        .findAll();
+    return rows.map(_toModel).toList(growable: false);
+  }
+
   Future<List<Snippet>> getSnippetsForBook(int bookId) async {
     final rows = await _isar.snippets
         .where()
@@ -184,6 +198,15 @@ class SnippetRepository {
         .sortByName()
         .watch(fireImmediately: fireImmediately)
         .map((rows) => rows.map((t) => t.name).toList());
+  }
+
+  Future<bool> getTagExists(String name) async {
+    final found = await _isar.tags.where().nameEqualTo(name).findFirst();
+    return found != null;
+  }
+
+  Future<void> createTag(String name) async {
+    await _isar.writeTxn(() => _isar.tags.put(i.Tag(name: name)));
   }
 
   /// Insert any tags that aren't already in the catalog. Idempotent —

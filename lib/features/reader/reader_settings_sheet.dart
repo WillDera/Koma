@@ -18,6 +18,11 @@ class ReaderSettings {
   bool showActionsOnLongTap;
   bool animatePageTransition;
   ProgressBarPlacement progressBarPlacement;
+  double brightness;
+  double contrast;
+  double saturation;
+  Color? tintColor;
+  double tintOpacity;
 
   ReaderSettings({
     this.readingMode = ReadingMode.defaultL2R,
@@ -35,6 +40,11 @@ class ReaderSettings {
     this.showActionsOnLongTap = true,
     this.animatePageTransition = true,
     this.progressBarPlacement = ProgressBarPlacement.horizontalBottom,
+    this.brightness = 1.0,
+    this.contrast = 1.0,
+    this.saturation = 1.0,
+    this.tintColor,
+    this.tintOpacity = 0.0,
   });
 
   Map<String, dynamic> toJson() => {
@@ -53,6 +63,11 @@ class ReaderSettings {
         'showActionsOnLongTap': showActionsOnLongTap ? 1 : 0,
         'animatePageTransition': animatePageTransition ? 1 : 0,
         'progressBarPlacement': progressBarPlacement.index,
+        'brightness': brightness,
+        'contrast': contrast,
+        'saturation': saturation,
+        'tintColor': tintColor?.toARGB32(),
+        'tintOpacity': tintOpacity,
       };
 
   factory ReaderSettings.fromJson(Map<String, dynamic> json) => ReaderSettings(
@@ -71,6 +86,11 @@ class ReaderSettings {
         showActionsOnLongTap: (json['showActionsOnLongTap'] as int? ?? 1) == 1,
         animatePageTransition: (json['animatePageTransition'] as int? ?? 1) == 1,
         progressBarPlacement: ProgressBarPlacement.values[json['progressBarPlacement'] as int? ?? 1],
+        brightness: (json['brightness'] as num?)?.toDouble() ?? 1.0,
+        contrast: (json['contrast'] as num?)?.toDouble() ?? 1.0,
+        saturation: (json['saturation'] as num?)?.toDouble() ?? 1.0,
+        tintColor: json['tintColor'] != null ? Color(json['tintColor'] as int) : null,
+        tintOpacity: (json['tintOpacity'] as num?)?.toDouble() ?? 0.0,
       );
 }
 
@@ -292,6 +312,57 @@ class _OtherTab extends StatelessWidget {
           onChange();
         }),
         const SizedBox(height: 20),
+        _SectionLabel(c, 'Color filter'),
+        const SizedBox(height: 8),
+        _SliderRow(c, 'Brightness', settings.brightness, 0.5, 1.5, (v) {
+          settings.brightness = v;
+          onChange();
+        }),
+        _SliderRow(c, 'Contrast', settings.contrast, 0.5, 1.5, (v) {
+          settings.contrast = v;
+          onChange();
+        }),
+        _SliderRow(c, 'Saturation', settings.saturation, 0.0, 2.0, (v) {
+          settings.saturation = v;
+          onChange();
+        }),
+        const SizedBox(height: 8),
+        _SectionLabel(c, 'Tint'),
+        const SizedBox(height: 8),
+        Row(
+          children: [
+            _TintChip(c, null, settings.tintColor == null || settings.tintOpacity == 0.0, () {
+              settings.tintColor = null;
+              settings.tintOpacity = 0.0;
+              onChange();
+            }),
+            const SizedBox(width: 8),
+            _TintChip(c, Colors.red, settings.tintColor == Colors.red, () {
+              settings.tintColor = Colors.red;
+              settings.tintOpacity = 0.3;
+              onChange();
+            }),
+            const SizedBox(width: 8),
+            _TintChip(c, Colors.green, settings.tintColor == Colors.green, () {
+              settings.tintColor = Colors.green;
+              settings.tintOpacity = 0.3;
+              onChange();
+            }),
+            const SizedBox(width: 8),
+            _TintChip(c, Colors.blue, settings.tintColor == Colors.blue, () {
+              settings.tintColor = Colors.blue;
+              settings.tintOpacity = 0.3;
+              onChange();
+            }),
+            const SizedBox(width: 8),
+            _TintChip(c, Colors.amber, settings.tintColor == Colors.amber, () {
+              settings.tintColor = Colors.amber;
+              settings.tintOpacity = 0.3;
+              onChange();
+            }),
+          ],
+        ),
+        const SizedBox(height: 20),
         _SectionLabel(c, 'Progress bar placement'),
         const SizedBox(height: 8),
         _ChipRow(
@@ -386,6 +457,71 @@ class _CheckboxTile extends StatelessWidget {
           const SizedBox(width: 12),
           Text(title, style: TextStyle(color: c.textPrimary, fontSize: 14)),
         ],
+      ),
+    );
+  }
+}
+
+class _SliderRow extends StatelessWidget {
+  final KomaColors c;
+  final String label;
+  final double value;
+  final double min;
+  final double max;
+  final ValueChanged<double> onChanged;
+
+  const _SliderRow(this.c, this.label, this.value, this.min, this.max, this.onChanged);
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: Row(
+        children: [
+          SizedBox(width: 70, child: Text(label, style: TextStyle(color: c.textSecondary, fontSize: 12))),
+          Expanded(
+            child: Slider(
+              value: value,
+              min: min,
+              max: max,
+              divisions: 20,
+              activeColor: c.accent,
+              onChanged: onChanged,
+            ),
+          ),
+          SizedBox(width: 36, child: Text(value.toStringAsFixed(2), textAlign: TextAlign.right, style: TextStyle(color: c.textTertiary, fontSize: 12))),
+        ],
+      ),
+    );
+  }
+}
+
+class _TintChip extends StatelessWidget {
+  final KomaColors c;
+  final Color? color;
+  final bool selected;
+  final VoidCallback onTap;
+
+  const _TintChip(this.c, this.color, this.selected, this.onTap);
+
+  @override
+  Widget build(BuildContext context) {
+    final bg = color ?? Colors.transparent;
+    final border = selected ? Border.all(color: c.accent, width: 2) : null;
+    return GestureDetector(
+      onTap: onTap,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 150),
+        width: 32,
+        height: 32,
+        decoration: BoxDecoration(
+          color: bg,
+          shape: BoxShape.circle,
+          border: border,
+        ),
+        child: selected
+            ? Icon(Icons.check, size: 16, color: c.onAccent)
+            : null,
       ),
     );
   }

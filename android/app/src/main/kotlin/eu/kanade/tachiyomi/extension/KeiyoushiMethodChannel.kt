@@ -288,14 +288,6 @@ class KeiyoushiMethodChannel(
                         result.success(pages)
                     }
                 }
-                "getDownloadedChapterKeys" -> {
-                    val sourceId = call.argument<String>("sourceId") ?: ""
-                    val mangaUrl = call.argument<String>("mangaUrl") ?: ""
-                    Log.d(TAG, "getDownloadedChapterKeys: sourceId=$sourceId")
-                    bg({ engine.getDownloadedChapterKeys(sourceId, mangaUrl) }, result) { keys ->
-                        result.success(keys)
-                    }
-                }
                 else -> {
                     Log.w(TAG, "Unimplemented method: ${call.method}")
                     result.notImplemented()

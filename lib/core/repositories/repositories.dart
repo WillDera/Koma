@@ -15,7 +15,7 @@
 /// constructs a single instance from the shared `isarProvider`. Screens
 /// reach individual repositories via `ref.watch(repositoriesProvider).books`
 /// etc. — the reactive `watch*` streams are wired into the UI as each
-/// feature is migrated off [DatabaseService] (PHASE 3+).
+/// feature is migrated.
 library;
 
 import 'package:isar_community/isar.dart';

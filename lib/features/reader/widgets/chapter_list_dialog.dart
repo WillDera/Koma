@@ -4,7 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/providers.dart';
 import '../../../core/models/manga_chapter.dart';
 import '../../../core/models/manga.dart';
-import '../../../core/services/database_service.dart';
+import '../../../core/repositories/repositories.dart';
 
 /// Dialog for viewing and jumping to chapters from within the reader.
 ///
@@ -40,12 +40,12 @@ class _ChapterListDialogState extends ConsumerState<ChapterListDialog> {
   }
 
   Future<void> _load() async {
-    final db = ref.read(databaseServiceProvider);
-    final manga = await db.getMangaByKey(
+    final repos = ref.watch(repositoriesProvider);
+    final manga = await repos.manga.getMangaByKey(
       widget.sourceId,
       widget.mangaUrl,
     );
-    final chapters = await db.getMangaChapters(widget.mangaId);
+    final chapters = await repos.manga.getMangaChapters(widget.mangaId);
     if (mounted) {
       setState(() {
         _manga = manga;

@@ -1,14 +1,14 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:file_picker/file_picker.dart';
 import '../../core/providers.dart';
 import '../../core/services/export_service.dart';
-import '../../core/services/database_service.dart';
-import '../../core/services/stats_service.dart';
 import '../../router/router.dart';
 import '../../core/services/source_service.dart';
 import '../../core/models/source.dart';
-import '../library/library_provider.dart';
 import '../../theme/app_theme.dart';
 import '../../theme/theme_provider.dart';
 import '../../theme/tokens/app_colors.dart';
@@ -41,7 +41,7 @@ class SettingsScreen extends StatelessWidget {
             const OneHandSpacer(),
             const LibraryHeader(
               title: 'Settings',
-              subtitle: 'Version 2.17.0',
+              subtitle: 'Version 2.19.6',
               padding: EdgeInsets.fromLTRB(24, 20, 20, 12),
             ),
             const StaggeredEntrance(
@@ -175,7 +175,8 @@ class _AppearanceSection extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final c = context.colors;
-    final themeProv = ref.watch(themeProvider);
+    final theme = ref.watch(themeProvider);
+    final tn = ref.read(themeProvider.notifier);
     return SettingsSection(
       title: 'Appearance',
       children: [
@@ -199,8 +200,8 @@ class _AppearanceSection extends ConsumerWidget {
                   ThemeMode.dark: 'Dark',
                   ThemeMode.system: 'Auto',
                 },
-                value: themeProv.themeMode,
-                onChanged: themeProv.setThemeMode,
+                value: theme.themeMode,
+                onChanged: tn.setThemeMode,
               ),
               const SizedBox(height: 12),
               Material(
@@ -212,8 +213,8 @@ class _AppearanceSection extends ConsumerWidget {
                     'Warm paper-like background',
                     style: TextStyle(color: c.textSecondary, fontSize: 12),
                   ),
-                  value: themeProv.sepiaMode,
-                  onChanged: themeProv.setSepiaMode,
+                  value: theme.sepiaMode,
+                  onChanged: tn.setSepiaMode,
                 ),
               ),
             ],
@@ -269,9 +270,9 @@ class _AppearanceSection extends ConsumerWidget {
                       dark: entry.$3,
                       label: entry.$4,
                       selected:
-                          themeProv.customAccentHex == null &&
-                          themeProv.accent == entry.$1,
-                      onTap: () => themeProv.setAccent(entry.$1),
+                          theme.customAccentHex == null &&
+                          theme.accent == entry.$1,
+                      onTap: () => tn.setAccent(entry.$1),
                     ),
                     const SizedBox(width: 10),
                   ],
@@ -288,8 +289,8 @@ class _AppearanceSection extends ConsumerWidget {
               ),
               const SizedBox(height: 6),
               _CustomAccentInput(
-                current: themeProv.customAccentHex,
-                onSubmit: themeProv.setCustomAccentHex,
+                current: theme.customAccentHex,
+                onSubmit: tn.setCustomAccentHex,
               ),
             ],
           ),
@@ -322,8 +323,8 @@ class _AppearanceSection extends ConsumerWidget {
                   HandMode.right: 'Right',
                   HandMode.left: 'Left',
                 },
-                value: themeProv.handMode,
-                onChanged: themeProv.setHandMode,
+                value: theme.handMode,
+                onChanged: tn.setHandMode,
               ),
             ],
           ),
@@ -508,7 +509,8 @@ class _OneHandToggle extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final themeProv = ref.watch(themeProvider);
+    final theme = ref.watch(themeProvider);
+    final tn = ref.read(themeProvider.notifier);
     final c = context.colors;
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 16, 16, 16),
@@ -534,8 +536,8 @@ class _OneHandToggle extends ConsumerWidget {
             child: SwitchListTile(
               contentPadding: EdgeInsets.zero,
               title: const Text('Enable one-hand layout'),
-              value: themeProv.oneHandMode,
-              onChanged: themeProv.setOneHandMode,
+              value: theme.oneHandMode,
+              onChanged: tn.setOneHandMode,
             ),
           ),
         ],
@@ -551,6 +553,7 @@ class _TypographySection extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final p = ref.watch(themeProvider);
+    final tn = ref.read(themeProvider.notifier);
     return SettingsSection(
       title: 'Typography',
       children: [
@@ -559,7 +562,7 @@ class _TypographySection extends ConsumerWidget {
           title: 'Reading font',
           subtitle: p.readingFont.label,
           trailing: const Icon(Icons.chevron_right, size: 18),
-          onTap: () => _showFontPicker(context, p),
+          onTap: () => _showFontPicker(context, ref, p),
         ),
         SettingsRow(
           icon: Icons.format_size,
@@ -572,7 +575,7 @@ class _TypographySection extends ConsumerWidget {
               min: 13,
               max: 26,
               divisions: 13,
-              onChanged: p.setFontSize,
+              onChanged: tn.setFontSize,
             ),
           ),
         ),
@@ -587,7 +590,7 @@ class _TypographySection extends ConsumerWidget {
               min: 1.2,
               max: 2.2,
               divisions: 10,
-              onChanged: p.setLineHeight,
+              onChanged: tn.setLineHeight,
             ),
           ),
         ),
@@ -598,7 +601,7 @@ class _TypographySection extends ConsumerWidget {
           subtitle: 'Bold the first 40% of every word',
           trailing: Switch(
             value: p.bionicReading,
-            onChanged: p.setBionicReading,
+            onChanged: tn.setBionicReading,
           ),
         ),
         const HairlineDivider(indent: 16, endIndent: 16),
@@ -607,7 +610,7 @@ class _TypographySection extends ConsumerWidget {
           title: 'Text alignment',
           subtitle: _alignName(p.textAlign),
           trailing: const Icon(Icons.chevron_right, size: 18),
-          onTap: () => _showAlignPicker(context, p),
+          onTap: () => _showAlignPicker(context, ref, p),
         ),
         SettingsRow(
           icon: Icons.width_normal,
@@ -620,7 +623,7 @@ class _TypographySection extends ConsumerWidget {
               min: 520,
               max: 760,
               divisions: 12,
-              onChanged: p.setPageWidth,
+              onChanged: tn.setPageWidth,
             ),
           ),
         ),
@@ -645,7 +648,8 @@ class _TypographySection extends ConsumerWidget {
     }
   }
 
-  void _showFontPicker(BuildContext context, ThemeProvider p) {
+  void _showFontPicker(BuildContext context, WidgetRef ref, ThemeState p) {
+    final tn = ref.read(themeProvider.notifier);
     StashSheet.show<void>(
       context,
       title: 'Reading font',
@@ -658,7 +662,7 @@ class _TypographySection extends ConsumerWidget {
           for (final f in ReadingFont.values) ...[
             AnimatedPress(
               onTap: () {
-                p.setReadingFont(f);
+                tn.setReadingFont(f);
                 Navigator.pop(context);
               },
               child: Container(
@@ -716,7 +720,8 @@ class _TypographySection extends ConsumerWidget {
     );
   }
 
-  void _showAlignPicker(BuildContext context, ThemeProvider p) {
+  void _showAlignPicker(BuildContext context, WidgetRef ref, ThemeState p) {
+    final tn = ref.read(themeProvider.notifier);
     final c = context.colors;
     final options = const [
       (TextAlign.left, 'Left', Icons.format_align_left),
@@ -735,7 +740,7 @@ class _TypographySection extends ConsumerWidget {
           for (final o in options) ...[
             AnimatedPress(
               onTap: () {
-                p.setTextAlign(o.$1);
+                tn.setTextAlign(o.$1);
                 Navigator.pop(context);
               },
               child: Container(
@@ -852,8 +857,8 @@ class _DataSectionState extends ConsumerState<_DataSection> {
   Future<void> _export() async {
     setState(() => _exporting = true);
     try {
-      final db = ref.read(databaseServiceProvider);
-      final svc = ExportService(db);
+      final repos = ref.watch(repositoriesProvider);
+      final svc = ExportService(repos);
       final message = await svc.exportToJson();
       if (mounted) {
         StashToast.show(
@@ -878,12 +883,27 @@ class _DataSectionState extends ConsumerState<_DataSection> {
   Future<void> _import() async {
     setState(() => _importing = true);
     try {
-      final db = ref.read(databaseServiceProvider);
-      final svc = ExportService(db);
-      final result = await svc.importFromJson();
+      final repos = ref.watch(repositoriesProvider);
+      final svc = ExportService(repos);
+      String? jsonStr;
+      try {
+        final result = await FilePicker.pickFiles(
+          type: FileType.custom,
+          allowedExtensions: ['json'],
+        );
+        if (result == null || result.files.isEmpty) {
+          if (mounted) setState(() => _importing = false);
+          return;
+        }
+        jsonStr = File(result.files.single.path!).readAsStringSync();
+      } catch (_) {
+        if (mounted) setState(() => _importing = false);
+        return;
+      }
+      final result = await svc.importFromJson(jsonStr);
       if (mounted) {
-        ref.read(libraryProvider).loadBooks();
-        StashToast.show(context, message: result, icon: Icons.check);
+        ref.read(libraryProvider.notifier).loadBooks();
+        StashToast.show(context, message: result.toString(), icon: Icons.check);
       }
     } catch (e) {
       if (mounted) {
@@ -909,32 +929,53 @@ class _SourcesSection extends ConsumerStatefulWidget {
 class _SourcesSectionState extends ConsumerState<_SourcesSection> {
   List<Source> _sources = [];
   bool _loading = true;
+  String? _error;
 
   @override
   void initState() {
     super.initState();
-    _load();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _load());
   }
 
   Future<void> _load() async {
-    final db = ref.read(databaseServiceProvider);
-    final sources = await db.getSources();
-    if (sources.isEmpty) {
-      for (final s in SourceService.defaultSources()) {
-        await db.insertSource(s);
+    try {
+      final repos = ref.read(repositoriesProvider);
+      final sources = await repos.stats.getSources();
+      if (sources.isEmpty) {
+        for (final s in SourceService.defaultSources()) {
+          await repos.stats.insertSource(s);
+        }
       }
+      final updated = await repos.stats.getSources();
+      if (!mounted) return;
+      setState(() {
+        _sources = updated;
+        _loading = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _error = e.toString();
+        _loading = false;
+      });
     }
-    final updated = await db.getSources();
-    if (!mounted) return;
-    setState(() {
-      _sources = updated;
-      _loading = false;
-    });
   }
 
   @override
   Widget build(BuildContext context) {
     if (_loading) return const SizedBox.shrink();
+    if (_error != null) {
+      return SettingsSection(
+        title: 'ePub Sources',
+        children: [
+          Padding(
+            padding: const EdgeInsets.all(16),
+            child: Text('Failed to load sources: $_error',
+                style: TextStyle(color: context.colors.accentMuted)),
+          ),
+        ],
+      );
+    }
     return SettingsSection(
       title: 'ePub Sources',
       footer:
@@ -954,17 +995,17 @@ class _SourcesSectionState extends ConsumerState<_SourcesSection> {
   }
 
   Future<void> _toggle(int id, bool enabled) async {
-    final db = ref.read(databaseServiceProvider);
+    final repos = ref.read(repositoriesProvider);
     final idx = _sources.indexWhere((s) => s.id == id);
     if (idx < 0) return;
     _sources[idx] = _sources[idx].copyWith(enabled: enabled);
-    await db.updateSource(_sources[idx]);
+    await repos.stats.updateSource(_sources[idx]);
     setState(() {});
   }
 
   Future<void> _delete(int id) async {
-    final db = ref.read(databaseServiceProvider);
-    await db.deleteSource(id);
+    final repos = ref.read(repositoriesProvider);
+    await repos.stats.deleteSource(id);
     _sources.removeWhere((s) => s.id == id);
     setState(() {});
   }
@@ -972,8 +1013,8 @@ class _SourcesSectionState extends ConsumerState<_SourcesSection> {
   Future<void> _add() async {
     final result = await _sourceDialog(context, null);
     if (result == null) return;
-    final db = ref.read(databaseServiceProvider);
-    final id = await db.insertSource(result);
+    final repos = ref.read(repositoriesProvider);
+    final id = await repos.stats.insertSource(result);
     _sources.add(result.copyWith(id: id));
     setState(() {});
   }
@@ -981,8 +1022,8 @@ class _SourcesSectionState extends ConsumerState<_SourcesSection> {
   Future<void> _edit(Source source) async {
     final result = await _sourceDialog(context, source);
     if (result == null) return;
-    final db = ref.read(databaseServiceProvider);
-    await db.updateSource(result);
+    final repos = ref.read(repositoriesProvider);
+    await repos.stats.updateSource(result);
     final idx = _sources.indexWhere((s) => s.id == result.id);
     if (idx >= 0) _sources[idx] = result;
     setState(() {});
@@ -1184,12 +1225,12 @@ class _StatsSectionState extends ConsumerState<_StatsSection> {
   }
 
   Future<void> _load() async {
-    final db = ref.read(databaseServiceProvider);
-    final statsSvc = StatsService(db);
+    final repos = ref.watch(repositoriesProvider);
+    final statsSvc = ref.watch(statsServiceProvider);
     final results = await Future.wait([
-      db.getGenreCounts(),
-      db.getExtensionCounts(),
-      db.getCompletedBooksCount(),
+      repos.books.getGenreCounts(),
+      repos.books.getExtensionCounts(),
+      repos.books.getCompletedBooksCount(),
       statsSvc.getWeeklyStreak(),
     ]);
     if (!mounted) return;
@@ -1381,7 +1422,7 @@ class _AboutSection extends StatelessWidget {
         SettingsRow(
           icon: Icons.info_outline,
           title: 'Koma',
-          subtitle: 'Version 2.18.3 · build 2.18.3+129',
+          subtitle: 'Version 2.19.6 · build 2.19.6+136',
         ),
         SettingsRow(
           icon: Icons.favorite_outline,
