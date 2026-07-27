@@ -230,7 +230,7 @@ class _MangaDetailScreenState extends ConsumerState<MangaDetailScreen> {
     final m = widget.manga;
     if (m != null && m.id > 0) {
       // Library manga or pre-inserted from source browse
-      await _ensureIsarForManga(m);
+      await _ensureIsarManga(m);
       await _loadFromIsarById(m.id);
       // Pre-inserted from source browse: chapters aren't in Isar yet.
       // Fetch them in background while the UI shows cached metadata.
@@ -262,28 +262,28 @@ class _MangaDetailScreenState extends ConsumerState<MangaDetailScreen> {
       _refreshFromSource();
     } else {
       final repos = ref.watch(repositoriesProvider);
-      final driftManga = await repos.manga.getMangaByKey(widget.sourceId, widget.url);
-      if (driftManga != null) {
-        await _ensureIsarForManga(driftManga);
-        await _loadFromIsarById(driftManga.id);
+      final existing = await repos.manga.getMangaByKey(widget.sourceId, widget.url);
+      if (existing != null) {
+        await _ensureIsarManga(existing);
+        await _loadFromIsarById(existing.id);
       } else {
         _loadFromIsarByKey();
       }
     }
   }
 
-  /// Migrate a single manga + its chapters from Drift to Isar if not yet
-  /// present. Uses the same Drift ID so both databases stay in sync.
-  Future<void> _ensureIsarForManga(Manga driftManga) async {
+  /// Ensure manga exists in Isar before loading. Idempotent — if already
+  /// present, returns immediately.
+  Future<void> _ensureIsarManga(Manga manga) async {
     final repos = ref.read(repositoriesProvider);
-    final isarManga = await repos.manga.getMangaById(driftManga.id);
-    if (isarManga != null) return;
+    final existing = await repos.manga.getMangaById(manga.id);
+    if (existing != null) return;
 
-    await repos.manga.insertManga(driftManga);
-    final driftChapters = await repos.manga.getMangaChapters(driftManga.id);
-    if (driftChapters.isNotEmpty) {
-      await repos.manga.deleteMangaChapters(driftManga.id);
-      await repos.manga.insertMangaChapters(driftManga.id, driftChapters);
+    await repos.manga.insertManga(manga);
+    final chapters = await repos.manga.getMangaChapters(manga.id);
+    if (chapters.isNotEmpty) {
+      await repos.manga.deleteMangaChapters(manga.id);
+      await repos.manga.insertMangaChapters(manga.id, chapters);
     }
   }
 
