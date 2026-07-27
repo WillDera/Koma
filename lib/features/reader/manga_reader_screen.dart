@@ -9,8 +9,8 @@ import 'package:scrollable_positioned_list/scrollable_positioned_list.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:go_router/go_router.dart';
 import '../../core/providers.dart';
-import '../../core/services/database_service.dart';
 import '../../core/services/keiyoushi_service.dart';
+import '../../core/repositories/repositories.dart';
 import '../../core/models/manga_page.dart';
 import '../../core/models/manga_chapter.dart';
 import '../../theme/app_theme.dart';
@@ -21,6 +21,8 @@ import 'widgets/reader_bottom_bar.dart';
 import 'widgets/page_indicator.dart';
 import 'widgets/navigation_overlay.dart';
 import 'widgets/chapter_list_dialog.dart';
+import 'widgets/image_actions_dialog.dart';
+import 'widgets/color_filter_widget.dart';
 import 'models/page_data.dart';
 import 'mixins/reader_memory_management.dart';
 import 'views/manga_image_view_paged.dart';
@@ -50,7 +52,7 @@ class MangaReaderScreen extends ConsumerStatefulWidget {
 class _MangaReaderScreenState extends ConsumerState<MangaReaderScreen>
     with WidgetsBindingObserver, ReaderMemoryManagement {
   final _service = KeiyoushiService();
-  DatabaseService? _db;
+  Repositories? _repos;
   bool _loading = true;
   String? _error;
   final _pageCtrl = PageController();
@@ -86,7 +88,7 @@ class _MangaReaderScreenState extends ConsumerState<MangaReaderScreen>
   @override
   void initState() {
     super.initState();
-    _db = ref.read(databaseServiceProvider);
+    _repos = ref.read(repositoriesProvider);
     WidgetsBinding.instance.addObserver(this);
     _itemPositionsListener.itemPositions.addListener(_onWebtoonScroll);
     _loadBookmark();
@@ -95,17 +97,18 @@ class _MangaReaderScreenState extends ConsumerState<MangaReaderScreen>
 
   Future<void> _initAsync() async {
     await _loadSettings();
-    if (widget.mangaId != null && _db != null) {
-      final ch = await _db!.getMangaChapterByUrl(
+    if (widget.mangaId != null && _repos != null) {
+      final ch = await _repos!.manga.getMangaChapterByUrl(
         widget.mangaId!,
         widget.chapterUrl,
       );
       if (ch != null && mounted) {
         _currentChapter = ch;
-        if (!ch.isOpened) _db!.markMangaChapterOpened(ch.id);
+        if (!ch.isOpened) {
+          await _repos!.manga.markMangaChapterOpened(ch.id);
+        }
       }
-      // Cache the full chapter list for navigation lookups
-      _chapters = await _db!.getMangaChapters(widget.mangaId!);
+      _chapters = await _repos!.manga.getMangaChapters(widget.mangaId!);
     }
     if (mounted) _load();
   }
@@ -434,24 +437,21 @@ class _MangaReaderScreenState extends ConsumerState<MangaReaderScreen>
   /// Saves the chapter-relative page index (not the flat list index),
   /// same as mangayomi's setPageIndex().
   Future<void> _saveProgress() async {
-    if (_currentChapter == null || _db == null) return;
+    if (_currentChapter == null || _repos == null) return;
     final flatIdx = _currentPageNotifier.value;
     if (flatIdx >= _pages.length) return;
     final page = _pages[flatIdx];
-    // Save the chapter-relative page index
     final chapterRelativeIndex = page.index;
     final chapterId =
         (page.chapter ?? _currentChapter)!.id;
-    await _db!.updateMangaChapterProgress(chapterId, chapterRelativeIndex);
+    await _repos!.manga.updateMangaChapterProgress(chapterId, chapterRelativeIndex);
 
-    // Mark chapter as read when user reaches the last page (same as
-    // mangayomi's setPageIndex() does with the isRead check).
     final ch = page.chapter;
     if (ch != null) {
       final chPages = _pages.where((p) =>
           p.chapter?.id == ch.id && !p.isTransitionPage).length;
       if (chPages > 0 && chapterRelativeIndex >= chPages - 1) {
-        await _db!.markMangaChapterRead(chapterId);
+        await _repos!.manga.markMangaChapterRead(chapterId);
       }
     }
   }
@@ -722,40 +722,16 @@ class _MangaReaderScreenState extends ConsumerState<MangaReaderScreen>
 
   void _showLongPressMenu() {
     if (!_settings.showActionsOnLongTap) return;
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: context.colors.surface,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
-      ),
-      builder: (ctx) => SafeArea(
-        child: Column(mainAxisSize: MainAxisSize.min, children: [
-          ListTile(
-            leading: const Icon(Icons.download_outlined),
-            title: const Text('Save page'),
-            onTap: () {
-              Navigator.pop(ctx);
-              _saveCurrentPage();
-            },
-          ),
-          ListTile(
-            leading: const Icon(Icons.share_outlined),
-            title: const Text('Share page'),
-            onTap: () {
-              Navigator.pop(ctx);
-              _shareCurrentPage();
-            },
-          ),
-          ListTile(
-            leading: const Icon(Icons.content_copy),
-            title: const Text('Copy page URL'),
-            onTap: () {
-              Navigator.pop(ctx);
-              _copyCurrentPage();
-            },
-          ),
-        ]),
-      ),
+    final page = _currentPageNotifier.value < _pages.length
+        ? _pages[_currentPageNotifier.value]
+        : null;
+    ImageActionsDialog.show(
+      context,
+      imageUrl: page?.imageUrl,
+      localPath: page?.localPath,
+      onSave: _saveCurrentPage,
+      onShare: _shareCurrentPage,
+      onCopyUrl: _copyCurrentPage,
     );
   }
 
@@ -842,19 +818,26 @@ class _MangaReaderScreenState extends ConsumerState<MangaReaderScreen>
             final props = _viewProps();
             return Stack(
               children: [
-                isContinuous
-                    ? MangaImageViewWebtoon(
-                        props: props,
-                        itemScrollController: _itemScrollCtrl,
-                        itemPositionsListener: _itemPositionsListener,
-                      )
-                    : MangaImageViewPaged(
-                        props: props,
-                        pageController: _pageCtrl,
-                        axis: axis,
-                        reverse: reverse,
-                        bookMode: showBookMode,
-                      ),
+                ColorFilterWidget(
+                  brightness: _settings.brightness,
+                  contrast: _settings.contrast,
+                  saturation: _settings.saturation,
+                  tint: _settings.tintColor,
+                  tintOpacity: _settings.tintOpacity,
+                  child: isContinuous
+                      ? MangaImageViewWebtoon(
+                          props: props,
+                          itemScrollController: _itemScrollCtrl,
+                          itemPositionsListener: _itemPositionsListener,
+                        )
+                      : MangaImageViewPaged(
+                          props: props,
+                          pageController: _pageCtrl,
+                          axis: axis,
+                          reverse: reverse,
+                          bookMode: showBookMode,
+                        ),
+                ),
 
                 if (_showNavigationOverlay)
                   NavigationOverlay(

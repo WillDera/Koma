@@ -27,9 +27,9 @@ class MangaChapter {
   int lastPageRead;
   double scrollPosition;
 
-  /// Set by the native downloader / future JS downloader. Phase 7 will
-  /// expose this as a reactive stream so the UI no longer needs the
-  /// `getDownloadedChapterKeys()` MethodChannel round-trip.
+  /// Set by the native downloader / future JS downloader. Phase 7 replaced
+  /// the `getDownloadedChapterKeys()` MethodChannel round-trip with a direct
+  /// Isar query; this flag is now the canonical source of truth.
   bool isDownloaded;
 
   /// First-open marker (mangayomi parity — drives the "new" badge).

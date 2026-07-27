@@ -56,6 +56,34 @@ class StatsRepository {
     });
   }
 
+  Future<void> setStatsForDate(
+    DateTime date, {
+    int readingTimeSeconds = 0,
+    int snippetsCreated = 0,
+    int booksCompleted = 0,
+  }) async {
+    final day = DateTime(date.year, date.month, date.day);
+    await _isar.writeTxn(() async {
+      final existing = await _isar.readingStats
+          .where()
+          .dateEqualTo(day)
+          .findFirst();
+      if (existing == null) {
+        await _isar.readingStats.put(i.ReadingStat(
+          date: day,
+          readingTimeSeconds: readingTimeSeconds,
+          snippetsCreated: snippetsCreated,
+          booksCompleted: booksCompleted,
+        ));
+      } else {
+        existing.readingTimeSeconds = readingTimeSeconds;
+        existing.snippetsCreated = snippetsCreated;
+        existing.booksCompleted = booksCompleted;
+        await _isar.readingStats.put(existing);
+      }
+    });
+  }
+
   Future<List<ReadingStat>> getStatsRange(
       DateTime start, DateTime end) async {
     final rows = await _isar.readingStats

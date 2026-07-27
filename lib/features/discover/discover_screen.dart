@@ -3,10 +3,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../../core/providers.dart';
 import '../../core/services/source_service.dart';
-import '../../core/services/database_service.dart';
 import '../../core/services/ebook_service.dart';
 import '../../core/services/keiyoushi_service.dart';
-import '../library/library_provider.dart';
 import '../../router/router.dart';
 import '../../theme/app_theme.dart';
 import '../../theme/theme_provider.dart';
@@ -62,8 +60,7 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
     }
   }
 
-  SourceService _svc() =>
-      SourceService(ref.read(databaseServiceProvider), EbookService());
+  SourceService _svc() => ref.read(sourceServiceProvider);
 
   Future<void> _search() async {
     final q = _ctrl.text.trim();
@@ -278,7 +275,7 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
     if (!mounted) return;
     setState(() => _downloading.remove(title));
     if (ok) {
-      ref.read(libraryProvider).loadBooks();
+      ref.read(libraryProvider.notifier).loadBooks();
       StashToast.show(
         context,
         message: '$title added to library',

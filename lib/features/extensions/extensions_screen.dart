@@ -4,7 +4,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/providers.dart';
 import '../../core/models/extension_repo.dart';
 import '../../core/models/extension_source.dart';
-import '../../core/services/database_service.dart';
 import '../../core/services/extension_manager.dart';
 import '../../core/services/keiyoushi_service.dart';
 import '../../core/utils/language.dart';
@@ -41,9 +40,13 @@ class _ExtensionsScreenState extends ConsumerState<ExtensionsScreen>
   void initState() {
     super.initState();
     _tabs = TabController(length: 3, vsync: this);
-    final db = ref.read(databaseServiceProvider);
-    _mgr = ExtensionManager(db, KeiyoushiService());
-    _refresh();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        final repos = ref.watch(repositoriesProvider);
+        _mgr = ExtensionManager(repos, KeiyoushiService());
+        _refresh();
+      }
+    });
   }
 
   @override

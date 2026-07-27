@@ -3,188 +3,234 @@ import 'dart:io';
 
 import 'package:collection/collection.dart';
 import 'package:crypto/crypto.dart';
-import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../core/models/book.dart';
 import '../../core/models/manga.dart';
-import '../../core/services/database_service.dart';
+import '../../core/providers.dart';
 
-class LibraryProvider extends ChangeNotifier {
+/// Immutable state for the library screen.
+class LibraryState {
+  const LibraryState({
+    this.books = const [],
+    this.mangas = const [],
+    this.loading = true,
+    this.error,
+    this.selectedIds = const {},
+    this.selectionMode = false,
+    this.isGridView = false,
+    this.showSourcePills = true,
+    this.extensionNames = const {},
+  });
+
+  final List<Book> books;
+  final List<Manga> mangas;
+  final bool loading;
+  final String? error;
+  final Set<String> selectedIds;
+  final bool selectionMode;
+  final bool isGridView;
+  final bool showSourcePills;
+  final Map<String, String> extensionNames;
+
+  LibraryState copyWith({
+    List<Book>? books,
+    List<Manga>? mangas,
+    bool? loading,
+    String? Function()? error,
+    Set<String>? selectedIds,
+    bool? selectionMode,
+    bool? isGridView,
+    bool? showSourcePills,
+    Map<String, String>? extensionNames,
+  }) {
+    return LibraryState(
+      books: books ?? this.books,
+      mangas: mangas ?? this.mangas,
+      loading: loading ?? this.loading,
+      error: error != null ? error() : this.error,
+      selectedIds: selectedIds ?? this.selectedIds,
+      selectionMode: selectionMode ?? this.selectionMode,
+      isGridView: isGridView ?? this.isGridView,
+      showSourcePills: showSourcePills ?? this.showSourcePills,
+      extensionNames: extensionNames ?? this.extensionNames,
+    );
+  }
+}
+
+class LibraryNotifier extends Notifier<LibraryState> {
   static const _keyIsGridView = 'library_is_grid_view';
   static const _keyShowSourcePills = 'library_show_source_pills';
 
-  final DatabaseService _db;
-  List<Book> _books = [];
-  List<Manga> _mangas = [];
-  bool _loading = true;
-  String? _error;
-  final Set<String> _selectedIds = {};
-  bool _selectionMode = false;
-  bool _isGridView = false;
-  bool _showSourcePills = true;
-  final Map<String, String> _extensionNames = {};
-
-  LibraryProvider(this._db);
-
-  bool get isGridView => _isGridView;
-  bool get showSourcePills => _showSourcePills;
-  Map<String, String> get extensionNames => _extensionNames;
+  @override
+  LibraryState build() => const LibraryState();
 
   Future<void> init() async {
     final prefs = await SharedPreferences.getInstance();
-    _isGridView = prefs.getBool(_keyIsGridView) ?? false;
-    _showSourcePills = prefs.getBool(_keyShowSourcePills) ?? true;
-    notifyListeners();
+    state = state.copyWith(
+      isGridView: prefs.getBool(_keyIsGridView) ?? false,
+      showSourcePills: prefs.getBool(_keyShowSourcePills) ?? true,
+    );
   }
 
   void toggleLayout() {
-    _isGridView = !_isGridView;
-    notifyListeners();
+    final next = !state.isGridView;
+    state = state.copyWith(isGridView: next);
     SharedPreferences.getInstance().then(
-      (prefs) => prefs.setBool(_keyIsGridView, _isGridView),
+      (prefs) => prefs.setBool(_keyIsGridView, next),
     );
   }
 
   void setShowSourcePills(bool value) {
-    _showSourcePills = value;
-    notifyListeners();
+    state = state.copyWith(showSourcePills: value);
     SharedPreferences.getInstance().then(
       (prefs) => prefs.setBool(_keyShowSourcePills, value),
     );
   }
 
-  List<Book> get books => _books;
-  List<Manga> get mangas => _mangas;
-  bool get loading => _loading;
-  String? get error => _error;
-  Set<String> get selectedIds => _selectedIds;
-  bool get selectionMode => _selectionMode;
-
   Future<void> loadBooks() async {
-    _loading = true;
-    _error = null;
-    notifyListeners();
-
+    state = state.copyWith(loading: true, error: () => null);
+    final repos = ref.read(repositoriesProvider);
     try {
-      _books = await _db.getBooks();
-      _mangas = await _db.getMangasInLibrary();
-      _extensionNames.clear();
-      final extensions = await _db.getInstalledExtensions();
+      final books = await repos.books.getBooks();
+      final mangas = await repos.manga.getMangasInLibrary();
+      final extNames = <String, String>{};
+      final extensions = await repos.extensions.getInstalledExtensions();
       for (final ext in extensions) {
-        _extensionNames[ext.id] = ext.name;
+        extNames[ext.id] = ext.name;
       }
+      state = state.copyWith(
+        books: books,
+        mangas: mangas,
+        extensionNames: extNames,
+        loading: false,
+      );
     } catch (e) {
-      _error = e.toString();
+      state = state.copyWith(error: () => e.toString(), loading: false);
     }
-
-    _loading = false;
-    notifyListeners();
   }
 
   Future<int> addBook(Book book) async {
-    final id = await _db.insertBook(book);
+    final repos = ref.read(repositoriesProvider);
+    final id = await repos.books.insertBook(book);
     await loadBooks();
     return id;
   }
 
   Future<void> deleteBook(int id) async {
-    await _db.deleteBook(id);
-    _selectedIds.remove('b:$id');
+    final repos = ref.read(repositoriesProvider);
+    await repos.books.deleteBook(id);
+    final ids = Set<String>.from(state.selectedIds)..remove('b:$id');
+    state = state.copyWith(selectedIds: ids);
     await loadBooks();
   }
 
   Future<void> deleteManga(int id) async {
-    final manga = _mangas.firstWhereOrNull((m) => m.id == id);
+    final repos = ref.read(repositoriesProvider);
+    final manga = state.mangas.firstWhereOrNull((m) => m.id == id);
     if (manga != null) {
       try {
         final supportDir = await getApplicationSupportDirectory();
-        final mangaKey = sha256.convert(utf8.encode(manga.url)).toString().substring(0, 16);
-        final mangaDir = Directory('${supportDir.path}/manga/${manga.sourceId}/$mangaKey');
+        final mangaKey = sha256
+            .convert(utf8.encode(manga.url))
+            .toString()
+            .substring(0, 16);
+        final mangaDir = Directory(
+            '${supportDir.path}/manga/${manga.sourceId}/$mangaKey');
         if (await mangaDir.exists()) {
           await mangaDir.delete(recursive: true);
         }
         final docsDir = await getApplicationDocumentsDirectory();
-        final thumbHash = sha256.convert(utf8.encode(manga.imageUrl ?? '')).toString();
-        final thumbFile = File('${docsDir.path}/thumbnails/$thumbHash.jpg');
+        final thumbHash =
+            sha256.convert(utf8.encode(manga.imageUrl ?? '')).toString();
+        final thumbFile =
+            File('${docsDir.path}/thumbnails/$thumbHash.jpg');
         if (await thumbFile.exists()) {
           await thumbFile.delete();
         }
-      } catch (_) {
-        // ignore cleanup failures
-      }
+      } catch (_) {}
     }
-    await _db.deleteMangaChapters(id);
-    await _db.deleteManga(id);
-    _selectedIds.remove('m:$id');
-    await loadBooks();
+      await repos.manga.deleteMangaChapters(id);
+      await repos.manga.deleteManga(id);
+      final ids = Set<String>.from(state.selectedIds)..remove('m:$id');
+      state = state.copyWith(selectedIds: ids);
+      await loadBooks();
   }
 
   void toggleSelection(String key) {
-    if (_selectedIds.contains(key)) {
-      _selectedIds.remove(key);
-      if (_selectedIds.isEmpty) _selectionMode = false;
+    final ids = Set<String>.from(state.selectedIds);
+    bool mode = state.selectionMode;
+    if (ids.contains(key)) {
+      ids.remove(key);
+      if (ids.isEmpty) mode = false;
     } else {
-      _selectedIds.add(key);
-      _selectionMode = true;
+      ids.add(key);
+      mode = true;
     }
-    notifyListeners();
+    state = state.copyWith(selectedIds: ids, selectionMode: mode);
   }
 
   void clearSelection() {
-    _selectedIds.clear();
-    _selectionMode = false;
-    notifyListeners();
+    state = state.copyWith(selectedIds: {}, selectionMode: false);
   }
 
   void selectAll() {
-    if (_selectedIds.length == _books.length + _mangas.length && _books.length + _mangas.length > 0) {
+    if (state.selectedIds.length ==
+            state.books.length + state.mangas.length &&
+        state.books.length + state.mangas.length > 0) {
       clearSelection();
       return;
     }
-    for (final book in _books) {
-      _selectedIds.add('b:${book.id}');
+    final ids = <String>{};
+    for (final book in state.books) {
+      ids.add('b:${book.id}');
     }
-    for (final manga in _mangas) {
-      _selectedIds.add('m:${manga.id}');
+    for (final manga in state.mangas) {
+      ids.add('m:${manga.id}');
     }
-    _selectionMode = true;
-    notifyListeners();
+    state = state.copyWith(selectedIds: ids, selectionMode: true);
   }
 
   Future<void> deleteSelected() async {
-    if (_selectedIds.isEmpty) return;
-    for (final key in _selectedIds.toList()) {
+    if (state.selectedIds.isEmpty) return;
+    final repos = ref.read(repositoriesProvider);
+    for (final key in state.selectedIds.toList()) {
       if (key.startsWith('b:')) {
         final id = int.parse(key.substring(2));
-        await _db.deleteBook(id);
+        await repos.books.deleteBook(id);
       } else if (key.startsWith('m:')) {
         final id = int.parse(key.substring(2));
-        final manga = _mangas.firstWhereOrNull((m) => m.id == id);
+        final manga =
+            state.mangas.firstWhereOrNull((m) => m.id == id);
         if (manga != null) {
           try {
             final supportDir = await getApplicationSupportDirectory();
-            final mangaKey = sha256.convert(utf8.encode(manga.url)).toString().substring(0, 16);
-            final mangaDir = Directory('${supportDir.path}/manga/${manga.sourceId}/$mangaKey');
+            final mangaKey = sha256
+                .convert(utf8.encode(manga.url))
+                .toString()
+                .substring(0, 16);
+            final mangaDir = Directory(
+                '${supportDir.path}/manga/${manga.sourceId}/$mangaKey');
             if (await mangaDir.exists()) {
               await mangaDir.delete(recursive: true);
             }
             final docsDir = await getApplicationDocumentsDirectory();
-            final thumbHash = sha256.convert(utf8.encode(manga.imageUrl ?? '')).toString();
-            final thumbFile = File('${docsDir.path}/thumbnails/$thumbHash.jpg');
+            final thumbHash = sha256
+                .convert(utf8.encode(manga.imageUrl ?? ''))
+                .toString();
+            final thumbFile =
+                File('${docsDir.path}/thumbnails/$thumbHash.jpg');
             if (await thumbFile.exists()) {
               await thumbFile.delete();
             }
-          } catch (_) {
-            // ignore cleanup failures
+            } catch (_) {}
+            await repos.manga.deleteMangaChapters(id);
+            await repos.manga.deleteManga(id);
           }
-          await _db.deleteMangaChapters(id);
-          await _db.deleteManga(id);
         }
-      }
     }
-    _selectedIds.clear();
-    _selectionMode = false;
+    state = state.copyWith(selectedIds: {}, selectionMode: false);
     await loadBooks();
   }
 }

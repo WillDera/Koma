@@ -7,7 +7,6 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../../core/models/book.dart';
 import '../../core/models/chapter.dart' as ch_model;
 import '../../core/models/snippet.dart';
-import '../../core/services/database_service.dart';
 import '../../core/services/search_service.dart';
 import '../../theme/app_theme.dart';
 import '../../theme/theme_provider.dart';
@@ -33,7 +32,6 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
   final _focusNode = FocusNode();
   final ScrollController _scrollCtrl = ScrollController();
   double _scrollProgress = 0;
-  SearchService? _searchService;
   List<SearchResult> _results = [];
   List<String> _recentSearches = [];
   bool _searching = false;
@@ -42,8 +40,6 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
   @override
   void initState() {
     super.initState();
-    final db = ref.read(databaseServiceProvider);
-    _searchService = SearchService(db.db);
     _scrollCtrl.addListener(_onScroll);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _loadRecentSearches();
@@ -100,7 +96,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
     }
     setState(() => _searching = true);
     try {
-      final results = await _searchService!.searchAll(query.trim());
+      final results = await ref.read(searchServiceProvider).searchAll(query.trim());
       if (!mounted) return;
       setState(() => _results = results);
       _saveSearch(query.trim());

@@ -38,7 +38,7 @@ class _SnippetsScreenState extends ConsumerState<SnippetsScreen> {
     super.initState();
     _scrollCtrl.addListener(_onScroll);
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      ref.read(snippetsProvider).loadSnippets();
+      ref.read(snippetsProvider.notifier).loadSnippets();
     });
   }
 
@@ -91,7 +91,7 @@ class _SnippetsScreenState extends ConsumerState<SnippetsScreen> {
     );
   }
 
-  Widget _body(BuildContext context, SnippetsProvider p) {
+  Widget _body(BuildContext context, SnippetsState p) {
     if (p.loading && p.snippets.isEmpty) return _loading();
     if (p.error != null) {
       return ListView(
@@ -110,7 +110,7 @@ class _SnippetsScreenState extends ConsumerState<SnippetsScreen> {
             title: 'Could not load snippets',
             subtitle: p.error!,
             primaryActionLabel: 'Try again',
-            onPrimaryAction: () => p.loadSnippets(),
+            onPrimaryAction: () => ref.read(snippetsProvider.notifier).loadSnippets(),
           ),
         ],
       );
@@ -170,13 +170,13 @@ class _SnippetsScreenState extends ConsumerState<SnippetsScreen> {
           _CollectionFilterBar(
             collections: p.collections,
             selectedId: p.filterCollectionId,
-            onSelected: p.setFilterCollection,
+            onSelected: ref.read(snippetsProvider.notifier).setFilterCollection,
           ),
           if (p.allTags.isNotEmpty)
             TagFilterBar(
               tags: p.allTags,
               selected: p.filterTag,
-              onChanged: p.setFilterTag,
+              onChanged: ref.read(snippetsProvider.notifier).setFilterTag,
             ),
         ],
         if (items.isEmpty)
@@ -204,14 +204,14 @@ class _SnippetsScreenState extends ConsumerState<SnippetsScreen> {
                   selectionMode: p.selectionMode,
                   onTap: () {
                     if (p.selectionMode) {
-                      p.toggleSelection(entry.$2.id);
+                      ref.read(snippetsProvider.notifier).toggleSelection(entry.$2.id);
                     } else {
                       _editSnippet(context, entry.$2, p);
                     }
                   },
                   onLongPress: () {
                     if (!p.selectionMode) {
-                      p.toggleSelection(entry.$2.id);
+                      ref.read(snippetsProvider.notifier).toggleSelection(entry.$2.id);
                     }
                   },
                   onOpenSource: entry.$2.bookId != null
@@ -231,7 +231,7 @@ class _SnippetsScreenState extends ConsumerState<SnippetsScreen> {
     );
   }
 
-  String _sectionTitle(SnippetsProvider p) {
+  String _sectionTitle(SnippetsState p) {
     final colId = p.filterCollectionId;
     if (colId == -1) return 'All snippets';
     if (colId == null) return 'Uncollected';
@@ -239,7 +239,8 @@ class _SnippetsScreenState extends ConsumerState<SnippetsScreen> {
     return col?.name ?? 'Collection';
   }
 
-  Widget _buildHeader(SnippetsProvider p) {
+  Widget _buildHeader(SnippetsState p) {
+    final sn = ref.read(snippetsProvider.notifier);
     if (p.selectionMode) {
       return LibraryHeader(
         title: '${p.selectedIds.length} selected',
@@ -252,8 +253,8 @@ class _SnippetsScreenState extends ConsumerState<SnippetsScreen> {
             iconColor: context.colors.textSecondary,
             tooltip: 'Select All',
             onPressed: p.selectedIds.length == p.snippets.length && p.snippets.isNotEmpty
-                ? p.clearSelection
-                : p.selectAll,
+                ? sn.clearSelection
+                : sn.selectAll,
           ),
           const SizedBox(width: 4),
           IconButtonRound(
@@ -262,7 +263,7 @@ class _SnippetsScreenState extends ConsumerState<SnippetsScreen> {
             variant: IconButtonVariant.tonal,
             iconColor: context.colors.textSecondary,
             tooltip: 'Inverse',
-            onPressed: p.inverseSelection,
+            onPressed: sn.inverseSelection,
           ),
           const SizedBox(width: 4),
           IconButtonRound(
@@ -289,7 +290,7 @@ class _SnippetsScreenState extends ConsumerState<SnippetsScreen> {
             variant: IconButtonVariant.tonal,
             iconColor: context.colors.textSecondary,
             tooltip: 'Done',
-            onPressed: p.clearSelection,
+            onPressed: sn.clearSelection,
           ),
         ],
       );
@@ -305,7 +306,7 @@ class _SnippetsScreenState extends ConsumerState<SnippetsScreen> {
           variant: IconButtonVariant.tonal,
           iconColor: context.colors.textSecondary,
           tooltip: 'Select',
-          onPressed: () => p.selectAll(),
+          onPressed: () => sn.selectAll(),
         ),
       ],
     );
@@ -346,7 +347,7 @@ class _SnippetsScreenState extends ConsumerState<SnippetsScreen> {
       creating: true,
       onSave: (s) async {
         try {
-          await ref.read(snippetsProvider).createSnippet(
+          await ref.read(snippetsProvider.notifier).createSnippet(
             text: s.text,
             note: s.note,
             sourceTitle: s.sourceTitle,
@@ -373,12 +374,13 @@ class _SnippetsScreenState extends ConsumerState<SnippetsScreen> {
     );
   }
 
-  void _editSnippet(BuildContext context, Snippet snippet, SnippetsProvider p) {
+  void _editSnippet(BuildContext context, Snippet snippet, SnippetsState p) {
+    final sn = ref.read(snippetsProvider.notifier);
     SnippetDetailSheet.show(
       context,
       snippet: snippet,
       onSave: (s) async {
-        await p.updateSnippet(s);
+        await sn.updateSnippet(s);
         if (context.mounted) {
           StashToast.show(
             context,
@@ -388,7 +390,7 @@ class _SnippetsScreenState extends ConsumerState<SnippetsScreen> {
         }
       },
       onDelete: (id) async {
-        await p.deleteSnippet(id);
+        await sn.deleteSnippet(id);
         if (context.mounted) {
           StashToast.show(
             context,
@@ -402,6 +404,7 @@ class _SnippetsScreenState extends ConsumerState<SnippetsScreen> {
 
   Future<void> _confirmDelete() async {
     final p = ref.read(snippetsProvider);
+    final sn = ref.read(snippetsProvider.notifier);
     final ctx = context;
     final confirmed = await StashDialog.show<bool>(
       ctx,
@@ -425,7 +428,7 @@ class _SnippetsScreenState extends ConsumerState<SnippetsScreen> {
       ],
     );
     if (confirmed == true) {
-      await p.deleteSelected();
+      await sn.deleteSelected();
       if (ctx.mounted) {
         StashToast.show(
           ctx,
@@ -436,7 +439,8 @@ class _SnippetsScreenState extends ConsumerState<SnippetsScreen> {
     }
   }
 
-  Future<void> _groupSelected(BuildContext context, SnippetsProvider p) async {
+  Future<void> _groupSelected(BuildContext context, SnippetsState p) async {
+    final sn = ref.read(snippetsProvider.notifier);
     final result = await showModalBottomSheet<int?>(
       context: context,
       isScrollControlled: true,
@@ -529,7 +533,7 @@ class _SnippetsScreenState extends ConsumerState<SnippetsScreen> {
                   };
                   if (confirmed == true && nameController.text.trim().isNotEmpty) {
                     final hex = keyToHex[selectedColor] ?? '#FFE8A8';
-                    final id = await p.createCollection(nameController.text.trim(), color: hex);
+                    final id = await sn.createCollection(nameController.text.trim(), color: hex);
                     if (ctx.mounted) {
                       Navigator.pop(ctx, id);
                     }
@@ -543,12 +547,12 @@ class _SnippetsScreenState extends ConsumerState<SnippetsScreen> {
     );
 
     if (result == null) {
-      await p.moveSnippetsToCollection(p.selectedIds.toList(), null);
+      await sn.moveSnippetsToCollection(p.selectedIds.toList(), null);
     } else if (result > 0) {
-      await p.moveSnippetsToCollection(p.selectedIds.toList(), result);
+      await sn.moveSnippetsToCollection(p.selectedIds.toList(), result);
     }
     if (context.mounted) {
-      p.clearSelection();
+      sn.clearSelection();
     }
   }
 
