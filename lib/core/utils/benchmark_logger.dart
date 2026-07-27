@@ -7,7 +7,6 @@ import 'package:path_provider/path_provider.dart';
 
 class BenchmarkLogger {
   static bool enabled = kDebugMode || kProfileMode;
-  static bool headerA11yPatch = false;
   static DateTime? _headerLastLog;
   static File? _file;
 

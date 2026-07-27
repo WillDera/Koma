@@ -1,7 +1,11 @@
 import 'package:flutter/material.dart';
 import '../../theme/app_theme.dart';
 
-// ── Settings model ─────────────────────────────────────────────────────
+enum ReadingMode { defaultL2R, rightToLeft, webtoon, longStrip, longStripWithGaps }
+enum RotationMode { portrait, free, landscape }
+enum TapZoneMode { leftRight, leftTopRightBottom, leftCenterRight }
+enum ProgressBarPlacement { horizontalTop, horizontalBottom, verticalLeft, verticalRight }
+
 class ReaderSettings {
   ReadingMode readingMode;
   RotationMode rotationMode;
@@ -46,6 +50,52 @@ class ReaderSettings {
     this.tintColor,
     this.tintOpacity = 0.0,
   });
+
+  ReaderSettings copyWith({
+    ReadingMode? readingMode,
+    RotationMode? rotationMode,
+    TapZoneMode? tapZones,
+    double? sidePadding,
+    bool? cropBorders,
+    bool? bookMode,
+    bool? disableDoubleTap,
+    bool? disableZoomOut,
+    bool? showPageNumber,
+    bool? showPageNavigator,
+    bool? fullscreen,
+    bool? keepScreenOn,
+    bool? showActionsOnLongTap,
+    bool? animatePageTransition,
+    ProgressBarPlacement? progressBarPlacement,
+    double? brightness,
+    double? contrast,
+    double? saturation,
+    Color? tintColor,
+    double? tintOpacity,
+  }) {
+    return ReaderSettings(
+      readingMode: readingMode ?? this.readingMode,
+      rotationMode: rotationMode ?? this.rotationMode,
+      tapZones: tapZones ?? this.tapZones,
+      sidePadding: sidePadding ?? this.sidePadding,
+      cropBorders: cropBorders ?? this.cropBorders,
+      bookMode: bookMode ?? this.bookMode,
+      disableDoubleTap: disableDoubleTap ?? this.disableDoubleTap,
+      disableZoomOut: disableZoomOut ?? this.disableZoomOut,
+      showPageNumber: showPageNumber ?? this.showPageNumber,
+      showPageNavigator: showPageNavigator ?? this.showPageNavigator,
+      fullscreen: fullscreen ?? this.fullscreen,
+      keepScreenOn: keepScreenOn ?? this.keepScreenOn,
+      showActionsOnLongTap: showActionsOnLongTap ?? this.showActionsOnLongTap,
+      animatePageTransition: animatePageTransition ?? this.animatePageTransition,
+      progressBarPlacement: progressBarPlacement ?? this.progressBarPlacement,
+      brightness: brightness ?? this.brightness,
+      contrast: contrast ?? this.contrast,
+      saturation: saturation ?? this.saturation,
+      tintColor: tintColor ?? this.tintColor,
+      tintOpacity: tintOpacity ?? this.tintOpacity,
+    );
+  }
 
   Map<String, dynamic> toJson() => {
         'readingMode': readingMode.index,
@@ -94,15 +144,6 @@ class ReaderSettings {
       );
 }
 
-enum ReadingMode { defaultL2R, rightToLeft, webtoon, longStrip, longStripWithGaps }
-
-enum RotationMode { portrait, free, landscape }
-
-enum TapZoneMode { leftRight, leftTopRightBottom, leftCenterRight }
-
-enum ProgressBarPlacement { horizontalTop, horizontalBottom, verticalLeft, verticalRight }
-
-// ── Settings bottom sheet ──────────────────────────────────────────────
 class ReaderSettingsSheet extends StatefulWidget {
   final ReaderSettings settings;
   final ValueChanged<ReaderSettings> onChanged;
@@ -125,7 +166,7 @@ class _ReaderSettingsSheetState extends State<ReaderSettingsSheet>
   @override
   void initState() {
     super.initState();
-    _tabs = TabController(length: 2, vsync: this);
+    _tabs = TabController(length: 3, vsync: this);
     _s = widget.settings;
   }
 
@@ -149,26 +190,25 @@ class _ReaderSettingsSheetState extends State<ReaderSettingsSheet>
               color: c.surface,
               borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
             ),
-            child: SafeArea(
-              bottom: false,
-              child: TabBar(
-                controller: _tabs,
-                indicatorColor: c.accent,
-                labelColor: c.accent,
-                unselectedLabelColor: c.textSecondary,
-                tabs: const [
-                  Tab(text: 'Reading'),
-                  Tab(text: 'Other'),
-                ],
-              ),
+            child: TabBar(
+              controller: _tabs,
+              indicatorColor: Theme.of(context).colorScheme.primary,
+              labelColor: Theme.of(context).colorScheme.onSurface,
+              unselectedLabelColor: Theme.of(context).colorScheme.onSurfaceVariant,
+              tabs: const [
+                Tab(text: 'Reading'),
+                Tab(text: 'Display'),
+                Tab(text: 'Filters'),
+              ],
             ),
           ),
           Expanded(
             child: TabBarView(
               controller: _tabs,
               children: [
-                _ReadingTab(settings: _s, onChange: () => setState(_emit)),
-                _OtherTab(settings: _s, onChange: () => setState(_emit)),
+                _ReadingTab(settings: _s, onChanged: (v) { _s = v; _emit(); }),
+                _DisplayTab(settings: _s, onChanged: (v) { _s = v; _emit(); }),
+                _FilterTab(settings: _s, onChanged: (v) { _s = v; _emit(); }),
               ],
             ),
           ),
@@ -178,351 +218,355 @@ class _ReaderSettingsSheetState extends State<ReaderSettingsSheet>
   }
 }
 
-// ── Reading tab ────────────────────────────────────────────────────────
 class _ReadingTab extends StatelessWidget {
   final ReaderSettings settings;
-  final VoidCallback onChange;
+  final ValueChanged<ReaderSettings> onChanged;
 
-  const _ReadingTab({required this.settings, required this.onChange});
-
-  @override
-  Widget build(BuildContext context) {
-    final c = context.colors;
-    return ListView(
-      padding: const EdgeInsets.all(16),
-      children: [
-        _SectionLabel(c, 'Reading mode'),
-        const SizedBox(height: 8),
-        _ChipRow(
-          options: ReadingMode.values,
-          labels: const ['Default (L2R)', 'Right to left', 'Webtoon', 'Long strip', 'Long strip w/ gaps'],
-          selected: settings.readingMode.index,
-          onSelect: (i) {
-            settings.readingMode = ReadingMode.values[i];
-            onChange();
-          },
-        ),
-        const SizedBox(height: 20),
-        _SectionLabel(c, 'Rotation'),
-        const SizedBox(height: 8),
-        _ChipRow(
-          options: RotationMode.values,
-          labels: const ['Portrait', 'Free', 'Landscape'],
-          selected: settings.rotationMode.index,
-          onSelect: (i) {
-            settings.rotationMode = RotationMode.values[i];
-            onChange();
-          },
-        ),
-        const SizedBox(height: 20),
-        _SectionLabel(c, 'Tap zones'),
-        const SizedBox(height: 8),
-        _ChipRow(
-          options: TapZoneMode.values,
-          labels: const ['Left/Right', 'Left/Top · Right/Bottom', 'Left/Center/Right'],
-          selected: settings.tapZones.index,
-          onSelect: (i) {
-            settings.tapZones = TapZoneMode.values[i];
-            onChange();
-          },
-        ),
-        const SizedBox(height: 20),
-        _SectionLabel(c, 'Side padding'),
-        const SizedBox(height: 8),
-        Row(
-          children: [
-            const SizedBox(width: 8),
-            Text('0%', style: TextStyle(color: c.textTertiary, fontSize: 12)),
-            Expanded(
-              child: Slider(
-                value: settings.sidePadding,
-                min: 0,
-                max: 0.3,
-                divisions: 30,
-                activeColor: c.accent,
-                onChanged: (v) {
-                  settings.sidePadding = v;
-                  onChange();
-                },
-              ),
-            ),
-            Text('30%', style: TextStyle(color: c.textTertiary, fontSize: 12)),
-            const SizedBox(width: 8),
-            Text('${(settings.sidePadding * 100).round()}%',
-                style: TextStyle(color: c.textPrimary, fontSize: 13)),
-          ],
-        ),
-        const SizedBox(height: 12),
-        _CheckboxTile(c, 'Crop borders', settings.cropBorders, (v) {
-          settings.cropBorders = v;
-          onChange();
-        }),
-        _CheckboxTile(c, 'Book mode (2 pages in landscape)', settings.bookMode, (v) {
-          settings.bookMode = v;
-          onChange();
-        }),
-        _CheckboxTile(c, 'Disable double tap to zoom', settings.disableDoubleTap, (v) {
-          settings.disableDoubleTap = v;
-          onChange();
-        }),
-        _CheckboxTile(c, 'Disable zoom out', settings.disableZoomOut, (v) {
-          settings.disableZoomOut = v;
-          onChange();
-        }),
-      ],
-    );
-  }
-}
-
-// ── Other tab ─────────────────────────────────────────────────────────
-class _OtherTab extends StatelessWidget {
-  final ReaderSettings settings;
-  final VoidCallback onChange;
-
-  const _OtherTab({required this.settings, required this.onChange});
+  const _ReadingTab({required this.settings, required this.onChanged});
 
   @override
   Widget build(BuildContext context) {
     final c = context.colors;
-    return ListView(
-      padding: const EdgeInsets.all(16),
-      children: [
-        _CheckboxTile(c, 'Show page number', settings.showPageNumber, (v) {
-          settings.showPageNumber = v;
-          onChange();
-        }),
-        _CheckboxTile(c, 'Show page navigator', settings.showPageNavigator, (v) {
-          settings.showPageNavigator = v;
-          onChange();
-        }),
-        _CheckboxTile(c, 'Fullscreen', settings.fullscreen, (v) {
-          settings.fullscreen = v;
-          onChange();
-        }),
-        _CheckboxTile(c, 'Keep screen on', settings.keepScreenOn, (v) {
-          settings.keepScreenOn = v;
-          onChange();
-        }),
-        _CheckboxTile(c, 'Show actions on long tap', settings.showActionsOnLongTap, (v) {
-          settings.showActionsOnLongTap = v;
-          onChange();
-        }),
-        _CheckboxTile(c, 'Animate page transition', settings.animatePageTransition, (v) {
-          settings.animatePageTransition = v;
-          onChange();
-        }),
-        const SizedBox(height: 20),
-        _SectionLabel(c, 'Color filter'),
-        const SizedBox(height: 8),
-        _SliderRow(c, 'Brightness', settings.brightness, 0.5, 1.5, (v) {
-          settings.brightness = v;
-          onChange();
-        }),
-        _SliderRow(c, 'Contrast', settings.contrast, 0.5, 1.5, (v) {
-          settings.contrast = v;
-          onChange();
-        }),
-        _SliderRow(c, 'Saturation', settings.saturation, 0.0, 2.0, (v) {
-          settings.saturation = v;
-          onChange();
-        }),
-        const SizedBox(height: 8),
-        _SectionLabel(c, 'Tint'),
-        const SizedBox(height: 8),
-        Row(
-          children: [
-            _TintChip(c, null, settings.tintColor == null || settings.tintOpacity == 0.0, () {
-              settings.tintColor = null;
-              settings.tintOpacity = 0.0;
-              onChange();
-            }),
-            const SizedBox(width: 8),
-            _TintChip(c, Colors.red, settings.tintColor == Colors.red, () {
-              settings.tintColor = Colors.red;
-              settings.tintOpacity = 0.3;
-              onChange();
-            }),
-            const SizedBox(width: 8),
-            _TintChip(c, Colors.green, settings.tintColor == Colors.green, () {
-              settings.tintColor = Colors.green;
-              settings.tintOpacity = 0.3;
-              onChange();
-            }),
-            const SizedBox(width: 8),
-            _TintChip(c, Colors.blue, settings.tintColor == Colors.blue, () {
-              settings.tintColor = Colors.blue;
-              settings.tintOpacity = 0.3;
-              onChange();
-            }),
-            const SizedBox(width: 8),
-            _TintChip(c, Colors.amber, settings.tintColor == Colors.amber, () {
-              settings.tintColor = Colors.amber;
-              settings.tintOpacity = 0.3;
-              onChange();
-            }),
-          ],
-        ),
-        const SizedBox(height: 20),
-        _SectionLabel(c, 'Progress bar placement'),
-        const SizedBox(height: 8),
-        _ChipRow(
-          options: [0, 1, 2, 3],
-          labels: const ['Horizontal top', 'Horizontal bottom', 'Vertical left', 'Vertical right'],
-          selected: settings.progressBarPlacement.index,
-          onSelect: (i) {
-            settings.progressBarPlacement = ProgressBarPlacement.values[i];
-            onChange();
-          },
-        ),
-      ],
-    );
-  }
-}
-
-// ── Shared widgets ─────────────────────────────────────────────────────
-class _SectionLabel extends StatelessWidget {
-  final KomaColors c;
-  final String label;
-  const _SectionLabel(this.c, this.label);
-
-  @override
-  Widget build(BuildContext context) {
-    return Text(label,
-        style: TextStyle(
-            color: c.textPrimary,
-            fontSize: 14,
-            fontWeight: FontWeight.w600));
-  }
-}
-
-class _ChipRow extends StatelessWidget {
-  final List<dynamic> options;
-  final List<String> labels;
-  final int selected;
-  final ValueChanged<int> onSelect;
-
-  const _ChipRow({
-    required this.options,
-    required this.labels,
-    required this.selected,
-    required this.onSelect,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final c = context.colors;
-    return Wrap(
-      spacing: 8,
-      runSpacing: 6,
-      children: List.generate(labels.length, (i) {
-        final active = i == selected;
-        return ChoiceChip(
-          label: Text(labels[i], style: TextStyle(fontSize: 12, color: active ? c.onAccent : c.textPrimary)),
-          selected: active,
-          selectedColor: c.accent,
-          backgroundColor: c.surfaceMuted,
-          onSelected: (_) => onSelect(i),
-        );
-      }),
-    );
-  }
-}
-
-class _CheckboxTile extends StatelessWidget {
-  final KomaColors c;
-  final String title;
-  final bool value;
-  final ValueChanged<bool> onChanged;
-
-  const _CheckboxTile(this.c, this.title, this.value, this.onChanged);
-
-  @override
-  Widget build(BuildContext context) {
-    return SizedBox(
-      height: 40,
-      child: Row(
+    return SingleChildScrollView(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          SizedBox(
-            height: 24,
-            width: 24,
-            child: Checkbox(
-              value: value,
-              onChanged: (v) {
-                if (v != null) onChanged(v);
+          _section(context, 'Reading Direction', [
+            SegmentedButton<ReadingMode>(
+              segments: const [
+                ButtonSegment(value: ReadingMode.defaultL2R, label: Text('L→R')),
+                ButtonSegment(value: ReadingMode.rightToLeft, label: Text('R→L')),
+                ButtonSegment(value: ReadingMode.webtoon, label: Text('Webtoon')),
+              ],
+              selected: {settings.readingMode},
+              onSelectionChanged: (v) {
+                final mode = v.firstOrNull ?? ReadingMode.defaultL2R;
+                onChanged(ReaderSettings(
+                  readingMode: mode,
+                  rotationMode: settings.rotationMode,
+                  tapZones: settings.tapZones,
+                  sidePadding: settings.sidePadding,
+                  cropBorders: settings.cropBorders,
+                  bookMode: settings.bookMode,
+                  disableDoubleTap: settings.disableDoubleTap,
+                  disableZoomOut: settings.disableZoomOut,
+                  showPageNumber: settings.showPageNumber,
+                  showPageNavigator: settings.showPageNavigator,
+                  fullscreen: settings.fullscreen,
+                  keepScreenOn: settings.keepScreenOn,
+                  showActionsOnLongTap: settings.showActionsOnLongTap,
+                  animatePageTransition: settings.animatePageTransition,
+                  progressBarPlacement: settings.progressBarPlacement,
+                  brightness: settings.brightness,
+                  contrast: settings.contrast,
+                  saturation: settings.saturation,
+                  tintColor: settings.tintColor,
+                  tintOpacity: settings.tintOpacity,
+                ));
               },
-              activeColor: c.accent,
-              side: BorderSide(color: c.textTertiary),
             ),
-          ),
-          const SizedBox(width: 12),
-          Text(title, style: TextStyle(color: c.textPrimary, fontSize: 14)),
+          ]),
+          const SizedBox(height: 16),
+          _section(context, 'Tap Zones', [
+            SegmentedButton<TapZoneMode>(
+              segments: const [
+                ButtonSegment(value: TapZoneMode.leftRight, label: Text('L/M/R')),
+                ButtonSegment(value: TapZoneMode.leftTopRightBottom, label: Text('L/T R/B')),
+              ],
+              selected: {settings.tapZones},
+              onSelectionChanged: (v) {
+                final mode = v.firstOrNull ?? TapZoneMode.leftRight;
+                onChanged(ReaderSettings(
+                  readingMode: settings.readingMode,
+                  rotationMode: settings.rotationMode,
+                  tapZones: mode,
+                  sidePadding: settings.sidePadding,
+                  cropBorders: settings.cropBorders,
+                  bookMode: settings.bookMode,
+                  disableDoubleTap: settings.disableDoubleTap,
+                  disableZoomOut: settings.disableZoomOut,
+                  showPageNumber: settings.showPageNumber,
+                  showPageNavigator: settings.showPageNavigator,
+                  fullscreen: settings.fullscreen,
+                  keepScreenOn: settings.keepScreenOn,
+                  showActionsOnLongTap: settings.showActionsOnLongTap,
+                  animatePageTransition: settings.animatePageTransition,
+                  progressBarPlacement: settings.progressBarPlacement,
+                  brightness: settings.brightness,
+                  contrast: settings.contrast,
+                  saturation: settings.saturation,
+                  tintColor: settings.tintColor,
+                  tintOpacity: settings.tintOpacity,
+                ));
+              },
+            ),
+          ]),
+          const SizedBox(height: 16),
+          _section(context, 'Options', [
+            SwitchListTile(
+              title: const Text('Book Mode'),
+              subtitle: const Text('Two pages per spread'),
+              value: settings.bookMode,
+              onChanged: (v) => onChanged(ReaderSettings(
+                readingMode: settings.readingMode,
+                rotationMode: settings.rotationMode,
+                tapZones: settings.tapZones,
+                sidePadding: settings.sidePadding,
+                cropBorders: settings.cropBorders,
+                bookMode: v,
+                disableDoubleTap: settings.disableDoubleTap,
+                disableZoomOut: settings.disableZoomOut,
+                showPageNumber: settings.showPageNumber,
+                showPageNavigator: settings.showPageNavigator,
+                fullscreen: settings.fullscreen,
+                keepScreenOn: settings.keepScreenOn,
+                showActionsOnLongTap: settings.showActionsOnLongTap,
+                animatePageTransition: settings.animatePageTransition,
+                progressBarPlacement: settings.progressBarPlacement,
+                brightness: settings.brightness,
+                contrast: settings.contrast,
+                saturation: settings.saturation,
+                tintColor: settings.tintColor,
+                tintOpacity: settings.tintOpacity,
+              )),
+              contentPadding: EdgeInsets.zero,
+            ),
+            SwitchListTile(
+              title: const Text('Crop Borders'),
+              subtitle: const Text('Trim whitespace from images'),
+              value: settings.cropBorders,
+              onChanged: (v) => onChanged(ReaderSettings(
+                readingMode: settings.readingMode,
+                rotationMode: settings.rotationMode,
+                tapZones: settings.tapZones,
+                sidePadding: settings.sidePadding,
+                cropBorders: v,
+                bookMode: settings.bookMode,
+                disableDoubleTap: settings.disableDoubleTap,
+                disableZoomOut: settings.disableZoomOut,
+                showPageNumber: settings.showPageNumber,
+                showPageNavigator: settings.showPageNavigator,
+                fullscreen: settings.fullscreen,
+                keepScreenOn: settings.keepScreenOn,
+                showActionsOnLongTap: settings.showActionsOnLongTap,
+                animatePageTransition: settings.animatePageTransition,
+                progressBarPlacement: settings.progressBarPlacement,
+                brightness: settings.brightness,
+                contrast: settings.contrast,
+                saturation: settings.saturation,
+                tintColor: settings.tintColor,
+                tintOpacity: settings.tintOpacity,
+              )),
+              contentPadding: EdgeInsets.zero,
+            ),
+          ]),
         ],
       ),
     );
   }
+
+  Widget _section(BuildContext context, String title, List<Widget> children) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(title, style: TextStyle(fontSize: 13, color: Theme.of(context).colorScheme.onSurfaceVariant, fontWeight: FontWeight.w600)),
+        const SizedBox(height: 8),
+        ...children,
+      ],
+    );
+  }
 }
 
-class _SliderRow extends StatelessWidget {
-  final KomaColors c;
-  final String label;
-  final double value;
-  final double min;
-  final double max;
-  final ValueChanged<double> onChanged;
+class _DisplayTab extends StatelessWidget {
+  final ReaderSettings settings;
+  final ValueChanged<ReaderSettings> onChanged;
 
-  const _SliderRow(this.c, this.label, this.value, this.min, this.max, this.onChanged);
+  const _DisplayTab({required this.settings, required this.onChanged});
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 12),
-      child: Row(
+    return SingleChildScrollView(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          SizedBox(width: 70, child: Text(label, style: TextStyle(color: c.textSecondary, fontSize: 12))),
-          Expanded(
-            child: Slider(
-              value: value,
-              min: min,
-              max: max,
-              divisions: 20,
-              activeColor: c.accent,
-              onChanged: onChanged,
+          _section('Rotation', [
+            SegmentedButton<RotationMode>(
+              segments: const [
+                ButtonSegment(value: RotationMode.portrait, label: Text('Portrait')),
+                ButtonSegment(value: RotationMode.free, label: Text('Free')),
+                ButtonSegment(value: RotationMode.landscape, label: Text('Landscape')),
+              ],
+              selected: {settings.rotationMode},
+              onSelectionChanged: (v) {
+                final mode = v.firstOrNull ?? RotationMode.free;
+                onChanged(ReaderSettings(
+                  readingMode: settings.readingMode,
+                  rotationMode: mode,
+                  tapZones: settings.tapZones,
+                  sidePadding: settings.sidePadding,
+                  cropBorders: settings.cropBorders,
+                  bookMode: settings.bookMode,
+                  disableDoubleTap: settings.disableDoubleTap,
+                  disableZoomOut: settings.disableZoomOut,
+                  showPageNumber: settings.showPageNumber,
+                  showPageNavigator: settings.showPageNavigator,
+                  fullscreen: settings.fullscreen,
+                  keepScreenOn: settings.keepScreenOn,
+                  showActionsOnLongTap: settings.showActionsOnLongTap,
+                  animatePageTransition: settings.animatePageTransition,
+                  progressBarPlacement: settings.progressBarPlacement,
+                  brightness: settings.brightness,
+                  contrast: settings.contrast,
+                  saturation: settings.saturation,
+                  tintColor: settings.tintColor,
+                  tintOpacity: settings.tintOpacity,
+                ));
+              },
             ),
-          ),
-          SizedBox(width: 36, child: Text(value.toStringAsFixed(2), textAlign: TextAlign.right, style: TextStyle(color: c.textTertiary, fontSize: 12))),
+          ]),
+          const SizedBox(height: 16),
+          _section('UI Options', [
+            SwitchListTile(
+              title: const Text('Fullscreen'),
+              subtitle: const Text('Hide system bars'),
+              value: settings.fullscreen,
+              onChanged: (v) => onChanged(_copy(fullscreen: v)),
+              contentPadding: EdgeInsets.zero,
+            ),
+            SwitchListTile(
+              title: const Text('Keep Screen On'),
+              subtitle: const Text('Prevent display sleep'),
+              value: settings.keepScreenOn,
+              onChanged: (v) => onChanged(_copy(keepScreenOn: v)),
+              contentPadding: EdgeInsets.zero,
+            ),
+            SwitchListTile(
+              title: const Text('Show Page Number'),
+              value: settings.showPageNumber,
+              onChanged: (v) => onChanged(_copy(showPageNumber: v)),
+              contentPadding: EdgeInsets.zero,
+            ),
+            SwitchListTile(
+              title: const Text('Animated Page Transition'),
+              value: settings.animatePageTransition,
+              onChanged: (v) => onChanged(_copy(animatePageTransition: v)),
+              contentPadding: EdgeInsets.zero,
+            ),
+          ]),
         ],
       ),
     );
   }
+
+  Widget _section(String title, List<Widget> children) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(title, style: TextStyle(fontSize: 13, color: Theme.of(context).colorScheme.onSurfaceVariant, fontWeight: FontWeight.w600)),
+        const SizedBox(height: 8),
+        ...children,
+      ],
+    );
+  }
+
+  ReaderSettings _copy({bool? fullscreen, bool? keepScreenOn, bool? showPageNumber, bool? animatePageTransition}) {
+    return settings.copyWith(fullscreen: fullscreen, keepScreenOn: keepScreenOn, showPageNumber: showPageNumber, animatePageTransition: animatePageTransition);
+  }
 }
 
-class _TintChip extends StatelessWidget {
-  final KomaColors c;
-  final Color? color;
-  final bool selected;
-  final VoidCallback onTap;
+class _FilterTab extends StatelessWidget {
+  final ReaderSettings settings;
+  final ValueChanged<ReaderSettings> onChanged;
 
-  const _TintChip(this.c, this.color, this.selected, this.onTap);
+  const _FilterTab({required this.settings, required this.onChanged});
 
   @override
   Widget build(BuildContext context) {
-    final bg = color ?? Colors.transparent;
-    final border = selected ? Border.all(color: c.accent, width: 2) : null;
-    return GestureDetector(
-      onTap: onTap,
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 150),
-        width: 32,
-        height: 32,
-        decoration: BoxDecoration(
-          color: bg,
-          shape: BoxShape.circle,
-          border: border,
-        ),
-        child: selected
-            ? Icon(Icons.check, size: 16, color: c.onAccent)
-            : null,
+    final c = Theme.of(context).colorScheme;
+    return SingleChildScrollView(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      child: Column(
+        children: [
+          _slider('Brightness', settings.brightness, 0.5, 1.5, (v) => onChanged(ReaderSettings(
+            readingMode: settings.readingMode,
+            rotationMode: settings.rotationMode,
+            tapZones: settings.tapZones,
+            sidePadding: settings.sidePadding,
+            cropBorders: settings.cropBorders,
+            bookMode: settings.bookMode,
+            disableDoubleTap: settings.disableDoubleTap,
+            disableZoomOut: settings.disableZoomOut,
+            showPageNumber: settings.showPageNumber,
+            showPageNavigator: settings.showPageNavigator,
+            fullscreen: settings.fullscreen,
+            keepScreenOn: settings.keepScreenOn,
+            showActionsOnLongTap: settings.showActionsOnLongTap,
+            animatePageTransition: settings.animatePageTransition,
+            progressBarPlacement: settings.progressBarPlacement,
+            brightness: v,
+            contrast: settings.contrast,
+            saturation: settings.saturation,
+            tintColor: settings.tintColor,
+            tintOpacity: settings.tintOpacity,
+          ))),
+          _slider('Contrast', settings.contrast, 0.5, 1.5, (v) => onChanged(ReaderSettings(
+            readingMode: settings.readingMode,
+            rotationMode: settings.rotationMode,
+            tapZones: settings.tapZones,
+            sidePadding: settings.sidePadding,
+            cropBorders: settings.cropBorders,
+            bookMode: settings.bookMode,
+            disableDoubleTap: settings.disableDoubleTap,
+            disableZoomOut: settings.disableZoomOut,
+            showPageNumber: settings.showPageNumber,
+            showPageNavigator: settings.showPageNavigator,
+            fullscreen: settings.fullscreen,
+            keepScreenOn: settings.keepScreenOn,
+            showActionsOnLongTap: settings.showActionsOnLongTap,
+            animatePageTransition: settings.animatePageTransition,
+            progressBarPlacement: settings.progressBarPlacement,
+            brightness: settings.brightness,
+            contrast: v,
+            saturation: settings.saturation,
+            tintColor: settings.tintColor,
+            tintOpacity: settings.tintOpacity,
+          ))),
+          _slider('Saturation', settings.saturation, 0.0, 2.0, (v) => onChanged(ReaderSettings(
+            readingMode: settings.readingMode,
+            rotationMode: settings.rotationMode,
+            tapZones: settings.tapZones,
+            sidePadding: settings.sidePadding,
+            cropBorders: settings.cropBorders,
+            bookMode: settings.bookMode,
+            disableDoubleTap: settings.disableDoubleTap,
+            disableZoomOut: settings.disableZoomOut,
+            showPageNumber: settings.showPageNumber,
+            showPageNavigator: settings.showPageNavigator,
+            fullscreen: settings.fullscreen,
+            keepScreenOn: settings.keepScreenOn,
+            showActionsOnLongTap: settings.showActionsOnLongTap,
+            animatePageTransition: settings.animatePageTransition,
+            progressBarPlacement: settings.progressBarPlacement,
+            brightness: settings.brightness,
+            contrast: settings.contrast,
+            saturation: v,
+            tintColor: settings.tintColor,
+            tintOpacity: settings.tintOpacity,
+          ))),
+        ],
       ),
+    );
+  }
+
+  Widget _slider(String label, double value, double min, double max, ValueChanged<double> onChanged) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(label, style: TextStyle(fontSize: 13, color: Theme.of(context).colorScheme.onSurfaceVariant, fontWeight: FontWeight.w600)),
+        Slider(value: value, min: min, max: max, onChanged: onChanged),
+      ],
     );
   }
 }

@@ -35,6 +35,7 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
   bool _gridView = false;
   _DiscoverSection _section = _DiscoverSection.books;
   double _scrollProgress = 0;
+  DateTime? _lastScroll;
   final Map<String, double> _downloading = {};
   bool get _oneHand => ref.watch(themeProvider).oneHandMode;
   final _mangaService = KeiyoushiService();
@@ -55,7 +56,12 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
 
   void _onScroll() {
     final p = (_scrollCtrl.offset / 60).clamp(0.0, 1.0);
-    if (p != _scrollProgress) {
+    final now = DateTime.now();
+    final minTime = _lastScroll == null ||
+        now.difference(_lastScroll!) > const Duration(milliseconds: 120);
+    final delta = (p - _scrollProgress).abs();
+    if (minTime && delta > 0.02) {
+      _lastScroll = now;
       setState(() => _scrollProgress = p);
     }
   }
