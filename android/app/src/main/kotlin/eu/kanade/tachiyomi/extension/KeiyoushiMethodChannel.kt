@@ -30,7 +30,7 @@ import kotlin.concurrent.thread
  */
 class KeiyoushiMethodChannel(
     private val context: Context,
-    private val engine: KeiyoushiEngine = KeiyoushiEngine(context),
+    engine: KeiyoushiEngine,
 ) : MethodChannel.MethodCallHandler {
 
     companion object {
@@ -39,23 +39,9 @@ class KeiyoushiMethodChannel(
     }
 
     private val mainHandler = Handler(Looper.getMainLooper())
+    private val engine: KeiyoushiEngine = engine
 
-    /**
-     * Read the `<meta-data android:name="tachiyomi.extension.class">` tag
-     * from a Keiyoushi APK's manifest, if present. Returns the FQN of
-     * the main Source class so the Dart side doesn't have to ask the
-     * user for it.
-     */
-    private fun extractMainClass(apkPath: String): String? {
-        val pm = context.packageManager
-        val info = pm.getPackageArchiveInfo(
-            apkPath,
-            PackageManager.GET_META_DATA,
-        ) ?: return null
-        info.applicationInfo?.sourceDir = apkPath
-        val meta = info.applicationInfo?.metaData ?: return null
-        return meta.getString("tachiyomi.extension.class")
-    }
+
 
     /** Run [block] on a background thread, deliver [onResult] on main; report errors to [result]. */
     private fun <T> bg(block: () -> T, result: MethodChannel.Result, onResult: (T) -> Unit) {
@@ -98,7 +84,7 @@ class KeiyoushiMethodChannel(
                     Log.d(TAG, "loadExtension: apkPath=$apkPath")
 
                     val className = call.argument<String>("className")
-                        ?: extractMainClass(apkPath)
+                        ?: extractMainClass(context, apkPath)
                         ?: run {
                             Log.e(TAG, "loadExtension: no className for $apkPath")
                             result.error(
@@ -288,6 +274,14 @@ class KeiyoushiMethodChannel(
                         result.success(pages)
                     }
                 }
+                "getDalvikPort" -> {
+                    val port = DalvikServer.getInstance().port
+                    if (port > 0) {
+                        result.success(port)
+                    } else {
+                        result.error("NOSERVER", "Dalvik server not running", null)
+                    }
+                }
                 else -> {
                     Log.w(TAG, "Unimplemented method: ${call.method}")
                     result.notImplemented()
@@ -299,4 +293,21 @@ class KeiyoushiMethodChannel(
             result.error("KEIYOUSHI", msg, e.stackTraceToString())
         }
     }
+}
+
+/**
+ * Read the `<meta-data android:name="tachiyomi.extension.class">` tag
+ * from a Keiyoushi APK's manifest, if present. Returns the FQN of
+ * the main Source class so the Dart side doesn't have to ask the
+ * user for it.
+ */
+internal fun extractMainClass(context: Context, apkPath: String): String? {
+    val pm = context.packageManager
+    val info = pm.getPackageArchiveInfo(
+        apkPath,
+        PackageManager.GET_META_DATA,
+    ) ?: return null
+    info.applicationInfo?.sourceDir = apkPath
+    val meta = info.applicationInfo?.metaData ?: return null
+    return meta.getString("tachiyomi.extension.class")
 }
