@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../../core/models/extension_source.dart';
+import '../../core/utils/custom_extended_image_provider.dart';
 import '../../core/utils/language.dart';
 import '../../theme/app_theme.dart';
 import 'source_browse_screen.dart';
@@ -219,8 +220,8 @@ class ExtensionDetailScreen extends StatelessWidget {
     }
     return ClipRRect(
       borderRadius: BorderRadius.circular(10),
-      child: Image.network(
-        iconUrl,
+      child: Image(
+        image: CustomExtendedNetworkImageProvider(iconUrl),
         fit: BoxFit.contain,
         width: 140,
         height: 140,
