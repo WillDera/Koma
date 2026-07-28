@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'app.dart';
@@ -12,48 +13,59 @@ import 'core/services/stats_service.dart';
 import 'theme/theme_provider.dart';
 import 'package:flutter_native_splash/flutter_native_splash.dart';
 
-void main() async {
+void main() {
   WidgetsFlutterBinding.ensureInitialized();
 
-  final isar = await openIsar();
+  FlutterError.onError = (details) {
+    FlutterError.dumpErrorToConsole(details);
+    if (kReleaseMode) {
+      throw details.exception;
+    }
+  };
 
-  final statsService = StatsService(Repositories(isar));
+  runZonedGuarded(() async {
+    final isar = await openIsar();
 
-  final keiyoushiService = KeiyoushiService();
-  final extensionManager = ExtensionManager(
-    Repositories(isar),
-    keiyoushiService,
-  );
-  unawaited(extensionManager.reloadAll().then((_) {
-    unawaited(_checkExtensionUpdates(extensionManager));
-  }));
+    final statsService = StatsService(Repositories(isar));
 
-  WidgetsBinding widgetsBinding = WidgetsFlutterBinding.ensureInitialized();
-  FlutterNativeSplash.preserve(widgetsBinding: widgetsBinding);
+    final keiyoushiService = KeiyoushiService();
+    final extensionManager = ExtensionManager(
+      Repositories(isar),
+      keiyoushiService,
+    );
+    unawaited(extensionManager.reloadAll().then((_) {
+      unawaited(_checkExtensionUpdates(extensionManager));
+    }));
 
-  final container = ProviderContainer(
-    overrides: [
-      isarProvider.overrideWithValue(isar),
-      statsServiceProvider.overrideWithValue(statsService),
-      keiyoushiServiceProvider.overrideWithValue(keiyoushiService),
-      extensionManagerProvider.overrideWithValue(extensionManager),
-    ],
-  );
+    WidgetsBinding widgetsBinding = WidgetsFlutterBinding.ensureInitialized();
+    FlutterNativeSplash.preserve(widgetsBinding: widgetsBinding);
 
-  // Initialize Notifiers that need SharedPreferences loaded before
-  // first paint. The Notifier instances are created by the container
-  // automatically — we just call their init() methods.
-  await container.read(themeProvider.notifier).init();
-  await container.read(libraryProvider.notifier).init();
+    final container = ProviderContainer(
+      overrides: [
+        isarProvider.overrideWithValue(isar),
+        statsServiceProvider.overrideWithValue(statsService),
+        keiyoushiServiceProvider.overrideWithValue(keiyoushiService),
+        extensionManagerProvider.overrideWithValue(extensionManager),
+      ],
+    );
 
-  runApp(
-    UncontrolledProviderScope(
-      container: container,
-      child: const KomaApp(),
-    ),
-  );
+    // Initialize Notifiers that need SharedPreferences loaded before
+    // first paint. The Notifier instances are created by the container
+    // automatically — we just call their init() methods.
+    await container.read(themeProvider.notifier).init();
+    await container.read(libraryProvider.notifier).init();
 
-  FlutterNativeSplash.remove();
+    runApp(
+      UncontrolledProviderScope(
+        container: container,
+        child: const KomaApp(),
+      ),
+    );
+
+    FlutterNativeSplash.remove();
+  }, (error, stack) {
+    debugPrint('Unhandled error: $error\n$stack');
+  });
 }
 
 /// Check all repos for extension updates and store versionLast flags.
