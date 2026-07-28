@@ -66,9 +66,15 @@ class KeiyoushiEngine(
     fun listLoaded(): List<Map<String, Any?>> =
         sourceById.values.map { it.toDescriptor() }
 
-    fun loadExtension(apkPath: String, className: String): Map<String, Any?> {
+    fun loadExtension(apkPath: String, className: String?): Map<String, Any?> {
         Log.d(TAG, "loadExtension: apkPath=$apkPath className=$className")
-        val source = loader.loadFromApk(apkPath, className)
+        val resolvedClassName = className
+            ?: extractMainClass(context, apkPath)
+            ?: run {
+                Log.e(TAG, "loadExtension: no className for $apkPath")
+                throw IllegalArgumentException("No className supplied and APK manifest has no tachiyomi.extension.class meta-data")
+            }
+        val source = loader.loadFromApk(apkPath, resolvedClassName)
         val id = source.id.toString()
         sourceById[id] = source
         idsByApkPath.getOrPut(apkPath) { mutableSetOf() }.add(id)
