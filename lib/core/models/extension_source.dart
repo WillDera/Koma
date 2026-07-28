@@ -1,5 +1,6 @@
 class ExtensionSource {
   final String id;
+  final String sourceId;
   final String name;
   final String version;
   final String? versionLast;
@@ -20,6 +21,7 @@ class ExtensionSource {
 
   ExtensionSource({
     required this.id,
+    required this.sourceId,
     required this.name,
     required this.version,
     this.versionLast,
@@ -42,6 +44,7 @@ class ExtensionSource {
 
   ExtensionSource copyWith({
     String? id,
+    String? sourceId,
     String? name,
     String? version,
     String? versionLast,
@@ -62,6 +65,7 @@ class ExtensionSource {
   }) {
     return ExtensionSource(
       id: id ?? this.id,
+      sourceId: sourceId ?? this.sourceId,
       name: name ?? this.name,
       version: version ?? this.version,
       versionLast: versionLast ?? this.versionLast,
@@ -84,6 +88,7 @@ class ExtensionSource {
 
   Map<String, dynamic> toJson() => {
         'id': id,
+        'sourceId': sourceId,
         'name': name,
         'version': version,
         'version_last': versionLast,
@@ -106,6 +111,7 @@ class ExtensionSource {
   factory ExtensionSource.fromJson(Map<String, dynamic> json) =>
       ExtensionSource(
         id: json['id'] as String? ?? '',
+        sourceId: json['sourceId'] as String? ?? json['id'] as String? ?? '',
         name: json['name'] as String? ?? '',
         version: json['version'] as String? ?? '',
         versionLast: json['version_last'] as String?,

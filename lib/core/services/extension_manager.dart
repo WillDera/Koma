@@ -109,6 +109,7 @@ class ExtensionManager {
       className: entry.className,
     );
     final nativeId = (desc['id'] as String?) ?? '';
+    final sourceId = (desc['sourceId'] as String?) ?? '';
     if (nativeId.isEmpty) {
       throw Exception('Native bridge returned no ID for ${entry.name}');
     }
@@ -116,6 +117,7 @@ class ExtensionManager {
     final firstSource = entry.sources.isNotEmpty ? entry.sources.first : null;
     final src = ExtensionSource(
       id: nativeId,
+      sourceId: sourceId,
       name: (desc['name'] as String?) ?? entry.name,
       version: entry.version,
       lang: (desc['lang'] as String?) ?? entry.lang,
@@ -138,12 +140,47 @@ class ExtensionManager {
       }
     }
     try {
-      await _keiyoushi.unloadExtension(src.id);
+      await _keiyoushi.unloadExtension(src.sourceId);
     } catch (_) {}
     try {
       final f = File(src.apkPath);
       if (await f.exists()) await f.delete();
     } catch (_) {}
+  }
+
+  Future<void> updateSource(
+    ExtensionSource src,
+    ExtensionIndexEntry entry,
+    String repoUrl,
+  ) async {
+    await _keiyoushi.unloadExtension(src.sourceId);
+
+    final dir = await _extensionsDir();
+    final newApkPath = p.join(dir.path, '${entry.pkg}.apk');
+    final baseUrl = repoUrl.replaceFirst(RegExp(r'/[^/]*$'), '');
+    final resolved = '$baseUrl/apk/${entry.apkUrl}';
+
+    final apkFile = File(newApkPath);
+    if (apkFile.existsSync()) {
+      try { await Process.run('chmod', ['+w', newApkPath]); } catch (_) {}
+      try { apkFile.deleteSync(); } catch (_) {}
+    }
+
+    await _downloadApk(resolved, newApkPath);
+
+    final desc = await _keiyoushi.loadExtension(
+      apkPath: newApkPath,
+      className: entry.className,
+    );
+    final newSourceId = (desc['sourceId'] as String?) ?? '';
+
+    await _repos.extensions.insertExtensionSource(src.copyWith(
+      sourceId: newSourceId,
+      apkPath: newApkPath,
+      version: entry.version,
+      versionLast: entry.version,
+      isObsolete: false,
+    ));
   }
 
   Future<void> checkForUpdates(
@@ -163,6 +200,7 @@ class ExtensionManager {
           (isrc) => isrc.className == className,
           orElse: () => ExtensionSource(
             id: '',
+            sourceId: '',
             name: '',
             version: '',
             lang: '',
@@ -203,6 +241,7 @@ class ExtensionManager {
       if (src.isObsolete != isNowObsolete) {
         toUpdate.add(ExtensionSource(
           id: src.id,
+          sourceId: src.sourceId,
           name: src.name,
           version: src.version,
           lang: src.lang,
@@ -236,11 +275,15 @@ class ExtensionManager {
           className: src.className.isEmpty ? null : src.className,
         );
         final nativeId = (desc['id'] as String?) ?? '';
+        final newSourceId = (desc['sourceId'] as String?) ?? '';
         if (nativeId.isEmpty) continue;
 
-        if (src.id != nativeId) {
+        if (src.id != nativeId || src.sourceId != newSourceId) {
           await _repos.extensions.deleteExtensionSource(src.id);
-          await _repos.extensions.insertExtensionSource(src.copyWith(id: nativeId));
+          await _repos.extensions.insertExtensionSource(src.copyWith(
+            id: nativeId,
+            sourceId: newSourceId,
+          ));
         }
       } catch (_) {}
     }
