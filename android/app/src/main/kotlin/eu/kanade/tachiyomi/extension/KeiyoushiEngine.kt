@@ -2,6 +2,7 @@ package eu.kanade.tachiyomi.extension
 
 import android.app.Application
 import android.content.Context
+import android.content.pm.PackageManager
 import android.util.Log
 import eu.kanade.tachiyomi.network.NetworkHelper
 import eu.kanade.tachiyomi.network.defaultClient
@@ -69,7 +70,7 @@ class KeiyoushiEngine(
     fun loadExtension(apkPath: String, className: String?): Map<String, Any?> {
         Log.d(TAG, "loadExtension: apkPath=$apkPath className=$className")
         val resolvedClassName = className
-            ?: extractMainClass(context, apkPath)
+            ?: extractMainClass(apkPath)
             ?: run {
                 Log.e(TAG, "loadExtension: no className for $apkPath")
                 throw IllegalArgumentException("No className supplied and APK manifest has no tachiyomi.extension.class meta-data")
@@ -343,4 +344,15 @@ class KeiyoushiEngine(
         "apkPath" to apkPath,
         "className" to className,
     )
+
+    private fun extractMainClass(apkPath: String): String? {
+        val pm = context.packageManager
+        val info = pm.getPackageArchiveInfo(
+            apkPath,
+            PackageManager.GET_META_DATA,
+        ) ?: return null
+        info.applicationInfo?.sourceDir = apkPath
+        val meta = info.applicationInfo?.metaData ?: return null
+        return meta.getString("tachiyomi.extension.class")
+    }
 }
