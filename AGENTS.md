@@ -7,7 +7,7 @@ Always update app version after each code change. Bump the patch number in both 
 - **Android Gradle:** 9.1.0 / AGP 8.7.3 / Kotlin 2.4.10 / `compileSdk` follows Flutter's default (currently 35/36). The AGP/Kotlin versions will be dropped by Flutter soon — bump when convenient.
 - **JDK:** Build with **JDK 25** (`/Library/Java/JavaVirtualMachines/jdk-25.jdk/Contents/Home`). JDK 26 hits a `jlink` bug against `android-35/core-for-system-modules.jar` and fails inside the `flutter_plugin_android_lifecycle` / `jni` plugin chain before `:app:compileDebugKotlin` even runs. Pinned via `flutter config --jdk-dir=...` (sticky).
 - **Source/target compat:** Java 17 in `android/app/build.gradle.kts`. Don't change it.
-- **Keystore:** `android/app/koma-debug.keystore` is committed and referenced by both debug + release `signingConfigs`. Don't regenerate.
+- **Keystore:** `android/app/koma-debug.keystore` should exist locally (not committed). The `koma` signing config in `build.gradle.kts` is always defined with the repo's credentials; the `release` build type checks if the file exists — if present, it uses the `koma` config; if missing (CI), it falls back to the standard `debug` signing config (default Android debug keystore). The file can be recreated with `keytool -genkey -v -keystore koma-debug.keystore -storepass k0m@k0m@ -alias k0m@k0m@ -keypass k0m@k0m@ -keyalg RSA -keysize 2048 -validity 10000`.
 
 ## graphify
 
