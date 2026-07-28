@@ -1,3 +1,7 @@
+## Working Directory
+
+Use `/Volumes/thezone/Documents/LNStash` as the project working directory. (User may sometimes type the abbreviated `/Volume/thezone/Documents/LNStash` — same path.)
+
 ## Versioning
 
 Always update app version after each code change. Bump the patch number in both `pubspec.yaml` and `lib/features/settings/settings_screen.dart` after any file change. Use semVer: patch for fixes/minor tweaks, minor for new features, major for breaking changes.

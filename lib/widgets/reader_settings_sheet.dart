@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../theme/app_theme.dart';
 import '../theme/theme_provider.dart';
 import '../theme/tokens/app_spacing.dart';
@@ -7,34 +8,33 @@ import 'animated_press.dart';
 import 'dialog_sheet.dart';
 import 'segmented_control.dart';
 
-class ReaderSettingsSheet extends StatefulWidget {
-  final ThemeProvider themeProvider;
-  const ReaderSettingsSheet({super.key, required this.themeProvider});
+class ReaderSettingsSheet extends ConsumerStatefulWidget {
+  const ReaderSettingsSheet({super.key});
 
-  static Future<void> show(BuildContext context, ThemeProvider prov) {
+  static Future<void> show(BuildContext context) {
     return StashSheet.show<void>(
       context,
       title: 'Reader',
       subtitle: 'Tune typography and theme.',
       initialChildSize: 0.78,
       maxChildSize: 0.95,
-      child: ReaderSettingsSheet(themeProvider: prov),
+      child: const ReaderSettingsSheet(),
     );
   }
 
   @override
-  State<ReaderSettingsSheet> createState() => _ReaderSettingsSheetState();
+  ConsumerState<ReaderSettingsSheet> createState() => _ReaderSettingsSheetState();
 }
 
-class _ReaderSettingsSheetState extends State<ReaderSettingsSheet> {
+class _ReaderSettingsSheetState extends ConsumerState<ReaderSettingsSheet> {
   @override
   Widget build(BuildContext context) {
-    final p = widget.themeProvider;
+    final p = ref.watch(themeProvider);
+    final tn = ref.read(themeProvider.notifier);
     final c = context.colors;
     return ListView(
       padding: const EdgeInsets.fromLTRB(20, 8, 20, 32),
       children: [
-        // Live preview card
         Container(
           padding: const EdgeInsets.all(20),
           decoration: BoxDecoration(
@@ -89,11 +89,11 @@ class _ReaderSettingsSheetState extends State<ReaderSettingsSheet> {
             ThemeMode.system: 'Auto',
           },
           value: p.themeMode,
-          onChanged: (v) => p.setThemeMode(v),
+          onChanged: (v) => tn.setThemeMode(v),
         ),
         const SizedBox(height: 12),
         AnimatedPress(
-          onTap: () => p.setSepiaMode(!p.sepiaMode),
+          onTap: () => tn.setSepiaMode(!p.sepiaMode),
           child: Container(
             padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
             decoration: BoxDecoration(
@@ -137,7 +137,7 @@ class _ReaderSettingsSheetState extends State<ReaderSettingsSheet> {
         _SectionLabel('Typography'),
         const SizedBox(height: 12),
         AnimatedPress(
-          onTap: () => _showFontPicker(context, p),
+          onTap: () => _showFontPicker(context, p, tn),
           child: Container(
             padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
             decoration: BoxDecoration(
@@ -179,7 +179,7 @@ class _ReaderSettingsSheetState extends State<ReaderSettingsSheet> {
           min: 13,
           max: 26,
           divisions: 13,
-          onChanged: (v) => p.setFontSize(v),
+          onChanged: (v) => tn.setFontSize(v),
         ),
         _LabelRow('Line height', p.lineHeight.toStringAsFixed(2)),
         Slider(
@@ -187,7 +187,7 @@ class _ReaderSettingsSheetState extends State<ReaderSettingsSheet> {
           min: 1.2,
           max: 2.2,
           divisions: 10,
-          onChanged: (v) => p.setLineHeight(v),
+          onChanged: (v) => tn.setLineHeight(v),
         ),
         const SizedBox(height: 28),
         _SectionLabel('Page'),
@@ -198,11 +198,11 @@ class _ReaderSettingsSheetState extends State<ReaderSettingsSheet> {
           min: 520,
           max: 760,
           divisions: 12,
-          onChanged: (v) => p.setPageWidth(v),
+          onChanged: (v) => tn.setPageWidth(v),
         ),
         const SizedBox(height: 12),
         AnimatedPress(
-          onTap: () => _showAlignPicker(context, p),
+          onTap: () => _showAlignPicker(context, p, tn),
           child: Container(
             padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
             decoration: BoxDecoration(
@@ -246,13 +246,13 @@ class _ReaderSettingsSheetState extends State<ReaderSettingsSheet> {
           title: 'Bionic reading',
           subtitle: 'Bold first half of each word',
           value: p.bionicReading,
-          onChanged: (v) => p.setBionicReading(v),
+          onChanged: (v) => tn.setBionicReading(v),
         ),
       ],
     );
   }
 
-  void _showFontPicker(BuildContext context, ThemeProvider p) {
+  void _showFontPicker(BuildContext context, ThemeState p, ThemeNotifier tn) {
     showDialog(
       context: context,
       builder: (ctx) {
@@ -273,7 +273,7 @@ class _ReaderSettingsSheetState extends State<ReaderSettingsSheet> {
                     label: font.label,
                     selected: p.readingFont == font,
                     onTap: () {
-                      p.setReadingFont(font);
+                      tn.setReadingFont(font);
                       Navigator.of(ctx).pop();
                     },
                   ),
@@ -285,7 +285,7 @@ class _ReaderSettingsSheetState extends State<ReaderSettingsSheet> {
     );
   }
 
-  void _showAlignPicker(BuildContext context, ThemeProvider p) {
+  void _showAlignPicker(BuildContext context, ThemeState p, ThemeNotifier tn) {
     showDialog(
       context: context,
       builder: (ctx) {
@@ -305,7 +305,7 @@ class _ReaderSettingsSheetState extends State<ReaderSettingsSheet> {
                   label: 'Left',
                   selected: p.textAlign == TextAlign.left,
                   onTap: () {
-                    p.setTextAlign(TextAlign.left);
+                    tn.setTextAlign(TextAlign.left);
                     Navigator.of(ctx).pop();
                   },
                 ),
@@ -313,7 +313,7 @@ class _ReaderSettingsSheetState extends State<ReaderSettingsSheet> {
                   label: 'Justify',
                   selected: p.textAlign == TextAlign.justify,
                   onTap: () {
-                    p.setTextAlign(TextAlign.justify);
+                    tn.setTextAlign(TextAlign.justify);
                     Navigator.of(ctx).pop();
                   },
                 ),
@@ -321,7 +321,7 @@ class _ReaderSettingsSheetState extends State<ReaderSettingsSheet> {
                   label: 'Center',
                   selected: p.textAlign == TextAlign.center,
                   onTap: () {
-                    p.setTextAlign(TextAlign.center);
+                    tn.setTextAlign(TextAlign.center);
                     Navigator.of(ctx).pop();
                   },
                 ),
@@ -474,5 +474,3 @@ class _ToggleRow extends StatelessWidget {
     );
   }
 }
-
-
