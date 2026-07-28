@@ -87,9 +87,8 @@ class _ExtensionsScreenState extends ConsumerState<ExtensionsScreen>
     try {
       final entries = await _mgr.fetchIndex(repo);
       if (!mounted) return;
-      // Check for obsolete sources after fetching fresh index (mangayomi pattern)
       await _mgr.checkForObsoleteSources(entries, repo.url);
-      // Reload installed list since obsolete flags may have changed
+      await _mgr.checkForUpdates(entries, repo.url);
       if (!mounted) return;
       final installed = await _mgr.listInstalled();
       if (!mounted) return;
@@ -172,32 +171,7 @@ class _ExtensionsScreenState extends ConsumerState<ExtensionsScreen>
 
   Future<void> _install(ExtensionIndexEntry entry, ExtensionRepo repo) async {
     final messenger = ScaffoldMessenger.of(context);
-    // Confirm install — matching Mihon's pattern
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (ctx) {
-        final c = ctx.colors;
-        return AlertDialog(
-          backgroundColor: c.surface,
-          title: Text('Install extension', style: TextStyle(color: c.textPrimary)),
-          content: Text(
-            'Install ${entry.name} v${entry.version}?',
-            style: TextStyle(color: c.textSecondary),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(ctx, false),
-              child: Text('Cancel', style: TextStyle(color: c.textSecondary)),
-            ),
-            FilledButton(
-              onPressed: () => Navigator.pop(ctx, true),
-              child: const Text('Install'),
-            ),
-          ],
-        );
-      },
-    );
-    if (confirmed != true) return;
+    messenger.showSnackBar(SnackBar(content: Text('Installing ${entry.name}...')));
     try {
       final src = await _mgr.install(entry, repoUrl: repo.url);
       messenger.showSnackBar(
@@ -326,7 +300,7 @@ class _InstalledTab extends StatelessWidget {
     return ListView.separated(
       padding: const EdgeInsets.all(16),
       itemCount: installed.length,
-      separatorBuilder: (_, __) => const SizedBox(height: 8),
+      separatorBuilder: (_, _) => const SizedBox(height: 8),
       itemBuilder: (_, i) {
         final src = installed[i];
         return AnimatedPress(
@@ -1051,7 +1025,7 @@ class _ReposTab extends StatelessWidget {
           ListView.separated(
             padding: const EdgeInsets.all(16),
             itemCount: repos.length,
-            separatorBuilder: (_, __) => const SizedBox(height: 8),
+            separatorBuilder: (_, _) => const SizedBox(height: 8),
             itemBuilder: (_, i) {
               final r = repos[i];
               return Container(
@@ -1207,7 +1181,7 @@ class _ExtensionNetworkIcon extends StatelessWidget {
           width: size,
           height: size,
           gaplessPlayback: true,
-          errorBuilder: (_, __, ___) => SizedBox(
+          errorBuilder: (_, _, _) => SizedBox(
             width: size,
             height: size,
             child: Icon(

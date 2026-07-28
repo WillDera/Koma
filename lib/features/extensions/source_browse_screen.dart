@@ -47,6 +47,7 @@ class _SourceBrowseScreenState extends ConsumerState<SourceBrowseScreen>
     _service = ref.read(extensionServiceProvider);
     _source = MSource(
       id: widget.sourceId,
+      sourceId: widget.sourceId,
       name: widget.sourceName,
       lang: 'en',
       baseUrl: '',
