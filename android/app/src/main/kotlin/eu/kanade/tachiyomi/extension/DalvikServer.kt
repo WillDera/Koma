@@ -1,53 +1,92 @@
 package eu.kanade.tachiyomi.extension
 
+import android.app.Application
+import android.content.Context
+import android.content.pm.PackageManager
+import android.util.Base64
 import android.util.Log
+import eu.kanade.tachiyomi.network.NetworkHelper
+import eu.kanade.tachiyomi.network.defaultClient
+import eu.kanade.tachiyomi.source.Source
+import eu.kanade.tachiyomi.source.SourceFactory
+import eu.kanade.tachiyomi.source.model.FilterList
+import eu.kanade.tachiyomi.source.model.MangasPage
+import eu.kanade.tachiyomi.source.model.Page
+import eu.kanade.tachiyomi.source.model.SChapter
+import eu.kanade.tachiyomi.source.model.SManga
+import eu.kanade.tachiyomi.source.model.SMangaUpdate
+import eu.kanade.tachiyomi.source.model.toMap
+import eu.kanade.tachiyomi.source.online.HttpSource
+import eu.kanade.tachiyomi.util.system.ChildFirstPathClassLoader
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
-import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
-import kotlinx.serialization.json.jsonArray
-import kotlinx.serialization.json.jsonObject
-import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
-import eu.kanade.tachiyomi.source.model.toMap
+import okhttp3.OkHttpClient
+import uy.kohesive.injekt.Injekt
+import uy.kohesive.injekt.api.InjektModule
+import uy.kohesive.injekt.api.InjektRegistrar
+import uy.kohesive.injekt.api.addSingleton
+import uy.kohesive.injekt.api.addSingletonFactory
+import uy.kohesive.injekt.api.get
 import java.io.BufferedReader
+import java.io.File
 import java.io.InputStreamReader
 import java.io.OutputStream
 import java.net.ServerSocket
 import java.net.Socket
 import java.nio.charset.StandardCharsets
+import java.security.MessageDigest
 
 class DalvikServer(
-    var engine: KeiyoushiEngine? = null,
+    private val context: Context,
 ) {
     companion object {
         private const val TAG = "DalvikServer"
+        private val SUPPORTED_LIB_VERSIONS = listOf(1.4, 1.6)
         @Volatile
         private var instance: DalvikServer? = null
 
-        fun getInstance(): DalvikServer = instance ?: synchronized(this) {
-            instance ?: DalvikServer().also { instance = it }
+        fun getInstance(): DalvikServer =
+            instance ?: throw IllegalStateException("DalvikServer not initialized")
+
+        fun initialize(context: Context): DalvikServer = instance ?: synchronized(this) {
+            instance ?: DalvikServer(context).also { instance = it }
         }
     }
+
+    private var injected = false
     private val json = Json { ignoreUnknownKeys = true; isLenient = true }
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
     private var serverSocket: ServerSocket? = null
     private var isRunning = false
     private var _port = -1
 
-    val port: Int
-        get() = _port
+    val port: Int get() = _port
+
+    // -- Stateful extension cache ----------------------------------------------
+
+    private data class LoadedExtension(
+        val sourceId: String,
+        val source: HttpSource,
+        val apkPath: String,
+        val loadedAt: Long,
+    )
+
+    private val loadedExtensions = mutableMapOf<String, LoadedExtension>()
 
     fun start(): Int {
         if (isRunning) return _port
+        ensureInjekt()
         serverSocket = ServerSocket(0)
         _port = serverSocket!!.localPort
         isRunning = true
@@ -78,6 +117,211 @@ class DalvikServer(
         _port = -1
     }
 
+    // -- Injekt init (once) ------------------------------------------------
+
+    private fun ensureInjekt() {
+        if (injected) return
+        injected = true
+        val app = context.applicationContext as Application
+        Injekt.importModule(object : InjektModule {
+            override fun InjektRegistrar.registerInjectables() {
+                addSingleton(app)
+                addSingletonFactory { defaultClient(context) }
+                addSingletonFactory {
+                    Json { ignoreUnknownKeys = true; explicitNulls = false; isLenient = true }
+                }
+                addSingletonFactory { NetworkHelper(Injekt.get<OkHttpClient>()) }
+            }
+        })
+    }
+
+    // -- Stateful extension registry (primary path) ------------------------
+
+    private fun handleLoadExtension(root: JsonObject): String {
+        val apkPath = root.str("apkPath") ?: return errorJson("missing apkPath")
+        val className = root.str("className")
+        val apkFile = File(apkPath)
+        if (!apkFile.exists()) return errorJson("apk not found: $apkPath")
+
+        val source = try {
+            loadSource(apkFile)
+        } catch (e: Throwable) {
+            Log.e(TAG, "loadExtension: failed", e)
+            return errorJson("loadExtension failed: ${e.message}")
+        }
+        if (source !is HttpSource) {
+            return errorJson("not HttpSource: ${source.javaClass.name}")
+        }
+
+        // Deterministic sourceId from apkPath so reloads reuse the same slot
+        val sourceId = sha256(apkPath).take(16)
+        loadedExtensions[sourceId] = LoadedExtension(
+            sourceId = sourceId,
+            source = source,
+            apkPath = apkPath,
+            loadedAt = System.currentTimeMillis(),
+        )
+        Log.d(TAG, "loadExtension: cached sourceId=$sourceId name=${source.name}")
+
+        return json.encodeToString(buildJsonObject {
+            put("sourceId", sourceId)
+            put("id", source.id.toString())
+            put("name", source.name)
+            put("lang", source.lang)
+            put("baseUrl", source.baseUrl)
+            if (className != null) put("className", className)
+        })
+    }
+
+    private fun handleUnloadExtension(root: JsonObject): String {
+        val sourceId = root.str("sourceId") ?: return errorJson("missing sourceId")
+        val removed = loadedExtensions.remove(sourceId)
+        Log.d(TAG, "unloadExtension: sourceId=$sourceId removed=${removed != null}")
+        return json.encodeToString(
+            buildJsonObject {
+                put("sourceId", sourceId)
+                put("unloaded", removed != null)
+            }
+        )
+    }
+
+    private fun handleListLoadedExtensions(): String {
+        val list = loadedExtensions.values.map { ext ->
+            buildJsonObject {
+                put("sourceId", ext.sourceId)
+                put("id", ext.source.id.toString())
+                put("name", ext.source.name)
+                put("lang", ext.source.lang)
+                put("baseUrl", ext.source.baseUrl)
+                put("apkPath", ext.apkPath)
+                put("loadedAt", ext.loadedAt)
+            }
+        }
+        return json.encodeToString(JsonArray(list))
+    }
+
+    // -- Fallback per-request extension loading (base64 APK) ----------------
+
+    private fun <T> withSource(base64Apk: String, block: (HttpSource) -> T): T {
+        val apkBytes = Base64.decode(base64Apk, Base64.DEFAULT)
+        val tempFile = File.createTempFile("ext", ".apk", context.cacheDir)
+        try {
+            tempFile.writeBytes(apkBytes)
+            tempFile.setReadOnly()
+            val source = loadSource(tempFile)
+            if (source !is HttpSource) {
+                throw IllegalArgumentException("Source is not HttpSource: ${source.javaClass.name}")
+            }
+            return block(source)
+        } finally {
+            if (tempFile.exists()) tempFile.delete()
+        }
+    }
+
+    // -- Unified source resolver (stateful first, stateless fallback) -------
+
+    private fun <T> withLoadedExtension(
+        sourceId: String?,
+        base64Apk: String?,
+        block: (HttpSource) -> T,
+    ): T {
+        if (sourceId != null) {
+            val ext = loadedExtensions[sourceId]
+            if (ext != null) {
+                Log.d(TAG, "withLoadedExtension: cache hit sourceId=$sourceId")
+                return block(ext.source)
+            }
+            Log.w(TAG, "withLoadedExtension: source not loaded sourceId=$sourceId")
+            throw IllegalStateException("Source not loaded: $sourceId — call loadExtension first")
+        }
+        if (base64Apk != null) {
+            Log.d(TAG, "withLoadedExtension: base64 fallback")
+            return withSource(base64Apk, block)
+        }
+        throw IllegalArgumentException("missing sourceId or data")
+    }
+
+    private fun loadSource(apkFile: File): Source {
+        val apkPath = apkFile.absolutePath
+        val className = resolveExtensionClass(apkFile)
+        Log.d(TAG, "loadSource: apkPath=$apkPath className=$className")
+
+        val resolvedClassName = if (className.startsWith(".")) {
+            val pkg = context.packageManager.getPackageArchiveInfo(apkPath, 0)?.packageName
+                ?: throw IllegalArgumentException("Cannot resolve relative class name: $className")
+            val resolved = pkg + className
+            Log.d(TAG, "Resolved relative class: $className -> $resolved")
+            resolved
+        } else {
+            className
+        }
+
+        val pkgInfo = context.packageManager.getPackageArchiveInfo(apkPath, 0)
+        if (pkgInfo != null) {
+            val vName = pkgInfo.versionName
+            Log.d(TAG, "Extension: ${pkgInfo.packageName} versionName=$vName")
+            if (vName != null) {
+                val libVer = vName.substringBeforeLast('.').toDoubleOrNull()
+                if (libVer != null && libVer !in SUPPORTED_LIB_VERSIONS) {
+                    Log.w(TAG, "Lib version $libVer out of range $SUPPORTED_LIB_VERSIONS")
+                }
+            }
+        }
+
+        val classLoader = try {
+            ChildFirstPathClassLoader(apkPath, null, context.classLoader)
+                .also { Log.d(TAG, "Created ChildFirstPathClassLoader") }
+        } catch (e: Exception) {
+            throw RuntimeException("Failed to create classloader for $apkPath", e)
+        }
+
+        val clazz = try {
+            classLoader.loadClass(resolvedClassName)
+        } catch (e: Throwable) {
+            Log.e(TAG, "Failed to load class $resolvedClassName", e)
+            throw e
+        }
+        Log.d(TAG, "Loaded class: ${clazz.name}")
+
+        val instance = try {
+            clazz.getDeclaredConstructor().newInstance()
+        } catch (e: Throwable) {
+            Log.e(TAG, "Failed to instantiate $resolvedClassName", e)
+            throw e
+        }
+        Log.d(TAG, "Instantiated: ${instance.javaClass.name}")
+
+        return when (instance) {
+            is SourceFactory -> {
+                val sources = instance.createSources()
+                if (sources.isEmpty()) throw IllegalArgumentException("SourceFactory returned empty list")
+                Log.d(TAG, "SourceFactory returned ${sources.size} sources, first=${sources.first().javaClass.name}")
+                sources.first()
+            }
+            is Source -> {
+                Log.d(TAG, "Instance is Source directly")
+                instance
+            }
+            else -> throw IllegalArgumentException(
+                "Class ${instance.javaClass.name} is neither Source nor SourceFactory"
+            )
+        }
+    }
+
+    private fun resolveExtensionClass(apkFile: File): String {
+        val pm = context.packageManager
+        val info = pm.getPackageArchiveInfo(apkFile.absolutePath, PackageManager.GET_META_DATA)
+            ?: throw IllegalArgumentException("No package info for ${apkFile.absolutePath}")
+        info.applicationInfo?.sourceDir = apkFile.absolutePath
+        val meta = info.applicationInfo?.metaData
+            ?: throw IllegalArgumentException("No meta-data in ${apkFile.absolutePath}")
+        return meta.getString("tachiyomi.extension.class")
+            ?: meta.getString("tachiyomi.animeextension.class")
+            ?: throw IllegalArgumentException("No tachiyomi.extension.class in manifest")
+    }
+
+    // -- HTTP server -------------------------------------------------------
+
     private fun handleClient(socket: Socket) {
         Log.d(TAG, "handleClient: accepted")
         try {
@@ -86,21 +330,12 @@ class DalvikServer(
 
             val requestLine = input.readLine()
             Log.d(TAG, "handleClient: requestLine=$requestLine")
-            if (requestLine == null || requestLine.isEmpty()) {
-                Log.w(TAG, "handleClient: empty request line")
-                return
-            }
+            if (requestLine == null || requestLine.isEmpty()) return
 
             val parts = requestLine.split(" ")
-            if (parts.size < 2) {
-                Log.w(TAG, "handleClient: malformed request line: $requestLine")
-                return
-            }
+            if (parts.size < 2) return
             val path = parts[1]
-            Log.d(TAG, "handleClient: path=$path")
-
             if (path != "/dalvik") {
-                Log.w(TAG, "handleClient: unknown path: $path")
                 sendResponse(output, 404, "{}")
                 return
             }
@@ -117,33 +352,258 @@ class DalvikServer(
                 }
                 line = input.readLine()
             }
-            Log.d(TAG, "handleClient: contentLength=$contentLength")
 
             val body = CharArray(contentLength)
             var read = 0
             while (read < contentLength) {
                 val n = input.read(body, read, contentLength - read)
-                Log.d(TAG, "handleClient: body read $n / $read / $contentLength")
                 if (n == -1) break
                 read += n
             }
             val bodyStr = String(body, 0, read)
-            Log.d(TAG, "handleClient: bodyStr.length=${bodyStr.length}")
 
             val response = handleRequest(bodyStr)
-            Log.d(TAG, "handleClient: response=${response.take(100)}")
             sendResponse(output, 200, response)
             Log.d(TAG, "handleClient: response sent")
         } catch (e: Throwable) {
             Log.e(TAG, "handleClient: caught", e)
         } finally {
             try {
-                Log.d(TAG, "handleClient: closing socket")
                 socket.close()
             } catch (_: Throwable) {
             }
         }
     }
+
+    private fun handleRequest(body: String): String {
+        return try {
+            val root = json.parseToJsonElement(body) as JsonObject
+            val method = (root["method"] as? JsonPrimitive)?.content ?: return errorJson("missing method")
+            val data = (root["data"] as? JsonPrimitive)?.content
+
+            val result = when (method) {
+                // -- Stateful lifecycle -------------------------------------------------
+                "loadExtension" -> handleLoadExtension(root)
+                "unloadExtension" -> handleUnloadExtension(root)
+                "listLoadedExtensions" -> handleListLoadedExtensions()
+
+                // -- Content methods (accept sourceId or base64 data fallback) ---------
+                "getPopularManga" -> {
+                    val page = root.int("page") ?: 1
+                    withLoadedExtension(root.str("sourceId"), data) { src ->
+                        val mp = runBlocking { src.getPopularManga(page) }
+                        json.encodeToString(buildJsonObject {
+                            put("mangas", JsonArray(mp.mangas.map { it.toMap().toJsonObject() }))
+                            put("hasNextPage", mp.hasNextPage)
+                        })
+                    }
+                }
+                "getLatestUpdates" -> {
+                    val page = root.int("page") ?: 1
+                    withSource(data!!) { src ->
+                        val mp = runBlocking { src.getLatestUpdates(page) }
+                        json.encodeToString(buildJsonObject {
+                            put("mangas", JsonArray(mp.mangas.map { it.toMap().toJsonObject() }))
+                            put("hasNextPage", mp.hasNextPage)
+                        })
+                    }
+                }
+                "getSearchManga" -> {
+                    val page = root.int("page") ?: 1
+                    val query = root.str("query") ?: ""
+                    withSource(data!!) { src ->
+                        val mp = try {
+                            runBlocking { src.getSearchManga(page, query, FilterList()) }
+                        } catch (_: AbstractMethodError) {
+                            MangasPage(emptyList(), false)
+                        }
+                        json.encodeToString(buildJsonObject {
+                            put("mangas", JsonArray(mp.mangas.map { it.toMap().toJsonObject() }))
+                            put("hasNextPage", mp.hasNextPage)
+                        })
+                    }
+                }
+                "getMangaDetails" -> {
+                    val url = root.str("url") ?: return errorJson("missing url")
+                    withSource(data!!) { src ->
+                        val manga = SManga.create().apply { this.url = url }
+                        val result = try {
+                            runBlocking { src.getMangaUpdate(manga, emptyList(), fetchDetails = true, fetchChapters = false) }
+                        } catch (e: Exception) {
+                            Log.e(TAG, "getMangaDetails failed for $url", e)
+                            manga.also { it.initialized = true }
+                            return@withSource json.encodeToString(manga.toMap().toJsonObject())
+                        }
+                        val details = result.manga
+                        if (!details.initialized) details.initialized = true
+                        json.encodeToString(details.toMap().toJsonObject())
+                    }
+                }
+                "getMangaUpdate" -> {
+                    val url = root.str("url") ?: return errorJson("missing url")
+                    withSource(data!!) { src ->
+                        val manga = SManga.create().apply { this.url = url }
+                        val update = try {
+                            runBlocking { src.getMangaUpdate(manga, emptyList(), fetchDetails = true, fetchChapters = true) }
+                        } catch (e: Exception) {
+                            Log.e(TAG, "getMangaUpdate failed for $url", e)
+                            manga.also { it.initialized = true }
+                            return@withSource json.encodeToString(buildJsonObject {
+                                put("manga", manga.toMap().toJsonObject())
+                                put("chapters", JsonArray(emptyList()))
+                            })
+                        }
+                        json.encodeToString(buildJsonObject {
+                            put("manga", update.manga.toMap().toJsonObject())
+                            put("chapters", JsonArray(update.chapters.map { it.toMap().toJsonObject() }))
+                        })
+                    }
+                }
+                "getChapterList" -> {
+                    val url = root.str("url") ?: return errorJson("missing url")
+                    withSource(data!!) { src ->
+                        val manga = SManga.create().apply { this.url = url }
+                        val update = try {
+                            runBlocking { src.getMangaUpdate(manga, emptyList(), fetchDetails = false, fetchChapters = true) }
+                        } catch (e: Exception) {
+                            Log.e(TAG, "getChapterList failed for $url", e)
+                            return@withSource json.encodeToString(JsonArray(emptyList()))
+                        }
+                        json.encodeToString(JsonArray(update.chapters.map { it.toMap().toJsonObject() }))
+                    }
+                }
+                "getPageList" -> {
+                    val url = root.str("url") ?: return errorJson("missing url")
+                    withSource(data!!) { src ->
+                        val chapter = SChapter.create().apply { this.url = url }
+                        val pages = runBlocking {
+                            src.getPageList(chapter).map { page ->
+                                val headers = try {
+                                    src.getImageRequestHeaders(page).toMap()
+                                } catch (_: Exception) {
+                                    emptyMap<String, String>()
+                                }
+                                page.toMap() + ("headers" to headers)
+                            }
+                        }
+                        json.encodeToString(pages.toJsonElement())
+                    }
+                }
+                "downloadChapters" -> {
+                    val mangaUrl = root.str("mangaUrl") ?: return errorJson("missing mangaUrl")
+                    val chapterUrls = (root["chapterUrls"] as? JsonArray)?.map { (it as? JsonPrimitive)?.content ?: "" } ?: emptyList()
+                    val chapterNames = (root["chapterNames"] as? JsonArray)?.map { (it as? JsonPrimitive)?.content ?: "" } ?: emptyList()
+                    val sourceId = root.str("sourceId") ?: ""
+                    withSource(data!!) { src ->
+                        val mangaKey = sha256(mangaUrl).take(16)
+                        val baseDir = File(context.filesDir, "manga/$sourceId/$mangaKey")
+                        baseDir.mkdirs()
+                        val result = mutableMapOf<String, List<String>>()
+                        for ((i, chapterUrl) in chapterUrls.withIndex()) {
+                            val chName = chapterNames.getOrElse(i) { chapterUrl }
+                            val chKey = sha256(chapterUrl).take(16)
+                            val chDir = File(baseDir, chKey)
+                            chDir.mkdirs()
+                            val existing = chDir.listFiles()?.filter { it.isFile }?.sortedBy { it.name }
+                            if (existing != null && existing.isNotEmpty()) {
+                                result[chapterUrl] = existing.map { it.toURI().toString() }
+                                continue
+                            }
+                            val chapter = SChapter.create().apply { url = chapterUrl; name = chName }
+                            val pages: List<Page> = runBlocking { src.getPageList(chapter) }
+                            val localPaths = mutableListOf<String>()
+                            for (page in pages) {
+                                try {
+                                    if (page.imageUrl == null) {
+                                        page.imageUrl = runBlocking { src.getImageUrl(page) }
+                                    }
+                                    if (page.imageUrl.isNullOrEmpty()) continue
+                                    val response = runBlocking { src.getImage(page) }
+                                    if (!response.isSuccessful) {
+                                        Log.w(TAG, "download: HTTP ${response.code} for page ${page.index}")
+                                        response.close()
+                                        continue
+                                    }
+                                    val bytes = response.body.bytes()
+                                    response.close()
+                                    if (bytes == null || bytes.isEmpty()) continue
+                                    val file = File(chDir, "${page.index}.jpg")
+                                    file.writeBytes(bytes)
+                                    localPaths.add(file.toURI().toString())
+                                } catch (e: Exception) {
+                                    Log.e(TAG, "download: failed page ${page.index} of $chName", e)
+                                }
+                            }
+                            if (localPaths.isNotEmpty()) result[chapterUrl] = localPaths
+                        }
+                        json.encodeToString(result.toJsonElement())
+                    }
+                }
+                "getLocalPages" -> {
+                    val sourceId = root.str("sourceId") ?: return errorJson("missing sourceId")
+                    val mangaUrl = root.str("mangaUrl") ?: return errorJson("missing mangaUrl")
+                    val chapterUrl = root.str("chapterUrl") ?: return errorJson("missing chapterUrl")
+                    val mangaKey = sha256(mangaUrl).take(16)
+                    val chKey = sha256(chapterUrl).take(16)
+                    val dir = File(context.filesDir, "manga/$sourceId/$mangaKey/$chKey")
+                    val paths = if (!dir.isDirectory) emptyList()
+                    else dir.listFiles()
+                        ?.filter { it.isFile && it.name.endsWith(".jpg") }
+                        ?.sortedBy { it.nameWithoutExtension.toIntOrNull() ?: Int.MAX_VALUE }
+                        ?.map { it.absolutePath }
+                        ?: emptyList()
+                    json.encodeToString(paths.toJsonElement())
+                }
+                "getExtensionMetadata" -> {
+                    withSource(data!!) { src ->
+                        json.encodeToString(buildJsonObject {
+                            put("id", src.id.toString())
+                            put("name", src.name)
+                            put("lang", src.lang)
+                            put("baseUrl", src.baseUrl)
+                        })
+                    }
+                }
+                "headersManga", "headersAnime" -> json.encodeToString(buildJsonObject { })
+                "supportLatestManga", "supportLatestAnime" -> json.encodeToString(JsonPrimitive(true))
+                "filtersManga", "filtersAnime" -> json.encodeToString(JsonArray(emptyList()))
+                "preferencesManga", "preferencesAnime" -> json.encodeToString(JsonArray(emptyList()))
+                else -> errorJson("unknown method: $method")
+            }
+            result
+        } catch (e: Throwable) {
+            Log.e(TAG, "handleRequest: error", e)
+            errorJson("error: ${e.message}")
+        }
+    }
+
+    // -- Helpers -----------------------------------------------------------
+
+    private fun JsonObject.str(key: String): String? = (this[key] as? JsonPrimitive)?.content
+
+    private fun JsonObject.int(key: String): Int? = str(key)?.toIntOrNull()
+
+    private fun errorJson(message: String): String = json.encodeToString(buildJsonObject {
+        put("error", message)
+        put("code", 500)
+    })
+
+    private fun sendResponse(output: OutputStream, statusCode: Int, body: String) {
+        val bodyBytes = body.toByteArray(StandardCharsets.UTF_8)
+        val response = "HTTP/1.1 $statusCode OK\r\n" +
+            "Content-Type: application/json\r\n" +
+            "Content-Length: ${bodyBytes.size}\r\n" +
+            "Connection: close\r\n" +
+            "\r\n"
+        output.write(response.toByteArray(StandardCharsets.UTF_8))
+        output.write(bodyBytes)
+        output.flush()
+    }
+
+    private fun sha256(input: String): String =
+        MessageDigest.getInstance("SHA-256")
+            .digest(input.toByteArray())
+            .joinToString("") { "%02x".format(it) }
 
     private fun Any?.toJsonElement(): JsonElement = when (this) {
         null -> JsonNull
@@ -158,144 +618,4 @@ class DalvikServer(
     private fun Map<String, Any?>.toJsonObject(): JsonObject = JsonObject(
         this.mapValues { it.value.toJsonElement() }
     )
-
-    private fun handleRequest(body: String): String {
-        return try {
-            val eng = engine ?: return errorJson("engine not initialized")
-            val jsonObj = json.parseToJsonElement(body).jsonObject
-            val method = jsonObj["method"]?.jsonPrimitive?.content ?: return errorJson("missing method")
-
-            val result = when (method) {
-                "loadExtension" -> {
-                    val apkPath = jsonObj["apkPath"]?.jsonPrimitive?.content ?: return errorJson("missing apkPath")
-                    val className = jsonObj["className"]?.jsonPrimitive?.content
-                    val desc = eng.loadExtension(apkPath, className)
-                    json.encodeToString(desc.toJsonObject())
-                }
-                "unloadExtension" -> {
-                    val sourceId = jsonObj["sourceId"]?.jsonPrimitive?.content ?: return errorJson("missing sourceId")
-                    eng.unloadExtension(sourceId)
-                    json.encodeToString(JsonNull)
-                }
-                "listLoadedExtensions" -> {
-                    val list = eng.listLoaded()
-                    json.encodeToString(list.map { it.toJsonObject() })
-                }
-                "getPopularManga" -> {
-                    val sourceId = jsonObj["sourceId"]?.jsonPrimitive?.content ?: return errorJson("missing sourceId")
-                    val page = jsonObj["page"]?.jsonPrimitive?.content?.toIntOrNull() ?: 1
-                    val pageResult = eng.getPopularManga(sourceId, page)
-                    json.encodeToString(buildJsonObject {
-                        put("mangas", JsonArray(pageResult.mangas.map { it.toMap().toJsonObject() }))
-                        put("hasNextPage", pageResult.hasNextPage)
-                    })
-                }
-                "getLatestUpdates" -> {
-                    val sourceId = jsonObj["sourceId"]?.jsonPrimitive?.content ?: return errorJson("missing sourceId")
-                    val page = jsonObj["page"]?.jsonPrimitive?.content?.toIntOrNull() ?: 1
-                    val pageResult = eng.getLatestUpdates(sourceId, page)
-                    json.encodeToString(buildJsonObject {
-                        put("mangas", JsonArray(pageResult.mangas.map { it.toMap().toJsonObject() }))
-                        put("hasNextPage", pageResult.hasNextPage)
-                    })
-                }
-                "searchManga" -> {
-                    val sourceId = jsonObj["sourceId"]?.jsonPrimitive?.content ?: return errorJson("missing sourceId")
-                    val page = jsonObj["page"]?.jsonPrimitive?.content?.toIntOrNull() ?: 1
-                    val query = jsonObj["query"]?.jsonPrimitive?.content ?: ""
-                    val pageResult = eng.searchManga(sourceId, query, page)
-                    json.encodeToString(buildJsonObject {
-                        put("mangas", JsonArray(pageResult.mangas.map { it.toMap().toJsonObject() }))
-                        put("hasNextPage", pageResult.hasNextPage)
-                    })
-                }
-                "getMangaDetails" -> {
-                    val sourceId = jsonObj["sourceId"]?.jsonPrimitive?.content ?: return errorJson("missing sourceId")
-                    val url = jsonObj["url"]?.jsonPrimitive?.content ?: return errorJson("missing url")
-                    val manga = eng.getMangaDetails(sourceId, url)
-                    json.encodeToString(manga.toMap().toJsonObject())
-                }
-                "getMangaUpdate" -> {
-                    val sourceId = jsonObj["sourceId"]?.jsonPrimitive?.content ?: return errorJson("missing sourceId")
-                    val url = jsonObj["url"]?.jsonPrimitive?.content ?: return errorJson("missing url")
-                    val (manga, chapters) = eng.getMangaUpdateCombined(sourceId, url)
-                    json.encodeToString(buildJsonObject {
-                        put("manga", manga.toMap().toJsonObject())
-                        put("chapters", JsonArray(chapters.map { it.toMap().toJsonObject() }))
-                    })
-                }
-                "getChapterList" -> {
-                    val sourceId = jsonObj["sourceId"]?.jsonPrimitive?.content ?: return errorJson("missing sourceId")
-                    val url = jsonObj["url"]?.jsonPrimitive?.content ?: return errorJson("missing url")
-                    val chapters = eng.getChapterList(sourceId, url)
-                    json.encodeToString(JsonArray(chapters.map { it.toMap().toJsonObject() }))
-                }
-                "getPageList" -> {
-                    val sourceId = jsonObj["sourceId"]?.jsonPrimitive?.content ?: return errorJson("missing sourceId")
-                    val url = jsonObj["url"]?.jsonPrimitive?.content ?: return errorJson("missing url")
-                    val pages = eng.getPageList(sourceId, url)
-                    json.encodeToString(pages.toJsonElement())
-                }
-                "searchAllInstalled" -> {
-                    val query = jsonObj["query"]?.jsonPrimitive?.content ?: ""
-                    val page = jsonObj["page"]?.jsonPrimitive?.content?.toIntOrNull() ?: 1
-                    val results = eng.searchAllInstalled(query, page)
-                    json.encodeToString(results.toJsonElement())
-                }
-                "downloadChapters" -> {
-                    val sourceId = jsonObj["sourceId"]?.jsonPrimitive?.content ?: return errorJson("missing sourceId")
-                    val mangaUrl = jsonObj["mangaUrl"]?.jsonPrimitive?.content ?: return errorJson("missing mangaUrl")
-                    val chapterUrls = jsonObj["chapterUrls"]?.jsonArray?.map { it.jsonPrimitive.content } ?: emptyList()
-                    val chapterNames = jsonObj["chapterNames"]?.jsonArray?.map { it.jsonPrimitive.content } ?: emptyList()
-                    val result = eng.downloadChapters(sourceId, mangaUrl, chapterUrls, chapterNames)
-                    json.encodeToString(result.toJsonElement())
-                }
-                "getLocalPages" -> {
-                    val sourceId = jsonObj["sourceId"]?.jsonPrimitive?.content ?: return errorJson("missing sourceId")
-                    val mangaUrl = jsonObj["mangaUrl"]?.jsonPrimitive?.content ?: return errorJson("missing mangaUrl")
-                    val chapterUrl = jsonObj["chapterUrl"]?.jsonPrimitive?.content ?: return errorJson("missing chapterUrl")
-                    val pages = eng.getLocalPages(sourceId, mangaUrl, chapterUrl)
-                    json.encodeToString(pages.toJsonElement())
-                }
-                "headersManga", "headersAnime" -> {
-                    json.encodeToString(buildJsonObject { })
-                }
-                "supportLatestManga", "supportLatestAnime" -> {
-                    json.encodeToString(JsonPrimitive(true))
-                }
-                "filtersManga", "filtersAnime" -> {
-                    json.encodeToString(JsonArray(emptyList()))
-                }
-                "preferencesManga", "preferencesAnime" -> {
-                    json.encodeToString(JsonArray(emptyList()))
-                }
-                else -> {
-                    errorJson("unknown method: $method")
-                }
-            }
-            result
-        } catch (e: Throwable) {
-            Log.e(TAG, "handleRequest: error", e)
-            errorJson("error: ${e.message}")
-        }
-    }
-
-    private fun errorJson(message: String): String {
-        return json.encodeToString(buildJsonObject {
-            put("error", message)
-            put("code", 500)
-        })
-    }
-
-    private fun sendResponse(output: OutputStream, statusCode: Int, body: String) {
-        val bodyBytes = body.toByteArray(StandardCharsets.UTF_8)
-        val response = "HTTP/1.1 $statusCode OK\r\n" +
-            "Content-Type: application/json\r\n" +
-            "Content-Length: ${bodyBytes.size}\r\n" +
-            "Connection: close\r\n" +
-            "\r\n"
-        output.write(response.toByteArray(StandardCharsets.UTF_8))
-        output.write(bodyBytes)
-        output.flush()
-    }
 }

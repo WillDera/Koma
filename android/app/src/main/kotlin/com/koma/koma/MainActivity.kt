@@ -1,7 +1,6 @@
 package com.koma.koma
 
 import eu.kanade.tachiyomi.extension.DalvikServer
-import eu.kanade.tachiyomi.extension.KeiyoushiEngine
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
@@ -10,11 +9,7 @@ class MainActivity : FlutterActivity() {
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
-        val engine = KeiyoushiEngine(applicationContext)
-        DalvikServer.getInstance().apply {
-            this.engine = engine
-            start()
-        }
+        DalvikServer.initialize(applicationContext).start()
         MethodChannel(
             flutterEngine.dartExecutor.binaryMessenger,
             "eu.kanade.tachiyomi/keiyoushi",
