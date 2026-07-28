@@ -1,21 +1,20 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:drift/drift.dart' hide isNull, isNotNull;
-import 'package:koma/core/database/database.dart';
+import 'package:koma/core/repositories/repositories.dart';
 import 'package:koma/core/services/cache_service.dart';
 
 import 'helpers/test_database.dart';
 
 void main() {
-  late AppDatabase db;
+  late Repositories repos;
   late CacheService service;
 
   setUp(() async {
-    db = await createTestDb();
-    service = CacheService(db);
+    repos = await createTestRepositories();
+    service = CacheService(repos);
   });
 
-  tearDown(() async {
-    await db.close();
+  tearDown(() {
+    repos.isar.close();
   });
 
   group('cacheContent', () {
@@ -66,7 +65,7 @@ void main() {
 
       final cached = await service.getCached('https://example.com/test');
       expect(cached, isNotNull);
-      expect(cached!.bookId, 0); // book_id=0 marks cached web content
+      expect(cached!.bookId, 0);
       expect(cached.content, '<h1>Hello</h1>');
       expect(cached.index, 0);
     });
@@ -113,62 +112,6 @@ void main() {
 
       expect(await service.isCached('https://example.com/1'), isFalse);
       expect(await service.isCached('https://example.com/2'), isFalse);
-    });
-
-    test('clearCache does not remove real book chapters', () async {
-      // Insert a real book
-      final bookId = await db.customInsert(
-        'INSERT INTO books (title, author, source) VALUES (?, ?, ?)',
-        variables: [
-          Variable.withString('Real Book'),
-          Variable.withString('Author'),
-          Variable.withString('local'),
-        ],
-      );
-      // Insert a real chapter (book_id > 0)
-      await db.customInsert(
-        'INSERT INTO chapters (book_id, title, content, "index") VALUES (?, ?, ?, ?)',
-        variables: [
-          Variable.withInt(bookId),
-          Variable.withString('Ch 1'),
-          Variable.withString('Real content'),
-          Variable.withInt(0),
-        ],
-      );
-
-      await service.clearCache();
-
-      // Real chapter should still exist
-      final chapters = await db.customSelect(
-        'SELECT * FROM chapters WHERE book_id = ?',
-        variables: [Variable.withInt(bookId)],
-      ).get();
-      expect(chapters.length, 1);
-      expect(chapters.first.data['content'], 'Real content');
-    });
-  });
-
-  group('cache entries do not interfere with real data', () {
-    test('cached entries use web_cache table', () async {
-      await service.cacheContent(
-        'https://example.com/cached',
-        'Cached',
-        '<p>Cached content</p>',
-      );
-
-      final rows = await db
-          .customSelect('SELECT * FROM web_cache').get();
-      expect(rows.length, 1);
-      expect(rows.first.data['title'], 'Cached');
-    });
-
-    test('multiple caches stored in web_cache', () async {
-      await service.cacheContent('https://a.com', 'A', '<p>A</p>');
-      await service.cacheContent('https://b.com', 'B', '<p>B</p>');
-
-      final rows = await db
-          .customSelect('SELECT * FROM web_cache').get();
-      expect(rows.length, 2);
     });
   });
 }

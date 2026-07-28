@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
-import 'package:provider/provider.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
+import '../../core/providers.dart';
+import '../../router/router.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../core/models/book.dart';
 import '../../core/models/chapter.dart' as ch_model;
 import '../../core/models/snippet.dart';
-import '../../core/services/database_service.dart';
 import '../../core/services/search_service.dart';
 import '../../theme/app_theme.dart';
 import '../../theme/theme_provider.dart';
@@ -17,21 +19,19 @@ import '../../widgets/one_hand_spacer.dart';
 import '../../widgets/search_result_row.dart';
 import '../../widgets/text_field.dart';
 import '../../widgets/toast.dart';
-import '../reader/reader_screen.dart';
 
-class SearchScreen extends StatefulWidget {
+class SearchScreen extends ConsumerStatefulWidget {
   const SearchScreen({super.key});
 
   @override
-  State<SearchScreen> createState() => _SearchScreenState();
+  ConsumerState<SearchScreen> createState() => _SearchScreenState();
 }
 
-class _SearchScreenState extends State<SearchScreen> {
+class _SearchScreenState extends ConsumerState<SearchScreen> {
   final _searchController = TextEditingController();
   final _focusNode = FocusNode();
   final ScrollController _scrollCtrl = ScrollController();
   double _scrollProgress = 0;
-  SearchService? _searchService;
   List<SearchResult> _results = [];
   List<String> _recentSearches = [];
   bool _searching = false;
@@ -40,8 +40,6 @@ class _SearchScreenState extends State<SearchScreen> {
   @override
   void initState() {
     super.initState();
-    final db = context.read<DatabaseService>();
-    _searchService = SearchService(db.db);
     _scrollCtrl.addListener(_onScroll);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _loadRecentSearches();
@@ -98,7 +96,7 @@ class _SearchScreenState extends State<SearchScreen> {
     }
     setState(() => _searching = true);
     try {
-      final results = await _searchService!.searchAll(query.trim());
+      final results = await ref.read(searchServiceProvider).searchAll(query.trim());
       if (!mounted) return;
       setState(() => _results = results);
       _saveSearch(query.trim());
@@ -115,7 +113,7 @@ class _SearchScreenState extends State<SearchScreen> {
     }
   }
 
-  bool get _oneHand => context.watch<ThemeProvider>().oneHandMode;
+  bool get _oneHand => ref.watch(themeProvider).oneHandMode;
 
   @override
   Widget build(BuildContext context) {
@@ -369,9 +367,10 @@ class _SearchScreenState extends State<SearchScreen> {
 
   void _openReader(int bookId) {
     if (bookId == 0) return;
-    Navigator.push(
-      context,
-      MaterialPageRoute(builder: (_) => ReaderScreen(bookId: bookId)),
+    context.pushNamed(
+      Routes.reader,
+      extra: (bookId: bookId, snippetChapterId: null, snippetScrollOffset: null)
+          as ReaderArgs,
     );
   }
 }
