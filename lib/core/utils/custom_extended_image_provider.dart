@@ -476,7 +476,10 @@ class CustomExtendedNetworkImageProvider
         }
 
         // Pre-allocate list if content length is known.
-        final int total = response.contentLength;
+        // dart:io returns -1 when Content-Length is absent (int, not int?),
+        // so normalize to 0 to match mangayomi semantics (uses the `http`
+        // package whose StreamedResponse.contentLength IS nullable).
+        final int total = response.contentLength > 0 ? response.contentLength : 0;
         final List<int> bytes = total > 0
             ? List<int>.filled(total, 0, growable: true)
             : <int>[];

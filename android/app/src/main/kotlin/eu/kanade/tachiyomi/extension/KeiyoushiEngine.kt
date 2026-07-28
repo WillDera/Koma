@@ -108,8 +108,14 @@ class KeiyoushiEngine(
     fun getMangaDetails(sourceId: String, url: String): SManga {
         val src = requireHttpSource(sourceId)
         val manga = SManga.create().apply { this.url = url }
-        val result = runBlocking {
-            src.getMangaUpdate(manga, emptyList(), fetchDetails = true, fetchChapters = false)
+        val result = try {
+            runBlocking {
+                src.getMangaUpdate(manga, emptyList(), fetchDetails = true, fetchChapters = false)
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "getMangaDetails failed for $url", e)
+            manga.also { it.initialized = true }
+            return manga
         }
         val details = result.manga
         if (!details.initialized) details.initialized = true
@@ -119,8 +125,13 @@ class KeiyoushiEngine(
     fun getChapterList(sourceId: String, url: String): List<SChapter> {
         val src = requireHttpSource(sourceId)
         val manga = SManga.create().apply { this.url = url }
-        val result = runBlocking {
-            src.getMangaUpdate(manga, emptyList(), fetchDetails = false, fetchChapters = true)
+        val result = try {
+            runBlocking {
+                src.getMangaUpdate(manga, emptyList(), fetchDetails = false, fetchChapters = true)
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "getChapterList failed for $url", e)
+            return emptyList()
         }
         // Log raw chapter data to check for music/audio/duration fields
         for ((i, ch) in result.chapters.withIndex()) {
@@ -139,7 +150,8 @@ class KeiyoushiEngine(
     }
 
     fun getMangaUpdateCombined(sourceId: String, url: String): Pair<SManga, List<SChapter>> {
-        // Sequential: details first, then chapters — avoids concurrent getMangaUpdate errors
+        // Sequential: details first, then chapters — avoids concurrent getMangaUpdate errors.
+        // Each call independently catches so one failure doesn't lose the other's data.
         val details = getMangaDetails(sourceId, url)
         val chapters = getChapterList(sourceId, url)
         return Pair(details, chapters)

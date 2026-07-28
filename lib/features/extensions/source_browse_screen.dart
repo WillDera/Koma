@@ -9,7 +9,7 @@ import '../../eval/models/m_source.dart';
 import '../../theme/app_theme.dart';
 import '../../theme/tokens/app_spacing.dart';
 import '../../widgets/animated_press.dart';
-import '../../core/utils/image_cache.dart';
+import '../../core/utils/custom_extended_image_provider.dart';
 import 'manga_detail_screen.dart';
 
 class SourceBrowseScreen extends ConsumerStatefulWidget {
@@ -251,7 +251,7 @@ class _MangaGridCard extends StatelessWidget {
             Expanded(
                             child: thumb != null && thumb.isNotEmpty
                   ? Image(
-                      image: cachedCover(thumb),
+                      image: CustomExtendedNetworkImageProvider(thumb),
                       width: double.infinity,
                       fit: BoxFit.cover,
                       errorBuilder: (_, _, _) => _placeholder(c),
