@@ -31,15 +31,19 @@ android {
     signingConfigs {
         create("koma") {
             storeFile = file("koma-debug.keystore")
-            storePassword = "stashreader"
-            keyAlias = "stashreader"
-            keyPassword = "stashreader"
+            storePassword = "k0m@k0m@"
+            keyAlias = "k0m@k0m@"
+            keyPassword = "k0m@k0m@"
         }
     }
 
     buildTypes {
         release {
-            signingConfig = signingConfigs.getByName("koma")
+            if (file("koma-debug.keystore").exists()) {
+                signingConfig = signingConfigs.getByName("koma")
+            } else {
+                signingConfig = signingConfigs.getByName("debug")
+            }
         }
     }
 
