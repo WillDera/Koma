@@ -1,25 +1,22 @@
 package com.koma.koma
 
-import eu.kanade.tachiyomi.extension.KeiyoushiMethodChannel
+import eu.kanade.tachiyomi.extension.DalvikServer
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 
 class MainActivity : FlutterActivity() {
 
-    private var keiyoushiChannel: KeiyoushiMethodChannel? = null
+    private var dalvikServer: DalvikServer? = null
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
-        // Wire the Keiyoushi extension bridge. The channel handler is
-        // stateless wrt Flutter engine lifecycle, so we re-create it on
-        // every configure call to handle engine restart correctly.
-        val channel = KeiyoushiMethodChannel(applicationContext)
-        channel.registerOn(flutterEngine)
-        keiyoushiChannel = channel
+        dalvikServer = DalvikServer()
+        dalvikServer?.start()
     }
 
     override fun cleanUpFlutterEngine(flutterEngine: FlutterEngine) {
-        keiyoushiChannel = null
+        dalvikServer?.stop()
+        dalvikServer = null
         super.cleanUpFlutterEngine(flutterEngine)
     }
 }

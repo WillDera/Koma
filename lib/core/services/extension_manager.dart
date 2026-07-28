@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:isolate';
 
 import 'package:http/http.dart' as http;
 import 'package:path/path.dart' as p;
@@ -79,16 +80,9 @@ class ExtensionManager {
     if (res.statusCode != 200) {
       throw HttpException('Repo returned ${res.statusCode}: ${repo.url}');
     }
-    final list = jsonDecode(res.body);
-    if (list is! List) {
-      throw FormatException(
-        'Repo JSON is not a list — got ${list.runtimeType}',
-      );
-    }
-    return list
-        .cast<Map>()
-        .map((e) => ExtensionIndexEntry.fromJson(Map<String, dynamic>.from(e)))
-        .toList(growable: false);
+    // Keiyoushi index is ~500KB / 1.3k entries — parse off the UI isolate so
+    // mid-range Android devices don't freeze (or black-screen) during fetch.
+    return Isolate.run(() => _parseIndexBody(res.body));
   }
 
   Future<ExtensionSource> install(
@@ -271,4 +265,18 @@ class ExtensionManager {
     }
     await File(destPath).writeAsBytes(res.bodyBytes);
   }
+}
+
+/// Top-level so [Isolate.run] can invoke it without capturing the manager.
+List<ExtensionIndexEntry> _parseIndexBody(String body) {
+  final list = jsonDecode(body);
+  if (list is! List) {
+    throw FormatException(
+      'Repo JSON is not a list — got ${list.runtimeType}',
+    );
+  }
+  return list
+      .cast<Map>()
+      .map((e) => ExtensionIndexEntry.fromJson(Map<String, dynamic>.from(e)))
+      .toList(growable: false);
 }

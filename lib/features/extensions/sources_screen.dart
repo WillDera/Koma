@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/providers.dart';
 import '../../core/models/extension_source.dart';
+import '../../core/utils/custom_extended_image_provider.dart';
 import '../../core/utils/language.dart';
 import '../../theme/app_theme.dart';
 import '../../theme/tokens/app_spacing.dart';
@@ -318,8 +319,8 @@ class _SourceTile extends StatelessWidget {
       ),
       child: ClipRRect(
         borderRadius: BorderRadius.circular(5),
-        child: Image.network(
-          iconUrl,
+        child: Image(
+          image: CustomExtendedNetworkImageProvider(iconUrl),
           fit: BoxFit.contain,
           width: size,
           height: size,
