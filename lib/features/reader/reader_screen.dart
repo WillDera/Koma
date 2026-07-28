@@ -1,8 +1,8 @@
 import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:provider/provider.dart';
-import '../../features/snippets/snippets_provider.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../../core/providers.dart';
 import '../../theme/app_theme.dart';
 import '../../theme/theme_provider.dart';
 import '../../theme/tokens/app_colors.dart';
@@ -19,13 +19,12 @@ import '../../widgets/reader_top_bar.dart';
 import '../../widgets/text_selection_toolbar.dart';
 import '../../widgets/toast.dart';
 import '../../core/models/highlight.dart';
-import '../../core/services/database_service.dart';
 import '../../core/utils/text_extractor.dart';
 import '../../widgets/tts_controls.dart';
 import 'reader_provider.dart';
 import 'tts_provider.dart';
 
-class ReaderScreen extends StatefulWidget {
+class ReaderScreen extends ConsumerStatefulWidget {
   final int bookId;
 
   /// Optional target chapter id and scroll offset for jump-to-snippet
@@ -42,15 +41,15 @@ class ReaderScreen extends StatefulWidget {
   });
 
   @override
-  State<ReaderScreen> createState() => _ReaderScreenState();
+  ConsumerState<ReaderScreen> createState() => _ReaderScreenState();
 }
 
 enum _SwipeDirection { none, next, previous }
 
-class _ReaderScreenState extends State<ReaderScreen>
+class _ReaderScreenState extends ConsumerState<ReaderScreen>
     with TickerProviderStateMixin {
   final ScrollController _scrollController = ScrollController();
-  ReaderProvider? _provider;
+  ReaderNotifier? _provider;
 
   /// Highlights loaded for the current chapter, used to decorate the
   /// reading text with colored backgrounds.
@@ -101,7 +100,7 @@ class _ReaderScreenState extends State<ReaderScreen>
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    _provider ??= context.read<ReaderProvider>();
+    _provider ??= ref.read(readerProvider.notifier);
   }
 
   Future<void> _loadAndRestore() async {
@@ -135,7 +134,8 @@ class _ReaderScreenState extends State<ReaderScreen>
     // Load highlights for this chapter.
     final ch = _provider?.chapters;
     if (ch != null && newIndex >= 0 && newIndex < ch.length) {
-      context.read<DatabaseService>().getHighlightsForChapter(ch[newIndex].id).then((hl) {
+      final repos = ref.watch(repositoriesProvider);
+      repos.books.getHighlightsForChapter(ch[newIndex].id).then((hl) {
         if (mounted) setState(() => _highlights = hl);
       });
     } else {
@@ -344,10 +344,9 @@ class _ReaderScreenState extends State<ReaderScreen>
 
   @override
   Widget build(BuildContext context) {
-    final themeProv = context.watch<ThemeProvider>();
-    return Consumer<ReaderProvider>(
-      builder: (context, provider, _) {
-        _onChapterChanged(provider.currentIndex);
+    final themeProv = ref.watch(themeProvider);
+    final provider = ref.watch(readerProvider);
+    _onChapterChanged(provider.currentIndex);
         if (provider.loading) {
           return Scaffold(
             backgroundColor: themeProv.isSepia
@@ -384,9 +383,9 @@ class _ReaderScreenState extends State<ReaderScreen>
             backgroundColor: themeProv.bgColor,
             bottomNavigationBar: ReaderBottomBar(
               visible: _showUI && !_toolbarVisible,
-              onChapters: () => _openChapters(context, provider),
-              onPrevious: provider.goToPreviousChapter,
-              onNext: provider.goToNextChapter,
+              onChapters: () => _openChapters(context, ref.read(readerProvider.notifier)),
+              onPrevious: () => ref.read(readerProvider.notifier).goToPreviousChapter(),
+              onNext: () => ref.read(readerProvider.notifier).goToNextChapter(),
               canGoNext:
                   provider.currentIndex < provider.chapters.length - 1,
               canGoPrevious: provider.currentIndex > 0,
@@ -536,7 +535,7 @@ class _ReaderScreenState extends State<ReaderScreen>
                       if (mounted) Navigator.pop(context);
                     },
                     onSettings: () =>
-                        ReaderSettingsSheet.show(context, themeProv),
+                        ReaderSettingsSheet.show(context),
                     onTtsToggle: _toggleTts,
                     isTtsActive: _ttsProvider?.isActive ?? false,
                   ),
@@ -604,7 +603,7 @@ class _ReaderScreenState extends State<ReaderScreen>
                                     colors: HighlightColorPicker.palette,
                                     selected: themeProv.defaultHighlight,
                                     onChanged: (color) {
-                                      themeProv.setDefaultHighlight(color);
+                                      ref.read(themeProvider.notifier).setDefaultHighlight(color);
                                       _saveHighlight(color);
                                     },
                                   ),
@@ -627,8 +626,6 @@ class _ReaderScreenState extends State<ReaderScreen>
             ),
           ),
         );
-      },
-    );
   }
 
   void _toggleTts() {
@@ -653,7 +650,7 @@ class _ReaderScreenState extends State<ReaderScreen>
     }
   }
 
-  TextStyle _readingStyle(ThemeProvider themeProv) {
+  TextStyle _readingStyle(ThemeState themeProv) {
     final c = context.colors;
     return AppType.fontStyle(
       fontFamily: themeProv.readingFontFamily,
@@ -664,7 +661,7 @@ class _ReaderScreenState extends State<ReaderScreen>
   }
 
   List<TextSpan> _buildReadingSpans(
-    ThemeProvider themeProv,
+    ThemeState themeProv,
     String text, {
     bool ttsActive = false,
     int ttsStart = 0,
@@ -771,7 +768,7 @@ class _ReaderScreenState extends State<ReaderScreen>
   /// a single TokenSpan. When [hlAltStyle] is provided it replaces the
   /// bold segment's style for highlighted bionic text (both arms use
   /// the highlight background).
-  List<TextSpan> _segments(ThemeProvider prov, String text, TextStyle base,
+  List<TextSpan> _segments(ThemeState prov, String text, TextStyle base,
       TextStyle? hlAltStyle) {
     if (!prov.bionicReading) {
       return [TextSpan(text: text, style: hlAltStyle ?? base)];
@@ -805,7 +802,7 @@ class _ReaderScreenState extends State<ReaderScreen>
       return;
     }
     try {
-      final db = context.read<DatabaseService>();
+      final repos = ref.watch(repositoriesProvider);
       final ch = p.currentChapter;
       final contentStr =
           ch != null ? TextExtractor.extractFromHtml(ch.content) : '';
@@ -817,7 +814,7 @@ class _ReaderScreenState extends State<ReaderScreen>
       // Bug 1 fix: save ONLY to the highlights table, NOT to snippets.
       // Only "Note" (renamed to "Snippet") creates a snippet row.
       if (p.book != null && ch != null && startOff != null && startOff >= 0) {
-        await db.insertHighlight(Highlight(
+        await repos.books.insertHighlight(Highlight(
           id: 0,
           // No snippetId — marks are separate from snippets
           bookId: p.book!.id,
@@ -876,7 +873,7 @@ class _ReaderScreenState extends State<ReaderScreen>
     if (_selectedText == null || _selectedText!.trim().isEmpty) return;
     final p = _provider!;
     final noteCtrl = TextEditingController();
-    final themeProv = context.read<ThemeProvider>();
+    final themeProv = ref.read(themeProvider);
     final saved = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -939,7 +936,7 @@ class _ReaderScreenState extends State<ReaderScreen>
     _hideToolbar();
     if (saved != true) return;
     try {
-      final snippetsProvider = context.read<SnippetsProvider>();
+      final snippetsProv = ref.read(snippetsProvider.notifier);
       final ch = p.currentChapter;
       final contentStr =
           ch != null ? TextExtractor.extractFromHtml(ch.content) : '';
@@ -949,7 +946,7 @@ class _ReaderScreenState extends State<ReaderScreen>
         startOff = contentStr.indexOf(selected);
       }
       final currPos = _scrollController.hasClients ? _scrollController.offset : null;
-      await snippetsProvider.createSnippet(
+      await snippetsProv.createSnippet(
         text: selected,
         note: noteCtrl.text.trim().isNotEmpty ? noteCtrl.text.trim() : null,
         color: themeProv.defaultHighlight,
@@ -981,7 +978,7 @@ class _ReaderScreenState extends State<ReaderScreen>
     }
   }
 
-  void _openChapters(BuildContext context, ReaderProvider provider) {
+  void _openChapters(BuildContext context, ReaderNotifier provider) {
     if (provider.chapters.length <= 1) return;
     ChapterSheet.show(
       context,

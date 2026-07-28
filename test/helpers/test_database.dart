@@ -1,8 +1,7 @@
-import 'package:drift/native.dart';
-import 'package:koma/core/database/database.dart';
+import 'package:koma/core/isar/isar.dart';
+import 'package:koma/core/repositories/repositories.dart';
 
-Future<AppDatabase> createTestDb() async {
-  final db = AppDatabase(NativeDatabase.memory());
-  await db.customSelect('SELECT 1').get();
-  return db;
+Future<Repositories> createTestRepositories() async {
+  final isar = await openIsarInMemory();
+  return Repositories(isar);
 }

@@ -1,17 +1,21 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'package:crypto/crypto.dart';
 import 'package:flutter/material.dart';
-import 'package:provider/provider.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
+import '../../core/providers.dart';
+import '../../router/router.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:path_provider/path_provider.dart';
 import '../../core/models/book.dart';
 import '../../core/models/chapter.dart';
 import '../../core/models/manga.dart';
-import '../../core/services/database_service.dart';
 import '../../core/services/ebook_service.dart';
 import '../../core/services/web_scraper_service.dart';
 import '../../core/services/cache_service.dart';
+import '../../core/utils/image_cache.dart';
 import '../../theme/app_theme.dart';
 import '../../theme/theme_provider.dart';
 import '../../theme/tokens/app_spacing.dart';
@@ -30,23 +34,20 @@ import '../../widgets/premium_button.dart';
 import '../../widgets/screen_chrome.dart';
 import '../../widgets/segmented_control.dart';
 import '../../widgets/toast.dart';
-import '../extensions/manga_detail_screen.dart';
-import '../reader/reader_screen.dart';
-import '../snippets/snippets_provider.dart';
+import '../../core/utils/benchmark_logger.dart';
 import 'library_provider.dart';
 
-class LibraryScreen extends StatefulWidget {
+class LibraryScreen extends ConsumerStatefulWidget {
   const LibraryScreen({super.key});
 
   @override
-  State<LibraryScreen> createState() => _LibraryScreenState();
+  ConsumerState<LibraryScreen> createState() => _LibraryScreenState();
 }
 
-class _LibraryScreenState extends State<LibraryScreen> with RouteAware {
+class _LibraryScreenState extends ConsumerState<LibraryScreen> with RouteAware {
   final ScrollController _scrollCtrl = ScrollController();
   final TextEditingController _bookSearchCtrl = TextEditingController();
   final TextEditingController _mangaSearchCtrl = TextEditingController();
-  double _scrollProgress = 0;
   bool _importingFile = false;
   _LibrarySection _section = _LibrarySection.books;
   _LibrarySort _sort = _LibrarySort.alphabetical;
@@ -58,9 +59,8 @@ class _LibraryScreenState extends State<LibraryScreen> with RouteAware {
   @override
   void initState() {
     super.initState();
-    _scrollCtrl.addListener(_onScroll);
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      context.read<LibraryProvider>().loadBooks();
+      ref.read(libraryProvider.notifier).loadBooks();
       _loadThumbnails();
     });
   }
@@ -70,7 +70,7 @@ class _LibraryScreenState extends State<LibraryScreen> with RouteAware {
       final appDir = await getApplicationDocumentsDirectory();
       final thumbDir = Directory('${appDir.path}/thumbnails');
       if (!await thumbDir.exists()) return;
-      final provider = context.read<LibraryProvider>();
+      final provider = ref.read(libraryProvider);
       final paths = <int, String?>{};
       for (final manga in provider.mangas) {
         if (manga.imageUrl != null && manga.imageUrl!.isNotEmpty) {
@@ -85,18 +85,8 @@ class _LibraryScreenState extends State<LibraryScreen> with RouteAware {
     }
   }
 
-  void _onScroll() {
-    if (!_scrollCtrl.hasClients) return;
-    final max = _scrollCtrl.position.maxScrollExtent;
-    final p = max <= 0 ? 0.0 : (_scrollCtrl.offset / max).clamp(0.0, 1.0);
-    if ((p - _scrollProgress).abs() > 0.01) {
-      setState(() => _scrollProgress = p);
-    }
-  }
-
   @override
   void dispose() {
-    _scrollCtrl.removeListener(_onScroll);
     _scrollCtrl.dispose();
     _bookSearchCtrl.dispose();
     _mangaSearchCtrl.dispose();
@@ -115,100 +105,98 @@ class _LibraryScreenState extends State<LibraryScreen> with RouteAware {
     // A pushed route (e.g. reader) was popped and we're visible again.
     // Reload data — this is the Mihon-equivalent of Room Flow
     // reacting to an onPause write.
-    context.read<LibraryProvider>().loadBooks();
+    ref.read(libraryProvider.notifier).loadBooks();
   }
 
-  bool get _oneHand => context.watch<ThemeProvider>().oneHandMode;
+  bool get _oneHand => ref.watch(themeProvider).oneHandMode;
 
   @override
   Widget build(BuildContext context) {
-    final leftHanded = context.watch<ThemeProvider>().handMode == HandMode.left;
+    final leftHanded = ref.watch(themeProvider).handMode == HandMode.left;
     final navClearance = MediaQuery.paddingOf(context).bottom + 84;
-    return Consumer<LibraryProvider>(
-      builder: (context, provider, _) {
-        return ScreenBackdrop(
-          child: Stack(
-            children: [
-              SafeArea(bottom: false, child: _body(context, provider)),
-              if (!provider.loading &&
-                  !provider.selectionMode &&
-                  (provider.books.isNotEmpty || provider.mangas.isNotEmpty))
-                Positioned(
-                  left: leftHanded ? 20 : null,
-                  right: leftHanded ? null : 20,
-                  bottom: navClearance,
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      IconButtonRound(
-                        icon: provider.isGridView
-                            ? Icons.list
-                            : Icons.grid_view_rounded,
-                        size: 44,
-                        variant: IconButtonVariant.filled,
-                        backgroundColor: context.colors.surfaceMuted,
-                        iconColor: context.colors.textPrimary,
-                        onPressed: provider.toggleLayout,
-                      ),
-                      const SizedBox(height: 10),
-                      IconButtonRound(
-                        icon: Icons.add,
-                        size: 52,
-                        variant: IconButtonVariant.filled,
-                        backgroundColor: context.colors.accent,
-                        iconColor: context.colors.onAccent,
-                        onPressed: () => _showImportOptions(context),
-                      ),
-                    ],
+    final provider = ref.watch(libraryProvider);
+    final ln = ref.read(libraryProvider.notifier);
+    return ScreenBackdrop(
+      child: Stack(
+        children: [
+          SafeArea(bottom: false, child: _body(context, provider)),
+          if (!provider.loading &&
+              !provider.selectionMode &&
+              (provider.books.isNotEmpty || provider.mangas.isNotEmpty))
+            Positioned(
+              left: leftHanded ? 20 : null,
+              right: leftHanded ? null : 20,
+              bottom: navClearance,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  IconButtonRound(
+                    icon: provider.isGridView
+                        ? Icons.list
+                        : Icons.grid_view_rounded,
+                    size: 44,
+                    variant: IconButtonVariant.filled,
+                    backgroundColor: context.colors.surfaceMuted,
+                    iconColor: context.colors.textPrimary,
+                    onPressed: ln.toggleLayout,
                   ),
-                ),
-              if (_importingFile)
-                Positioned.fill(
-                  child: AbsorbPointer(
-                    child: ColoredBox(
-                      color: Colors.black38,
-                      child: Center(
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 20,
-                            vertical: 18,
+                  const SizedBox(height: 10),
+                  IconButtonRound(
+                    icon: Icons.add,
+                    size: 52,
+                    variant: IconButtonVariant.filled,
+                    backgroundColor: context.colors.accent,
+                    iconColor: context.colors.onAccent,
+                    onPressed: () => _showImportOptions(context),
+                  ),
+                ],
+              ),
+            ),
+          if (_importingFile)
+            Positioned.fill(
+              child: AbsorbPointer(
+                child: ColoredBox(
+                  color: Colors.black38,
+                  child: Center(
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 20,
+                        vertical: 18,
+                      ),
+                      decoration: BoxDecoration(
+                        color: context.colors.surface,
+                        borderRadius: BorderRadius.circular(18),
+                      ),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          CircularProgressIndicator(
+                            color: context.colors.accent,
                           ),
-                          decoration: BoxDecoration(
-                            color: context.colors.surface,
-                            borderRadius: BorderRadius.circular(18),
+                          const SizedBox(height: 14),
+                          Text(
+                            'Preparing MOBI...',
+                            style: TextStyle(
+                              color: context.colors.textPrimary,
+                              fontSize: 14,
+                              fontWeight: FontWeight.w600,
+                            ),
                           ),
-                          child: Column(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              CircularProgressIndicator(
-                                color: context.colors.accent,
-                              ),
-                              const SizedBox(height: 14),
-                              Text(
-                                'Preparing MOBI...',
-                                style: TextStyle(
-                                  color: context.colors.textPrimary,
-                                  fontSize: 14,
-                                  fontWeight: FontWeight.w600,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
+                        ],
                       ),
                     ),
                   ),
                 ),
-            ],
-          ),
-        );
-      },
+              ),
+            ),
+        ],
+      ),
     );
   }
 
   // ── Body dispatcher ─────────────────────────────────────────────────
 
-  Widget _body(BuildContext context, LibraryProvider provider) {
+  Widget _body(BuildContext context, LibraryState provider) {
     if (provider.loading && provider.books.isEmpty && provider.mangas.isEmpty)
       return _loading(context);
     if (provider.error != null) return _error(context, provider);
@@ -252,7 +240,7 @@ class _LibraryScreenState extends State<LibraryScreen> with RouteAware {
     );
   }
 
-  Widget _error(BuildContext context, LibraryProvider provider) {
+  Widget _error(BuildContext context, LibraryState provider) {
     return Column(
       children: [
         _header(context, provider),
@@ -263,7 +251,7 @@ class _LibraryScreenState extends State<LibraryScreen> with RouteAware {
             subtitle: provider.error!,
             primaryActionLabel: 'Try again',
             primaryActionIcon: Icons.refresh,
-            onPrimaryAction: () => provider.loadBooks(),
+            onPrimaryAction: () => ref.read(libraryProvider.notifier).loadBooks(),
           ),
         ),
       ],
@@ -273,7 +261,7 @@ class _LibraryScreenState extends State<LibraryScreen> with RouteAware {
   Widget _empty(BuildContext context) {
     return Column(
       children: [
-        _header(context, context.read<LibraryProvider>()),
+        _header(context, ref.read(libraryProvider)),
         Expanded(
           child: EmptyState(
             icon: Icons.auto_stories_outlined,
@@ -291,18 +279,26 @@ class _LibraryScreenState extends State<LibraryScreen> with RouteAware {
 
   // ── Normal content (scrolling includes spacer → header → grid/list) ──
 
-  Widget _combined(BuildContext context, LibraryProvider provider) {
+  Widget _combined(BuildContext context, LibraryState provider) {
     return RefreshIndicator(
       color: context.colors.accent,
       backgroundColor: context.colors.surface,
-      onRefresh: () => provider.loadBooks(),
+      onRefresh: () => ref.read(libraryProvider.notifier).loadBooks(),
       child: ListView(
         controller: _scrollCtrl,
         padding: const EdgeInsets.only(bottom: 100),
         physics: const AlwaysScrollableScrollPhysics(),
         children: [
           const OneHandSpacer(),
-          _header(context, provider, _oneHand),
+          _LibraryHeaderController(
+            scrollController: _scrollCtrl,
+            oneHand: _oneHand,
+            selectionMode: provider.selectionMode,
+            selectedCount: provider.selectedIds.length,
+            onSelectAll: () => ref.read(libraryProvider.notifier).selectAll,
+            onDeleteSelected: () => _confirmDelete(context, provider),
+            onClearSelection: () => ref.read(libraryProvider.notifier).clearSelection,
+          ),
           if (!provider.selectionMode)
             StaggeredEntrance(
               index: 0,
@@ -339,7 +335,7 @@ class _LibraryScreenState extends State<LibraryScreen> with RouteAware {
             onQueryChanged: (_) => setState(() {}),
             showSourcePills: provider.showSourcePills,
             onShowSourcePillsChanged: (value) {
-              provider.setShowSourcePills(value);
+              ref.read(libraryProvider.notifier).setShowSourcePills(value);
             },
           ),
           AnimatedSwitcher(
@@ -351,6 +347,7 @@ class _LibraryScreenState extends State<LibraryScreen> with RouteAware {
                     key: const ValueKey('books-shelf'),
                     books: _visibleBooks(provider.books),
                     provider: provider,
+                    notifier: ref.read(libraryProvider.notifier),
                     showSourcePills: provider.showSourcePills,
                     onOpen: (id) => _openReader(context, id),
                   )
@@ -359,6 +356,7 @@ class _LibraryScreenState extends State<LibraryScreen> with RouteAware {
                     mangas: _visibleMangas(provider.mangas),
                     gridView: provider.isGridView,
                     provider: provider,
+                    notifier: ref.read(libraryProvider.notifier),
                     extensionNames: provider.extensionNames,
                     mangaThumbnails: _mangaThumbnails,
                     showSourcePills: provider.showSourcePills,
@@ -372,11 +370,7 @@ class _LibraryScreenState extends State<LibraryScreen> with RouteAware {
 
   // ── Header ──────────────────────────────────────────────────────────
 
-  Widget _header(
-    BuildContext context,
-    LibraryProvider provider, [
-    bool oneHand = false,
-  ]) {
+  Widget _header(BuildContext context, LibraryState provider) {
     if (provider.selectionMode) {
       return LibraryHeader(
         title: '${provider.selectedIds.length} selected',
@@ -386,7 +380,7 @@ class _LibraryScreenState extends State<LibraryScreen> with RouteAware {
             size: 40,
             variant: IconButtonVariant.tonal,
             iconColor: context.colors.textSecondary,
-            onPressed: provider.selectAll,
+            onPressed: ref.read(libraryProvider.notifier).selectAll,
           ),
           const SizedBox(width: 8),
           IconButtonRound(
@@ -401,7 +395,7 @@ class _LibraryScreenState extends State<LibraryScreen> with RouteAware {
             icon: Icons.close,
             size: 40,
             variant: IconButtonVariant.tonal,
-            onPressed: provider.clearSelection,
+            onPressed: ref.read(libraryProvider.notifier).clearSelection,
           ),
           const SizedBox(width: 8),
         ],
@@ -410,7 +404,6 @@ class _LibraryScreenState extends State<LibraryScreen> with RouteAware {
     return LibraryHeader(
       title: 'Library',
       titleSize: _oneHand ? 64 : 32,
-      shrinkProgress: _oneHand ? _scrollProgress : 0.0,
     );
   }
 
@@ -508,7 +501,7 @@ class _LibraryScreenState extends State<LibraryScreen> with RouteAware {
 
   // ── Dialogs / import ────────────────────────────────────────────────
 
-  void _confirmDelete(BuildContext context, LibraryProvider provider) async {
+  void _confirmDelete(BuildContext context, LibraryState provider) async {
     final confirmed = await StashDialog.show<bool>(
       context,
       title: 'Remove titles?',
@@ -531,7 +524,7 @@ class _LibraryScreenState extends State<LibraryScreen> with RouteAware {
         ),
       ],
     );
-    if (confirmed == true) await provider.deleteSelected();
+    if (confirmed == true) await ref.read(libraryProvider.notifier).deleteSelected();
   }
 
   void _showImportOptions(BuildContext context) {
@@ -591,13 +584,13 @@ class _LibraryScreenState extends State<LibraryScreen> with RouteAware {
       if (showMobiLoader && mounted) {
         setState(() => _importingFile = true);
       }
-      final db = context.read<DatabaseService>();
-      final provider = context.read<LibraryProvider>();
+      final repos = ref.read(repositoriesProvider);
+      final ln = ref.read(libraryProvider.notifier);
       final ebookSvc = EbookService();
       final parsed = await ebookSvc.parse(filePath);
       if (parsed == null) throw Exception('Unsupported format');
       if (!context.mounted) return;
-      final existing = await db.findLocalBook(
+      final existing = await repos.books.findLocalBook(
         parsed.book.title,
         parsed.book.author,
       );
@@ -612,9 +605,9 @@ class _LibraryScreenState extends State<LibraryScreen> with RouteAware {
         }
         return;
       }
-      final bookId = await provider.addBook(parsed.book);
+      final bookId = await ln.addBook(parsed.book);
       for (final ch in parsed.chapters) {
-        await db.insertChapter(ch.copyWith(bookId: bookId));
+        await repos.books.insertChapter(ch.copyWith(bookId: bookId));
       }
       if (context.mounted) {
         StashToast.show(
@@ -659,12 +652,12 @@ class _LibraryScreenState extends State<LibraryScreen> with RouteAware {
       final scraper = WebScraperService();
       final result = await scraper.fetchContent(url);
       if (!context.mounted) return;
-      final db = context.read<DatabaseService>();
-      final cache = CacheService(db.db);
+      final repos = ref.read(repositoriesProvider);
+      final cache = CacheService(repos);
       final cached = await cache.getCached(url);
       if (cached != null) {
         if (context.mounted) {
-          final provider = context.read<LibraryProvider>();
+          final provider = ref.read(libraryProvider.notifier);
           final book = Book(
             id: 0,
             title: cached.title,
@@ -673,7 +666,7 @@ class _LibraryScreenState extends State<LibraryScreen> with RouteAware {
             totalChapters: 1,
           );
           final bookId = await provider.addBook(book);
-          await db.insertChapter(cached.copyWith(bookId: bookId));
+          await repos.books.insertChapter(cached.copyWith(bookId: bookId));
           if (context.mounted) {
             StashToast.show(
               context,
@@ -684,7 +677,7 @@ class _LibraryScreenState extends State<LibraryScreen> with RouteAware {
         }
         return;
       }
-      final provider = context.read<LibraryProvider>();
+      final provider = ref.read(libraryProvider.notifier);
       final book = Book(
         id: 0,
         title: result.title,
@@ -693,10 +686,10 @@ class _LibraryScreenState extends State<LibraryScreen> with RouteAware {
         sourceUrl: url,
         totalChapters: 1,
       );
-      final bookId = await provider.addBook(book);
-      await db.insertChapter(
-        Chapter(
-          id: 0,
+final bookId = await provider.addBook(book);
+       await repos.books.insertChapter(
+         Chapter(
+           id: 0,
           bookId: bookId,
           title: result.title,
           content: result.contentHtml,
@@ -775,7 +768,7 @@ class _LibraryScreenState extends State<LibraryScreen> with RouteAware {
     if (title.isEmpty || content.isEmpty) return;
     if (!context.mounted) return;
     try {
-      await context.read<SnippetsProvider>().createSnippet(
+      await ref.read(snippetsProvider.notifier).createSnippet(
         text: content,
         sourceTitle: title,
         tags: ['note'],
@@ -795,22 +788,138 @@ class _LibraryScreenState extends State<LibraryScreen> with RouteAware {
   }
 
   void _openReader(BuildContext context, int bookId) {
-    Navigator.push(
-      context,
-      MaterialPageRoute(builder: (_) => ReaderScreen(bookId: bookId)),
+    context.pushNamed(
+      Routes.reader,
+      extra: (bookId: bookId, snippetChapterId: null, snippetScrollOffset: null)
+          as ReaderArgs,
     );
   }
 
   void _openManga(BuildContext context, Manga manga) {
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (_) => MangaDetailScreen(
-          sourceId: manga.sourceId,
-          url: manga.url,
-          title: manga.name,
-        ),
-      ),
+    context.pushNamed(
+      Routes.mangaDetail,
+      extra: (
+        sourceId: manga.sourceId,
+        url: manga.url,
+        title: manga.name,
+        manga: manga, // Pass full Manga object for instant first frame
+      ) as MangaDetailArgs,
+    );
+  }
+}
+
+class _LibraryHeaderController extends StatefulWidget {
+  final ScrollController scrollController;
+  final bool oneHand;
+  final bool selectionMode;
+  final int selectedCount;
+  final VoidCallback? onSelectAll;
+  final VoidCallback? onDeleteSelected;
+  final VoidCallback? onClearSelection;
+
+  const _LibraryHeaderController({
+    required this.scrollController,
+    required this.oneHand,
+    required this.selectionMode,
+    required this.selectedCount,
+    this.onSelectAll,
+    this.onDeleteSelected,
+    this.onClearSelection,
+  });
+
+  @override
+  State<_LibraryHeaderController> createState() =>
+      _LibraryHeaderControllerState();
+}
+
+class _LibraryHeaderControllerState extends State<_LibraryHeaderController> {
+  double _scrollProgress = 0;
+  int _bmCalls = 0;
+  Timer? _bmTimer;
+  DateTime? _lastSetState;
+
+  @override
+  void initState() {
+    super.initState();
+    widget.scrollController.addListener(_onScroll);
+    _bmTimer = Timer.periodic(const Duration(seconds: 2), (_) {
+      if (_bmCalls > 0 && mounted) {
+        BenchmarkLogger.log('lib_scroll_setstate',
+            'calls=$_bmCalls elapsed=2s');
+        _bmCalls = 0;
+      }
+    });
+  }
+
+  @override
+  void didUpdateWidget(covariant _LibraryHeaderController oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.scrollController != widget.scrollController) {
+      oldWidget.scrollController.removeListener(_onScroll);
+      widget.scrollController.addListener(_onScroll);
+    }
+  }
+
+  void _onScroll() {
+    _bmCalls++;
+    final max = widget.scrollController.position.maxScrollExtent;
+    final p =
+        max <= 0 ? 0.0 : (widget.scrollController.offset / max).clamp(0.0, 1.0);
+    final now = DateTime.now();
+    final minTime = _lastSetState == null ||
+        now.difference(_lastSetState!) > const Duration(milliseconds: 100);
+    if (minTime && (p - _scrollProgress).abs() > 0.02) {
+      _lastSetState = now;
+      setState(() => _scrollProgress = p);
+    }
+  }
+
+  @override
+  void dispose() {
+    _bmTimer?.cancel();
+    widget.scrollController.removeListener(_onScroll);
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (widget.selectionMode) {
+      return LibraryHeader(
+        title: '${widget.selectedCount} selected',
+        actions: [
+          if (widget.onSelectAll != null)
+            IconButtonRound(
+              icon: Icons.select_all_rounded,
+              size: 40,
+              variant: IconButtonVariant.tonal,
+              iconColor: context.colors.textSecondary,
+              onPressed: widget.onSelectAll,
+            ),
+          const SizedBox(width: 8),
+          if (widget.onDeleteSelected != null)
+            IconButtonRound(
+              icon: Icons.delete_outline,
+              size: 40,
+              variant: IconButtonVariant.tonal,
+              iconColor: const Color(0xFFC44C4C),
+              onPressed: widget.onDeleteSelected,
+            ),
+          const SizedBox(width: 8),
+          if (widget.onClearSelection != null)
+            IconButtonRound(
+              icon: Icons.close,
+              size: 40,
+              variant: IconButtonVariant.tonal,
+              onPressed: widget.onClearSelection,
+            ),
+          const SizedBox(width: 8),
+        ],
+      );
+    }
+    return LibraryHeader(
+      title: 'Library',
+      titleSize: widget.oneHand ? 64 : 32,
+      shrinkProgress: widget.oneHand ? _scrollProgress : 0.0,
     );
   }
 }
@@ -1264,7 +1373,8 @@ class _TriStateGlyph extends StatelessWidget {
 
 class _BookShelf extends StatelessWidget {
   final List<Book> books;
-  final LibraryProvider provider;
+  final LibraryState provider;
+  final LibraryNotifier notifier;
   final ValueChanged<int> onOpen;
   final bool showSourcePills;
 
@@ -1272,6 +1382,7 @@ class _BookShelf extends StatelessWidget {
     super.key,
     required this.books,
     required this.provider,
+    required this.notifier,
     required this.onOpen,
     this.showSourcePills = true,
   });
@@ -1288,8 +1399,9 @@ class _BookShelf extends StatelessWidget {
         ),
       );
     }
+    final sw = Stopwatch()..start();
     if (provider.isGridView) {
-      return Padding(
+      final result = Padding(
         padding: const EdgeInsets.symmetric(horizontal: 20),
         child: GridView.builder(
           shrinkWrap: true,
@@ -1310,43 +1422,49 @@ class _BookShelf extends StatelessWidget {
               selectionMode: provider.selectionMode,
               showSourcePills: provider.showSourcePills,
               onTap: () => provider.selectionMode
-                  ? provider.toggleSelection('b:${books[i].id}')
+                  ? notifier.toggleSelection('b:${books[i].id}')
                   : onOpen(books[i].id),
-              onLongPress: () => provider.toggleSelection('b:${books[i].id}'),
+              onLongPress: () => notifier.toggleSelection('b:${books[i].id}'),
             ),
           ),
         ),
       );
+      BenchmarkLogger.log('book_shelf_build',
+          'variant=grid count=${books.length} elapsed=${sw.elapsedMicroseconds}us');
+      return result;
     }
-    return Column(
-      children: [
-        for (final entry in books.indexed)
-          Padding(
-            padding: const EdgeInsets.fromLTRB(20, 0, 20, 4),
-            child: StaggeredEntrance(
-              index: entry.$1 + 1,
-              child: LibraryBookCard(
-                book: entry.$2,
-                variant: LibraryCardVariant.list,
-                selected: provider.selectedIds.contains('b:${entry.$2.id}'),
-                selectionMode: provider.selectionMode,
-                showSourcePills: provider.showSourcePills,
-                onTap: () => provider.selectionMode
-                    ? provider.toggleSelection('b:${entry.$2.id}')
-                    : onOpen(entry.$2.id),
-                onLongPress: () => provider.toggleSelection('b:${entry.$2.id}'),
-              ),
-            ),
-          ),
-      ],
+        final result = ListView.separated(
+      shrinkWrap: true,
+      physics: const NeverScrollableScrollPhysics(),
+      padding: const EdgeInsets.symmetric(horizontal: 20),
+      itemCount: books.length,
+      separatorBuilder: (_, _) => const SizedBox(height: 4),
+      itemBuilder: (ctx, i) => StaggeredEntrance(
+        index: i + 1,
+        child: LibraryBookCard(
+          book: books[i],
+          variant: LibraryCardVariant.list,
+          selected: provider.selectedIds.contains('b:${books[i].id}'),
+          selectionMode: provider.selectionMode,
+          showSourcePills: provider.showSourcePills,
+          onTap: () => provider.selectionMode
+              ? notifier.toggleSelection('b:${books[i].id}')
+              : onOpen(books[i].id),
+          onLongPress: () => notifier.toggleSelection('b:${books[i].id}'),
+        ),
+      ),
     );
+    BenchmarkLogger.log('book_shelf_build',
+        'variant=list count=${books.length} elapsed=${sw.elapsedMicroseconds}us');
+    return result;
   }
 }
 
 class _MangaShelf extends StatelessWidget {
   final List<Manga> mangas;
   final bool gridView;
-  final LibraryProvider provider;
+  final LibraryState provider;
+  final LibraryNotifier notifier;
   final ValueChanged<Manga> onOpen;
   final Map<int, String?> mangaThumbnails;
   final Map<String, String> extensionNames;
@@ -1357,6 +1475,7 @@ class _MangaShelf extends StatelessWidget {
     required this.mangas,
     required this.gridView,
     required this.provider,
+    required this.notifier,
     required this.onOpen,
     this.mangaThumbnails = const {},
     this.extensionNames = const {},
@@ -1375,8 +1494,9 @@ class _MangaShelf extends StatelessWidget {
         ),
       );
     }
+    final sw = Stopwatch()..start();
     if (gridView) {
-      return Padding(
+      final result = Padding(
         padding: const EdgeInsets.symmetric(horizontal: 20),
         child: GridView.builder(
           shrinkWrap: true,
@@ -1400,38 +1520,46 @@ class _MangaShelf extends StatelessWidget {
                 extensionName: extensionNames[manga.sourceId] ?? manga.sourceId,
                 showSourcePills: showSourcePills,
                 onTap: () => provider.selectionMode
-                    ? provider.toggleSelection('m:${manga.id}')
+                    ? notifier.toggleSelection('m:${manga.id}')
                     : onOpen(manga),
-                onLongPress: () => provider.toggleSelection('m:${manga.id}'),
+                onLongPress: () => notifier.toggleSelection('m:${manga.id}'),
               ),
             );
           },
         ),
       );
+      BenchmarkLogger.log('manga_shelf_build',
+          'variant=grid count=${mangas.length} elapsed=${sw.elapsedMicroseconds}us');
+      return result;
     }
-    return Column(
-      children: [
-        for (final entry in mangas.indexed)
-          StaggeredEntrance(
-            index: entry.$1 + 1,
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 20),
-              child: _MangaLibraryRow(
-                manga: entry.$2,
-                localImagePath: mangaThumbnails[entry.$2.id],
-                selected: provider.selectedIds.contains('m:${entry.$2.id}'),
-                selectionMode: provider.selectionMode,
-                extensionName: extensionNames[entry.$2.sourceId] ?? entry.$2.sourceId,
-                showSourcePills: showSourcePills,
-                onTap: () => provider.selectionMode
-                    ? provider.toggleSelection('m:${entry.$2.id}')
-                    : onOpen(entry.$2),
-                onLongPress: () => provider.toggleSelection('m:${entry.$2.id}'),
-              ),
-            ),
+        Widget result = ListView.separated(
+      shrinkWrap: true,
+      physics: const NeverScrollableScrollPhysics(),
+      padding: const EdgeInsets.symmetric(horizontal: 20),
+      itemCount: mangas.length,
+      separatorBuilder: (_, _) => const SizedBox(height: 8),
+      itemBuilder: (ctx, i) {
+        final manga = mangas[i];
+        return StaggeredEntrance(
+          index: i + 1,
+          child: _MangaLibraryRow(
+            manga: manga,
+            localImagePath: mangaThumbnails[manga.id],
+            selected: provider.selectedIds.contains('m:${manga.id}'),
+            selectionMode: provider.selectionMode,
+            extensionName: extensionNames[manga.sourceId] ?? manga.sourceId,
+            showSourcePills: showSourcePills,
+            onTap: () => provider.selectionMode
+                ? notifier.toggleSelection('m:${manga.id}')
+                : onOpen(manga),
+            onLongPress: () => notifier.toggleSelection('m:${manga.id}'),
           ),
-      ],
+        );
+      },
     );
+    BenchmarkLogger.log('manga_shelf_build',
+        'variant=list count=${mangas.length} elapsed=${sw.elapsedMicroseconds}us');
+    return result;
   }
 }
 
@@ -1487,8 +1615,8 @@ class _MangaLibraryCard extends StatelessWidget {
                             errorBuilder: (_, __, ___) => _placeholder(c),
                           )
                         : manga.imageUrl != null && manga.imageUrl!.isNotEmpty
-                            ? Image.network(
-                                manga.imageUrl!,
+                            ? Image(
+                                image: cachedCover(manga.imageUrl!),
                                 width: double.infinity,
                                 fit: BoxFit.cover,
                                 errorBuilder: (_, __, ___) => _placeholder(c),
@@ -1623,8 +1751,8 @@ class _MangaLibraryRow extends StatelessWidget {
                             errorBuilder: (_, __, ___) => _placeholder(c, 48, 64),
                           )
                         : manga.imageUrl != null && manga.imageUrl!.isNotEmpty
-                            ? Image.network(
-                                manga.imageUrl!,
+                            ? Image(
+                                image: cachedCover(manga.imageUrl!, width: 48, height: 64),
                                 width: 48,
                                 height: 64,
                                 fit: BoxFit.cover,
