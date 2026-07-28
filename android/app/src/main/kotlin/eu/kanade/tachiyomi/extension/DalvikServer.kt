@@ -400,7 +400,7 @@ class DalvikServer(
                 }
                 "getLatestUpdates" -> {
                     val page = root.int("page") ?: 1
-                    withSource(data!!) { src ->
+                    withLoadedExtension(root.str("sourceId"), data) { src ->
                         val mp = runBlocking { src.getLatestUpdates(page) }
                         json.encodeToString(buildJsonObject {
                             put("mangas", JsonArray(mp.mangas.map { it.toMap().toJsonObject() }))
@@ -411,7 +411,7 @@ class DalvikServer(
                 "getSearchManga" -> {
                     val page = root.int("page") ?: 1
                     val query = root.str("query") ?: ""
-                    withSource(data!!) { src ->
+                    withLoadedExtension(root.str("sourceId"), data) { src ->
                         val mp = try {
                             runBlocking { src.getSearchManga(page, query, FilterList()) }
                         } catch (_: AbstractMethodError) {
@@ -425,7 +425,7 @@ class DalvikServer(
                 }
                 "getMangaDetails" -> {
                     val url = root.str("url") ?: return errorJson("missing url")
-                    withSource(data!!) { src ->
+                    withLoadedExtension(root.str("sourceId"), data) { src ->
                         val manga = SManga.create().apply { this.url = url }
                         val result = try {
                             runBlocking { src.getMangaUpdate(manga, emptyList(), fetchDetails = true, fetchChapters = false) }
@@ -441,7 +441,7 @@ class DalvikServer(
                 }
                 "getMangaUpdate" -> {
                     val url = root.str("url") ?: return errorJson("missing url")
-                    withSource(data!!) { src ->
+                    withLoadedExtension(root.str("sourceId"), data) { src ->
                         val manga = SManga.create().apply { this.url = url }
                         val update = try {
                             runBlocking { src.getMangaUpdate(manga, emptyList(), fetchDetails = true, fetchChapters = true) }
@@ -461,7 +461,7 @@ class DalvikServer(
                 }
                 "getChapterList" -> {
                     val url = root.str("url") ?: return errorJson("missing url")
-                    withSource(data!!) { src ->
+                    withLoadedExtension(root.str("sourceId"), data) { src ->
                         val manga = SManga.create().apply { this.url = url }
                         val update = try {
                             runBlocking { src.getMangaUpdate(manga, emptyList(), fetchDetails = false, fetchChapters = true) }
@@ -474,7 +474,7 @@ class DalvikServer(
                 }
                 "getPageList" -> {
                     val url = root.str("url") ?: return errorJson("missing url")
-                    withSource(data!!) { src ->
+                    withLoadedExtension(root.str("sourceId"), data) { src ->
                         val chapter = SChapter.create().apply { this.url = url }
                         val pages = runBlocking {
                             src.getPageList(chapter).map { page ->
@@ -494,7 +494,7 @@ class DalvikServer(
                     val chapterUrls = (root["chapterUrls"] as? JsonArray)?.map { (it as? JsonPrimitive)?.content ?: "" } ?: emptyList()
                     val chapterNames = (root["chapterNames"] as? JsonArray)?.map { (it as? JsonPrimitive)?.content ?: "" } ?: emptyList()
                     val sourceId = root.str("sourceId") ?: ""
-                    withSource(data!!) { src ->
+                    withLoadedExtension(root.str("sourceId"), data) { src ->
                         val mangaKey = sha256(mangaUrl).take(16)
                         val baseDir = File(context.filesDir, "manga/$sourceId/$mangaKey")
                         baseDir.mkdirs()
@@ -555,7 +555,7 @@ class DalvikServer(
                     json.encodeToString(paths.toJsonElement())
                 }
                 "getExtensionMetadata" -> {
-                    withSource(data!!) { src ->
+                    withLoadedExtension(root.str("sourceId"), data) { src ->
                         json.encodeToString(buildJsonObject {
                             put("id", src.id.toString())
                             put("name", src.name)

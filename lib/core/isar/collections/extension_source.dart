@@ -47,6 +47,54 @@ class ExtensionSource {
   DateTime? createdAt;
   DateTime? updatedAt;
 
+  bool get isUpdateAvailable => versionLast != null && versionLast != version;
+
+  ExtensionSource copyWith({
+    Id? id,
+    String? sourceId,
+    String? name,
+    String? version,
+    String? versionLast,
+    String? lang,
+    String? apkPath,
+    String? className,
+    String? iconUrl,
+    String? baseUrl,
+    String? sourceCodeUrl,
+    String? repoUrl,
+    bool? isInstalled,
+    bool? isActive,
+    bool? isNsfw,
+    bool? isPinned,
+    bool? isObsolete,
+    String? sourceCodeLanguage,
+    DateTime? createdAt,
+    DateTime? updatedAt,
+  }) {
+    return ExtensionSource(
+      id: id ?? this.id,
+      sourceId: sourceId ?? this.sourceId,
+      name: name ?? this.name,
+      version: version ?? this.version,
+      versionLast: versionLast ?? this.versionLast,
+      lang: lang ?? this.lang,
+      apkPath: apkPath ?? this.apkPath,
+      className: className ?? this.className,
+      iconUrl: iconUrl ?? this.iconUrl,
+      baseUrl: baseUrl ?? this.baseUrl,
+      sourceCodeUrl: sourceCodeUrl ?? this.sourceCodeUrl,
+      repoUrl: repoUrl ?? this.repoUrl,
+      isInstalled: isInstalled ?? this.isInstalled,
+      isActive: isActive ?? this.isActive,
+      isNsfw: isNsfw ?? this.isNsfw,
+      isPinned: isPinned ?? this.isPinned,
+      isObsolete: isObsolete ?? this.isObsolete,
+      sourceCodeLanguage: sourceCodeLanguage ?? this.sourceCodeLanguage,
+      createdAt: createdAt ?? this.createdAt,
+      updatedAt: updatedAt ?? this.updatedAt,
+    );
+  }
+
   ExtensionSource({
     this.id = Isar.autoIncrement,
     required this.sourceId,

@@ -45,6 +45,7 @@ final updateMangaDetailProvider =
 
   final source = MSource(
     id: manga.sourceId,
+    sourceId: manga.sourceId,
     name: '',
     lang: 'en',
     baseUrl: '',
