@@ -1,64 +1,47 @@
-# Keiyoushi Extension Installation — Progress & Current Issue
+# Keiyoushi Extension Loading — Progress
 
 ## Goal
-Enable the Flutter app to install and load Keiyoushi/Mihon extension APKs at runtime using `DexClassLoader` on Android 14+.
+Enable the Flutter app to install and load Keiyoushi/Mihon extension APKs at runtime on Android 14+.
 
-## What We Built
-- **Dart side (`lib/core/services/extension_manager.dart`)**: fetches `index.min.json`, downloads APKs, and calls the Kotlin bridge.
-- **Kotlin bridge (`KeiyoushiMethodChannel.kt` → `KeiyoushiEngine.kt` → `ExtensionLoader.kt`)**: receives `apkPath` + `className`, marks files read-only for Android 14 DCL, and loads the class via `DexClassLoader`.
-- **Tachiyomi stub library** (under `android/app/src/main/kotlin/eu/kanade/tachiyomi/`):
-  - `source/Source.kt`
-  - `source/SourceFactory.kt`
-  - `source/ConfigurableSource.kt`
-  - `source/model/Models.kt`
-  - `source/model/Filter.kt`
-  - `source/online/HttpSource.kt`
-  - `source/online/ParsedHttpSource.kt`
-  - `network/NetworkHelper.kt`
-  - `util/ResponseExtensions.kt`
+## Architecture (current)
 
-These stubs satisfy the extension APKs’ references to `eu.kanade.tachiyomi.*` classes.
-
-## Issues Encountered (chronological)
-
-### 1. Writable dex file / `SecurityException`
-**Fix**: `ExtensionLoader.kt` now marks the APK and optimized-dex directory read-only before `DexClassLoader` opens them.
-
-### 2. Relative class names (`ClassNotFoundException: ".ExtensionGenerated"`)
-**Fix**: `ExtensionLoader.kt` resolves class names starting with `.` by prepending the APK’s manifest package name.
-
-### 3. Missing `SourceFactory` (`NoClassDefFoundError`)
-**Fix**: Added `SourceFactory.kt` stub.
-
-### 4. Duplicate `Requests.kt` conflicting with `NetworkHelper.kt`
-**Fix**: Deleted the duplicate `Requests.kt` file.
-
-### 5. `ExtensionGenerated does not implement Source`
-**Current blocker**.
-
-## Current Issue: `SourceFactory` vs `Source`
-
-**Error**:
 ```
-IllegalArgumentException: eu.kanade.tachiyomi.extension.all.mangadex.ExtensionGenerated does not implement Source
+Dart (KeiyoushiService) ──HTTP POST──→ DalvikServer (raw ServerSocket)
+                                           │
+                                     KeiyoushiEngine
+                                           │
+                                     ExtensionLoader (DexClassLoader)
+                                           │
+                                     ExtensionGenerated (reflectively)
 ```
 
-**Root cause**: Multi-source extensions (e.g. MangaDex, MangaFire) expose many sources per APK. In the upstream Mihon/Keiyoushi build system, the generated `ExtensionGenerated` class typically implements **`SourceFactory`**, not `Source` directly. Our `ExtensionLoader` was checking `Source::class.java.isAssignableFrom(clazz)` and rejecting classes that only implement `SourceFactory`.
+- **`DalvikServer.kt`**: HTTP server listening on a local port. Receives JSON-RPC requests from Dart, dispatches to `KeiyoushiEngine`, serializes responses as `JsonElement` (never `Any`).
+- **`KeiyoushiEngine.kt`**: Manages loaded extensions by source ID, calls `ExtensionLoader`, provides `getPopularManga`/`getMangaDetails`/`getChapterList`/`getPageList` etc. Catches all `Throwable` from extension overrides and returns fallback values (bare `SManga`, empty list).
+- **`ExtensionLoader.kt`**: Creates `ChildFirstPathClassLoader` per APK, resolves relative class names, instantiates `Source` objects.
+- **Tachiyomi stub library** (`android/app/src/main/kotlin/eu/kanade/tachiyomi/`): `Source`, `HttpSource`, `SManga`, `SChapter`, `Page`, etc.
 
-**Partial fix applied**: `ExtensionLoader.instantiate()` now detects `SourceFactory` implementations, calls `createSources()`, and returns the first source. The `Source` interface was also expanded with `baseUrl` and `supportsLatest`.
+## Completed
 
-**Remaining problem**: Real extension APKs still fail at load time. The suspicion is that the app’s stub `Source`/`HttpSource` interfaces are too minimal compared to the real tachiyomi/mihon APIs the extensions were compiled against. Extensions reference additional types (`SourceFactory`, `ConfigurableSource`, filter model classes, coroutine-based suspend APIs, etc.). If any required class is missing or has an incompatible shape, class loading or instantiation will fail.
+- [x] Extension APK download and install from Keiyoushi repos
+- [x] `DexClassLoader` with read-only enforcement for Android 14 DCL
+- [x] Relative class name resolution (`.ExtensionGenerated` → FQN)
+- [x] `SourceFactory` detection and first-source extraction
+- [x] All `catch (e: Exception)` → `catch (e: Throwable)` in server (NPE coverage)
+- [x] `_post()` no longer throws on JSON `error` field; `_postChecked()` for operations that must fail
+- [x] `KeiyoushiEngine.getMangaDetails` / `getChapterList` — try-catch around `getMangaUpdate`, returns fallback on failure
+- [x] `Image.network` → `CustomExtendedNetworkImageProvider` (50 MB memory + 500 MB disk LRU)
+- [x] `contentLength` normalized `-1` → `0` for `ImageChunkEvent` assertion
+- [x] All `json.encodeToString(mapOf(...))` → `buildJsonObject { put(...) }` / `toJsonObject()` to avoid `Serializer for class 'Any'` crash
+- [x] `KeiyoushiMethodChannel.kt` deleted (functionality moved into `DalvikServer` / `MainActivity`)
+- [x] Version `2.19.19+149`
 
-**Evidence gathered**:
-- Keiyoushi `index.min.json` does **not** contain a `className` field; the class name is read from the APK manifest meta-data `tachiyomi.extension.class`.
-- Extensions like MangaDex and MangaFire do **not** ship that meta-data in their manifests (or it is not readable by our extractor).
-- Extensions compiled against the real tachiyomi source-api expect many more members than our stubs provide.
+## Remaining
 
-## Next Steps
-1. **Use the real stub library** (`mihonapp/tachiyomix`) instead of hand-written stubs, or otherwise align our stubs with the upstream `Source` API surface.
-2. **Verify the actual extension class hierarchy** by decompiling the APK (e.g. `jadx`, `apktool`, or `dex2jar`) to see exactly what the generated class extends/implements.
-3. **Confirm the manifest meta-data**: inspect APK manifests with `aapt2 dump xmltree` or a binary XML parser to see whether `tachiyomi.extension.class` is present and what value it contains.
-4. **Fix the build environment**: resolve the AGP/JDK 26 / `flutter_plugin_android_lifecycle` `jlink` failure (switch to JDK 17 per `AGENTS.md`, or use `--android-skip-build-dependency-validation`).
+- [ ] Stateless per-request APK loading (mangayomi pattern: base64 APK in every POST, temp file per request, no `sourceById` caching)
+- [ ] Delete `KeiyoushiEngine.kt` / `ExtensionLoader.kt` if/when functionality fully inlined into `DalvikServer`
+- [ ] Verify all `Image.network` remnants replaced (3 locations: `min_subsampling_image_view.dart:50`, `history_screen.dart:355`, `double_page_view.dart:148`)
 
-## Version
-`2.5.8+31`
+## Known Issues
+
+- **JDK 26**: `jlink` bug against `android-36/core-for-system-modules.jar` — build with JDK 25. Pinned via `flutter config --jdk-dir=...`.
+- **`ExtensionGenerated.getMangaUpdate` is the method override** — fixing `CatalogueSource.kt` interface default is ineffective. Error handling must live in `KeiyoushiEngine.kt` and the Dart client.
