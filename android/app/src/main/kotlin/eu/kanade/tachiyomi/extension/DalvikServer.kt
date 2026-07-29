@@ -772,16 +772,11 @@ class DalvikServer(
     private fun jsonPrimitiveString(el: JsonElement?): String? =
         (el as? JsonPrimitive)?.content
 
-    private fun jsonPrimitiveBoolean(el: JsonElement?): Boolean? {
-        val p = el as? JsonPrimitive ?: return null
-        return p.content.toBooleanStrictOrNull()
-            ?: p.booleanOrNull
-    }
+    private fun jsonPrimitiveBoolean(el: JsonElement?): Boolean? =
+        (el as? JsonPrimitive)?.content?.toBooleanStrictOrNull()
 
-    private fun jsonPrimitiveInt(el: JsonElement?): Int? {
-        val p = el as? JsonPrimitive ?: return null
-        return p.content.toIntOrNull() ?: p.intOrNull
-    }
+    private fun jsonPrimitiveInt(el: JsonElement?): Int? =
+        (el as? JsonPrimitive)?.content?.toIntOrNull()
 
     private fun parseFilter(jo: JsonObject?): Filter<*>? {
         if (jo == null) return null
