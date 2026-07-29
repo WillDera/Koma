@@ -189,6 +189,28 @@ class _SourceBrowseScreenState extends ConsumerState<SourceBrowseScreen>
                     manga: m,
                     onTap: () async {
                       final repos = ref.read(repositoriesProvider);
+                      // Reuse an existing library row if present so the
+                      // MangaDetailScreen reflects the correct inLibrary
+                      // state and we don't create duplicate entries.
+                      final existing = await repos.manga.getMangaByKey(
+                        widget.sourceId,
+                        m.url,
+                      );
+                      if (existing != null) {
+                        if (!context.mounted) return;
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) => MangaDetailScreen(
+                              sourceId: widget.sourceId,
+                              url: m.url,
+                              title: m.title,
+                              manga: existing,
+                            ),
+                          ),
+                        );
+                        return;
+                      }
                       final manga = Manga(
                         id: 0,
                         name: m.title,
