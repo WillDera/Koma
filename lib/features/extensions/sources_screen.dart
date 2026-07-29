@@ -313,8 +313,8 @@ class _SourceTile extends StatelessWidget {
     );
   }
 
-  Widget _buildIcon(String pkg, KomaColors c, {double size = 37}) {
-    return _PkgExtensionIcon(pkg: pkg, colors: c, size: size);
+  Widget _buildIcon(String pkg, KomaColors c, {double size = 37, String? iconUrl}) {
+    return _PkgExtensionIcon(pkg: pkg, colors: c, size: size, iconUrl: iconUrl);
   }
 }
 
@@ -357,11 +357,13 @@ class _PkgExtensionIcon extends StatefulWidget {
   final String pkg;
   final KomaColors colors;
   final double size;
+  final String? iconUrl;
 
   const _PkgExtensionIcon({
     required this.pkg,
     required this.colors,
     required this.size,
+    this.iconUrl,
   });
 
   @override
@@ -369,20 +371,25 @@ class _PkgExtensionIcon extends StatefulWidget {
 }
 
 class _PkgExtensionIconState extends State<_PkgExtensionIcon> {
-  String? _url = ExtensionIconCache.iconUrlForPkg('');
+  String? _url;
 
   @override
   void initState() {
     super.initState();
-    _url = ExtensionIconCache.iconUrlForPkg(widget.pkg);
-    _resolveFromCache();
+    if (widget.iconUrl != null && widget.iconUrl!.isNotEmpty) {
+      _url = widget.iconUrl;
+    } else {
+      _url = ExtensionIconCache.iconUrlForPkg(widget.pkg);
+      _resolveFromCache();
+    }
   }
 
   Future<void> _resolveFromCache() async {
+    if (_url != null && _url!.isNotEmpty) return;
     final cached =
         await ExtensionIconCache.instance.cachedIconUrl(widget.pkg);
     if (!mounted) return;
-    if (cached != null && cached.isNotEmpty && cached != _url) {
+    if (cached != null && cached.isNotEmpty) {
       setState(() => _url = cached);
     }
   }
