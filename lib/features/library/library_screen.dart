@@ -295,9 +295,9 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> with RouteAware {
             oneHand: _oneHand,
             selectionMode: provider.selectionMode,
             selectedCount: provider.selectedIds.length,
-            onSelectAll: () => ref.read(libraryProvider.notifier).selectAll,
+            onSelectAll: () => ref.read(libraryProvider.notifier).selectAll(),
             onDeleteSelected: () => _confirmDelete(context, provider),
-            onClearSelection: () => ref.read(libraryProvider.notifier).clearSelection,
+            onClearSelection: () => ref.read(libraryProvider.notifier).clearSelection(),
           ),
           if (!provider.selectionMode)
             StaggeredEntrance(
