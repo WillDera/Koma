@@ -108,7 +108,7 @@ class ExtensionManager {
     final dir = await _extensionsDir();
     final apkPath = p.join(dir.path, '${entry.pkg}.apk');
     final baseUrl = repoUrl.replaceFirst(RegExp(r'/[^/]*$'), '');
-    final resolved = '$baseUrl/apk/${entry.apkUrl}';
+    final resolved = _resolveApkUrl(baseUrl, entry.apkUrl);
 
     final apkFile = File(apkPath);
     if (apkFile.existsSync()) {
@@ -119,7 +119,7 @@ class ExtensionManager {
 
     final iconUrl =
         ExtensionIconCache.iconUrlForPkg(entry.pkg) ?? '';
-    final sourceCodeUrl = '$baseUrl/apk/${entry.apkUrl}';
+    final sourceCodeUrl = resolved;
 
     final desc = await _keiyoushi.loadExtension(
       apkPath: apkPath,
@@ -175,7 +175,7 @@ class ExtensionManager {
     final dir = await _extensionsDir();
     final newApkPath = p.join(dir.path, '${entry.pkg}.apk');
     final baseUrl = repoUrl.replaceFirst(RegExp(r'/[^/]*$'), '');
-    final resolved = '$baseUrl/apk/${entry.apkUrl}';
+    final resolved = _resolveApkUrl(baseUrl, entry.apkUrl);
 
     final apkFile = File(newApkPath);
     if (apkFile.existsSync()) {
@@ -330,6 +330,17 @@ class ExtensionManager {
       await Process.run('chmod', ['-R', '+w', dir.path]);
     } catch (_) {}
     return dir;
+  }
+
+  String _resolveApkUrl(String baseUrl, String apkUrl) {
+    if (apkUrl.isEmpty) return '';
+    if (apkUrl.startsWith('http://') || apkUrl.startsWith('https://')) {
+      return apkUrl;
+    }
+    if (apkUrl.contains('/')) {
+      return '$baseUrl/$apkUrl';
+    }
+    return '$baseUrl/apk/$apkUrl';
   }
 
   Future<void> _downloadApk(String url, String destPath) async {

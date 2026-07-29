@@ -99,18 +99,6 @@ class _SettingsHub extends StatelessWidget {
               _open(context, 'Sources', const _SourcesAndPluginsPage()),
         ),
         SettingsRow(
-          icon: Icons.extension_outlined,
-          title: 'Extensions',
-          onTap: () =>
-              _open(context, 'Extensions', const _ExtensionsSection()),
-        ),
-        SettingsRow(
-          icon: Icons.library_books_outlined,
-          title: 'Library',
-          onTap: () =>
-              _open(context, 'Library', const _LibrarySection()),
-        ),
-        SettingsRow(
           icon: Icons.info_outline_rounded,
           title: 'About',
           onTap: () => _open(context, 'About', const _AboutSection()),
@@ -181,124 +169,6 @@ class _SourcesAndPluginsPage extends StatelessWidget {
   }
 }
 
-class _ExtensionsSection extends ConsumerWidget {
-  const _ExtensionsSection();
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final c = context.colors;
-    final theme = ref.watch(themeProvider);
-    final tn = ref.read(themeProvider.notifier);
-    return SettingsSection(
-      title: 'Extensions',
-      children: [
-        Material(
-          type: MaterialType.transparency,
-          child: SwitchListTile(
-            contentPadding: EdgeInsets.zero,
-            title: const Text('Show NSFW extensions'),
-            subtitle: Text(
-              'Hide sensitive extensions by default',
-              style: TextStyle(color: c.textSecondary, fontSize: 12),
-            ),
-            value: theme.showNsfwExtensions,
-            onChanged: tn.setShowNsfwExtensions,
-          ),
-        ),
-        Material(
-          type: MaterialType.transparency,
-          child: SwitchListTile(
-            contentPadding: EdgeInsets.zero,
-            title: const Text('Show obsolete extensions'),
-            subtitle: Text(
-              'Hide extensions marked as outdated',
-              style: TextStyle(color: c.textSecondary, fontSize: 12),
-            ),
-            value: theme.showObsoleteExtensions,
-            onChanged: tn.setShowObsoleteExtensions,
-          ),
-        ),
-      ],
-    );
-  }
-}
-
-class _LibrarySection extends ConsumerWidget {
-  const _LibrarySection();
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final c = context.colors;
-    final library = ref.watch(libraryProvider);
-    final ln = ref.read(libraryProvider.notifier);
-    return SettingsSection(
-      title: 'Library',
-      children: [
-        Padding(
-          padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                'Grid columns',
-                style: TextStyle(
-                  color: c.textPrimary,
-                  fontSize: 14,
-                  fontWeight: FontWeight.w500,
-                ),
-              ),
-              const SizedBox(height: 10),
-              SegmentedControl<int>(
-                segments: const {
-                  2: '2',
-                  3: '3',
-                  4: '4',
-                  5: '5',
-                },
-                value: library.gridColumns,
-                onChanged: (v) => ln.setGridColumns(v ?? 2),
-              ),
-            ],
-          ),
-        ),
-        const Padding(
-          padding: EdgeInsets.symmetric(horizontal: 16),
-          child: HairlineDivider(),
-        ),
-        Padding(
-          padding: const EdgeInsets.fromLTRB(16, 16, 16, 16),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                'Card style',
-                style: TextStyle(
-                  color: c.textPrimary,
-                  fontSize: 14,
-                  fontWeight: FontWeight.w500,
-                ),
-              ),
-              const SizedBox(height: 10),
-              SegmentedControl<LibraryCardVariant>(
-                segments: const {
-                  LibraryCardVariant.grid: 'Grid',
-                  LibraryCardVariant.list: 'List',
-                  LibraryCardVariant.compact: 'Compact',
-                  LibraryCardVariant.overlay: 'Overlay',
-                },
-                value: library.cardVariant,
-                onChanged: (v) {
-                  if (v != null) ln.setCardVariant(v);
-                },
-              ),
-            ],
-          ),
-        ),
-      ],
-    );
-  }
-}
-
 // ─── Appearance ──────────────────────────────────────────────────────────
 class _AppearanceSection extends ConsumerWidget {
   const _AppearanceSection();
@@ -308,6 +178,8 @@ class _AppearanceSection extends ConsumerWidget {
     final c = context.colors;
     final theme = ref.watch(themeProvider);
     final tn = ref.read(themeProvider.notifier);
+    final library = ref.watch(libraryProvider);
+    final ln = ref.read(libraryProvider.notifier);
     return SettingsSection(
       title: 'Appearance',
       children: [
@@ -482,6 +354,59 @@ class _AppearanceSection extends ConsumerWidget {
                 },
                 value: theme.handMode,
                 onChanged: tn.setHandMode,
+              ),
+            ],
+          ),
+        ),
+        const Padding(
+          padding: EdgeInsets.symmetric(horizontal: 16),
+          child: HairlineDivider(),
+        ),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 16, 16, 16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Library grid',
+                style: TextStyle(
+                  color: c.textPrimary,
+                  fontSize: 14,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+              const SizedBox(height: 10),
+              SegmentedControl<int>(
+                segments: const {
+                  2: '2 cols',
+                  3: '3 cols',
+                  4: '4 cols',
+                  5: '5 cols',
+                },
+                value: library.gridColumns,
+                onChanged: (v) => ln.setGridColumns(v ?? 2),
+              ),
+              const SizedBox(height: 16),
+              Text(
+                'Card style',
+                style: TextStyle(
+                  color: c.textPrimary,
+                  fontSize: 14,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+              const SizedBox(height: 10),
+              SegmentedControl<LibraryCardVariant>(
+                segments: const {
+                  LibraryCardVariant.grid: 'Grid',
+                  LibraryCardVariant.list: 'List',
+                  LibraryCardVariant.compact: 'Compact',
+                  LibraryCardVariant.overlay: 'Overlay',
+                },
+                value: library.cardVariant,
+                onChanged: (v) {
+                  if (v != null) ln.setCardVariant(v);
+                },
               ),
             ],
           ),
@@ -1120,6 +1045,9 @@ class _SourcesSectionState extends ConsumerState<_SourcesSection> {
 
   @override
   Widget build(BuildContext context) {
+    final theme = ref.watch(themeProvider);
+    final tn = ref.read(themeProvider.notifier);
+    final c = context.colors;
     if (_loading) return const SizedBox.shrink();
     if (_error != null) {
       return SettingsSection(
@@ -1147,6 +1075,36 @@ class _SourcesSectionState extends ConsumerState<_SourcesSection> {
           ),
         ),
         SettingsRow(icon: Icons.add, title: 'Add source', onTap: _add),
+        const Padding(
+          padding: EdgeInsets.symmetric(horizontal: 16),
+          child: HairlineDivider(),
+        ),
+        Material(
+          type: MaterialType.transparency,
+          child: SwitchListTile(
+            contentPadding: const EdgeInsets.symmetric(horizontal: 16),
+            title: const Text('Show NSFW extensions'),
+            subtitle: Text(
+              'Hide sensitive extensions by default',
+              style: TextStyle(color: c.textSecondary, fontSize: 12),
+            ),
+            value: theme.showNsfwExtensions,
+            onChanged: tn.setShowNsfwExtensions,
+          ),
+        ),
+        Material(
+          type: MaterialType.transparency,
+          child: SwitchListTile(
+            contentPadding: const EdgeInsets.symmetric(horizontal: 16),
+            title: const Text('Show obsolete extensions'),
+            subtitle: Text(
+              'Hide extensions marked as outdated',
+              style: TextStyle(color: c.textSecondary, fontSize: 12),
+            ),
+            value: theme.showObsoleteExtensions,
+            onChanged: tn.setShowObsoleteExtensions,
+          ),
+        ),
       ],
     );
   }

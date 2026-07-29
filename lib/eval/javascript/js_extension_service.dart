@@ -21,6 +21,9 @@ class JsExtensionService implements ExtensionService {
   }
 
   @override
+  Future<FilterList> getFilterList(MSource source) async => const FilterList();
+
+  @override
   Future<List<MManga>> getPopular(int page, {required MSource source}) async {
     final rt = _ensureRuntime();
     final results = rt.evaluateMangaList(

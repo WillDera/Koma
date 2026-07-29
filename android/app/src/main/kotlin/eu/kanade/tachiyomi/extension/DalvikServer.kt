@@ -9,6 +9,7 @@ import eu.kanade.tachiyomi.network.NetworkHelper
 import eu.kanade.tachiyomi.network.defaultClient
 import eu.kanade.tachiyomi.source.Source
 import eu.kanade.tachiyomi.source.SourceFactory
+import eu.kanade.tachiyomi.source.model.Filter
 import eu.kanade.tachiyomi.source.model.FilterList
 import eu.kanade.tachiyomi.source.model.MangasPage
 import eu.kanade.tachiyomi.source.model.Page
@@ -436,9 +437,10 @@ class DalvikServer(
                 "getSearchManga" -> {
                     val page = root.int("page") ?: 1
                     val query = root.str("query") ?: ""
+                    val filters = parseFilters(root)
                     withLoadedExtension(root.str("sourceId"), data) { src ->
                         val mp = try {
-                            runBlocking { src.getSearchManga(page, query, FilterList()) }
+                            runBlocking { src.getSearchManga(page, query, filters) }
                         } catch (_: AbstractMethodError) {
                             MangasPage(emptyList(), false)
                         }
@@ -591,7 +593,16 @@ class DalvikServer(
                 }
                 "headersManga", "headersAnime" -> json.encodeToString(buildJsonObject { })
                 "supportLatestManga", "supportLatestAnime" -> json.encodeToString(JsonPrimitive(true))
-                "filtersManga", "filtersAnime" -> json.encodeToString(JsonArray(emptyList()))
+                "filtersManga", "filtersAnime" -> {
+                    withLoadedExtension(root.str("sourceId"), data) { src ->
+                        val fl = try {
+                            src.getFilterList()
+                        } catch (_: AbstractMethodError) {
+                            FilterList()
+                        }
+                        json.encodeToString(JsonArray(fl.map { filterToJson(it) }))
+                    }
+                }
                 "preferencesManga", "preferencesAnime" -> json.encodeToString(JsonArray(emptyList()))
                 else -> errorJson("unknown method: $method")
             }
@@ -640,7 +651,93 @@ class DalvikServer(
         else -> JsonPrimitive(this.toString())
     }
 
-    private fun Map<String, Any?>.toJsonObject(): JsonObject = JsonObject(
+        private fun Map<String, Any?>.toJsonObject(): JsonObject = JsonObject(
         this.mapValues { it.value.toJsonElement() }
     )
+
+    // -- Filter serialization / deserialization --------------------------------
+
+    private fun filterToJson(filter: Filter<*>): JsonObject = buildJsonObject {
+        put("name", filter.name)
+        when (filter) {
+            is Filter.Header -> put("type", "header")
+            is Filter.Separator -> put("type", "separator")
+            is Filter.Text -> {
+                put("type", "text")
+                put("value", filter.state as String)
+            }
+            is Filter.CheckBox -> {
+                put("type", "check")
+                put("value", filter.state as Boolean)
+            }
+            is Filter.TriState -> {
+                put("type", "triState")
+                put("value", filter.state as Int)
+            }
+            is Filter.Select<*> -> {
+                put("type", "select")
+                put("value", filter.state as Int)
+                put("options", JsonArray(filter.values.map { JsonPrimitive(it.toString()) }))
+            }
+            is Filter.Sort -> {
+                put("type", "sort")
+                put("options", JsonArray(filter.values.map { JsonPrimitive(it) }))
+                val sel = filter.state
+                if (sel != null) {
+                    put("value", JsonObject(mapOf(
+                        "index" to JsonPrimitive(sel.index),
+                        "ascending" to JsonPrimitive(sel.ascending),
+                    )))
+                } else {
+                    put("value", JsonNull)
+                }
+            }
+            is Filter.Group<*> -> {
+                put("type", "group")
+                @Suppress("UNCHECKED_CAST")
+                val subs = filter.state as? List<Filter<*>> ?: emptyList()
+                put("value", JsonArray(subs.map { filterToJson(it) }))
+            }
+            else -> put("type", "text")
+        }
+    }
+
+    private fun parseFilters(root: JsonObject): FilterList {
+        val arr = root["filters"] as? JsonArray ?: return FilterList()
+        val filters = arr.mapNotNull { elem -> parseFilter(elem as? JsonObject) }
+        return FilterList(filters)
+    }
+
+    private fun parseFilter(jo: JsonObject?): Filter<*>? {
+        if (jo == null) return null
+        val name = (jo["name"] as? JsonPrimitive)?.content ?: ""
+        val type = (jo["type"] as? JsonPrimitive)?.content ?: "text"
+        val value = jo["value"]
+        return when (type) {
+            "header" -> Filter.Header(name)
+            "separator" -> Filter.Separator(name)
+            "text" -> object : Filter.Text(name, (value as? JsonPrimitive)?.content ?: "") {}
+            "check" -> object : Filter.CheckBox(name, (value as? JsonPrimitive)?.content?.toBoolean() ?: false) {}
+            "triState" -> object : Filter.TriState(name, (value as? JsonPrimitive)?.content?.toIntOrNull() ?: 0) {}
+            "select" -> {
+                val opts = (jo["options"] as? JsonArray)?.mapNotNull { (it as? JsonPrimitive)?.content } ?: emptyList()
+                object : Filter.Select<String>(name, opts.toTypedArray(), (value as? JsonPrimitive)?.content?.toIntOrNull() ?: 0) {}
+            }
+            "sort" -> {
+                val opts = (jo["options"] as? JsonArray)?.mapNotNull { (it as? JsonPrimitive)?.content } ?: emptyList()
+                val sel = if (value is JsonObject) {
+                    val idx = (value["index"] as? JsonPrimitive)?.content?.toIntOrNull() ?: 0
+                    val asc = (value["ascending"] as? JsonPrimitive)?.content?.toBoolean() ?: true
+                    Filter.Sort.Selection(idx, asc)
+                } else null
+                object : Filter.Sort(name, opts.toTypedArray(), sel) {}
+            }
+            "group" -> {
+                val subFilters = (value as? JsonArray)
+                    ?.mapNotNull { parseFilter(it as? JsonObject) } ?: emptyList()
+                object : Filter.Group<Filter<*>>(name, subFilters) {}
+            }
+            else -> null
+        }
+    }
 }

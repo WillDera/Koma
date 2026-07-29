@@ -34,6 +34,12 @@ class KeiyoushiExtensionService implements ExtensionService {
   }
 
   @override
+  Future<FilterList> getFilterList(MSource source) async {
+    final raw = await _keiyoushi.getFilters(sourceId: source.sourceId);
+    return FilterList.fromJson(raw);
+  }
+
+  @override
   Future<List<MManga>> search(
     MSource source,
     int page,
@@ -44,6 +50,7 @@ class KeiyoushiExtensionService implements ExtensionService {
       sourceId: source.sourceId,
       query: query,
       page: page,
+      filters: filters?.toJson(),
     );
     return result.mangas.map((m) => MManga.fromMap(m)).toList();
   }
