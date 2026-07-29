@@ -98,14 +98,27 @@ class KeiyoushiService {
     return _parseMangasPage(res is Map ? Map<String, dynamic>.from(res) : <String, dynamic>{});
   }
 
-  Future<({List<Map<String, dynamic>> mangas, bool hasNextPage})>
-      searchManga({required String sourceId, String query = '', int page = 1}) async {
+  Future<List<Map<String, dynamic>>> getFilters({
+    required String sourceId,
+  }) async {
     final res = await _post({
-      'method': 'getSearchManga',
+      'method': 'filtersManga',
+      'sourceId': sourceId,
+    });
+    if (res is! List) return [];
+    return res.cast<Map<String, dynamic>>();
+  }
+
+  Future<({List<Map<String, dynamic>> mangas, bool hasNextPage})>
+      searchManga({required String sourceId, String query = '', int page = 1, List<Map<String, dynamic>>? filters}) async {
+    final body = <String, dynamic>{
+      'method': 'searchManga',
       'sourceId': sourceId,
       'query': query,
       'page': page,
-    });
+    };
+    if (filters != null) body['filters'] = filters;
+    final res = await _post(body);
     return _parseMangasPage(res is Map ? Map<String, dynamic>.from(res) : <String, dynamic>{});
   }
 

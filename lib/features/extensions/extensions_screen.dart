@@ -241,6 +241,7 @@ class _ExtensionsScreenState extends ConsumerState<ExtensionsScreen>
   @override
   Widget build(BuildContext context) {
     final c = context.colors;
+    final theme = ref.watch(themeProvider);
     return Scaffold(
       backgroundColor: c.bg,
       appBar: AppBar(
@@ -293,8 +294,8 @@ class _ExtensionsScreenState extends ConsumerState<ExtensionsScreen>
                   indexCache: _indexCache,
                   loading: _loadingIndex,
                   installed: _installed,
-                  showNsfw: ref.read(themeProvider).showNsfwExtensions,
-                  showObsolete: ref.read(themeProvider).showObsoleteExtensions,
+                  showNsfw: theme.showNsfwExtensions,
+                  showObsolete: theme.showObsoleteExtensions,
                   onFetch: _fetchIndex,
                   onInstall: _install,
                   onSeed: _ensureRepoSeeded,
@@ -476,21 +477,29 @@ class _AvailableTabState extends State<_AvailableTab> {
     super.dispose();
   }
 
-  List<_AvailableRow> _buildRowsCached() {
+  List<_AvailableRow> _buildRowsCached({
+    required bool showNsfw,
+    required bool showObsolete,
+  }) {
     final key = Object.hash(
       _query,
       widget.repos.length,
       widget.indexCache.length,
       widget.installed.length,
       _collapsedRepos.length,
+      showNsfw,
+      showObsolete,
     );
     if (_cachedRows != null && _rowsCacheKey == key) return _cachedRows!;
-    _cachedRows = _buildRows();
+    _cachedRows = _buildRows(showNsfw: showNsfw, showObsolete: showObsolete);
     _rowsCacheKey = key;
     return _cachedRows!;
   }
 
-  List<_AvailableRow> _buildRows() {
+  List<_AvailableRow> _buildRows({
+    required bool showNsfw,
+    required bool showObsolete,
+  }) {
     final installedPkgs = _installedPkgs(widget.installed);
     final allEntries = <_EntryWithRepo>[];
     for (final repo in widget.repos) {
@@ -514,8 +523,9 @@ class _AvailableTabState extends State<_AvailableTab> {
     for (final er in filtered) {
       if (!_allowedLanguages.contains(er.entry.lang.toLowerCase())) continue;
       final entry = er.entry;
-      if (!widget.showNsfw && entry.isNsfw) continue;
-      if (!widget.showObsolete && entry.isObsolete) continue;
+      if (entry.sources.isEmpty) continue;
+      if (!showNsfw && entry.isNsfw) continue;
+      if (!showObsolete && entry.isObsolete) continue;
       notInstalledEntries.add(er);
     }
 
@@ -586,7 +596,12 @@ class _AvailableTabState extends State<_AvailableTab> {
 
     final hasAnyFetched =
         widget.repos.any((r) => widget.indexCache.containsKey(r.id));
-    final rows = hasAnyFetched ? _buildRowsCached() : const <_AvailableRow>[];
+    final rows = hasAnyFetched
+        ? _buildRowsCached(
+            showNsfw: widget.showNsfw,
+            showObsolete: widget.showObsolete,
+          )
+        : const <_AvailableRow>[];
 
     return Column(
       children: [
