@@ -320,7 +320,7 @@ class _SourceTile extends StatelessWidget {
       child: ClipRRect(
         borderRadius: BorderRadius.circular(5),
         child: Image(
-          image: CustomExtendedNetworkImageProvider(iconUrl),
+          image: CustomExtendedNetworkImageProvider(iconUrl, printError: false),
           fit: BoxFit.contain,
           width: size,
           height: size,
