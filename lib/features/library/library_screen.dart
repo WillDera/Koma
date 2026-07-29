@@ -198,7 +198,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> with RouteAware {
 
   Widget _body(BuildContext context, LibraryState provider) {
     if (provider.loading && provider.books.isEmpty && provider.mangas.isEmpty)
-      return _loading(context);
+      return _loading(context, provider.gridColumns);
     if (provider.error != null) return _error(context, provider);
     if (provider.books.isEmpty && provider.mangas.isEmpty)
       return _empty(context);
@@ -207,7 +207,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> with RouteAware {
 
   // ── States ──────────────────────────────────────────────────────────
 
-  Widget _loading(BuildContext context) {
+  Widget _loading(BuildContext context, int gridColumns) {
     return ListView(
       padding: const EdgeInsets.fromLTRB(20, 8, 20, 16),
       children: [
@@ -217,8 +217,8 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> with RouteAware {
         GridView.builder(
           shrinkWrap: true,
           physics: const NeverScrollableScrollPhysics(),
-          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-            crossAxisCount: 2,
+          gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+            crossAxisCount: gridColumns,
             mainAxisSpacing: 16,
             crossAxisSpacing: 16,
             childAspectRatio: 0.62,
@@ -1406,8 +1406,8 @@ class _BookShelf extends StatelessWidget {
         child: GridView.builder(
           shrinkWrap: true,
           physics: const NeverScrollableScrollPhysics(),
-          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-            crossAxisCount: 2,
+          gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+            crossAxisCount: provider.gridColumns,
             mainAxisSpacing: 18,
             crossAxisSpacing: 18,
             childAspectRatio: 0.6,
@@ -1501,8 +1501,8 @@ class _MangaShelf extends StatelessWidget {
         child: GridView.builder(
           shrinkWrap: true,
           physics: const NeverScrollableScrollPhysics(),
-          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-            crossAxisCount: 2,
+          gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+            crossAxisCount: provider.gridColumns,
             mainAxisSpacing: 8,
             crossAxisSpacing: 8,
             childAspectRatio: 0.65,
@@ -1519,6 +1519,7 @@ class _MangaShelf extends StatelessWidget {
                 selectionMode: provider.selectionMode,
                 extensionName: extensionNames[manga.sourceId] ?? manga.sourceId,
                 showSourcePills: showSourcePills,
+                variant: provider.cardVariant,
                 onTap: () => provider.selectionMode
                     ? notifier.toggleSelection('m:${manga.id}')
                     : onOpen(manga),
@@ -1574,6 +1575,7 @@ class _MangaLibraryCard extends StatelessWidget {
   final VoidCallback? onLongPress;
   final String? extensionName;
   final bool showSourcePills;
+  final LibraryCardVariant variant;
 
   const _MangaLibraryCard({
     required this.manga,
@@ -1584,11 +1586,120 @@ class _MangaLibraryCard extends StatelessWidget {
     this.onLongPress,
     this.extensionName,
     this.showSourcePills = true,
+    this.variant = LibraryCardVariant.grid,
   });
 
   @override
   Widget build(BuildContext context) {
     final c = context.colors;
+    if (variant == LibraryCardVariant.overlay) {
+      return AnimatedPress(
+        onTap: onTap,
+        onLongPress: onLongPress,
+        scaleDown: 0.99,
+        child: AspectRatio(
+          aspectRatio: 0.65,
+          child: Stack(
+            children: [
+              Positioned.fill(
+                child: localImagePath != null
+                    ? Image.file(
+                        File(localImagePath!),
+                        width: double.infinity,
+                        fit: BoxFit.cover,
+                        errorBuilder: (_, __, ___) => _placeholder(c),
+                      )
+                    : manga.imageUrl != null && manga.imageUrl!.isNotEmpty
+                        ? Image(
+                            image: cachedCover(manga.imageUrl!),
+                            width: double.infinity,
+                            fit: BoxFit.cover,
+                            errorBuilder: (_, __, ___) => _placeholder(c),
+                          )
+                        : _placeholder(c),
+              ),
+              Positioned.fill(
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.bottomCenter,
+                      end: Alignment.topCenter,
+                      colors: [
+                        Colors.black.withValues(alpha: 0.75),
+                        Colors.black.withValues(alpha: 0.35),
+                        Colors.transparent,
+                      ],
+                      stops: const [0.0, 0.35, 1.0],
+                    ),
+                  ),
+                ),
+              ),
+              if (showSourcePills)
+                Positioned(
+                  top: 6,
+                  left: 6,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: Colors.black.withValues(alpha: 0.7),
+                      borderRadius: AppSpacing.brPill,
+                    ),
+                    child: Text(
+                      extensionName ?? manga.sourceId,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 10,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                ),
+              if (selectionMode)
+                Positioned(
+                  top: 8,
+                  right: 8,
+                  child: AnimatedContainer(
+                    duration: const Duration(milliseconds: 180),
+                    width: 24,
+                    height: 24,
+                    decoration: BoxDecoration(
+                      color: selected ? c.accent : Colors.black.withValues(alpha: 0.4),
+                      shape: BoxShape.circle,
+                      border: Border.all(color: Colors.white, width: 1.5),
+                    ),
+                    child: selected
+                        ? Icon(Icons.check, size: 14, color: c.onAccent)
+                        : null,
+                  ),
+                ),
+              Positioned(
+                left: 8,
+                right: 8,
+                bottom: 8,
+                child: Text(
+                  manga.name,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                    height: 1.3,
+                    shadows: const [
+                      Shadow(
+                        blurRadius: 4,
+                        color: Colors.black54,
+                        offset: Offset(0, 1),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
     return AnimatedPress(
       onTap: onTap,
       onLongPress: onLongPress,
@@ -1644,23 +1755,23 @@ class _MangaLibraryCard extends StatelessWidget {
                        ),
                      ),
                    if (selectionMode)
-                    Positioned(
-                      top: 8,
-                      right: 8,
-                      child: AnimatedContainer(
-                        duration: const Duration(milliseconds: 180),
-                        width: 24,
-                        height: 24,
-                        decoration: BoxDecoration(
-                          color: selected ? c.accent : Colors.black.withValues(alpha: 0.4),
-                          shape: BoxShape.circle,
-                          border: Border.all(color: Colors.white, width: 1.5),
-                        ),
-                        child: selected
-                            ? Icon(Icons.check, size: 14, color: c.onAccent)
-                            : null,
-                      ),
-                    ),
+                     Positioned(
+                       top: 8,
+                       right: 8,
+                       child: AnimatedContainer(
+                         duration: const Duration(milliseconds: 180),
+                         width: 24,
+                         height: 24,
+                         decoration: BoxDecoration(
+                           color: selected ? c.accent : Colors.black.withValues(alpha: 0.4),
+                           shape: BoxShape.circle,
+                           border: Border.all(color: Colors.white, width: 1.5),
+                         ),
+                         child: selected
+                             ? Icon(Icons.check, size: 14, color: c.onAccent)
+                             : null,
+                       ),
+                     ),
                 ],
               ),
             ),

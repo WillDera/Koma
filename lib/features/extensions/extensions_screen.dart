@@ -12,6 +12,7 @@ import '../../core/services/keiyoushi_service.dart';
 import '../../core/utils/custom_extended_image_provider.dart';
 import '../../core/utils/language.dart';
 import '../../theme/app_theme.dart';
+import '../../theme/theme_provider.dart';
 import '../../theme/tokens/app_spacing.dart';
 import '../../widgets/animated_press.dart';
 import 'extension_detail_screen.dart';
@@ -292,6 +293,8 @@ class _ExtensionsScreenState extends ConsumerState<ExtensionsScreen>
                   indexCache: _indexCache,
                   loading: _loadingIndex,
                   installed: _installed,
+                  showNsfw: ref.read(themeProvider).showNsfwExtensions,
+                  showObsolete: ref.read(themeProvider).showObsoleteExtensions,
                   onFetch: _fetchIndex,
                   onInstall: _install,
                   onSeed: _ensureRepoSeeded,
@@ -403,6 +406,8 @@ class _AvailableTab extends StatefulWidget {
   final Map<int, List<ExtensionIndexEntry>> indexCache;
   final Set<int> loading;
   final List<ExtensionSource> installed;
+  final bool showNsfw;
+  final bool showObsolete;
   final void Function(ExtensionRepo) onFetch;
   final void Function(ExtensionIndexEntry, ExtensionRepo) onInstall;
   final VoidCallback onSeed;
@@ -412,6 +417,8 @@ class _AvailableTab extends StatefulWidget {
     required this.indexCache,
     required this.loading,
     required this.installed,
+    required this.showNsfw,
+    required this.showObsolete,
     required this.onFetch,
     required this.onInstall,
     required this.onSeed,
@@ -506,6 +513,9 @@ class _AvailableTabState extends State<_AvailableTab> {
 
     for (final er in filtered) {
       if (!_allowedLanguages.contains(er.entry.lang.toLowerCase())) continue;
+      final entry = er.entry;
+      if (!widget.showNsfw && entry.isNsfw) continue;
+      if (!widget.showObsolete && entry.isObsolete) continue;
       notInstalledEntries.add(er);
     }
 
@@ -784,6 +794,9 @@ class _EntryWithRepo {
 extension on ExtensionIndexEntry {
   bool get isNsfw => sources.any(
     (s) => (s['nsfw'] as int? ?? 0) == 1,
+  );
+  bool get isObsolete => sources.any(
+    (s) => (s['obsolete'] as int? ?? 0) == 1,
   );
 }
 

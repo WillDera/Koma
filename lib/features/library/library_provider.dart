@@ -9,6 +9,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../../core/models/book.dart';
 import '../../core/models/manga.dart';
 import '../../core/providers.dart';
+import '../../widgets/library_book_card.dart';
 
 /// Immutable state for the library screen.
 class LibraryState {
@@ -20,6 +21,8 @@ class LibraryState {
     this.selectedIds = const {},
     this.selectionMode = false,
     this.isGridView = false,
+    this.gridColumns = 2,
+    this.cardVariant = LibraryCardVariant.grid,
     this.showSourcePills = true,
     this.extensionNames = const {},
   });
@@ -31,6 +34,8 @@ class LibraryState {
   final Set<String> selectedIds;
   final bool selectionMode;
   final bool isGridView;
+  final int gridColumns;
+  final LibraryCardVariant cardVariant;
   final bool showSourcePills;
   final Map<String, String> extensionNames;
 
@@ -42,6 +47,8 @@ class LibraryState {
     Set<String>? selectedIds,
     bool? selectionMode,
     bool? isGridView,
+    int? gridColumns,
+    LibraryCardVariant? cardVariant,
     bool? showSourcePills,
     Map<String, String>? extensionNames,
   }) {
@@ -53,6 +60,8 @@ class LibraryState {
       selectedIds: selectedIds ?? this.selectedIds,
       selectionMode: selectionMode ?? this.selectionMode,
       isGridView: isGridView ?? this.isGridView,
+      gridColumns: gridColumns ?? this.gridColumns,
+      cardVariant: cardVariant ?? this.cardVariant,
       showSourcePills: showSourcePills ?? this.showSourcePills,
       extensionNames: extensionNames ?? this.extensionNames,
     );
@@ -62,6 +71,8 @@ class LibraryState {
 class LibraryNotifier extends Notifier<LibraryState> {
   static const _keyIsGridView = 'library_is_grid_view';
   static const _keyShowSourcePills = 'library_show_source_pills';
+  static const _keyGridColumns = 'library_grid_columns';
+  static const _keyCardVariant = 'library_card_variant';
 
   @override
   LibraryState build() => const LibraryState();
@@ -71,6 +82,8 @@ class LibraryNotifier extends Notifier<LibraryState> {
     state = state.copyWith(
       isGridView: prefs.getBool(_keyIsGridView) ?? false,
       showSourcePills: prefs.getBool(_keyShowSourcePills) ?? true,
+      gridColumns: prefs.getInt(_keyGridColumns) ?? 2,
+      cardVariant: LibraryCardVariant.values[prefs.getInt(_keyCardVariant) ?? 0],
     );
   }
 
@@ -86,6 +99,21 @@ class LibraryNotifier extends Notifier<LibraryState> {
     state = state.copyWith(showSourcePills: value);
     SharedPreferences.getInstance().then(
       (prefs) => prefs.setBool(_keyShowSourcePills, value),
+    );
+  }
+
+  void setGridColumns(int value) {
+    final clamped = value.clamp(2, 5);
+    state = state.copyWith(gridColumns: clamped);
+    SharedPreferences.getInstance().then(
+      (prefs) => prefs.setInt(_keyGridColumns, clamped),
+    );
+  }
+
+  void setCardVariant(LibraryCardVariant value) {
+    state = state.copyWith(cardVariant: value);
+    SharedPreferences.getInstance().then(
+      (prefs) => prefs.setInt(_keyCardVariant, value.index),
     );
   }
 
