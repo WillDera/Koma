@@ -177,9 +177,10 @@ class _ExtensionsScreenState extends ConsumerState<ExtensionsScreen>
       messenger.showSnackBar(
         SnackBar(content: Text('Loaded ${src.name}')),
       );
-      // Reload the index to show installed state
+      setState(() {
+        _installed = List.from(_installed)..add(src);
+      });
       await _fetchIndex(repo);
-      await _refresh();
     } catch (e) {
       messenger.showSnackBar(
         SnackBar(content: Text('Load failed: $e')),
@@ -192,9 +193,12 @@ class _ExtensionsScreenState extends ConsumerState<ExtensionsScreen>
     try {
       await _mgr.uninstall(src);
       messenger.showSnackBar(
-        SnackBar(content: Text('Uninstalled ${src.name}')),
+        SnackBar(content: Text('Unloaded ${src.name}')),
       );
-      await _refresh();
+      setState(() {
+        _installed =
+            _installed.where((s) => s.sourceId != src.sourceId).toList();
+      });
     } catch (e) {
       messenger.showSnackBar(
         SnackBar(content: Text('Unload failed: $e')),
