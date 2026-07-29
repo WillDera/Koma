@@ -148,7 +148,7 @@ class ExtensionDetailScreen extends StatelessWidget {
                   ),
                   icon: const Icon(Icons.delete_outline, color: Colors.redAccent),
                   label: const Text(
-                    'Uninstall',
+                     'Unload',
                     style: TextStyle(color: Colors.redAccent),
                   ),
                 ),
@@ -189,7 +189,7 @@ class ExtensionDetailScreen extends StatelessWidget {
         backgroundColor: c.surface,
         title: Text(source.name, style: TextStyle(color: c.textPrimary)),
         content: Text(
-          'Uninstall ${source.name}? This will remove all sources sharing its APK.',
+          'Unload ${source.name}? This will remove all sources sharing its APK.',
           style: TextStyle(color: c.textSecondary),
         ),
         actions: [
