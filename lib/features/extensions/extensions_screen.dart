@@ -171,18 +171,18 @@ class _ExtensionsScreenState extends ConsumerState<ExtensionsScreen>
 
   Future<void> _install(ExtensionIndexEntry entry, ExtensionRepo repo) async {
     final messenger = ScaffoldMessenger.of(context);
-    messenger.showSnackBar(SnackBar(content: Text('Installing ${entry.name}...')));
+    messenger.showSnackBar(SnackBar(content: Text('Loading ${entry.name}...')));
     try {
       final src = await _mgr.install(entry, repoUrl: repo.url);
       messenger.showSnackBar(
-        SnackBar(content: Text('Installed ${src.name}')),
+        SnackBar(content: Text('Loaded ${src.name}')),
       );
       // Reload the index to show installed state
       await _fetchIndex(repo);
       await _refresh();
     } catch (e) {
       messenger.showSnackBar(
-        SnackBar(content: Text('Install failed: $e')),
+        SnackBar(content: Text('Load failed: $e')),
       );
     }
   }
@@ -197,7 +197,7 @@ class _ExtensionsScreenState extends ConsumerState<ExtensionsScreen>
       await _refresh();
     } catch (e) {
       messenger.showSnackBar(
-        SnackBar(content: Text('Uninstall failed: $e')),
+        SnackBar(content: Text('Unload failed: $e')),
       );
     }
   }
@@ -217,7 +217,7 @@ class _ExtensionsScreenState extends ConsumerState<ExtensionsScreen>
           labelColor: c.accent,
           unselectedLabelColor: c.textSecondary,
           tabs: const [
-            Tab(text: 'Installed'),
+            Tab(text: 'Loaded'),
             Tab(text: 'Available'),
             Tab(text: 'Repos'),
           ],
@@ -294,7 +294,7 @@ class _InstalledTab extends StatelessWidget {
       return _EmptyState(
         icon: Icons.extension_outlined,
         title: 'Nothing installed yet',
-        subtitle: 'Open the Available tab to install your first extension.',
+        subtitle: 'Open the Available tab to load your first extension.',
       );
     }
     return ListView.separated(
@@ -350,7 +350,7 @@ class _InstalledTab extends StatelessWidget {
                 IconButton(
                   icon: Icon(Icons.delete_outline, color: c.textSecondary),
                   onPressed: () => onUninstall(src),
-                  tooltip: 'Uninstall',
+                   tooltip: 'Unload',
                 ),
               ],
             ),
@@ -456,7 +456,7 @@ class _AvailableTabState extends State<_AvailableTab> {
     // Fallback: match by extension name when className is missing or
     // mismatched (e.g. extension author changed the class name).
     for (final s in widget.installed) {
-      if (s.name == er.entry.name) return s;
+      if (s.name.trim().toLowerCase() == er.entry.name.trim().toLowerCase()) return s;
     }
     return null;
   }
@@ -526,7 +526,7 @@ class _AvailableTabState extends State<_AvailableTab> {
     }
 
     if (installedEntries.isNotEmpty) {
-      rows.add(const _AvailableRow.section('Installed'));
+      rows.add(const _AvailableRow.section('Loaded'));
       for (final er in installedEntries) {
         final match = _matchInstalled(er, byClass);
         rows.add(_AvailableRow.entry(
@@ -986,8 +986,8 @@ class _ExtensionRow extends StatelessWidget {
               hasUpdate
                   ? 'Update'
                   : installed
-                      ? 'Installed'
-                      : 'Install',
+                       ? 'Loaded'
+                       : 'Load',
             ),
           ),
         ],
