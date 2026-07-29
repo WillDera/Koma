@@ -14,8 +14,6 @@ import 'theme/theme_provider.dart';
 import 'package:flutter_native_splash/flutter_native_splash.dart';
 
 void main() {
-  WidgetsFlutterBinding.ensureInitialized();
-
   FlutterError.onError = (details) {
     FlutterError.dumpErrorToConsole(details);
     if (kReleaseMode) {
@@ -24,6 +22,9 @@ void main() {
   };
 
   runZonedGuarded(() async {
+    final widgetsBinding = WidgetsFlutterBinding.ensureInitialized();
+    FlutterNativeSplash.preserve(widgetsBinding: widgetsBinding);
+
     final isar = await openIsar();
 
     final statsService = StatsService(Repositories(isar));
@@ -37,8 +38,6 @@ void main() {
       unawaited(_checkExtensionUpdates(extensionManager));
     }));
 
-    WidgetsBinding widgetsBinding = WidgetsFlutterBinding.ensureInitialized();
-    FlutterNativeSplash.preserve(widgetsBinding: widgetsBinding);
 
     final container = ProviderContainer(
       overrides: [

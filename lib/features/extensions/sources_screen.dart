@@ -51,7 +51,7 @@ class _SourcesScreenState extends ConsumerState<SourcesScreen> {
       context,
       MaterialPageRoute(
         builder: (_) => SourceBrowseScreen(
-          sourceId: src.id,
+          sourceId: src.sourceId,
           sourceName: src.name,
         ),
       ),
@@ -66,7 +66,7 @@ class _SourcesScreenState extends ConsumerState<SourcesScreen> {
       context,
       MaterialPageRoute(
         builder: (_) => SourceBrowseScreen(
-          sourceId: src.id,
+          sourceId: src.sourceId,
           sourceName: src.name,
         ),
       ),

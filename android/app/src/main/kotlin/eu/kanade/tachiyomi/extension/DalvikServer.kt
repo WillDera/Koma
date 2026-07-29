@@ -83,6 +83,10 @@ class DalvikServer(
     )
 
     private val loadedExtensions = mutableMapOf<String, LoadedExtension>()
+    private val loadedApkPaths = mutableMapOf<String, File>()
+    private val extensionsCacheDir: File by lazy {
+        File(context.cacheDir, "dex-extensions").also { it.mkdirs() }
+    }
 
     fun start(): Int {
         if (isRunning) return _port
@@ -143,22 +147,34 @@ class DalvikServer(
         val apkFile = File(apkPath)
         if (!apkFile.exists()) return errorJson("apk not found: $apkPath")
 
+        val sourceId = sha256(apkPath).take(16)
+
+        // Copy to read-only cache dir so Android 14+ allows DexClassLoader
+        val cachedApk = File(extensionsCacheDir, "$sourceId.apk")
+        if (!cachedApk.exists() || cachedApk.length() != apkFile.length()) {
+            cachedApk.delete()
+            cachedApk.parentFile?.mkdirs()
+            apkFile.copyTo(cachedApk, overwrite = true)
+            cachedApk.setReadOnly()
+        }
+        loadedApkPaths[sourceId] = cachedApk
+
         val source = try {
-            loadSource(apkFile)
+            loadSource(cachedApk)
         } catch (e: Throwable) {
             Log.e(TAG, "loadExtension: failed", e)
+            cachedApk.delete()
+            loadedApkPaths.remove(sourceId)
             return errorJson("loadExtension failed: ${e.message}")
         }
         if (source !is HttpSource) {
             return errorJson("not HttpSource: ${source.javaClass.name}")
         }
 
-        // Deterministic sourceId from apkPath so reloads reuse the same slot
-        val sourceId = sha256(apkPath).take(16)
         loadedExtensions[sourceId] = LoadedExtension(
             sourceId = sourceId,
             source = source,
-            apkPath = apkPath,
+            apkPath = cachedApk.absolutePath,
             loadedAt = System.currentTimeMillis(),
         )
         Log.d(TAG, "loadExtension: cached sourceId=$sourceId name=${source.name}")
@@ -176,6 +192,7 @@ class DalvikServer(
     private fun handleUnloadExtension(root: JsonObject): String {
         val sourceId = root.str("sourceId") ?: return errorJson("missing sourceId")
         val removed = loadedExtensions.remove(sourceId)
+        loadedApkPaths.remove(sourceId)?.delete()
         Log.d(TAG, "unloadExtension: sourceId=$sourceId removed=${removed != null}")
         return json.encodeToString(
             buildJsonObject {
@@ -230,6 +247,14 @@ class DalvikServer(
             if (ext != null) {
                 Log.d(TAG, "withLoadedExtension: cache hit sourceId=$sourceId")
                 return block(ext.source)
+            }
+            // Fallback: match by Mihon numeric ID (source.id.toString()) for
+            // callers that only have the old numeric ID from the Manga model.
+            for ((_, candidate) in loadedExtensions) {
+                if (candidate.source.id.toString() == sourceId) {
+                    Log.d(TAG, "withLoadedExtension: matched by Mihon id sourceId=$sourceId -> hex=${candidate.sourceId}")
+                    return block(candidate.source)
+                }
             }
             Log.w(TAG, "withLoadedExtension: source not loaded sourceId=$sourceId")
             throw IllegalStateException("Source not loaded: $sourceId — call loadExtension first")
@@ -432,7 +457,7 @@ class DalvikServer(
                         } catch (e: Exception) {
                             Log.e(TAG, "getMangaDetails failed for $url", e)
                             manga.also { it.initialized = true }
-                            return@withSource json.encodeToString(manga.toMap().toJsonObject())
+                            return@withLoadedExtension json.encodeToString(manga.toMap().toJsonObject())
                         }
                         val details = result.manga
                         if (!details.initialized) details.initialized = true
@@ -448,7 +473,7 @@ class DalvikServer(
                         } catch (e: Exception) {
                             Log.e(TAG, "getMangaUpdate failed for $url", e)
                             manga.also { it.initialized = true }
-                            return@withSource json.encodeToString(buildJsonObject {
+                            return@withLoadedExtension json.encodeToString(buildJsonObject {
                                 put("manga", manga.toMap().toJsonObject())
                                 put("chapters", JsonArray(emptyList()))
                             })
@@ -467,7 +492,7 @@ class DalvikServer(
                             runBlocking { src.getMangaUpdate(manga, emptyList(), fetchDetails = false, fetchChapters = true) }
                         } catch (e: Exception) {
                             Log.e(TAG, "getChapterList failed for $url", e)
-                            return@withSource json.encodeToString(JsonArray(emptyList()))
+                            return@withLoadedExtension json.encodeToString(JsonArray(emptyList()))
                         }
                         json.encodeToString(JsonArray(update.chapters.map { it.toMap().toJsonObject() }))
                     }
