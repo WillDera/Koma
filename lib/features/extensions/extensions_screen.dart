@@ -458,6 +458,10 @@ class _AvailableTabState extends State<_AvailableTab> {
     for (final s in widget.installed) {
       if (s.name.trim().toLowerCase() == er.entry.name.trim().toLowerCase()) return s;
     }
+    // Fallback: match by package name.
+    for (final s in widget.installed) {
+      if (s.name.trim().toLowerCase() == er.entry.pkg.trim().toLowerCase()) return s;
+    }
     return null;
   }
 
@@ -998,6 +1002,7 @@ class _ExtensionRow extends StatelessWidget {
 
 /// Derive the icon URL for an [ExtensionIndexEntry] from the repo URL context.
 String? _deriveIconUrl(ExtensionIndexEntry entry, BuildContext context) {
+  if (entry.pkg.isEmpty) return null;
   // We don't have direct repo URL access here, but the icon path follows
   // mangayomi's pattern: "$repoUrl/icon/${pkg}.png". Try guacamoly's repo.
   return 'https://raw.githubusercontent.com/keiyoushi/extensions/repo/icon/${entry.pkg}.png';
@@ -1181,7 +1186,7 @@ class _ExtensionNetworkIcon extends StatelessWidget {
       child: ClipRRect(
         borderRadius: BorderRadius.circular(5),
         child: Image(
-          image: CustomExtendedNetworkImageProvider(iconUrl),
+          image: CustomExtendedNetworkImageProvider(iconUrl, printError: false),
           fit: BoxFit.contain,
           width: size,
           height: size,

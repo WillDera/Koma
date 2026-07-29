@@ -602,6 +602,7 @@ class _MangaDetailScreenState extends ConsumerState<MangaDetailScreen> {
       }
       if (!mounted) return;
       setState(() => _inLibrary = true);
+      if (mounted) ref.read(libraryProvider.notifier).loadBooks();
     } else {
       // First time insertion — ensure chapters exist before creating manga row
       var detail = ref.read(mangaDetailProvider);

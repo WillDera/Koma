@@ -221,7 +221,7 @@ class ExtensionDetailScreen extends StatelessWidget {
     return ClipRRect(
       borderRadius: BorderRadius.circular(10),
       child: Image(
-        image: CustomExtendedNetworkImageProvider(iconUrl),
+                      image: CustomExtendedNetworkImageProvider(iconUrl, printError: false),
         fit: BoxFit.contain,
         width: 140,
         height: 140,
