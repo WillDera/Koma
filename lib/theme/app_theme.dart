@@ -53,13 +53,15 @@ class AppTheme {
       accent: a,
       accentMuted: _muted(a, AppColors.lightSurface),
       onAccent: _onAccentFor(a),
-      fontFamily: fontFamily ?? AppType.uiFont,
+      // null = let the platform default font apply (Use device font).
+      fontFamily: fontFamily,
     );
   }
 
   static ThemeData darkTheme({Color? accent, bool amoled = false, String? fontFamily}) {
     final a = accent ?? AppColors.darkAccent;
-    final ff = fontFamily ?? AppType.uiFont;
+    // null = let the platform default font apply (Use device font).
+    final ff = fontFamily;
     if (amoled) {
       return _buildTheme(
         brightness: Brightness.dark,
@@ -112,7 +114,8 @@ class AppTheme {
       accent: a,
       accentMuted: _muted(a, AppColors.sepiaSurface),
       onAccent: _onAccentFor(a),
-      fontFamily: fontFamily ?? AppType.uiFont,
+      // null = let the platform default font apply (Use device font).
+      fontFamily: fontFamily,
     );
   }
 
@@ -145,7 +148,7 @@ class AppTheme {
     required Color accent,
     required Color accentMuted,
     required Color onAccent,
-    required String fontFamily,
+    required String? fontFamily,
   }) {
     final textTheme = AppType.ui(fontFamily: fontFamily).apply(
       bodyColor: textPrimary,
@@ -181,7 +184,8 @@ class AppTheme {
       colorScheme: colorScheme,
       scaffoldBackgroundColor: bg,
       canvasColor: bg,
-      fontFamily: AppType.uiFont,
+      // null => Flutter uses the platform default device font.
+      fontFamily: fontFamily,
       textTheme: textTheme,
       primaryTextTheme: textTheme,
       splashFactory: InkSparkle.splashFactory,
