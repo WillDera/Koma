@@ -898,7 +898,7 @@ class _ExtensionRow extends StatelessWidget {
       ),
       child: Row(
         children: [
-          _buildIcon(entry.pkg, c, size: 28),
+          _buildIcon(entry.pkg, c, size: 28, iconUrl: entry.iconUrl),
           const SizedBox(width: 10),
           Expanded(
             child: Column(
@@ -1143,19 +1143,21 @@ class _EmptyState extends StatelessWidget {
 /// This never reads the stale `.../repo/icon/${pkg}.png` value that older DB
 /// rows may still hold, so already-installed extensions self-heal without a
 /// migration. See Q5.
-Widget _buildIcon(String pkg, KomaColors c, {double size = 37}) {
-  return _PkgExtensionIcon(pkg: pkg, colors: c, size: size);
+Widget _buildIcon(String pkg, KomaColors c, {double size = 37, String? iconUrl}) {
+  return _PkgExtensionIcon(pkg: pkg, colors: c, size: size, iconUrl: iconUrl);
 }
 
 class _PkgExtensionIcon extends StatefulWidget {
   final String pkg;
   final KomaColors colors;
   final double size;
+  final String? iconUrl;
 
   const _PkgExtensionIcon({
     required this.pkg,
     required this.colors,
     required this.size,
+    this.iconUrl,
   });
 
   @override
@@ -1163,22 +1165,25 @@ class _PkgExtensionIcon extends StatefulWidget {
 }
 
 class _PkgExtensionIconState extends State<_PkgExtensionIcon> {
-  /// Instant, correct URL for standard extensions (pure string derivation,
-  /// no I/O) — avoids any flicker before the async cache read completes.
-  String? _url = ExtensionIconCache.iconUrlForPkg('');
+  String? _url;
 
   @override
   void initState() {
     super.initState();
-    _url = ExtensionIconCache.iconUrlForPkg(widget.pkg);
-    _resolveFromCache();
+    if (widget.iconUrl != null && widget.iconUrl!.isNotEmpty) {
+      _url = widget.iconUrl;
+    } else {
+      _url = ExtensionIconCache.iconUrlForPkg(widget.pkg);
+      _resolveFromCache();
+    }
   }
 
   Future<void> _resolveFromCache() async {
+    if (_url != null && _url!.isNotEmpty) return;
     final cached =
         await ExtensionIconCache.instance.cachedIconUrl(widget.pkg);
     if (!mounted) return;
-    if (cached != null && cached.isNotEmpty && cached != _url) {
+    if (cached != null && cached.isNotEmpty) {
       setState(() => _url = cached);
     }
   }
