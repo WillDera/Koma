@@ -10,6 +10,7 @@ import 'package:path_provider/path_provider.dart';
 import '../models/extension_repo.dart';
 import '../models/extension_source.dart';
 import '../repositories/repositories.dart';
+import 'extension_icon_cache.dart';
 import 'keiyoushi_service.dart';
 
 class ExtensionIndexEntry {
@@ -75,6 +76,21 @@ class ExtensionManager {
 
   Future<void> removeRepo(int id) => _repos.extensions.deleteExtensionRepo(id);
 
+  /// One-time fetch of the full Keiyoushi `index.json` (~1.3 MB) to populate
+  /// the persistent `pkg → iconUrl` cache ([ExtensionIconCache]). Subsequent
+  /// calls are no-ops once the cache is populated. Safe to call on app start
+  /// or on the extensions screen — failures are swallowed and reported via
+  /// [onError] so icon resolution degrades to the CDN derivation fallback.
+  ///
+  /// See Q5: the legacy `.../repo/icon/${pkg}.png` URLs always 404'd against
+  /// Keiyoushi; the authoritative icon URLs live in the full index's
+  /// `resources.iconUrl` field.
+  Future<void> refreshIconCache({
+    void Function(Object error)? onError,
+  }) {
+    return ExtensionIconCache.instance.ensurePopulated(onError: onError);
+  }
+
   Future<List<ExtensionIndexEntry>> fetchIndex(ExtensionRepo repo) async {
     final res = await _http.get(Uri.parse(repo.url));
     if (res.statusCode != 200) {
@@ -101,7 +117,8 @@ class ExtensionManager {
     }
     await _downloadApk(resolved, apkPath);
 
-    final iconUrl = '$baseUrl/icon/${entry.pkg}.png';
+    final iconUrl =
+        ExtensionIconCache.iconUrlForPkg(entry.pkg) ?? '';
     final sourceCodeUrl = '$baseUrl/apk/${entry.apkUrl}';
 
     final desc = await _keiyoushi.loadExtension(
