@@ -147,7 +147,7 @@ class AppTheme {
     required Color onAccent,
     required String fontFamily,
   }) {
-    final textTheme = AppType.ui().apply(
+    final textTheme = AppType.ui(fontFamily: fontFamily).apply(
       bodyColor: textPrimary,
       displayColor: textPrimary,
     );

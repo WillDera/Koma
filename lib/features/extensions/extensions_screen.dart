@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/providers.dart';
 import '../../core/models/extension_repo.dart';
 import '../../core/models/extension_source.dart';
+import '../../core/services/extension_icon_cache.dart';
 import '../../core/services/extension_manager.dart';
 import '../../core/services/keiyoushi_service.dart';
 import '../../core/utils/custom_extended_image_provider.dart';
@@ -83,6 +84,11 @@ class _ExtensionsScreenState extends ConsumerState<ExtensionsScreen>
         _installed = installed;
         _error = null;
       });
+      // One-time population of the pkg→iconUrl cache from the full Keiyoushi
+      // index. No-op after the first run; failures are swallowed internally
+      // so icon resolution degrades to the CDN derivation fallback.
+      // See Q5.
+      _mgr.refreshIconCache();
     } catch (e) {
       if (!mounted) return;
       setState(() => _error = '$e');
@@ -343,7 +349,7 @@ class _InstalledTab extends StatelessWidget {
             ),
             child: Row(
               children: [
-                _buildIcon(src.iconUrl, c),
+                _buildIcon(_extractPkgFromApkPath(src.apkPath), c),
                 const SizedBox(width: 12),
                 Expanded(
                   child: Column(
@@ -853,7 +859,6 @@ class _ExtensionRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final c = context.colors;
-    final iconUrl = _deriveIconUrl(entry, context);
     final isNsfw = entry.isNsfw;
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
@@ -868,7 +873,7 @@ class _ExtensionRow extends StatelessWidget {
       ),
       child: Row(
         children: [
-          _buildIcon(iconUrl, c, size: 28),
+          _buildIcon(entry.pkg, c, size: 28),
           const SizedBox(width: 10),
           Expanded(
             child: Column(
@@ -960,14 +965,6 @@ class _ExtensionRow extends StatelessWidget {
       ),
     );
   }
-}
-
-/// Derive the icon URL for an [ExtensionIndexEntry] from the repo URL context.
-String? _deriveIconUrl(ExtensionIndexEntry entry, BuildContext context) {
-  if (entry.pkg.isEmpty) return null;
-  // We don't have direct repo URL access here, but the icon path follows
-  // mangayomi's pattern: "$repoUrl/icon/${pkg}.png". Try guacamoly's repo.
-  return 'https://raw.githubusercontent.com/keiyoushi/extensions/repo/icon/${entry.pkg}.png';
 }
 
 // ─── Repos tab ──────────────────────────────────────────────────────────
@@ -1109,46 +1106,81 @@ class _EmptyState extends StatelessWidget {
   }
 }
 
-/// Shared icon widget for extension list tiles — loads the icon from [iconUrl]
-/// with a fallback Material icon, matching mangayomi's extension_list_tile_widget.
+/// Shared icon widget for extension list tiles.
 ///
-/// [cacheWidth]/[cacheHeight] keep decoded bitmaps tiny so scrolling a long
-/// extension list does not thrash memory (a major crash source on Android 15+).
-Widget _buildIcon(String? iconUrl, KomaColors c, {double size = 37}) {
-  if (iconUrl == null || iconUrl.isEmpty) {
-    return SizedBox(
-      width: size,
-      height: size,
-      child: Icon(Icons.extension_rounded, color: c.accent, size: size * 0.75),
-    );
-  }
-  return _ExtensionNetworkIcon(iconUrl: iconUrl, colors: c, size: size);
+/// Resolves the icon URL from the package name via [ExtensionIconCache]:
+///   1. The persisted cache (fast SharedPreferences read) — authoritative
+///      `resources.iconUrl` from the one-time full-index fetch.
+///   2. The deterministic CDN derivation (`iconUrlForPkg`) — used as the
+///      instant initial value so there is no flicker, and as the fallback
+///      when the cache has no entry.
+///
+/// This never reads the stale `.../repo/icon/${pkg}.png` value that older DB
+/// rows may still hold, so already-installed extensions self-heal without a
+/// migration. See Q5.
+Widget _buildIcon(String pkg, KomaColors c, {double size = 37}) {
+  return _PkgExtensionIcon(pkg: pkg, colors: c, size: size);
 }
 
-class _ExtensionNetworkIcon extends StatelessWidget {
-  final String iconUrl;
+class _PkgExtensionIcon extends StatefulWidget {
+  final String pkg;
   final KomaColors colors;
   final double size;
 
-  const _ExtensionNetworkIcon({
-    required this.iconUrl,
+  const _PkgExtensionIcon({
+    required this.pkg,
     required this.colors,
     required this.size,
   });
 
   @override
+  State<_PkgExtensionIcon> createState() => _PkgExtensionIconState();
+}
+
+class _PkgExtensionIconState extends State<_PkgExtensionIcon> {
+  /// Instant, correct URL for standard extensions (pure string derivation,
+  /// no I/O) — avoids any flicker before the async cache read completes.
+  String? _url = ExtensionIconCache.iconUrlForPkg('');
+
+  @override
+  void initState() {
+    super.initState();
+    _url = ExtensionIconCache.iconUrlForPkg(widget.pkg);
+    _resolveFromCache();
+  }
+
+  Future<void> _resolveFromCache() async {
+    final cached =
+        await ExtensionIconCache.instance.cachedIconUrl(widget.pkg);
+    if (!mounted) return;
+    if (cached != null && cached.isNotEmpty && cached != _url) {
+      setState(() => _url = cached);
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final url = _url;
+    final size = widget.size;
+    final c = widget.colors;
+    if (url == null || url.isEmpty) {
+      return SizedBox(
+        width: size,
+        height: size,
+        child: Icon(Icons.extension_rounded, color: c.accent, size: size * 0.75),
+      );
+    }
     return Container(
       width: size,
       height: size,
       decoration: BoxDecoration(
-        color: colors.surfaceMuted,
+        color: c.surfaceMuted,
         borderRadius: BorderRadius.circular(5),
       ),
       child: ClipRRect(
         borderRadius: BorderRadius.circular(5),
         child: Image(
-          image: CustomExtendedNetworkImageProvider(iconUrl, printError: false),
+          image: CustomExtendedNetworkImageProvider(url, printError: false),
           fit: BoxFit.contain,
           width: size,
           height: size,
@@ -1158,7 +1190,7 @@ class _ExtensionNetworkIcon extends StatelessWidget {
             height: size,
             child: Icon(
               Icons.extension_rounded,
-              color: colors.accent,
+              color: c.accent,
               size: size * 0.75,
             ),
           ),
@@ -1167,6 +1199,7 @@ class _ExtensionNetworkIcon extends StatelessWidget {
     );
   }
 }
+
 
 /// Collapsible repo group header used by the lazy Available list.
 class _RepoGroupHeader extends StatelessWidget {
