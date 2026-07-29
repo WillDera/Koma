@@ -19,7 +19,7 @@ import 'extension_detail_screen.dart';
 import 'source_browse_screen.dart';
 
 const _keiyoushiDefaultRepoUrl =
-    'https://raw.githubusercontent.com/keiyoushi/extensions/repo/index.min.json';
+    'https://raw.githubusercontent.com/keiyoushi/extensions/repo/index.json';
 const _keiyoushiDefaultRepoName = 'Keiyoushi (official)';
 
 String _extractPkgFromApkPath(String apkPath) {
@@ -807,12 +807,9 @@ class _EntryWithRepo {
 }
 
 extension on ExtensionIndexEntry {
-  bool get isNsfw => sources.any(
-    (s) => (s['nsfw'] as int? ?? 0) == 1,
-  );
-  bool get isObsolete => sources.any(
-    (s) => (s['obsolete'] as int? ?? 0) == 1,
-  );
+  bool get isNsfw => contentWarning == 'CONTENT_WARNING_NSFW' ||
+      contentWarning == 'CONTENT_WARNING_MIXED';
+  bool get isObsolete => false;
 }
 
 class _RepoHeader extends StatelessWidget {

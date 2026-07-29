@@ -19,6 +19,7 @@ class ExtensionIndexEntry {
   final String apkUrl;
   final String version;
   final String lang;
+  final String contentWarning;
   final List<Map<String, dynamic>> sources;
 
   const ExtensionIndexEntry({
@@ -27,6 +28,7 @@ class ExtensionIndexEntry {
     required this.apkUrl,
     required this.version,
     required this.lang,
+    this.contentWarning = 'CONTENT_WARNING_SAFE',
     required this.sources,
   });
 
@@ -42,15 +44,45 @@ class ExtensionIndexEntry {
         .cast<Map>()
         .map((e) => Map<String, dynamic>.from(e))
         .toList(growable: false);
+
+    final pkg = j['packageName'] as String? ??
+        j['pkg'] as String? ??
+        '';
+    final name = j['name'] as String? ??
+        pkg ??
+        'Unknown';
+
+    String apkUrl;
+    if (j['resources'] is Map) {
+      final r = j['resources'] as Map;
+      apkUrl = (r['apkUrl'] as String?) ?? '';
+    } else {
+      apkUrl = j['apk'] as String? ?? '';
+    }
+
+    final version = j['versionName'] as String? ??
+        j['version'] as String? ??
+        '0';
+
+    String lang;
+    if (sources.isNotEmpty) {
+      lang = sources.first['language'] as String? ??
+          sources.first['lang'] as String? ??
+          'en';
+    } else {
+      lang = j['lang'] as String? ?? 'en';
+    }
+
+    final contentWarning = j['contentWarning'] as String? ??
+        'CONTENT_WARNING_SAFE';
+
     return ExtensionIndexEntry(
-      pkg: j['pkg'] as String? ?? '',
-      name: j['name'] as String? ?? j['pkg'] as String? ?? 'Unknown',
-      apkUrl: j['apk'] as String? ?? '',
-      version: j['version'] as String? ?? '0',
-      lang: (sources.isNotEmpty
-              ? sources.first['lang']
-              : j['lang']) as String? ??
-          'en',
+      pkg: pkg,
+      name: name,
+      apkUrl: apkUrl,
+      version: version,
+      lang: lang,
+      contentWarning: contentWarning,
       sources: sources,
     );
   }
@@ -354,14 +386,26 @@ class ExtensionManager {
 
 /// Top-level so [Isolate.run] can invoke it without capturing the manager.
 List<ExtensionIndexEntry> _parseIndexBody(String body) {
-  final list = jsonDecode(body);
-  if (list is! List) {
-    throw FormatException(
-      'Repo JSON is not a list — got ${list.runtimeType}',
-    );
+  final decoded = jsonDecode(body);
+  if (decoded is List) {
+    return decoded
+        .cast<Map>()
+        .map((e) => ExtensionIndexEntry.fromJson(Map<String, dynamic>.from(e)))
+        .toList(growable: false);
   }
-  return list
-      .cast<Map>()
-      .map((e) => ExtensionIndexEntry.fromJson(Map<String, dynamic>.from(e)))
-      .toList(growable: false);
+  if (decoded is Map) {
+    final extList = decoded['extensionList'];
+    if (extList is Map) {
+      final exts = extList['extensions'];
+      if (exts is List) {
+        return exts
+            .cast<Map>()
+            .map((e) => ExtensionIndexEntry.fromJson(Map<String, dynamic>.from(e)))
+            .toList(growable: false);
+      }
+    }
+  }
+  throw FormatException(
+    'Repo JSON is not a recognized format — got ${decoded.runtimeType}',
+  );
 }
