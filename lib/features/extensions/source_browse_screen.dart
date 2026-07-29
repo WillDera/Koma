@@ -52,7 +52,6 @@ class _SourceBrowseScreenState extends ConsumerState<SourceBrowseScreen>
   List<Filter> _filters = [];
   Map<String, dynamic> _filterValues = {};
   bool _filtersLoaded = false;
-  bool _showFilterSheet = false;
 
   @override
   void initState() {
@@ -119,7 +118,7 @@ class _SourceBrowseScreenState extends ConsumerState<SourceBrowseScreen>
   void _onSearchChanged(String query) {
     _searchTimer?.cancel();
     setState(() => _searchQuery = query);
-    if (query.isEmpty) {
+    if (query.isEmpty && _filters.isEmpty) {
       setState(() => _searchResults = []);
       return;
     }
@@ -221,6 +220,9 @@ class _SourceBrowseScreenState extends ConsumerState<SourceBrowseScreen>
         values: Map.from(_filterValues),
         onApply: (updated) {
           setState(() => _filterValues = updated);
+          if (!_searchActive) {
+            setState(() => _searchActive = true);
+          }
           _performSearch(_searchQuery);
         },
       ),
@@ -228,12 +230,16 @@ class _SourceBrowseScreenState extends ConsumerState<SourceBrowseScreen>
   }
 
   Future<void> _performSearch(String query) async {
-    if (query.isEmpty) {
+    final hasFilters = _filters.isNotEmpty;
+    if (query.isEmpty && !hasFilters) {
       _mangas = [];
       _page = 1;
       _hasNext = true;
       _loadPage();
       return;
+    }
+    if (!_searchActive) {
+      setState(() => _searchActive = true);
     }
     setState(() => _searchLoading = true);
     try {
@@ -318,7 +324,7 @@ class _SourceBrowseScreenState extends ConsumerState<SourceBrowseScreen>
               )
             : Text(widget.sourceName),
         actions: [
-          if (_searchActive && _filtersLoaded && _filters.isNotEmpty)
+          if (_filtersLoaded && _filters.isNotEmpty)
             IconButton(
               icon: const Icon(Icons.filter_list),
               onPressed: _openFilterSheet,

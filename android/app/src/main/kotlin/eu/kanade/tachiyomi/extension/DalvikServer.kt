@@ -434,11 +434,17 @@ class DalvikServer(
                         })
                     }
                 }
-                "getSearchManga" -> {
+                "getSearchManga", "searchManga" -> {
                     val page = root.int("page") ?: 1
                     val query = root.str("query") ?: ""
-                    val filters = parseFilters(root)
                     withLoadedExtension(root.str("sourceId"), data) { src ->
+                        // Prefer the source's real FilterList (preserves custom
+                        // subclasses) and apply incoming JSON state onto it.
+                        val filters = try {
+                            applyFilterState(src.getFilterList(), root)
+                        } catch (_: AbstractMethodError) {
+                            parseFilters(root)
+                        }
                         val mp = try {
                             runBlocking { src.getSearchManga(page, query, filters) }
                         } catch (_: AbstractMethodError) {
@@ -708,6 +714,75 @@ class DalvikServer(
         return FilterList(filters)
     }
 
+    /**
+     * Apply client-sent filter state onto the source's own [FilterList] so
+     * custom filter subclasses remain intact for searchMangaRequest casting.
+     * Falls back to rebuilding anonymous filters when lists cannot be aligned.
+     */
+    private fun applyFilterState(base: FilterList, root: JsonObject): FilterList {
+        val arr = root["filters"] as? JsonArray ?: return base
+        if (arr.isEmpty()) return base
+        val byName = arr.mapNotNull { it as? JsonObject }
+            .associateBy { (it["name"] as? JsonPrimitive)?.content ?: "" }
+        for (filter in base) {
+            val jo = byName[filter.name] ?: continue
+            applyOneFilterState(filter, jo)
+        }
+        return base
+    }
+
+    @Suppress("UNCHECKED_CAST")
+    private fun applyOneFilterState(filter: Filter<*>, jo: JsonObject) {
+        val value = jo["value"]
+        when (filter) {
+            is Filter.Text -> {
+                filter.state = jsonPrimitiveString(value) ?: filter.state
+            }
+            is Filter.CheckBox -> {
+                filter.state = jsonPrimitiveBoolean(value) ?: filter.state
+            }
+            is Filter.TriState -> {
+                filter.state = jsonPrimitiveInt(value) ?: filter.state
+            }
+            is Filter.Select<*> -> {
+                filter.state = jsonPrimitiveInt(value) ?: filter.state
+            }
+            is Filter.Sort -> {
+                if (value is JsonObject) {
+                    val idx = jsonPrimitiveInt(value["index"]) ?: 0
+                    val asc = jsonPrimitiveBoolean(value["ascending"]) ?: true
+                    filter.state = Filter.Sort.Selection(idx, asc)
+                }
+            }
+            is Filter.Group<*> -> {
+                val subs = filter.state as? List<*> ?: return
+                val valueArr = value as? JsonArray ?: return
+                val subByName = valueArr.mapNotNull { it as? JsonObject }
+                    .associateBy { (it["name"] as? JsonPrimitive)?.content ?: "" }
+                for (sub in subs) {
+                    if (sub !is Filter<*>) continue
+                    val subJo = subByName[sub.name] ?: continue
+                    applyOneFilterState(sub, subJo)
+                }
+            }
+            else -> { /* Header / Separator — no state */ }
+        }
+    }
+
+    private fun jsonPrimitiveString(el: JsonElement?): String? =
+        (el as? JsonPrimitive)?.content
+
+    private fun jsonPrimitiveBoolean(el: JsonElement?): Boolean? {
+        val p = el as? JsonPrimitive ?: return null
+        return p.content.toBooleanStrictOrNull()
+            ?: p.booleanOrNull
+    }
+
+    private fun jsonPrimitiveInt(el: JsonElement?): Int? {
+        val p = el as? JsonPrimitive ?: return null
+        return p.content.toIntOrNull() ?: p.intOrNull
+    }
+
     private fun parseFilter(jo: JsonObject?): Filter<*>? {
         if (jo == null) return null
         val name = (jo["name"] as? JsonPrimitive)?.content ?: ""
@@ -716,18 +791,18 @@ class DalvikServer(
         return when (type) {
             "header" -> Filter.Header(name)
             "separator" -> Filter.Separator(name)
-            "text" -> object : Filter.Text(name, (value as? JsonPrimitive)?.content ?: "") {}
-            "check" -> object : Filter.CheckBox(name, (value as? JsonPrimitive)?.content?.toBoolean() ?: false) {}
-            "triState" -> object : Filter.TriState(name, (value as? JsonPrimitive)?.content?.toIntOrNull() ?: 0) {}
+            "text" -> object : Filter.Text(name, jsonPrimitiveString(value) ?: "") {}
+            "check" -> object : Filter.CheckBox(name, jsonPrimitiveBoolean(value) ?: false) {}
+            "triState" -> object : Filter.TriState(name, jsonPrimitiveInt(value) ?: 0) {}
             "select" -> {
                 val opts = (jo["options"] as? JsonArray)?.mapNotNull { (it as? JsonPrimitive)?.content } ?: emptyList()
-                object : Filter.Select<String>(name, opts.toTypedArray(), (value as? JsonPrimitive)?.content?.toIntOrNull() ?: 0) {}
+                object : Filter.Select<String>(name, opts.toTypedArray(), jsonPrimitiveInt(value) ?: 0) {}
             }
             "sort" -> {
                 val opts = (jo["options"] as? JsonArray)?.mapNotNull { (it as? JsonPrimitive)?.content } ?: emptyList()
                 val sel = if (value is JsonObject) {
-                    val idx = (value["index"] as? JsonPrimitive)?.content?.toIntOrNull() ?: 0
-                    val asc = (value["ascending"] as? JsonPrimitive)?.content?.toBoolean() ?: true
+                    val idx = jsonPrimitiveInt(value["index"]) ?: 0
+                    val asc = jsonPrimitiveBoolean(value["ascending"]) ?: true
                     Filter.Sort.Selection(idx, asc)
                 } else null
                 object : Filter.Sort(name, opts.toTypedArray(), sel) {}
