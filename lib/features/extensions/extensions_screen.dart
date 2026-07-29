@@ -20,6 +20,23 @@ const _keiyoushiDefaultRepoUrl =
     'https://raw.githubusercontent.com/keiyoushi/extensions/repo/index.min.json';
 const _keiyoushiDefaultRepoName = 'Keiyoushi (official)';
 
+String _extractPkgFromApkPath(String apkPath) {
+  final fileName = apkPath.split('/').last;
+  if (fileName.endsWith('.apk')) {
+    return fileName.substring(0, fileName.length - 4);
+  }
+  return fileName;
+}
+
+Set<String> _installedPkgs(List<ExtensionSource> installed) {
+  final set = <String>{};
+  for (final s in installed) {
+    final pkg = _extractPkgFromApkPath(s.apkPath);
+    if (pkg.isNotEmpty) set.add(pkg);
+  }
+  return set;
+}
+
 class ExtensionsScreen extends ConsumerStatefulWidget {
   const ExtensionsScreen({super.key});
 
@@ -34,7 +51,6 @@ class _ExtensionsScreenState extends ConsumerState<ExtensionsScreen>
 
   List<ExtensionRepo> _repos = const [];
   List<ExtensionSource> _installed = const [];
-  final Set<String> _loadedPkgs = {};
   // Map<repoId, List<ExtensionIndexEntry>>
   final Map<int, List<ExtensionIndexEntry>> _indexCache = {};
   final Set<int> _loadingIndex = {};
@@ -93,9 +109,10 @@ class _ExtensionsScreenState extends ConsumerState<ExtensionsScreen>
       if (!mounted) return;
       final installed = await _mgr.listInstalled();
       if (!mounted) return;
+      final loadedPkgs = _installedPkgs(installed);
       setState(() {
         _indexCache[repo.id] = entries
-            .where((e) => !_loadedPkgs.contains(e.pkg))
+            .where((e) => !loadedPkgs.contains(e.pkg))
             .toList(growable: false);
         _installed = installed;
         _error = null;
@@ -182,7 +199,6 @@ class _ExtensionsScreenState extends ConsumerState<ExtensionsScreen>
       );
       setState(() {
         _installed = List.from(_installed)..add(src);
-        _loadedPkgs.add(entry.pkg);
         _indexCache[repo.id] = _indexCache[repo.id]
                 ?.where((e) => e.pkg != entry.pkg)
                 .toList(growable: false) ??
@@ -206,12 +222,8 @@ class _ExtensionsScreenState extends ConsumerState<ExtensionsScreen>
       setState(() {
         _installed =
             _installed.where((s) => s.sourceId != src.sourceId).toList();
-        _loadedPkgs.removeWhere((pkg) {
-          final stillInstalled = _installed.any(
-              (s) => s.name.trim().toLowerCase() == pkg.trim().toLowerCase());
-          return !stillInstalled;
-        });
       });
+      await _refresh();
     } catch (e) {
       messenger.showSnackBar(
         SnackBar(content: Text('Unload failed: $e')),
@@ -274,7 +286,6 @@ class _ExtensionsScreenState extends ConsumerState<ExtensionsScreen>
                   indexCache: _indexCache,
                   loading: _loadingIndex,
                   installed: _installed,
-                  loadedPkgs: _loadedPkgs,
                   onFetch: _fetchIndex,
                   onInstall: _install,
                   onSeed: _ensureRepoSeeded,
@@ -386,7 +397,6 @@ class _AvailableTab extends StatefulWidget {
   final Map<int, List<ExtensionIndexEntry>> indexCache;
   final Set<int> loading;
   final List<ExtensionSource> installed;
-  final Set<String> loadedPkgs;
   final void Function(ExtensionRepo) onFetch;
   final void Function(ExtensionIndexEntry, ExtensionRepo) onInstall;
   final VoidCallback onSeed;
@@ -396,7 +406,6 @@ class _AvailableTab extends StatefulWidget {
     required this.indexCache,
     required this.loading,
     required this.installed,
-    required this.loadedPkgs,
     required this.onFetch,
     required this.onInstall,
     required this.onSeed,
@@ -454,38 +463,7 @@ class _AvailableTabState extends State<_AvailableTab> {
     super.dispose();
   }
 
-  /// O(1) lookup map: className → installed source.
-  Map<String, ExtensionSource> _installedByClass() {
-    final map = <String, ExtensionSource>{};
-    for (final s in widget.installed) {
-      if (s.className.isNotEmpty) map[s.className] = s;
-    }
-    return map;
-  }
-
-  ExtensionSource? _matchInstalled(
-    _EntryWithRepo er,
-    Map<String, ExtensionSource> byClass,
-  ) {
-    for (final s in er.entry.sources) {
-      final className = s['className'] as String? ?? '';
-      if (className.isEmpty) continue;
-      final match = byClass[className];
-      if (match != null) return match;
-    }
-    // Fallback: match by extension name when className is missing or
-    // mismatched (e.g. extension author changed the class name).
-    for (final s in widget.installed) {
-      if (s.name.trim().toLowerCase() == er.entry.name.trim().toLowerCase()) return s;
-    }
-    // Fallback: match by package name.
-    for (final s in widget.installed) {
-      if (s.name.trim().toLowerCase() == er.entry.pkg.trim().toLowerCase()) return s;
-    }
-    return null;
-  }
-
-  List<_AvailableRow> _buildRowsCached(Map<String, ExtensionSource> byClass) {
+  List<_AvailableRow> _buildRowsCached() {
     final key = Object.hash(
       _query,
       widget.repos.length,
@@ -494,18 +472,19 @@ class _AvailableTabState extends State<_AvailableTab> {
       _collapsedRepos.length,
     );
     if (_cachedRows != null && _rowsCacheKey == key) return _cachedRows!;
-    _cachedRows = _buildRows(byClass);
+    _cachedRows = _buildRows();
     _rowsCacheKey = key;
     return _cachedRows!;
   }
 
-  List<_AvailableRow> _buildRows(Map<String, ExtensionSource> byClass) {
+  List<_AvailableRow> _buildRows() {
+    final installedPkgs = _installedPkgs(widget.installed);
     final allEntries = <_EntryWithRepo>[];
     for (final repo in widget.repos) {
       final entries = widget.indexCache[repo.id];
       if (entries == null) continue;
       for (final e in entries) {
-        if (widget.loadedPkgs.contains(e.pkg)) continue;
+        if (installedPkgs.contains(e.pkg)) continue;
         allEntries.add(_EntryWithRepo(entry: e, repo: repo));
       }
     }
@@ -517,51 +496,14 @@ class _AvailableTabState extends State<_AvailableTab> {
             .where((er) => er.entry.name.toLowerCase().contains(query))
             .toList(growable: false);
 
-    final updateEntries = <_EntryWithRepo>[];
-    final installedEntries = <_EntryWithRepo>[];
     final notInstalledEntries = <_EntryWithRepo>[];
 
     for (final er in filtered) {
-      final match = _matchInstalled(er, byClass);
-      if (match != null) {
-        if (match.version != er.entry.version) {
-          updateEntries.add(er);
-        } else {
-          installedEntries.add(er);
-        }
-      } else {
-        if (!_allowedLanguages.contains(er.entry.lang.toLowerCase())) continue;
-        notInstalledEntries.add(er);
-      }
+      if (!_allowedLanguages.contains(er.entry.lang.toLowerCase())) continue;
+      notInstalledEntries.add(er);
     }
 
     final rows = <_AvailableRow>[];
-
-    if (updateEntries.isNotEmpty) {
-      rows.add(const _AvailableRow.section('Update pending'));
-      for (final er in updateEntries) {
-        final match = _matchInstalled(er, byClass);
-        rows.add(_AvailableRow.entry(
-          er,
-          installed: true,
-          hasUpdate: true,
-          installedVersion: match?.version,
-        ));
-      }
-    }
-
-    if (installedEntries.isNotEmpty) {
-      rows.add(const _AvailableRow.section('Loaded'));
-      for (final er in installedEntries) {
-        final match = _matchInstalled(er, byClass);
-        rows.add(_AvailableRow.entry(
-          er,
-          installed: true,
-          hasUpdate: false,
-          installedVersion: match?.version,
-        ));
-      }
-    }
 
     if (notInstalledEntries.isNotEmpty) {
       final groups = <int, List<_EntryWithRepo>>{};
@@ -628,8 +570,7 @@ class _AvailableTabState extends State<_AvailableTab> {
 
     final hasAnyFetched =
         widget.repos.any((r) => widget.indexCache.containsKey(r.id));
-    final byClass = _installedByClass();
-    final rows = hasAnyFetched ? _buildRowsCached(byClass) : const <_AvailableRow>[];
+    final rows = hasAnyFetched ? _buildRowsCached() : const <_AvailableRow>[];
 
     return Column(
       children: [
