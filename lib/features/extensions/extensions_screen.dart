@@ -34,6 +34,7 @@ class _ExtensionsScreenState extends ConsumerState<ExtensionsScreen>
 
   List<ExtensionRepo> _repos = const [];
   List<ExtensionSource> _installed = const [];
+  final Set<String> _loadedPkgs = {};
   // Map<repoId, List<ExtensionIndexEntry>>
   final Map<int, List<ExtensionIndexEntry>> _indexCache = {};
   final Set<int> _loadingIndex = {};
@@ -93,7 +94,9 @@ class _ExtensionsScreenState extends ConsumerState<ExtensionsScreen>
       final installed = await _mgr.listInstalled();
       if (!mounted) return;
       setState(() {
-        _indexCache[repo.id] = entries;
+        _indexCache[repo.id] = entries
+            .where((e) => !_loadedPkgs.contains(e.pkg))
+            .toList(growable: false);
         _installed = installed;
         _error = null;
       });
@@ -179,6 +182,11 @@ class _ExtensionsScreenState extends ConsumerState<ExtensionsScreen>
       );
       setState(() {
         _installed = List.from(_installed)..add(src);
+        _loadedPkgs.add(entry.pkg);
+        _indexCache[repo.id] = _indexCache[repo.id]
+                ?.where((e) => e.pkg != entry.pkg)
+                .toList(growable: false) ??
+            const [];
       });
       await _fetchIndex(repo);
     } catch (e) {
@@ -198,6 +206,11 @@ class _ExtensionsScreenState extends ConsumerState<ExtensionsScreen>
       setState(() {
         _installed =
             _installed.where((s) => s.sourceId != src.sourceId).toList();
+        _loadedPkgs.removeWhere((pkg) {
+          final stillInstalled = _installed.any(
+              (s) => s.name.trim().toLowerCase() == pkg.trim().toLowerCase());
+          return !stillInstalled;
+        });
       });
     } catch (e) {
       messenger.showSnackBar(
@@ -261,6 +274,7 @@ class _ExtensionsScreenState extends ConsumerState<ExtensionsScreen>
                   indexCache: _indexCache,
                   loading: _loadingIndex,
                   installed: _installed,
+                  loadedPkgs: _loadedPkgs,
                   onFetch: _fetchIndex,
                   onInstall: _install,
                   onSeed: _ensureRepoSeeded,
@@ -372,6 +386,7 @@ class _AvailableTab extends StatefulWidget {
   final Map<int, List<ExtensionIndexEntry>> indexCache;
   final Set<int> loading;
   final List<ExtensionSource> installed;
+  final Set<String> loadedPkgs;
   final void Function(ExtensionRepo) onFetch;
   final void Function(ExtensionIndexEntry, ExtensionRepo) onInstall;
   final VoidCallback onSeed;
@@ -381,6 +396,7 @@ class _AvailableTab extends StatefulWidget {
     required this.indexCache,
     required this.loading,
     required this.installed,
+    required this.loadedPkgs,
     required this.onFetch,
     required this.onInstall,
     required this.onSeed,
@@ -489,6 +505,7 @@ class _AvailableTabState extends State<_AvailableTab> {
       final entries = widget.indexCache[repo.id];
       if (entries == null) continue;
       for (final e in entries) {
+        if (widget.loadedPkgs.contains(e.pkg)) continue;
         allEntries.add(_EntryWithRepo(entry: e, repo: repo));
       }
     }

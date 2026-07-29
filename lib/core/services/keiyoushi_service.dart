@@ -101,7 +101,7 @@ class KeiyoushiService {
   Future<({List<Map<String, dynamic>> mangas, bool hasNextPage})>
       searchManga({required String sourceId, String query = '', int page = 1}) async {
     final res = await _post({
-      'method': 'searchManga',
+      'method': 'getSearchManga',
       'sourceId': sourceId,
       'query': query,
       'page': page,
