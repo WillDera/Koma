@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -41,6 +42,12 @@ class _SourceBrowseScreenState extends ConsumerState<SourceBrowseScreen>
   String? _error;
   String _tab = 'popular';
 
+  bool _searchActive = false;
+  String _searchQuery = '';
+  List<MManga> _searchResults = [];
+  bool _searchLoading = false;
+  Timer? _searchTimer;
+
   @override
   void initState() {
     super.initState();
@@ -75,6 +82,7 @@ class _SourceBrowseScreenState extends ConsumerState<SourceBrowseScreen>
 
   @override
   void dispose() {
+    _searchTimer?.cancel();
     _tabCtrl.dispose();
     _scrollCtrl.removeListener(_onScroll);
     _scrollCtrl.dispose();
@@ -87,6 +95,49 @@ class _SourceBrowseScreenState extends ConsumerState<SourceBrowseScreen>
         !_loading &&
         _hasNext) {
       _loadPage();
+    }
+  }
+
+  void _toggleSearch() {
+    _searchTimer?.cancel();
+    setState(() {
+      _searchActive = !_searchActive;
+      if (!_searchActive) {
+        _searchQuery = '';
+        _searchResults = [];
+      }
+    });
+  }
+
+  void _onSearchChanged(String query) {
+    _searchTimer?.cancel();
+    setState(() => _searchQuery = query);
+    if (query.isEmpty) {
+      setState(() => _searchResults = []);
+      return;
+    }
+    _searchTimer = Timer(const Duration(milliseconds: 500), () {
+      _performSearch(query);
+    });
+  }
+
+  Future<void> _performSearch(String query) async {
+    if (query.isEmpty) return;
+    setState(() => _searchLoading = true);
+    try {
+      final mangas = await _service.search(_source, 1, query);
+      if (!mounted) return;
+      setState(() {
+        _searchResults = mangas;
+        _searchLoading = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _searchResults = [];
+        _searchLoading = false;
+        _error = '$e';
+      });
     }
   }
 
@@ -132,118 +183,220 @@ class _SourceBrowseScreenState extends ConsumerState<SourceBrowseScreen>
       backgroundColor: c.bg,
       appBar: AppBar(
         backgroundColor: c.bg,
-        title: Text(widget.sourceName),
-        bottom: TabBar(
-          controller: _tabCtrl,
-          indicatorColor: c.accent,
-          labelColor: c.accent,
-          unselectedLabelColor: c.textSecondary,
-          tabs: const [
-            Tab(text: 'Popular'),
-            Tab(text: 'Latest'),
-          ],
-        ),
-      ),
-      body: _mangas.isEmpty && !_loading && _error == null
-          ? ListView(
-              children: [
-                if (_error != null)
-                  Padding(
-                    padding: const EdgeInsets.all(16),
-                    child: Text(
-                      _error!,
-                      style: TextStyle(color: c.accent, fontSize: 12),
-                    ),
-                  ),
-                const SizedBox(height: 120),
-                const Center(child: Text('Nothing found')),
-              ],
-            )
-          : RefreshIndicator(
-              onRefresh: _refresh,
-              child: GridView.builder(
-                controller: _scrollCtrl,
-                padding: const EdgeInsets.all(16),
-                gridDelegate:
-                    const SliverGridDelegateWithFixedCrossAxisCount(
-                  crossAxisCount: 3,
-                  mainAxisSpacing: 12,
-                  crossAxisSpacing: 12,
-                  childAspectRatio: 0.65,
+        title: _searchActive
+            ? TextField(
+                autofocus: true,
+                decoration: InputDecoration(
+                  hintText: 'Search...',
+                  border: InputBorder.none,
+                  hintStyle: TextStyle(color: c.textSecondary),
                 ),
-                itemCount: _mangas.length + (_hasNext ? 1 : 0),
-                itemBuilder: (_, i) {
-                  if (i >= _mangas.length) {
-                    return const Center(
-                      child: SizedBox(
-                        width: 24,
-                        height: 24,
-                        child: CircularProgressIndicator(
-                          strokeWidth: 2,
+                style: TextStyle(color: c.textPrimary),
+                onChanged: _onSearchChanged,
+                onSubmitted: (v) => _performSearch(v),
+              )
+            : Text(widget.sourceName),
+        actions: [
+          IconButton(
+            icon: Icon(_searchActive ? Icons.close : Icons.search),
+            onPressed: _toggleSearch,
+          ),
+        ],
+        bottom: _searchActive
+            ? null
+            : TabBar(
+                controller: _tabCtrl,
+                indicatorColor: c.accent,
+                labelColor: c.accent,
+                unselectedLabelColor: c.textSecondary,
+                tabs: const [
+                  Tab(text: 'Popular'),
+                  Tab(text: 'Latest'),
+                ],
+              ),
+      ),
+      body: _searchActive
+          ? _buildSearchBody(c)
+          : _mangas.isEmpty && !_loading && _error == null
+              ? ListView(
+                  children: [
+                    if (_error != null)
+                      Padding(
+                        padding: const EdgeInsets.all(16),
+                        child: Text(
+                          _error!,
+                          style: TextStyle(color: c.accent, fontSize: 12),
                         ),
                       ),
-                    );
-                  }
-                  final m = _mangas[i];
-                  return _MangaGridCard(
-                    manga: m,
-                    onTap: () async {
-                      final repos = ref.read(repositoriesProvider);
-                      // Reuse an existing library row if present so the
-                      // MangaDetailScreen reflects the correct inLibrary
-                      // state and we don't create duplicate entries.
-                      final existing = await repos.manga.getMangaByKey(
-                        widget.sourceId,
-                        m.url,
-                      );
-                      if (existing != null) {
-                        if (!context.mounted) return;
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (_) => MangaDetailScreen(
-                              sourceId: widget.sourceId,
-                              url: m.url,
-                              title: m.title,
-                              manga: existing,
+                    const SizedBox(height: 120),
+                    const Center(child: Text('Nothing found')),
+                  ],
+                )
+              : RefreshIndicator(
+                  onRefresh: _refresh,
+                  child: GridView.builder(
+                    controller: _scrollCtrl,
+                    padding: const EdgeInsets.all(16),
+                    gridDelegate:
+                        const SliverGridDelegateWithFixedCrossAxisCount(
+                      crossAxisCount: 3,
+                      mainAxisSpacing: 12,
+                      crossAxisSpacing: 12,
+                      childAspectRatio: 0.65,
+                    ),
+                    itemCount: _mangas.length + (_hasNext ? 1 : 0),
+                    itemBuilder: (_, i) {
+                      if (i >= _mangas.length) {
+                        return const Center(
+                          child: SizedBox(
+                            width: 24,
+                            height: 24,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
                             ),
                           ),
                         );
-                        return;
                       }
-                      final manga = Manga(
-                        id: 0,
-                        name: m.title,
-                        url: m.url,
-                        imageUrl: m.thumbnailUrl,
-                        author: m.author,
-                        artist: m.artist,
-                        description: m.description,
-                        status: m.status,
-                        genres: m.genres,
-                        sourceId: widget.sourceId,
-                      );
-                      // Pre-insert into Isar so the detail screen can
-                      // read reactively from a stream, matching mangayomi's
-                      // pushToMangaReaderDetail pattern — no loading spinner.
-                      final id = await repos.manga.insertManga(manga);
-                      if (!context.mounted) return;
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (_) => MangaDetailScreen(
-                            sourceId: widget.sourceId,
+                      final m = _mangas[i];
+                      return _MangaGridCard(
+                        manga: m,
+                        onTap: () async {
+                          final repos = ref.read(repositoriesProvider);
+                          final existing = await repos.manga.getMangaByKey(
+                            widget.sourceId,
+                            m.url,
+                          );
+                          if (existing != null) {
+                            if (!context.mounted) return;
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (_) => MangaDetailScreen(
+                                  sourceId: widget.sourceId,
+                                  url: m.url,
+                                  title: m.title,
+                                  manga: existing,
+                                ),
+                              ),
+                            );
+                            return;
+                          }
+                          final manga = Manga(
+                            id: 0,
+                            name: m.title,
                             url: m.url,
-                            title: m.title,
-                            manga: manga.copyWith(id: id),
-                          ),
-                        ),
+                            imageUrl: m.thumbnailUrl,
+                            author: m.author,
+                            artist: m.artist,
+                            description: m.description,
+                            status: m.status,
+                            genres: m.genres,
+                            sourceId: widget.sourceId,
+                          );
+                          final id = await repos.manga.insertManga(manga);
+                          if (!context.mounted) return;
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => MangaDetailScreen(
+                                sourceId: widget.sourceId,
+                                url: m.url,
+                                title: m.title,
+                                manga: manga.copyWith(id: id),
+                              ),
+                            ),
+                          );
+                        },
                       );
                     },
-                  );
-                },
-              ),
+                  ),
+                ),
+    );
+  }
+
+  Widget _buildSearchBody(KomaColors c) {
+    if (_searchLoading) {
+      return const Center(child: CircularProgressIndicator(strokeWidth: 2));
+    }
+    if (_searchQuery.isEmpty) {
+      return const Center(child: Text('Type to search'));
+    }
+    if (_searchResults.isEmpty) {
+      return ListView(
+        children: [
+          const SizedBox(height: 120),
+          Center(
+            child: Text(
+              _error != null ? '$_error' : 'No results for "$_searchQuery"',
+              textAlign: TextAlign.center,
+              style: TextStyle(color: c.textSecondary),
             ),
+          ),
+        ],
+      );
+    }
+    return GridView.builder(
+      padding: const EdgeInsets.all(16),
+      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+        crossAxisCount: 3,
+        mainAxisSpacing: 12,
+        crossAxisSpacing: 12,
+        childAspectRatio: 0.65,
+      ),
+      itemCount: _searchResults.length,
+      itemBuilder: (_, i) {
+        final m = _searchResults[i];
+        return _MangaGridCard(
+          manga: m,
+          onTap: () async {
+            final repos = ref.read(repositoriesProvider);
+            final existing = await repos.manga.getMangaByKey(
+              widget.sourceId,
+              m.url,
+            );
+            if (existing != null) {
+              if (!context.mounted) return;
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => MangaDetailScreen(
+                    sourceId: widget.sourceId,
+                    url: m.url,
+                    title: m.title,
+                    manga: existing,
+                  ),
+                ),
+              );
+              return;
+            }
+            final manga = Manga(
+              id: 0,
+              name: m.title,
+              url: m.url,
+              imageUrl: m.thumbnailUrl,
+              author: m.author,
+              artist: m.artist,
+              description: m.description,
+              status: m.status,
+              genres: m.genres,
+              sourceId: widget.sourceId,
+            );
+            final id = await repos.manga.insertManga(manga);
+            if (!context.mounted) return;
+            Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) => MangaDetailScreen(
+                  sourceId: widget.sourceId,
+                  url: m.url,
+                  title: m.title,
+                  manga: manga.copyWith(id: id),
+                ),
+              ),
+            );
+          },
+        );
+      },
     );
   }
 }
