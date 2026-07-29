@@ -25,6 +25,8 @@ class ThemeState {
     this.handMode = HandMode.right,
     this.oneHandMode = false,
     this.bionicReading = false,
+    this.useDeviceFont = false,
+    this.amoledMode = false,
   });
 
   final ThemeMode themeMode;
@@ -44,6 +46,8 @@ class ThemeState {
   final HandMode handMode;
   final bool oneHandMode;
   final bool bionicReading;
+  final bool useDeviceFont;
+  final bool amoledMode;
 
   // ── Derived getters ────────────────────────────────────────────────
 
@@ -117,6 +121,8 @@ class ThemeState {
     HandMode? handMode,
     bool? oneHandMode,
     bool? bionicReading,
+    bool? useDeviceFont,
+    bool? amoledMode,
   }) {
     return ThemeState(
       themeMode: themeMode ?? this.themeMode,
@@ -138,6 +144,8 @@ class ThemeState {
       handMode: handMode ?? this.handMode,
       oneHandMode: oneHandMode ?? this.oneHandMode,
       bionicReading: bionicReading ?? this.bionicReading,
+      useDeviceFont: useDeviceFont ?? this.useDeviceFont,
+      amoledMode: amoledMode ?? this.amoledMode,
     );
   }
 }

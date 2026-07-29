@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'app_theme.dart';
 import 'theme_state.dart';
+import 'tokens/app_type.dart';
 
 export 'theme_state.dart';
 
@@ -32,6 +33,8 @@ class ThemeNotifier extends Notifier<ThemeState> {
   static const _keyHandMode = 'hand_mode';
   static const _keyOneHandMode = 'one_hand_mode';
   static const _keyBionicReading = 'bionic_reading';
+  static const _keyUseDeviceFont = 'use_device_font';
+  static const _keyAmoledMode = 'amoled_mode';
 
   @override
   ThemeState build() {
@@ -61,6 +64,8 @@ class ThemeNotifier extends Notifier<ThemeState> {
       handMode: HandMode.values[prefs.getInt(_keyHandMode) ?? 1],
       oneHandMode: prefs.getBool(_keyOneHandMode) ?? false,
       bionicReading: prefs.getBool(_keyBionicReading) ?? false,
+      useDeviceFont: prefs.getBool(_keyUseDeviceFont) ?? false,
+      amoledMode: prefs.getBool(_keyAmoledMode) ?? false,
     );
   }
 
@@ -70,13 +75,24 @@ class ThemeNotifier extends Notifier<ThemeState> {
   // ── Theme convenience getters (forwarded from state) ───────────────
 
   /// Live light theme built from the current accent color.
-  ThemeData get lightTheme => AppTheme.lightTheme(accent: state.accentColor);
-  ThemeData get darkTheme => AppTheme.darkTheme(accent: state.accentColor);
-  ThemeData get sepiaTheme => AppTheme.sepiaTheme(accent: state.accentColor);
+  ThemeData get lightTheme => AppTheme.lightTheme(
+    accent: state.accentColor,
+    fontFamily: state.useDeviceFont ? null : AppType.uiFont,
+  );
+  ThemeData get darkTheme => AppTheme.darkTheme(
+    accent: state.accentColor,
+    amoled: state.amoledMode,
+    fontFamily: state.useDeviceFont ? null : AppType.uiFont,
+  );
+  ThemeData get sepiaTheme => AppTheme.sepiaTheme(
+    accent: state.accentColor,
+    fontFamily: state.useDeviceFont ? null : AppType.uiFont,
+  );
 
   ThemeData get currentTheme {
     if (state.sepiaMode) return sepiaTheme;
-    return state.isDark ? darkTheme : lightTheme;
+    if (state.isDark) return darkTheme;
+    return lightTheme;
   }
 
   // ── Mutators ───────────────────────────────────────────────────────
@@ -193,6 +209,18 @@ class ThemeNotifier extends Notifier<ThemeState> {
     state = state.copyWith(bionicReading: value);
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool(_keyBionicReading, value);
+  }
+
+  Future<void> setUseDeviceFont(bool value) async {
+    state = state.copyWith(useDeviceFont: value);
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_keyUseDeviceFont, value);
+  }
+
+  Future<void> setAmoledMode(bool value) async {
+    state = state.copyWith(amoledMode: value);
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_keyAmoledMode, value);
   }
 
   void toggleTheme() {
