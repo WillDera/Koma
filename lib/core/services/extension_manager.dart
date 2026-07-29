@@ -20,6 +20,8 @@ class ExtensionIndexEntry {
   final String version;
   final String lang;
   final String contentWarning;
+  final String? baseUrl;
+  final String? iconUrl;
   final List<Map<String, dynamic>> sources;
 
   const ExtensionIndexEntry({
@@ -29,6 +31,8 @@ class ExtensionIndexEntry {
     required this.version,
     required this.lang,
     this.contentWarning = 'CONTENT_WARNING_SAFE',
+    this.baseUrl,
+    this.iconUrl,
     required this.sources,
   });
 
@@ -45,36 +49,68 @@ class ExtensionIndexEntry {
         .map((e) => Map<String, dynamic>.from(e))
         .toList(growable: false);
 
-    final pkg = j['packageName'] as String? ??
-        j['pkg'] as String? ??
-        '';
-    final name = j['name'] as String? ??
-        pkg ??
-        'Unknown';
-
+    String pkg;
+    String name;
     String apkUrl;
-    if (j['resources'] is Map) {
-      final r = j['resources'] as Map;
-      apkUrl = (r['apkUrl'] as String?) ?? '';
-    } else {
-      apkUrl = j['apk'] as String? ?? '';
-    }
-
-    final version = j['versionName'] as String? ??
-        j['version'] as String? ??
-        '0';
-
+    String version;
     String lang;
-    if (sources.isNotEmpty) {
-      lang = sources.first['language'] as String? ??
-          sources.first['lang'] as String? ??
-          'en';
-    } else {
-      lang = j['lang'] as String? ?? 'en';
-    }
+    String contentWarning;
+    String? baseUrl;
+    String? iconUrl;
 
-    final contentWarning = j['contentWarning'] as String? ??
-        'CONTENT_WARNING_SAFE';
+    final hasPackageName = j['packageName'] != null || j['pkg'] != null;
+    final hasSourceCodeUrl = j['sourceCodeUrl'] != null;
+    final hasId = j['id'] != null;
+
+    if (hasSourceCodeUrl || (hasId && !hasPackageName)) {
+      pkg = j['id']?.toString() ?? '';
+      name = (j['name'] as String?) ?? (pkg.isEmpty ? 'Unknown' : pkg);
+      apkUrl = j['sourceCodeUrl'] as String? ?? '';
+      version = j['version'] as String? ?? '0';
+      lang = j['lang'] as String? ?? 'en';
+      contentWarning = (j['isNsfw'] as bool? ?? false)
+          ? 'CONTENT_WARNING_NSFW'
+          : 'CONTENT_WARNING_SAFE';
+      baseUrl = j['baseUrl'] as String?;
+      iconUrl = j['iconUrl'] as String?;
+    } else {
+      pkg = j['packageName'] as String? ??
+          j['pkg'] as String? ??
+          '';
+      name = j['name'] as String? ??
+          pkg ??
+          'Unknown';
+
+      String apk;
+      if (j['resources'] is Map) {
+        final r = j['resources'] as Map;
+        apk = (r['apkUrl'] as String?) ?? '';
+      } else {
+        apk = j['apk'] as String? ?? '';
+      }
+      apkUrl = apk;
+
+      version = j['versionName'] as String? ??
+          j['version'] as String? ??
+          '0';
+
+      if (sources.isNotEmpty) {
+        lang = sources.first['language'] as String? ??
+            sources.first['lang'] as String? ??
+            'en';
+      } else {
+        lang = j['lang'] as String? ?? 'en';
+      }
+
+      contentWarning = j['contentWarning'] as String? ??
+          'CONTENT_WARNING_SAFE';
+
+      baseUrl = j['baseUrl'] as String? ??
+          (sources.isNotEmpty ? sources.first['baseUrl'] as String? : null);
+      iconUrl = j['resources'] is Map
+          ? (j['resources'] as Map)['iconUrl'] as String?
+          : null;
+    }
 
     return ExtensionIndexEntry(
       pkg: pkg,
@@ -83,6 +119,8 @@ class ExtensionIndexEntry {
       version: version,
       lang: lang,
       contentWarning: contentWarning,
+      baseUrl: baseUrl,
+      iconUrl: iconUrl,
       sources: sources,
     );
   }
@@ -173,7 +211,7 @@ class ExtensionManager {
       apkPath: apkPath,
       className: entry.className ?? '',
       iconUrl: iconUrl,
-      baseUrl: firstSource?['baseUrl'] as String?,
+      baseUrl: entry.baseUrl ?? firstSource?['baseUrl'] as String?,
       sourceCodeUrl: sourceCodeUrl,
       repoUrl: repoUrl,
     );
