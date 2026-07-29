@@ -453,6 +453,11 @@ class _AvailableTabState extends State<_AvailableTab> {
       final match = byClass[className];
       if (match != null) return match;
     }
+    // Fallback: match by extension name when className is missing or
+    // mismatched (e.g. extension author changed the class name).
+    for (final s in widget.installed) {
+      if (s.name == er.entry.name) return s;
+    }
     return null;
   }
 
