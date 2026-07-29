@@ -28,6 +28,8 @@ class ThemeState {
     this.useDeviceFont = false,
     this.amoledMode = false,
     this.systemFontFamily,
+    this.showNsfwExtensions = false,
+    this.showObsoleteExtensions = false,
   });
 
   final ThemeMode themeMode;
@@ -50,6 +52,8 @@ class ThemeState {
   final bool useDeviceFont;
   final bool amoledMode;
   final String? systemFontFamily;
+  final bool showNsfwExtensions;
+  final bool showObsoleteExtensions;
 
   // ── Derived getters ────────────────────────────────────────────────
 
@@ -126,6 +130,8 @@ class ThemeState {
       bool? useDeviceFont,
       bool? amoledMode,
       String? systemFontFamily,
+      bool? showNsfwExtensions,
+      bool? showObsoleteExtensions,
     }) {
       return ThemeState(
       themeMode: themeMode ?? this.themeMode,
@@ -150,6 +156,8 @@ class ThemeState {
       useDeviceFont: useDeviceFont ?? this.useDeviceFont,
       amoledMode: amoledMode ?? this.amoledMode,
       systemFontFamily: systemFontFamily ?? this.systemFontFamily,
+      showNsfwExtensions: showNsfwExtensions ?? this.showNsfwExtensions,
+      showObsoleteExtensions: showObsoleteExtensions ?? this.showObsoleteExtensions,
     );
   }
 }

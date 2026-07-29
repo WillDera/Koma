@@ -37,6 +37,8 @@ class ThemeNotifier extends Notifier<ThemeState> {
   static const _keyBionicReading = 'bionic_reading';
   static const _keyUseDeviceFont = 'use_device_font';
   static const _keyAmoledMode = 'amoled_mode';
+  static const _keyShowNsfwExtensions = 'show_nsfw_extensions';
+  static const _keyShowObsoleteExtensions = 'show_obsolete_extensions';
 
   @override
   ThemeState build() {
@@ -68,6 +70,8 @@ class ThemeNotifier extends Notifier<ThemeState> {
       bionicReading: prefs.getBool(_keyBionicReading) ?? false,
       useDeviceFont: prefs.getBool(_keyUseDeviceFont) ?? false,
       amoledMode: prefs.getBool(_keyAmoledMode) ?? false,
+      showNsfwExtensions: prefs.getBool(_keyShowNsfwExtensions) ?? false,
+      showObsoleteExtensions: prefs.getBool(_keyShowObsoleteExtensions) ?? false,
     );
     if (state.useDeviceFont) {
       unawaited(_resolveSystemFont());
@@ -243,6 +247,18 @@ class ThemeNotifier extends Notifier<ThemeState> {
     state = state.copyWith(amoledMode: value);
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool(_keyAmoledMode, value);
+  }
+
+  Future<void> setShowNsfwExtensions(bool value) async {
+    state = state.copyWith(showNsfwExtensions: value);
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_keyShowNsfwExtensions, value);
+  }
+
+  Future<void> setShowObsoleteExtensions(bool value) async {
+    state = state.copyWith(showObsoleteExtensions: value);
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_keyShowObsoleteExtensions, value);
   }
 
   void toggleTheme() {
