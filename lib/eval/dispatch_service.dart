@@ -27,6 +27,10 @@ class ExtensionDispatchService implements ExtensionService {
   }
 
   @override
+  Future<FilterList> getFilterList(MSource source) =>
+      _resolve(source).getFilterList(source);
+
+  @override
   Future<List<MManga>> getPopular(int page, {required MSource source}) =>
       _resolve(source).getPopular(page, source: source);
 

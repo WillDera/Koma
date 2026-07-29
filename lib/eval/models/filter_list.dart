@@ -4,6 +4,7 @@ class Filter {
   final FilterType type;
   final dynamic value;
   final List<FilterOption>? options;
+  final List<Filter>? subFilters;
 
   const Filter({
     required this.key,
@@ -11,28 +12,85 @@ class Filter {
     required this.type,
     this.value,
     this.options,
+    this.subFilters,
   });
 
-  Map<String, dynamic> toJson() => {
-        'key': key,
-        'name': name,
-        'type': type.name,
-        'value': value,
-        if (options != null) 'options': options!.map((o) => o.toJson()).toList(),
+  Map<String, dynamic> toJson() {
+    final json = <String, dynamic>{
+      'name': name,
+      'type': _typeToKotlin(type),
+    };
+    if (type == FilterType.sort) {
+      final sel = value;
+      json['value'] = sel != null
+          ? {'index': (sel as Map)['index'], 'ascending': (sel)['ascending']}
+          : null;
+    } else if (type == FilterType.group) {
+      json['value'] = subFilters?.map((f) => f.toJson()).toList() ?? [];
+    } else {
+      json['value'] = value;
+    }
+    if (options != null && options!.isNotEmpty) {
+      json['options'] = options!.map((o) => o.name).toList();
+    }
+    return json;
+  }
+
+  factory Filter.fromJson(Map<String, dynamic> json) {
+    final kotlinType = json['type'] as String? ?? 'text';
+    final type = _typeFromKotlin(kotlinType);
+    dynamic value = json['value'];
+    List<Filter>? subFilters;
+    List<FilterOption>? opts;
+
+    if (type == FilterType.group) {
+      if (value is List) {
+        subFilters = value
+            .map((e) => Filter.fromJson(Map<String, dynamic>.from(e)))
+            .toList();
+      }
+      value = null;
+    } else if (type == FilterType.select || type == FilterType.sort) {
+      final rawOpts = json['options'] as List?;
+      if (rawOpts != null) {
+        opts = rawOpts
+            .map((o) => FilterOption(name: o.toString(), value: o.toString()))
+            .toList();
+      }
+    }
+
+    return Filter(
+      key: json['name'] as String? ?? '',
+      name: json['name'] as String? ?? '',
+      type: type,
+      value: value,
+      options: opts,
+      subFilters: subFilters,
+    );
+  }
+
+  static String _typeToKotlin(FilterType t) => switch (t) {
+        FilterType.text => 'text',
+        FilterType.check => 'check',
+        FilterType.select => 'select',
+        FilterType.sort => 'sort',
+        FilterType.group => 'group',
+        FilterType.header => 'header',
+        FilterType.separator => 'separator',
+        FilterType.triState => 'triState',
       };
 
-  factory Filter.fromJson(Map<String, dynamic> json) => Filter(
-        key: json['key'] as String? ?? '',
-        name: json['name'] as String? ?? '',
-        type: FilterType.values.firstWhere(
-          (t) => t.name == json['type'],
-          orElse: () => FilterType.text,
-        ),
-        value: json['value'],
-        options: json['options'] != null
-            ? (json['options'] as List).map((o) => FilterOption.fromJson(Map<String, dynamic>.from(o))).toList()
-            : null,
-      );
+  static FilterType _typeFromKotlin(String t) => switch (t) {
+        'text' => FilterType.text,
+        'check' => FilterType.check,
+        'select' => FilterType.select,
+        'sort' => FilterType.sort,
+        'group' => FilterType.group,
+        'header' => FilterType.header,
+        'separator' => FilterType.separator,
+        'triState' => FilterType.triState,
+        _ => FilterType.text,
+      };
 }
 
 class FilterOption {
@@ -59,4 +117,6 @@ class FilterList {
   factory FilterList.fromJson(List<dynamic> json) => FilterList(
         filters: json.map((e) => Filter.fromJson(Map<String, dynamic>.from(e))).toList(),
       );
+
+  List<Map<String, dynamic>> toJson() => filters.map((f) => f.toJson()).toList();
 }
