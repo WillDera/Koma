@@ -112,7 +112,8 @@ class KeiyoushiService {
   Future<({List<Map<String, dynamic>> mangas, bool hasNextPage})>
       searchManga({required String sourceId, String query = '', int page = 1, List<Map<String, dynamic>>? filters}) async {
     final body = <String, dynamic>{
-      'method': 'searchManga',
+      // DalvikServer handler is getSearchManga (alias searchManga also accepted).
+      'method': 'getSearchManga',
       'sourceId': sourceId,
       'query': query,
       'page': page,
@@ -229,6 +230,9 @@ class KeiyoushiService {
   ({List<Map<String, dynamic>> mangas, bool hasNextPage}) _parseMangasPage(
     Map<String, dynamic> raw,
   ) {
+    if (raw.containsKey('error')) {
+      throw Exception(raw['error']?.toString() ?? 'Dalvik search failed');
+    }
     final mangas = ((raw['mangas'] as List?) ?? const [])
         .cast<Map>()
         .map((e) => Map<String, dynamic>.from(e))
