@@ -246,7 +246,7 @@ class _ExtensionsScreenState extends ConsumerState<ExtensionsScreen>
                     context,
                     MaterialPageRoute(
                       builder: (_) => SourceBrowseScreen(
-                        sourceId: src.id,
+                        sourceId: src.sourceId,
                         sourceName: src.name,
                       ),
                     ),

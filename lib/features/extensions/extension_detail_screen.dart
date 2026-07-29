@@ -121,7 +121,7 @@ class ExtensionDetailScreen extends StatelessWidget {
                       context,
                       MaterialPageRoute(
                         builder: (_) => SourceBrowseScreen(
-                          sourceId: source.id,
+                          sourceId: source.sourceId,
                           sourceName: source.name,
                         ),
                       ),

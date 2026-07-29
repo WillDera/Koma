@@ -262,6 +262,20 @@ class ExtensionManager {
 
   Future<List<ExtensionSource>> listInstalled() => _repos.extensions.getInstalledExtensions();
 
+  /// Translate any source identifier (old Mihon numeric ID or hex sourceId)
+  /// to the hex sourceId used by the DalvikServer cache. Falls back to
+  /// [sourceId] if no match is found in installed extensions.
+  Future<String> resolveSourceId(String sourceId) async {
+    final installed = await listInstalled();
+    // Direct hex match — already correct
+    if (installed.any((e) => e.sourceId == sourceId)) return sourceId;
+    // Look up by old Mihon numeric ID (stored in ext.id)
+    for (final ext in installed) {
+      if (ext.id == sourceId) return ext.sourceId;
+    }
+    return sourceId;
+  }
+
   Future<void> reloadAll() async {
     final installed = await listInstalled();
     for (final src in installed) {
