@@ -41,7 +41,7 @@ class SettingsScreen extends StatelessWidget {
             const OneHandSpacer(),
             const LibraryHeader(
               title: 'Settings',
-              subtitle: 'Version 2.19.30',
+              subtitle: 'Version 2.19.31',
               padding: EdgeInsets.fromLTRB(24, 20, 20, 12),
             ),
             const StaggeredEntrance(
@@ -215,6 +215,32 @@ class _AppearanceSection extends ConsumerWidget {
                   ),
                   value: theme.sepiaMode,
                   onChanged: tn.setSepiaMode,
+                ),
+              ),
+              Material(
+                type: MaterialType.transparency,
+                child: SwitchListTile(
+                  contentPadding: EdgeInsets.zero,
+                  title: const Text('AMOLED dark mode'),
+                  subtitle: Text(
+                    'True black for OLED screens',
+                    style: TextStyle(color: c.textSecondary, fontSize: 12),
+                  ),
+                  value: theme.amoledMode,
+                  onChanged: tn.setAmoledMode,
+                ),
+              ),
+              Material(
+                type: MaterialType.transparency,
+                child: SwitchListTile(
+                  contentPadding: EdgeInsets.zero,
+                  title: const Text('Use device font'),
+                  subtitle: Text(
+                    'System default instead of Inter',
+                    style: TextStyle(color: c.textSecondary, fontSize: 12),
+                  ),
+                  value: theme.useDeviceFont,
+                  onChanged: tn.setUseDeviceFont,
                 ),
               ),
             ],
@@ -1423,7 +1449,7 @@ class _AboutSection extends StatelessWidget {
         SettingsRow(
           icon: Icons.info_outline,
           title: 'Koma',
-           subtitle: 'Version 2.19.30 · build 2.19.30+160',
+           subtitle: 'Version 2.19.31 · build 2.19.31+161',
         ),
         SettingsRow(
           icon: Icons.favorite_outline,

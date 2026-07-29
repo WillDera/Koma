@@ -38,6 +38,21 @@ class AppColors {
   static const Color darkAccentText = Color(0xFF0E0E10);
   static const Color darkOnAccent = Color(0xFF0E0E10);
 
+  // ─── AMOLED (true black) ──────────────────────────────────────────────
+  static const Color amoledBg = Color(0xFF000000);
+  static const Color amoledBgElevated = Color(0xFF0A0A0A);
+  static const Color amoledSurface = Color(0xFF000000);
+  static const Color amoledSurfaceMuted = Color(0xFF111111);
+  static const Color amoledBorder = Color(0xFF222222);
+  static const Color amoledBorderStrong = Color(0xFF333333);
+  static const Color amoledTextPrimary = Color(0xFFF2EFEA);
+  static const Color amoledTextSecondary = Color(0xFFA6A29B);
+  static const Color amoledTextTertiary = Color(0xFF6E6A66);
+  static const Color amoledAccent = Color(0xFF7C82F0);
+  static const Color amoledAccentMuted = Color(0xFF1E1F35);
+  static const Color amoledAccentText = Color(0xFF0E0E10);
+  static const Color amoledOnAccent = Color(0xFF0E0E10);
+
   // ─── Sepia (paper) ─────────────────────────────────────────────────────
   static const Color sepiaBg = Color(0xFFF2E8D5);
   static const Color sepiaBgElevated = Color(0xFFF8EFDD);
