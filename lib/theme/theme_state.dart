@@ -27,6 +27,7 @@ class ThemeState {
     this.bionicReading = false,
     this.useDeviceFont = false,
     this.amoledMode = false,
+    this.systemFontFamily,
   });
 
   final ThemeMode themeMode;
@@ -48,6 +49,7 @@ class ThemeState {
   final bool bionicReading;
   final bool useDeviceFont;
   final bool amoledMode;
+  final String? systemFontFamily;
 
   // ── Derived getters ────────────────────────────────────────────────
 
@@ -120,11 +122,12 @@ class ThemeState {
     String? defaultHighlight,
     HandMode? handMode,
     bool? oneHandMode,
-    bool? bionicReading,
-    bool? useDeviceFont,
-    bool? amoledMode,
-  }) {
-    return ThemeState(
+      bool? bionicReading,
+      bool? useDeviceFont,
+      bool? amoledMode,
+      String? systemFontFamily,
+    }) {
+      return ThemeState(
       themeMode: themeMode ?? this.themeMode,
       sepiaMode: sepiaMode ?? this.sepiaMode,
       fontFamily: fontFamily ?? this.fontFamily,
@@ -146,6 +149,7 @@ class ThemeState {
       bionicReading: bionicReading ?? this.bionicReading,
       useDeviceFont: useDeviceFont ?? this.useDeviceFont,
       amoledMode: amoledMode ?? this.amoledMode,
+      systemFontFamily: systemFontFamily ?? this.systemFontFamily,
     );
   }
 }
