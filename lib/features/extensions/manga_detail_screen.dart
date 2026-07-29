@@ -409,7 +409,18 @@ class _MangaDetailScreenState extends ConsumerState<MangaDetailScreen> {
       );
       if (!mounted) return;
       final details = result.details;
-      final chapters = result.chapters;
+      var chapters = result.chapters;
+
+      if (chapters.isEmpty) {
+        try {
+          final fallback = await _service.getChapterList(
+            sourceId: widget.sourceId,
+            url: widget.url,
+          );
+          if (fallback.isNotEmpty) chapters = fallback;
+        } catch (_) {}
+      }
+
       final thumb = details['thumbnail_url'] as String?;
       if (thumb != null && thumb.isNotEmpty) {
         _cacheThumbnail(thumb);
