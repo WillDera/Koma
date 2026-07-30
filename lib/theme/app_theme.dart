@@ -37,7 +37,7 @@ class AppTheme {
   static const Color sepiaAccent = AppColors.sepiaAccent;
 
   // ─── Public entry points ───────────────────────────────────────────────
-  static ThemeData lightTheme({Color? accent}) {
+  static ThemeData lightTheme({Color? accent, String? fontFamily}) {
     final a = accent ?? AppColors.lightAccent;
     return _buildTheme(
       brightness: Brightness.light,
@@ -53,11 +53,33 @@ class AppTheme {
       accent: a,
       accentMuted: _muted(a, AppColors.lightSurface),
       onAccent: _onAccentFor(a),
+      // null = let the platform default font apply (Use device font).
+      fontFamily: fontFamily,
     );
   }
 
-  static ThemeData darkTheme({Color? accent}) {
+  static ThemeData darkTheme({Color? accent, bool amoled = false, String? fontFamily}) {
     final a = accent ?? AppColors.darkAccent;
+    // null = let the platform default font apply (Use device font).
+    final ff = fontFamily;
+    if (amoled) {
+      return _buildTheme(
+        brightness: Brightness.dark,
+        bg: AppColors.amoledBg,
+        bgElevated: AppColors.amoledBgElevated,
+        surface: AppColors.amoledSurface,
+        surfaceMuted: AppColors.amoledSurfaceMuted,
+        border: AppColors.amoledBorder,
+        borderStrong: AppColors.amoledBorderStrong,
+        textPrimary: AppColors.amoledTextPrimary,
+        textSecondary: AppColors.amoledTextSecondary,
+        textTertiary: AppColors.amoledTextTertiary,
+        accent: a,
+        accentMuted: _muted(a, AppColors.amoledSurface),
+        onAccent: _onAccentFor(a),
+        fontFamily: ff,
+      );
+    }
     return _buildTheme(
       brightness: Brightness.dark,
       bg: AppColors.darkBg,
@@ -72,10 +94,11 @@ class AppTheme {
       accent: a,
       accentMuted: _muted(a, AppColors.darkSurface),
       onAccent: _onAccentFor(a),
+      fontFamily: ff,
     );
   }
 
-  static ThemeData sepiaTheme({Color? accent}) {
+  static ThemeData sepiaTheme({Color? accent, String? fontFamily}) {
     final a = accent ?? AppColors.sepiaAccent;
     return _buildTheme(
       brightness: Brightness.light,
@@ -91,6 +114,8 @@ class AppTheme {
       accent: a,
       accentMuted: _muted(a, AppColors.sepiaSurface),
       onAccent: _onAccentFor(a),
+      // null = let the platform default font apply (Use device font).
+      fontFamily: fontFamily,
     );
   }
 
@@ -123,8 +148,9 @@ class AppTheme {
     required Color accent,
     required Color accentMuted,
     required Color onAccent,
+    required String? fontFamily,
   }) {
-    final textTheme = AppType.ui().apply(
+    final textTheme = AppType.ui(fontFamily: fontFamily).apply(
       bodyColor: textPrimary,
       displayColor: textPrimary,
     );
@@ -158,7 +184,8 @@ class AppTheme {
       colorScheme: colorScheme,
       scaffoldBackgroundColor: bg,
       canvasColor: bg,
-      fontFamily: AppType.uiFont,
+      // null => Flutter uses the platform default device font.
+      fontFamily: fontFamily,
       textTheme: textTheme,
       primaryTextTheme: textTheme,
       splashFactory: InkSparkle.splashFactory,

@@ -166,6 +166,7 @@ class StashDialog extends StatelessWidget {
   }) {
     return showDialog<T>(
       context: context,
+      useRootNavigator: false,
       barrierColor: Colors.black.withValues(alpha: 0.4),
       builder: (ctx) => StashDialog(
         title: title,

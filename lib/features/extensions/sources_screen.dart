@@ -3,11 +3,23 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/providers.dart';
 import '../../core/models/extension_source.dart';
+import '../../core/services/extension_icon_cache.dart';
+import '../../core/utils/custom_extended_image_provider.dart';
 import '../../core/utils/language.dart';
 import '../../theme/app_theme.dart';
 import '../../theme/tokens/app_spacing.dart';
 import '../../widgets/animated_press.dart';
 import 'source_browse_screen.dart';
+
+/// Extract the package name from an installed extension's on-disk APK path,
+/// where the file is stored as `{extensionsDir}/{pkg}.apk`.
+String _extractPkgFromApkPath(String apkPath) {
+  final fileName = apkPath.split('/').last;
+  if (fileName.endsWith('.apk')) {
+    return fileName.substring(0, fileName.length - 4);
+  }
+  return fileName;
+}
 
 /// Browse all installed sources — ported from mangayomi's SourcesScreen.
 ///
@@ -50,7 +62,7 @@ class _SourcesScreenState extends ConsumerState<SourcesScreen> {
       context,
       MaterialPageRoute(
         builder: (_) => SourceBrowseScreen(
-          sourceId: src.id,
+          sourceId: src.sourceId,
           sourceName: src.name,
         ),
       ),
@@ -65,7 +77,7 @@ class _SourcesScreenState extends ConsumerState<SourcesScreen> {
       context,
       MaterialPageRoute(
         builder: (_) => SourceBrowseScreen(
-          sourceId: src.id,
+          sourceId: src.sourceId,
           sourceName: src.name,
         ),
       ),
@@ -233,7 +245,7 @@ class _SourceTile extends StatelessWidget {
         ),
         child: Row(
           children: [
-            _buildIcon(source.iconUrl, c, size: 37),
+            _buildIcon(_extractPkgFromApkPath(source.apkPath), c, size: 37),
             const SizedBox(width: 12),
             Expanded(
               child: Column(
@@ -301,36 +313,8 @@ class _SourceTile extends StatelessWidget {
     );
   }
 
-  Widget _buildIcon(String? iconUrl, KomaColors c, {double size = 37}) {
-    if (iconUrl == null || iconUrl.isEmpty) {
-      return SizedBox(
-        width: size,
-        height: size,
-        child: Icon(Icons.extension_rounded, color: c.accent, size: size * 0.75),
-      );
-    }
-    return Container(
-      width: size,
-      height: size,
-      decoration: BoxDecoration(
-        color: c.surfaceMuted,
-        borderRadius: BorderRadius.circular(5),
-      ),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(5),
-        child: Image.network(
-          iconUrl,
-          fit: BoxFit.contain,
-          width: size,
-          height: size,
-          errorBuilder: (_, __, ___) => SizedBox(
-            width: size,
-            height: size,
-            child: Icon(Icons.extension_rounded, color: c.accent, size: size * 0.75),
-          ),
-        ),
-      ),
-    );
+  Widget _buildIcon(String pkg, KomaColors c, {double size = 37, String? iconUrl}) {
+    return _PkgExtensionIcon(pkg: pkg, colors: c, size: size, iconUrl: iconUrl);
   }
 }
 
@@ -364,3 +348,87 @@ class _EmptyState extends StatelessWidget {
     );
   }
 }
+
+/// Resolves an extension's launcher-icon URL from its package name via
+/// [ExtensionIconCache] (cache-first, with a deterministic CDN derivation
+/// fallback). Never reads the stale `.../repo/icon/${pkg}.png` value, so
+/// already-installed extensions self-heal. See Q5.
+class _PkgExtensionIcon extends StatefulWidget {
+  final String pkg;
+  final KomaColors colors;
+  final double size;
+  final String? iconUrl;
+
+  const _PkgExtensionIcon({
+    required this.pkg,
+    required this.colors,
+    required this.size,
+    this.iconUrl,
+  });
+
+  @override
+  State<_PkgExtensionIcon> createState() => _PkgExtensionIconState();
+}
+
+class _PkgExtensionIconState extends State<_PkgExtensionIcon> {
+  String? _url;
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.iconUrl != null && widget.iconUrl!.isNotEmpty) {
+      _url = widget.iconUrl;
+    } else {
+      _url = ExtensionIconCache.iconUrlForPkg(widget.pkg);
+      _resolveFromCache();
+    }
+  }
+
+  Future<void> _resolveFromCache() async {
+    if (_url != null && _url!.isNotEmpty) return;
+    final cached =
+        await ExtensionIconCache.instance.cachedIconUrl(widget.pkg);
+    if (!mounted) return;
+    if (cached != null && cached.isNotEmpty) {
+      setState(() => _url = cached);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final url = _url;
+    final size = widget.size;
+    final c = widget.colors;
+    if (url == null || url.isEmpty) {
+      return SizedBox(
+        width: size,
+        height: size,
+        child: Icon(Icons.extension_rounded, color: c.accent, size: size * 0.75),
+      );
+    }
+    return Container(
+      width: size,
+      height: size,
+      decoration: BoxDecoration(
+        color: c.surfaceMuted,
+        borderRadius: BorderRadius.circular(5),
+      ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(5),
+        child: Image(
+          image: CustomExtendedNetworkImageProvider(url, printError: false),
+          fit: BoxFit.contain,
+          width: size,
+          height: size,
+          gaplessPlayback: true,
+          errorBuilder: (_, _, _) => SizedBox(
+            width: size,
+            height: size,
+            child: Icon(Icons.extension_rounded, color: c.accent, size: size * 0.75),
+          ),
+        ),
+      ),
+    );
+  }
+}
+

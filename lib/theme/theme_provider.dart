@@ -1,8 +1,11 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'app_theme.dart';
 import 'theme_state.dart';
+import 'tokens/app_type.dart';
+import '../../core/services/system_font_service.dart';
 
 export 'theme_state.dart';
 
@@ -32,6 +35,10 @@ class ThemeNotifier extends Notifier<ThemeState> {
   static const _keyHandMode = 'hand_mode';
   static const _keyOneHandMode = 'one_hand_mode';
   static const _keyBionicReading = 'bionic_reading';
+  static const _keyUseDeviceFont = 'use_device_font';
+  static const _keyAmoledMode = 'amoled_mode';
+  static const _keyShowNsfwExtensions = 'show_nsfw_extensions';
+  static const _keyShowObsoleteExtensions = 'show_obsolete_extensions';
 
   @override
   ThemeState build() {
@@ -61,22 +68,54 @@ class ThemeNotifier extends Notifier<ThemeState> {
       handMode: HandMode.values[prefs.getInt(_keyHandMode) ?? 1],
       oneHandMode: prefs.getBool(_keyOneHandMode) ?? false,
       bionicReading: prefs.getBool(_keyBionicReading) ?? false,
+      useDeviceFont: prefs.getBool(_keyUseDeviceFont) ?? false,
+      amoledMode: prefs.getBool(_keyAmoledMode) ?? false,
+      showNsfwExtensions: prefs.getBool(_keyShowNsfwExtensions) ?? false,
+      showObsoleteExtensions: prefs.getBool(_keyShowObsoleteExtensions) ?? false,
     );
+    if (state.useDeviceFont) {
+      unawaited(_resolveSystemFont());
+    }
   }
 
   static String? _nonEmpty(String? s) =>
       s != null && s.isNotEmpty ? s : null;
 
+  Future<String?> _resolveSystemFont() async {
+    if (state.systemFontFamily != null) return state.systemFontFamily;
+    final font = await SystemFontService().getSystemTypeface();
+    if (font != null) {
+      state = state.copyWith(systemFontFamily: font);
+    }
+    return font;
+  }
+
   // ── Theme convenience getters (forwarded from state) ───────────────
 
   /// Live light theme built from the current accent color.
-  ThemeData get lightTheme => AppTheme.lightTheme(accent: state.accentColor);
-  ThemeData get darkTheme => AppTheme.darkTheme(accent: state.accentColor);
-  ThemeData get sepiaTheme => AppTheme.sepiaTheme(accent: state.accentColor);
+  ThemeData get lightTheme => AppTheme.lightTheme(
+    accent: state.accentColor,
+    fontFamily: _fontFamilyForMode(),
+  );
+  ThemeData get darkTheme => AppTheme.darkTheme(
+    accent: state.accentColor,
+    amoled: state.amoledMode,
+    fontFamily: _fontFamilyForMode(),
+  );
+  ThemeData get sepiaTheme => AppTheme.sepiaTheme(
+    accent: state.accentColor,
+    fontFamily: _fontFamilyForMode(),
+  );
+
+  String? _fontFamilyForMode() {
+    if (!state.useDeviceFont) return AppType.uiFont;
+    return state.systemFontFamily;
+  }
 
   ThemeData get currentTheme {
     if (state.sepiaMode) return sepiaTheme;
-    return state.isDark ? darkTheme : lightTheme;
+    if (state.isDark) return darkTheme;
+    return lightTheme;
   }
 
   // ── Mutators ───────────────────────────────────────────────────────
@@ -193,6 +232,33 @@ class ThemeNotifier extends Notifier<ThemeState> {
     state = state.copyWith(bionicReading: value);
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool(_keyBionicReading, value);
+  }
+
+  Future<void> setUseDeviceFont(bool value) async {
+    state = state.copyWith(useDeviceFont: value);
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_keyUseDeviceFont, value);
+    if (value) {
+      unawaited(_resolveSystemFont());
+    }
+  }
+
+  Future<void> setAmoledMode(bool value) async {
+    state = state.copyWith(amoledMode: value);
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_keyAmoledMode, value);
+  }
+
+  Future<void> setShowNsfwExtensions(bool value) async {
+    state = state.copyWith(showNsfwExtensions: value);
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_keyShowNsfwExtensions, value);
+  }
+
+  Future<void> setShowObsoleteExtensions(bool value) async {
+    state = state.copyWith(showObsoleteExtensions: value);
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_keyShowObsoleteExtensions, value);
   }
 
   void toggleTheme() {

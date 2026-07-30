@@ -53,6 +53,7 @@ typedef MangaReaderArgs = ({
   String mangaUrl,
   String chapterUrl,
   String chapterName,
+int? pageNumber,
 });
 
 typedef MangaDetailArgs = ({
@@ -144,13 +145,42 @@ final GoRouter appRouter = GoRouter(
       name: Routes.mangaReader,
       parentNavigatorKey: rootNavigatorKey,
       builder: (context, state) {
-        final a = state.extra as MangaReaderArgs;
+        final extra = state.extra;
+        int? mangaId;
+        String sourceId = '';
+        String mangaUrl = '';
+        String chapterUrl = '';
+        String chapterName = '';
+        int? pageNumber;
+
+        if (extra is Map) {
+          mangaId = extra['mangaId'] as int?;
+          sourceId = extra['sourceId'] as String? ?? '';
+          mangaUrl = extra['mangaUrl'] as String? ?? '';
+          chapterUrl = extra['chapterUrl'] as String? ?? '';
+          chapterName = extra['chapterName'] as String? ?? '';
+          pageNumber = extra['pageNumber'] as int?;
+        } else if (extra is MangaReaderArgs) {
+          // Named record — the canonical form pushed by all reader entry
+          // points (manga detail, snippets bookmarks, chapter navigation).
+          // The previous positional-record `is` checks never matched a named
+          // record, so every field fell through to its empty default and the
+          // Dalvik server received sourceId='' → "Source not loaded: ".
+          mangaId = extra.mangaId;
+          sourceId = extra.sourceId;
+          mangaUrl = extra.mangaUrl;
+          chapterUrl = extra.chapterUrl;
+          chapterName = extra.chapterName;
+          pageNumber = extra.pageNumber;
+        }
+
         return MangaReaderScreen(
-          mangaId: a.mangaId,
-          sourceId: a.sourceId,
-          mangaUrl: a.mangaUrl,
-          chapterUrl: a.chapterUrl,
-          chapterName: a.chapterName,
+          mangaId: mangaId,
+          sourceId: sourceId,
+          mangaUrl: mangaUrl,
+          chapterUrl: chapterUrl,
+          chapterName: chapterName,
+          pageNumber: pageNumber,
         );
       },
     ),

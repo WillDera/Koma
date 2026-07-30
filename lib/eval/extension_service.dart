@@ -12,6 +12,8 @@ abstract class ExtensionService {
 
   Future<List<MManga>> getLatestUpdates(int page, {required MSource source});
 
+  Future<FilterList> getFilterList(MSource source);
+
   Future<List<MManga>> search(
     MSource source,
     int page,
