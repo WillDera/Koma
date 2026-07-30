@@ -109,10 +109,10 @@ class LibraryBookCard extends StatelessWidget {
                 ),
             ],
           ),
-          const SizedBox(height: 10),
+          const SizedBox(height: 6),
           Text(
             book.title,
-            maxLines: 2,
+            maxLines: 1,
             overflow: TextOverflow.ellipsis,
             style: TextStyle(
               color: c.textPrimary,
@@ -122,19 +122,6 @@ class LibraryBookCard extends StatelessWidget {
               letterSpacing: -0.1,
             ),
           ),
-          if (book.author != null && book.author!.isNotEmpty) ...[
-            const SizedBox(height: 2),
-            Text(
-              book.author!,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                color: c.textTertiary,
-                fontSize: 12,
-                fontWeight: FontWeight.w400,
-              ),
-            ),
-          ],
         ],
       ),
     );
