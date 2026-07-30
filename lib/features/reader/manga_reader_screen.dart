@@ -14,6 +14,7 @@ import '../../core/models/manga_chapter.dart';
 import '../../core/models/manga_page.dart';
 import '../../core/providers.dart';
 import '../../core/repositories/repositories.dart';
+import '../../core/services/extension_manager.dart';
 import '../../core/services/keiyoushi_service.dart';
 import '../../features/snippets/bookmarks_provider.dart';
 import '../../router/router.dart';
@@ -58,6 +59,7 @@ class _MangaReaderScreenState extends ConsumerState<MangaReaderScreen>
     with WidgetsBindingObserver, ReaderMemoryManagement {
   final _service = KeiyoushiService();
   Repositories? _repos;
+  ExtensionManager? _extensionManager;
   bool _loading = true;
   String? _error;
   final _pageCtrl = PageController();
@@ -94,6 +96,7 @@ class _MangaReaderScreenState extends ConsumerState<MangaReaderScreen>
   void initState() {
     super.initState();
     _repos = ref.read(repositoriesProvider);
+    _extensionManager = ref.read(extensionManagerProvider);
     WidgetsBinding.instance.addObserver(this);
     _itemPositionsListener.itemPositions.addListener(_onWebtoonScroll);
     _initAsync();
@@ -162,10 +165,20 @@ class _MangaReaderScreenState extends ConsumerState<MangaReaderScreen>
     }
   }
 
+  /// Resolve the sourceId: translate old Mihon numeric IDs to the hex
+  /// sourceId used by the Dalvik server cache. Falls back to [widget.sourceId]
+  /// when no matching extension is found.
+  Future<String> _resolveSourceId() async {
+    if (_extensionManager == null) return widget.sourceId;
+    final resolved = await _extensionManager!.resolveSourceId(widget.sourceId);
+    return resolved.isNotEmpty ? resolved : widget.sourceId;
+  }
+
   Future<void> _load() async {
     try {
+      final sourceId = await _resolveSourceId();
       final raw = await _service.getPageList(
-        sourceId: widget.sourceId,
+        sourceId: sourceId,
         url: widget.chapterUrl,
       );
       if (!mounted) return;
@@ -299,7 +312,7 @@ class _MangaReaderScreenState extends ConsumerState<MangaReaderScreen>
   }
 
   Future<void> _initProgress() async {
-    if (_currentChapter == null) return;
+    if (_currentChapter == null || _pages.isEmpty) return;
     _showNavigationOverlay = true;
     if (_settings.readingMode == ReadingMode.webtoon ||
         _settings.readingMode == ReadingMode.longStrip ||
@@ -420,6 +433,7 @@ class _MangaReaderScreenState extends ConsumerState<MangaReaderScreen>
   }
 
   void _goToPage(int flatIndex) {
+    if (_pages.isEmpty) return;
     HapticFeedback.lightImpact();
     final clamped = flatIndex.clamp(0, _pages.length - 1);
     if (_settings.readingMode == ReadingMode.webtoon ||
@@ -508,7 +522,7 @@ class _MangaReaderScreenState extends ConsumerState<MangaReaderScreen>
         return;
       }
       final raw = await _service.getPageList(
-        sourceId: widget.sourceId,
+        sourceId: await _resolveSourceId(),
         url: nextChapter.url,
       );
       if (!mounted) {
@@ -612,6 +626,7 @@ class _MangaReaderScreenState extends ConsumerState<MangaReaderScreen>
           mangaUrl: widget.mangaUrl,
           chapterUrl: chapter.url,
           chapterName: chapter.name,
+        pageNumber: widget.pageNumber,
         ),
       );
     });
