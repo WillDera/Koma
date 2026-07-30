@@ -38,6 +38,20 @@ android {
     }
 
     buildTypes {
+        debug {
+            if (file("koma-debug.keystore").exists()) {
+                signingConfig = signingConfigs.getByName("koma")
+            } else {
+                signingConfig = signingConfigs.getByName("debug")
+            }
+        }
+        profile {
+            if (file("koma-debug.keystore").exists()) {
+                signingConfig = signingConfigs.getByName("koma")
+            } else {
+                signingConfig = signingConfigs.getByName("debug")
+            }
+        }
         release {
             if (file("koma-debug.keystore").exists()) {
                 signingConfig = signingConfigs.getByName("koma")
