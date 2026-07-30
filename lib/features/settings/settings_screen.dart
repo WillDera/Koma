@@ -1,14 +1,15 @@
 import 'dart:io';
 
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-import 'package:file_picker/file_picker.dart';
+
+import '../../core/models/source.dart';
 import '../../core/providers.dart';
 import '../../core/services/export_service.dart';
-import '../../router/router.dart';
 import '../../core/services/source_service.dart';
-import '../../core/models/source.dart';
+import '../../router/router.dart';
 import '../../theme/app_theme.dart';
 import '../../theme/theme_provider.dart';
 import '../../theme/tokens/app_colors.dart';
@@ -17,8 +18,8 @@ import '../../theme/tokens/app_spacing.dart';
 import '../../widgets/animated_press.dart';
 import '../../widgets/dialog_sheet.dart';
 import '../../widgets/divider_hairline.dart';
-import '../../widgets/library_header.dart';
 import '../../widgets/library_book_card.dart';
+import '../../widgets/library_header.dart';
 import '../../widgets/one_hand_spacer.dart';
 import '../../widgets/reading_streak_card.dart';
 import '../../widgets/screen_chrome.dart';
@@ -42,7 +43,7 @@ class SettingsScreen extends StatelessWidget {
             const OneHandSpacer(),
             const LibraryHeader(
               title: 'Settings',
-              subtitle: 'Version 2.19.38',
+              subtitle: 'Version 2.19.39',
               padding: EdgeInsets.fromLTRB(24, 20, 20, 12),
             ),
             const StaggeredEntrance(
@@ -1538,7 +1539,7 @@ class _AboutSection extends StatelessWidget {
         SettingsRow(
           icon: Icons.info_outline,
           title: 'Koma',
-           subtitle: 'Version 2.19.38 · build 2.19.38+168',
+          subtitle: 'Version 2.19.39 · build 2.19.39+169',
         ),
         SettingsRow(
           icon: Icons.favorite_outline,
