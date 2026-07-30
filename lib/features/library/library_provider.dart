@@ -20,7 +20,7 @@ class LibraryState {
     this.error,
     this.selectedIds = const {},
     this.selectionMode = false,
-    this.isGridView = false,
+    this.isGridView = true,
     this.gridColumns = 2,
     this.cardVariant = LibraryCardVariant.grid,
     this.showSourcePills = true,
@@ -80,7 +80,7 @@ class LibraryNotifier extends Notifier<LibraryState> {
   Future<void> init() async {
     final prefs = await SharedPreferences.getInstance();
     state = state.copyWith(
-      isGridView: prefs.getBool(_keyIsGridView) ?? false,
+      isGridView: prefs.getBool(_keyIsGridView) ?? true,
       showSourcePills: prefs.getBool(_keyShowSourcePills) ?? true,
       gridColumns: prefs.getInt(_keyGridColumns) ?? 2,
       cardVariant: LibraryCardVariant.values[prefs.getInt(_keyCardVariant) ?? 0],
@@ -103,7 +103,7 @@ class LibraryNotifier extends Notifier<LibraryState> {
   }
 
   void setGridColumns(int value) {
-    final clamped = value.clamp(2, 5);
+    final clamped = value.clamp(2, 3);
     state = state.copyWith(gridColumns: clamped);
     SharedPreferences.getInstance().then(
       (prefs) => prefs.setInt(_keyGridColumns, clamped),

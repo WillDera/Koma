@@ -43,7 +43,7 @@ class SettingsScreen extends StatelessWidget {
             const OneHandSpacer(),
             const LibraryHeader(
               title: 'Settings',
-              subtitle: 'Version 2.19.43',
+              subtitle: 'Version 2.19.44',
               padding: EdgeInsets.fromLTRB(24, 20, 20, 12),
             ),
             const StaggeredEntrance(
@@ -381,11 +381,9 @@ class _AppearanceSection extends ConsumerWidget {
                 segments: const {
                   2: '2 cols',
                   3: '3 cols',
-                  4: '4 cols',
-                  5: '5 cols',
                 },
                 value: library.gridColumns,
-                onChanged: (v) => ln.setGridColumns(v ?? 2),
+                onChanged: (v) => ln.setGridColumns(v),
               ),
               const SizedBox(height: 16),
               Text(
@@ -405,9 +403,7 @@ class _AppearanceSection extends ConsumerWidget {
                   LibraryCardVariant.overlay: 'Overlay',
                 },
                 value: library.cardVariant,
-                onChanged: (v) {
-                  if (v != null) ln.setCardVariant(v);
-                },
+                onChanged: (v) => ln.setCardVariant(v),
               ),
             ],
           ),
