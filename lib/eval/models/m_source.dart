@@ -2,6 +2,7 @@ enum SourceType { js, mihon }
 
 class MSource {
   final String id;
+  final String sourceId;
   final String name;
   final String lang;
   final String baseUrl;
@@ -13,6 +14,7 @@ class MSource {
 
   const MSource({
     required this.id,
+    required this.sourceId,
     required this.name,
     required this.lang,
     required this.baseUrl,
@@ -29,6 +31,7 @@ class MSource {
 
   Map<String, dynamic> toJson() => {
         'id': id,
+        'sourceId': sourceId,
         'name': name,
         'lang': lang,
         'baseUrl': baseUrl,
@@ -41,6 +44,7 @@ class MSource {
 
   factory MSource.fromJson(Map<String, dynamic> json) => MSource(
         id: json['id'] as String? ?? '',
+        sourceId: json['sourceId'] as String? ?? json['id'] as String? ?? '',
         name: json['name'] as String? ?? '',
         lang: json['lang'] as String? ?? 'en',
         baseUrl: json['baseUrl'] as String? ?? '',
@@ -53,6 +57,7 @@ class MSource {
 
   factory MSource.fromExtensionSource(dynamic ext) => MSource(
         id: ext.id as String,
+        sourceId: (ext.sourceId as String?) ?? ext.id as String,
         name: ext.name as String,
         lang: (ext.lang as String?) ?? 'en',
         baseUrl: (ext.baseUrl as String?) ?? '',

@@ -3,6 +3,7 @@ import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 
 import 'collections/book.dart';
+import 'collections/bookmark.dart';
 import 'collections/chapter.dart';
 import 'collections/extension_repo.dart';
 import 'collections/extension_source.dart';
@@ -17,6 +18,7 @@ import 'collections/tag.dart';
 import 'collections/web_cache.dart';
 
 export 'collections/book.dart';
+export 'collections/bookmark.dart';
 export 'collections/chapter.dart';
 export 'collections/extension_repo.dart';
 export 'collections/extension_source.dart';
@@ -35,6 +37,7 @@ export 'collections/web_cache.dart';
 /// mangayomi's [StorageProvider.initDB] schema list.
 const List<CollectionSchema<dynamic>> komaIsarSchemas = [
   BookSchema,
+  BookmarkSchema,
   ChapterSchema,
   MangaSchema,
   MangaChapterSchema,

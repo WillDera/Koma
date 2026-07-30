@@ -1,26 +1,28 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+
 import 'package:crypto/crypto.dart';
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-import '../../core/providers.dart';
-import '../../router/router.dart';
-import 'package:file_picker/file_picker.dart';
 import 'package:path_provider/path_provider.dart';
+
+import '../../app.dart' show routeObserver;
 import '../../core/models/book.dart';
 import '../../core/models/chapter.dart';
 import '../../core/models/manga.dart';
+import '../../core/providers.dart';
+import '../../core/services/cache_service.dart';
 import '../../core/services/ebook_service.dart';
 import '../../core/services/web_scraper_service.dart';
-import '../../core/services/cache_service.dart';
+import '../../core/utils/benchmark_logger.dart';
 import '../../core/utils/image_cache.dart';
+import '../../router/router.dart';
 import '../../theme/app_theme.dart';
 import '../../theme/theme_provider.dart';
 import '../../theme/tokens/app_spacing.dart';
-
-import '../../app.dart' show routeObserver;
 import '../../widgets/animated_press.dart';
 import '../../widgets/dialog_sheet.dart';
 import '../../widgets/empty_state.dart';
@@ -34,7 +36,6 @@ import '../../widgets/premium_button.dart';
 import '../../widgets/screen_chrome.dart';
 import '../../widgets/segmented_control.dart';
 import '../../widgets/toast.dart';
-import '../../core/utils/benchmark_logger.dart';
 import 'library_provider.dart';
 
 class LibraryScreen extends ConsumerStatefulWidget {
@@ -198,7 +199,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> with RouteAware {
 
   Widget _body(BuildContext context, LibraryState provider) {
     if (provider.loading && provider.books.isEmpty && provider.mangas.isEmpty)
-      return _loading(context);
+      return _loading(context, provider.gridColumns);
     if (provider.error != null) return _error(context, provider);
     if (provider.books.isEmpty && provider.mangas.isEmpty)
       return _empty(context);
@@ -207,7 +208,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> with RouteAware {
 
   // ── States ──────────────────────────────────────────────────────────
 
-  Widget _loading(BuildContext context) {
+  Widget _loading(BuildContext context, int gridColumns) {
     return ListView(
       padding: const EdgeInsets.fromLTRB(20, 8, 20, 16),
       children: [
@@ -217,8 +218,8 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> with RouteAware {
         GridView.builder(
           shrinkWrap: true,
           physics: const NeverScrollableScrollPhysics(),
-          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-            crossAxisCount: 2,
+          gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+            crossAxisCount: gridColumns,
             mainAxisSpacing: 16,
             crossAxisSpacing: 16,
             childAspectRatio: 0.62,
@@ -295,9 +296,9 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> with RouteAware {
             oneHand: _oneHand,
             selectionMode: provider.selectionMode,
             selectedCount: provider.selectedIds.length,
-            onSelectAll: () => ref.read(libraryProvider.notifier).selectAll,
+            onSelectAll: () => ref.read(libraryProvider.notifier).selectAll(),
             onDeleteSelected: () => _confirmDelete(context, provider),
-            onClearSelection: () => ref.read(libraryProvider.notifier).clearSelection,
+            onClearSelection: () => ref.read(libraryProvider.notifier).clearSelection(),
           ),
           if (!provider.selectionMode)
             StaggeredEntrance(
@@ -1141,99 +1142,101 @@ class _LibraryFilterSheet extends StatelessWidget {
         borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
         border: Border(top: BorderSide(color: c.border, width: 0.5)),
       ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Center(
-            child: Container(
-              width: 36,
-              height: 4,
-              decoration: BoxDecoration(
-                color: c.textTertiary,
-                borderRadius: AppSpacing.brPill,
-              ),
-            ),
-          ),
-          const SizedBox(height: 20),
-          Text(
-            'Filter',
-            style: TextStyle(
-              color: Colors.white,
-              fontSize: 18,
-              fontWeight: FontWeight.bold,
-            ),
-          ),
-          const SizedBox(height: 6),
-          _FilterOption(
-            icon: Icons.markunread_outlined,
-            label: 'Unread',
-            mode: filters[_LibraryFilter.unread] ?? _FilterMode.none,
-            onTap: () => onFilterChanged(_LibraryFilter.unread),
-          ),
-          _FilterOption(
-            icon: Icons.fiber_new_rounded,
-            label: 'Newly added',
-            mode: filters[_LibraryFilter.newlyAdded] ?? _FilterMode.none,
-            onTap: () => onFilterChanged(_LibraryFilter.newlyAdded),
-          ),
-          Padding(
-            padding: const EdgeInsets.symmetric(vertical: 14),
-            child: Divider(color: c.border, height: 1),
-          ),
-          Row(
-            children: [
-              Expanded(
-                child: Text(
-                  'Show source pills',
-                  style: TextStyle(
-                    color: c.textPrimary,
-                    fontSize: 15,
-                    fontWeight: FontWeight.w600,
-                  ),
+      child: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Center(
+              child: Container(
+                width: 36,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: c.textTertiary,
+                  borderRadius: AppSpacing.brPill,
                 ),
               ),
-              Checkbox(
-                value: showSourcePills,
-                onChanged: (value) {
-                  if (value != null) onShowSourcePillsChanged(value);
-                },
-                activeColor: c.accent,
-              ),
-            ],
-          ),
-          Padding(
-            padding: const EdgeInsets.symmetric(vertical: 14),
-            child: Divider(color: c.border, height: 1),
-          ),
-          Text(
-            'Sort',
-            style: TextStyle(
-              color: c.textTertiary,
-              fontSize: 12,
-              fontWeight: FontWeight.w700,
             ),
-          ),
-          const SizedBox(height: 6),
-          _SortOption(
-            icon: Icons.sort_by_alpha_rounded,
-            label: 'Alphabetical order',
-            selected: sort == _LibrarySort.alphabetical,
-            onTap: () => onSortChanged(_LibrarySort.alphabetical),
-          ),
-          _SortOption(
-            icon: Icons.person_outline_rounded,
-            label: 'Author',
-            selected: sort == _LibrarySort.author,
-            onTap: () => onSortChanged(_LibrarySort.author),
-          ),
-          _SortOption(
-            icon: Icons.donut_large_rounded,
-            label: 'Progress',
-            selected: sort == _LibrarySort.progress,
-            onTap: () => onSortChanged(_LibrarySort.progress),
-          ),
-        ],
+            const SizedBox(height: 20),
+            Text(
+              'Filter',
+              style: TextStyle(
+                color: Colors.white,
+                fontSize: 18,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+            const SizedBox(height: 6),
+            _FilterOption(
+              icon: Icons.markunread_outlined,
+              label: 'Unread',
+              mode: filters[_LibraryFilter.unread] ?? _FilterMode.none,
+              onTap: () => onFilterChanged(_LibraryFilter.unread),
+            ),
+            _FilterOption(
+              icon: Icons.fiber_new_rounded,
+              label: 'Newly added',
+              mode: filters[_LibraryFilter.newlyAdded] ?? _FilterMode.none,
+              onTap: () => onFilterChanged(_LibraryFilter.newlyAdded),
+            ),
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 14),
+              child: Divider(color: c.border, height: 1),
+            ),
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    'Show source pills',
+                    style: TextStyle(
+                      color: c.textPrimary,
+                      fontSize: 15,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+                Checkbox(
+                  value: showSourcePills,
+                  onChanged: (value) {
+                    if (value != null) onShowSourcePillsChanged(value);
+                  },
+                  activeColor: c.accent,
+                ),
+              ],
+            ),
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 14),
+              child: Divider(color: c.border, height: 1),
+            ),
+            Text(
+              'Sort',
+              style: TextStyle(
+                color: c.textTertiary,
+                fontSize: 12,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+            const SizedBox(height: 6),
+            _SortOption(
+              icon: Icons.sort_by_alpha_rounded,
+              label: 'Alphabetical order',
+              selected: sort == _LibrarySort.alphabetical,
+              onTap: () => onSortChanged(_LibrarySort.alphabetical),
+            ),
+            _SortOption(
+              icon: Icons.person_outline_rounded,
+              label: 'Author',
+              selected: sort == _LibrarySort.author,
+              onTap: () => onSortChanged(_LibrarySort.author),
+            ),
+            _SortOption(
+              icon: Icons.donut_large_rounded,
+              label: 'Progress',
+              selected: sort == _LibrarySort.progress,
+              onTap: () => onSortChanged(_LibrarySort.progress),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -1406,8 +1409,8 @@ class _BookShelf extends StatelessWidget {
         child: GridView.builder(
           shrinkWrap: true,
           physics: const NeverScrollableScrollPhysics(),
-          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-            crossAxisCount: 2,
+          gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+            crossAxisCount: provider.gridColumns,
             mainAxisSpacing: 18,
             crossAxisSpacing: 18,
             childAspectRatio: 0.6,
@@ -1501,8 +1504,8 @@ class _MangaShelf extends StatelessWidget {
         child: GridView.builder(
           shrinkWrap: true,
           physics: const NeverScrollableScrollPhysics(),
-          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-            crossAxisCount: 2,
+          gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+            crossAxisCount: provider.gridColumns,
             mainAxisSpacing: 8,
             crossAxisSpacing: 8,
             childAspectRatio: 0.65,
@@ -1519,6 +1522,7 @@ class _MangaShelf extends StatelessWidget {
                 selectionMode: provider.selectionMode,
                 extensionName: extensionNames[manga.sourceId] ?? manga.sourceId,
                 showSourcePills: showSourcePills,
+                variant: provider.cardVariant,
                 onTap: () => provider.selectionMode
                     ? notifier.toggleSelection('m:${manga.id}')
                     : onOpen(manga),
@@ -1574,6 +1578,7 @@ class _MangaLibraryCard extends StatelessWidget {
   final VoidCallback? onLongPress;
   final String? extensionName;
   final bool showSourcePills;
+  final LibraryCardVariant variant;
 
   const _MangaLibraryCard({
     required this.manga,
@@ -1584,11 +1589,120 @@ class _MangaLibraryCard extends StatelessWidget {
     this.onLongPress,
     this.extensionName,
     this.showSourcePills = true,
+    this.variant = LibraryCardVariant.grid,
   });
 
   @override
   Widget build(BuildContext context) {
     final c = context.colors;
+    if (variant == LibraryCardVariant.overlay) {
+      return AnimatedPress(
+        onTap: onTap,
+        onLongPress: onLongPress,
+        scaleDown: 0.99,
+        child: AspectRatio(
+          aspectRatio: 0.65,
+          child: Stack(
+            children: [
+              Positioned.fill(
+                child: localImagePath != null
+                    ? Image.file(
+                        File(localImagePath!),
+                        width: double.infinity,
+                        fit: BoxFit.cover,
+                        errorBuilder: (_, __, ___) => _placeholder(c),
+                      )
+                    : manga.imageUrl != null && manga.imageUrl!.isNotEmpty
+                        ? Image(
+                            image: cachedCover(manga.imageUrl!),
+                            width: double.infinity,
+                            fit: BoxFit.cover,
+                            errorBuilder: (_, __, ___) => _placeholder(c),
+                          )
+                        : _placeholder(c),
+              ),
+              Positioned.fill(
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.bottomCenter,
+                      end: Alignment.topCenter,
+                      colors: [
+                        Colors.black.withValues(alpha: 0.75),
+                        Colors.black.withValues(alpha: 0.35),
+                        Colors.transparent,
+                      ],
+                      stops: const [0.0, 0.35, 1.0],
+                    ),
+                  ),
+                ),
+              ),
+              if (showSourcePills)
+                Positioned(
+                  top: 6,
+                  left: 6,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: Colors.black.withValues(alpha: 0.7),
+                      borderRadius: AppSpacing.brPill,
+                    ),
+                    child: Text(
+                      extensionName ?? manga.sourceId,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 10,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                ),
+              if (selectionMode)
+                Positioned(
+                  top: 8,
+                  right: 8,
+                  child: AnimatedContainer(
+                    duration: const Duration(milliseconds: 180),
+                    width: 24,
+                    height: 24,
+                    decoration: BoxDecoration(
+                      color: selected ? c.accent : Colors.black.withValues(alpha: 0.4),
+                      shape: BoxShape.circle,
+                      border: Border.all(color: Colors.white, width: 1.5),
+                    ),
+                    child: selected
+                        ? Icon(Icons.check, size: 14, color: c.onAccent)
+                        : null,
+                  ),
+                ),
+              Positioned(
+                left: 8,
+                right: 8,
+                bottom: 8,
+                child: Text(
+                  manga.name,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                    height: 1.3,
+                    shadows: const [
+                      Shadow(
+                        blurRadius: 4,
+                        color: Colors.black54,
+                        offset: Offset(0, 1),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
     return AnimatedPress(
       onTap: onTap,
       onLongPress: onLongPress,
@@ -1644,23 +1758,23 @@ class _MangaLibraryCard extends StatelessWidget {
                        ),
                      ),
                    if (selectionMode)
-                    Positioned(
-                      top: 8,
-                      right: 8,
-                      child: AnimatedContainer(
-                        duration: const Duration(milliseconds: 180),
-                        width: 24,
-                        height: 24,
-                        decoration: BoxDecoration(
-                          color: selected ? c.accent : Colors.black.withValues(alpha: 0.4),
-                          shape: BoxShape.circle,
-                          border: Border.all(color: Colors.white, width: 1.5),
-                        ),
-                        child: selected
-                            ? Icon(Icons.check, size: 14, color: c.onAccent)
-                            : null,
-                      ),
-                    ),
+                     Positioned(
+                       top: 8,
+                       right: 8,
+                       child: AnimatedContainer(
+                         duration: const Duration(milliseconds: 180),
+                         width: 24,
+                         height: 24,
+                         decoration: BoxDecoration(
+                           color: selected ? c.accent : Colors.black.withValues(alpha: 0.4),
+                           shape: BoxShape.circle,
+                           border: Border.all(color: Colors.white, width: 1.5),
+                         ),
+                         child: selected
+                             ? Icon(Icons.check, size: 14, color: c.onAccent)
+                             : null,
+                       ),
+                     ),
                 ],
               ),
             ),

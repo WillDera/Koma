@@ -7,7 +7,7 @@ import 'animated_press.dart';
 import 'book_cover.dart';
 import 'progress_ring.dart';
 
-enum LibraryCardVariant { grid, list, compact }
+enum LibraryCardVariant { grid, list, compact, overlay }
 
 class LibraryBookCard extends StatelessWidget {
   final Book book;
@@ -33,6 +33,7 @@ class LibraryBookCard extends StatelessWidget {
   Widget build(BuildContext context) {
     if (variant == LibraryCardVariant.list) return _list(context);
     if (variant == LibraryCardVariant.compact) return _compact(context);
+    if (variant == LibraryCardVariant.overlay) return _overlay(context);
     return _grid(context);
   }
 
@@ -108,10 +109,10 @@ class LibraryBookCard extends StatelessWidget {
                 ),
             ],
           ),
-          const SizedBox(height: 10),
+          const SizedBox(height: 6),
           Text(
             book.title,
-            maxLines: 2,
+            maxLines: 1,
             overflow: TextOverflow.ellipsis,
             style: TextStyle(
               color: c.textPrimary,
@@ -121,19 +122,6 @@ class LibraryBookCard extends StatelessWidget {
               letterSpacing: -0.1,
             ),
           ),
-          if (book.author != null && book.author!.isNotEmpty) ...[
-            const SizedBox(height: 2),
-            Text(
-              book.author!,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                color: c.textTertiary,
-                fontSize: 12,
-                fontWeight: FontWeight.w400,
-              ),
-            ),
-          ],
         ],
       ),
     );
@@ -284,6 +272,87 @@ class LibraryBookCard extends StatelessWidget {
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  Widget _overlay(BuildContext context) {
+    final c = context.colors;
+    return AnimatedPress(
+      onTap: onTap,
+      onLongPress: onLongPress,
+      scaleDown: 0.97,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Expanded(
+            child: Stack(
+              children: [
+                Positioned.fill(
+                  child: BookCover(book: book, variant: BookCoverVariant.grid),
+                ),
+                Positioned.fill(
+                  child: DecoratedBox(
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        begin: Alignment.bottomCenter,
+                        end: Alignment.topCenter,
+                        colors: [
+                          Colors.black.withValues(alpha: 0.75),
+                          Colors.black.withValues(alpha: 0.35),
+                          Colors.transparent,
+                        ],
+                        stops: const [0.0, 0.35, 1.0],
+                      ),
+                    ),
+                  ),
+                ),
+                Positioned(
+                  left: 8,
+                  right: 8,
+                  bottom: 8,
+                  child: Text(
+                    book.title,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                      height: 1.3,
+                      shadows: const [
+                        Shadow(
+                          blurRadius: 4,
+                          color: Colors.black54,
+                          offset: Offset(0, 1),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                if (selectionMode)
+                  Positioned(
+                    top: 8,
+                    right: 8,
+                    child: AnimatedContainer(
+                      duration: AppMotion.fast,
+                      width: 24,
+                      height: 24,
+                      decoration: BoxDecoration(
+                        color: selected ? c.accent : Colors.black.withValues(alpha: 0.4),
+                        shape: BoxShape.circle,
+                        border: Border.all(color: Colors.white, width: 1.5),
+                      ),
+                      child: selected
+                          ? Icon(Icons.check, size: 14, color: c.onAccent)
+                          : null,
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        ],
       ),
     );
   }

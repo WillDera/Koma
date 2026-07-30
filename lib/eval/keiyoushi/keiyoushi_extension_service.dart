@@ -18,7 +18,7 @@ class KeiyoushiExtensionService implements ExtensionService {
   @override
   Future<List<MManga>> getPopular(int page, {required MSource source}) async {
     final result = await _keiyoushi.getPopularManga(
-      sourceId: source.id,
+      sourceId: source.sourceId,
       page: page,
     );
     return result.mangas.map((m) => MManga.fromMap(m)).toList();
@@ -27,10 +27,16 @@ class KeiyoushiExtensionService implements ExtensionService {
   @override
   Future<List<MManga>> getLatestUpdates(int page, {required MSource source}) async {
     final result = await _keiyoushi.getLatestUpdates(
-      sourceId: source.id,
+      sourceId: source.sourceId,
       page: page,
     );
     return result.mangas.map((m) => MManga.fromMap(m)).toList();
+  }
+
+  @override
+  Future<FilterList> getFilterList(MSource source) async {
+    final raw = await _keiyoushi.getFilters(sourceId: source.sourceId);
+    return FilterList.fromJson(raw);
   }
 
   @override
@@ -41,9 +47,10 @@ class KeiyoushiExtensionService implements ExtensionService {
     FilterList? filters,
   }) async {
     final result = await _keiyoushi.searchManga(
-      sourceId: source.id,
+      sourceId: source.sourceId,
       query: query,
       page: page,
+      filters: filters?.toJson(),
     );
     return result.mangas.map((m) => MManga.fromMap(m)).toList();
   }
@@ -51,7 +58,7 @@ class KeiyoushiExtensionService implements ExtensionService {
   @override
   Future<MManga?> getDetail(MSource source, String url) async {
     final result = await _keiyoushi.getMangaDetails(
-      sourceId: source.id,
+      sourceId: source.sourceId,
       url: url,
     );
     if (result.isEmpty) return null;
@@ -61,7 +68,7 @@ class KeiyoushiExtensionService implements ExtensionService {
   @override
   Future<List<MChapter>> getChapterList(MSource source, String url) async {
     final result = await _keiyoushi.getChapterList(
-      sourceId: source.id,
+      sourceId: source.sourceId,
       url: url,
     );
     return result.map((c) => MChapter.fromMap(c)).toList();
@@ -73,7 +80,7 @@ class KeiyoushiExtensionService implements ExtensionService {
     String url,
   ) async {
     final result = await _keiyoushi.getMangaUpdate(
-      sourceId: source.id,
+      sourceId: source.sourceId,
       url: url,
     );
     final details = result.details;
@@ -85,7 +92,7 @@ class KeiyoushiExtensionService implements ExtensionService {
   @override
   Future<List<MPages>> getPageList(MSource source, MChapter chapter) async {
     final result = await _keiyoushi.getPageList(
-      sourceId: source.id,
+      sourceId: source.sourceId,
       url: chapter.url,
     );
     return [MPages.fromList(result)];

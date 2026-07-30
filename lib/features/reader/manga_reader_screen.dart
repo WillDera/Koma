@@ -1,33 +1,37 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:http/http.dart' as http;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
+import 'package:http/http.dart' as http;
 import 'package:scrollable_positioned_list/scrollable_positioned_list.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:go_router/go_router.dart';
-import '../../core/providers.dart';
-import '../../core/services/keiyoushi_service.dart';
-import '../../core/repositories/repositories.dart';
-import '../../core/models/manga_page.dart';
+
 import '../../core/models/manga_chapter.dart';
-import '../../theme/app_theme.dart';
+import '../../core/models/manga_page.dart';
+import '../../core/providers.dart';
+import '../../core/repositories/repositories.dart';
+import '../../core/services/extension_manager.dart';
+import '../../core/services/keiyoushi_service.dart';
+import '../../features/snippets/bookmarks_provider.dart';
 import '../../router/router.dart';
-import 'reader_settings_sheet.dart';
-import 'widgets/reader_app_bar.dart';
-import 'widgets/reader_bottom_bar.dart';
-import 'widgets/page_indicator.dart';
-import 'widgets/navigation_overlay.dart';
-import 'widgets/chapter_list_dialog.dart';
-import 'widgets/image_actions_dialog.dart';
-import 'widgets/color_filter_widget.dart';
-import 'models/page_data.dart';
+import '../../theme/app_theme.dart';
 import 'mixins/reader_memory_management.dart';
+import 'models/page_data.dart';
+import 'reader_settings_sheet.dart';
 import 'views/manga_image_view_paged.dart';
 import 'views/manga_image_view_webtoon.dart';
 import 'views/reader_view_props.dart';
+import 'widgets/chapter_list_dialog.dart';
+import 'widgets/color_filter_widget.dart';
+import 'widgets/image_actions_dialog.dart';
+import 'widgets/navigation_overlay.dart';
+import 'widgets/page_indicator.dart';
+import 'widgets/reader_app_bar.dart';
+import 'widgets/reader_bottom_bar.dart';
 
 class MangaReaderScreen extends ConsumerStatefulWidget {
   final int? mangaId;
@@ -35,6 +39,7 @@ class MangaReaderScreen extends ConsumerStatefulWidget {
   final String mangaUrl;
   final String chapterUrl;
   final String chapterName;
+  final int? pageNumber;
 
   const MangaReaderScreen({
     super.key,
@@ -43,6 +48,7 @@ class MangaReaderScreen extends ConsumerStatefulWidget {
     required this.mangaUrl,
     required this.chapterUrl,
     required this.chapterName,
+    this.pageNumber,
   });
 
   @override
@@ -53,6 +59,7 @@ class _MangaReaderScreenState extends ConsumerState<MangaReaderScreen>
     with WidgetsBindingObserver, ReaderMemoryManagement {
   final _service = KeiyoushiService();
   Repositories? _repos;
+  ExtensionManager? _extensionManager;
   bool _loading = true;
   String? _error;
   final _pageCtrl = PageController();
@@ -89,9 +96,9 @@ class _MangaReaderScreenState extends ConsumerState<MangaReaderScreen>
   void initState() {
     super.initState();
     _repos = ref.read(repositoriesProvider);
+    _extensionManager = ref.read(extensionManagerProvider);
     WidgetsBinding.instance.addObserver(this);
     _itemPositionsListener.itemPositions.addListener(_onWebtoonScroll);
-    _loadBookmark();
     _initAsync();
   }
 
@@ -158,10 +165,20 @@ class _MangaReaderScreenState extends ConsumerState<MangaReaderScreen>
     }
   }
 
+  /// Resolve the sourceId: translate old Mihon numeric IDs to the hex
+  /// sourceId used by the Dalvik server cache. Falls back to [widget.sourceId]
+  /// when no matching extension is found.
+  Future<String> _resolveSourceId() async {
+    if (_extensionManager == null) return widget.sourceId;
+    final resolved = await _extensionManager!.resolveSourceId(widget.sourceId);
+    return resolved.isNotEmpty ? resolved : widget.sourceId;
+  }
+
   Future<void> _load() async {
     try {
+      final sourceId = await _resolveSourceId();
       final raw = await _service.getPageList(
-        sourceId: widget.sourceId,
+        sourceId: sourceId,
         url: widget.chapterUrl,
       );
       if (!mounted) return;
@@ -205,6 +222,10 @@ class _MangaReaderScreenState extends ConsumerState<MangaReaderScreen>
 
       await _initProgress();
       _proactivePreload();
+      _updateBookmarkState();
+      if (widget.pageNumber != null) {
+        _jumpToPageByNumber(widget.pageNumber!);
+      }
     } catch (e) {
       if (!mounted) return;
       setState(() {
@@ -291,7 +312,7 @@ class _MangaReaderScreenState extends ConsumerState<MangaReaderScreen>
   }
 
   Future<void> _initProgress() async {
-    if (_currentChapter == null) return;
+    if (_currentChapter == null || _pages.isEmpty) return;
     _showNavigationOverlay = true;
     if (_settings.readingMode == ReadingMode.webtoon ||
         _settings.readingMode == ReadingMode.longStrip ||
@@ -366,7 +387,7 @@ class _MangaReaderScreenState extends ConsumerState<MangaReaderScreen>
           _currentChapter = page.chapter;
         });
       }
-      _loadBookmark();
+      _updateBookmarkState();
     }
 
     // ── Next-chapter preload trigger when near the end ──
@@ -376,6 +397,7 @@ class _MangaReaderScreenState extends ConsumerState<MangaReaderScreen>
     }
 
     _schedulePageSave(flatIndex);
+    _updateBookmarkState();
   }
 
   // ── Page change listener (paged modes — L2R, RTL) ──
@@ -397,7 +419,7 @@ class _MangaReaderScreenState extends ConsumerState<MangaReaderScreen>
           _currentChapter = page.chapter;
         });
       }
-      _loadBookmark();
+      _updateBookmarkState();
     }
 
     // ── Next-chapter preload trigger when near the end ──
@@ -407,9 +429,11 @@ class _MangaReaderScreenState extends ConsumerState<MangaReaderScreen>
     }
 
     _schedulePageSave(flatIndex);
+    _updateBookmarkState();
   }
 
   void _goToPage(int flatIndex) {
+    if (_pages.isEmpty) return;
     HapticFeedback.lightImpact();
     final clamped = flatIndex.clamp(0, _pages.length - 1);
     if (_settings.readingMode == ReadingMode.webtoon ||
@@ -432,6 +456,18 @@ class _MangaReaderScreenState extends ConsumerState<MangaReaderScreen>
       }
     }
     _schedulePageSave(clamped);
+  }
+
+  void _jumpToPageByNumber(int chapterRelativePage) {
+    if (_pages.isEmpty) return;
+    final target = _pages.indexWhere((p) {
+      if (p.isTransitionPage) return false;
+      return p.chapter?.id == _currentChapter?.id &&
+          p.mangaPage?.index == chapterRelativePage;
+    });
+    if (target >= 0) {
+      _goToPage(target);
+    }
   }
 
   /// Saves the chapter-relative page index (not the flat list index),
@@ -486,7 +522,7 @@ class _MangaReaderScreenState extends ConsumerState<MangaReaderScreen>
         return;
       }
       final raw = await _service.getPageList(
-        sourceId: widget.sourceId,
+        sourceId: await _resolveSourceId(),
         url: nextChapter.url,
       );
       if (!mounted) {
@@ -590,31 +626,50 @@ class _MangaReaderScreenState extends ConsumerState<MangaReaderScreen>
           mangaUrl: widget.mangaUrl,
           chapterUrl: chapter.url,
           chapterName: chapter.name,
+        pageNumber: widget.pageNumber,
         ),
       );
     });
   }
 
-  void _loadBookmark() async {
+  Future<void> _updateBookmarkState() async {
     if (widget.mangaId == null) return;
-    final chapterUrl = _currentChapter?.url ?? widget.chapterUrl;
-    final prefs = await SharedPreferences.getInstance();
-    final saved = prefs.getBool('reader_${widget.mangaId}_${chapterUrl}_bk');
-    if (saved != null && mounted) {
-      setState(() => _isBookmarked = saved);
+    if (_pages.isEmpty) return;
+    final flatIndex = _currentPageNotifier.value;
+    if (flatIndex >= _pages.length) return;
+    final page = _pages[flatIndex];
+    final chapter = page.chapter;
+    if (chapter == null) return;
+
+    final pageNumber = page.mangaPage?.index ?? 0;
+    final bookmarked = await ref.read(bookmarksProvider.notifier).isBookmarked(
+      widget.mangaId!,
+      chapter.id,
+      pageNumber,
+    );
+
+    if (mounted) {
+      setState(() => _isBookmarked = bookmarked);
     }
   }
 
-  void _toggleBookmark() async {
-    setState(() => _isBookmarked = !_isBookmarked);
-    if (widget.mangaId != null) {
-      final chapterUrl = _currentChapter?.url ?? widget.chapterUrl;
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setBool(
-        'reader_${widget.mangaId}_${chapterUrl}_bk',
-        _isBookmarked,
-      );
-    }
+  Future<void> _toggleBookmark() async {
+    if (widget.mangaId == null) return;
+    if (_pages.isEmpty) return;
+    final flatIndex = _currentPageNotifier.value;
+    if (flatIndex >= _pages.length) return;
+    final page = _pages[flatIndex];
+    final chapter = page.chapter;
+    if (chapter == null) return;
+
+    final pageNumber = page.mangaPage?.index ?? 0;
+    await ref.read(bookmarksProvider.notifier).toggleBookmark(
+      bookId: widget.mangaId!,
+      chapterId: chapter.id,
+      pageNumber: pageNumber,
+    );
+
+    await _updateBookmarkState();
   }
 
   void _showChapterList() {

@@ -653,7 +653,7 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
   TextStyle _readingStyle(ThemeState themeProv) {
     final c = context.colors;
     return AppType.fontStyle(
-      fontFamily: themeProv.readingFontFamily,
+      fontFamily: themeProv.useDeviceFont ? null : themeProv.readingFontFamily,
       fontSize: themeProv.fontSize,
       lineHeight: themeProv.lineHeight,
       color: c.textPrimary,

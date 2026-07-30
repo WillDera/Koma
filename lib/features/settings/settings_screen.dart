@@ -1,14 +1,15 @@
 import 'dart:io';
 
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-import 'package:file_picker/file_picker.dart';
+
+import '../../core/models/source.dart';
 import '../../core/providers.dart';
 import '../../core/services/export_service.dart';
-import '../../router/router.dart';
 import '../../core/services/source_service.dart';
-import '../../core/models/source.dart';
+import '../../router/router.dart';
 import '../../theme/app_theme.dart';
 import '../../theme/theme_provider.dart';
 import '../../theme/tokens/app_colors.dart';
@@ -17,6 +18,7 @@ import '../../theme/tokens/app_spacing.dart';
 import '../../widgets/animated_press.dart';
 import '../../widgets/dialog_sheet.dart';
 import '../../widgets/divider_hairline.dart';
+import '../../widgets/library_book_card.dart';
 import '../../widgets/library_header.dart';
 import '../../widgets/one_hand_spacer.dart';
 import '../../widgets/reading_streak_card.dart';
@@ -41,7 +43,7 @@ class SettingsScreen extends StatelessWidget {
             const OneHandSpacer(),
             const LibraryHeader(
               title: 'Settings',
-              subtitle: 'Version 2.19.13',
+              subtitle: 'Version 2.19.44',
               padding: EdgeInsets.fromLTRB(24, 20, 20, 12),
             ),
             const StaggeredEntrance(
@@ -177,6 +179,8 @@ class _AppearanceSection extends ConsumerWidget {
     final c = context.colors;
     final theme = ref.watch(themeProvider);
     final tn = ref.read(themeProvider.notifier);
+    final library = ref.watch(libraryProvider);
+    final ln = ref.read(libraryProvider.notifier);
     return SettingsSection(
       title: 'Appearance',
       children: [
@@ -215,6 +219,32 @@ class _AppearanceSection extends ConsumerWidget {
                   ),
                   value: theme.sepiaMode,
                   onChanged: tn.setSepiaMode,
+                ),
+              ),
+              Material(
+                type: MaterialType.transparency,
+                child: SwitchListTile(
+                  contentPadding: EdgeInsets.zero,
+                  title: const Text('AMOLED dark mode'),
+                  subtitle: Text(
+                    'True black for OLED screens',
+                    style: TextStyle(color: c.textSecondary, fontSize: 12),
+                  ),
+                  value: theme.amoledMode,
+                  onChanged: tn.setAmoledMode,
+                ),
+              ),
+              Material(
+                type: MaterialType.transparency,
+                child: SwitchListTile(
+                  contentPadding: EdgeInsets.zero,
+                  title: const Text('Use device font'),
+                  subtitle: Text(
+                    'System default instead of Inter',
+                    style: TextStyle(color: c.textSecondary, fontSize: 12),
+                  ),
+                  value: theme.useDeviceFont,
+                  onChanged: tn.setUseDeviceFont,
                 ),
               ),
             ],
@@ -325,6 +355,55 @@ class _AppearanceSection extends ConsumerWidget {
                 },
                 value: theme.handMode,
                 onChanged: tn.setHandMode,
+              ),
+            ],
+          ),
+        ),
+        const Padding(
+          padding: EdgeInsets.symmetric(horizontal: 16),
+          child: HairlineDivider(),
+        ),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 16, 16, 16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Library grid',
+                style: TextStyle(
+                  color: c.textPrimary,
+                  fontSize: 14,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+              const SizedBox(height: 10),
+              SegmentedControl<int>(
+                segments: const {
+                  2: '2 cols',
+                  3: '3 cols',
+                },
+                value: library.gridColumns,
+                onChanged: (v) => ln.setGridColumns(v),
+              ),
+              const SizedBox(height: 16),
+              Text(
+                'Card style',
+                style: TextStyle(
+                  color: c.textPrimary,
+                  fontSize: 14,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+              const SizedBox(height: 10),
+              SegmentedControl<LibraryCardVariant>(
+                segments: const {
+                  LibraryCardVariant.grid: 'Grid',
+                  LibraryCardVariant.list: 'List',
+                  LibraryCardVariant.compact: 'Compact',
+                  LibraryCardVariant.overlay: 'Overlay',
+                },
+                value: library.cardVariant,
+                onChanged: (v) => ln.setCardVariant(v),
               ),
             ],
           ),
@@ -963,6 +1042,9 @@ class _SourcesSectionState extends ConsumerState<_SourcesSection> {
 
   @override
   Widget build(BuildContext context) {
+    final theme = ref.watch(themeProvider);
+    final tn = ref.read(themeProvider.notifier);
+    final c = context.colors;
     if (_loading) return const SizedBox.shrink();
     if (_error != null) {
       return SettingsSection(
@@ -990,6 +1072,36 @@ class _SourcesSectionState extends ConsumerState<_SourcesSection> {
           ),
         ),
         SettingsRow(icon: Icons.add, title: 'Add source', onTap: _add),
+        const Padding(
+          padding: EdgeInsets.symmetric(horizontal: 16),
+          child: HairlineDivider(),
+        ),
+        Material(
+          type: MaterialType.transparency,
+          child: SwitchListTile(
+            contentPadding: const EdgeInsets.symmetric(horizontal: 16),
+            title: const Text('Show NSFW extensions'),
+            subtitle: Text(
+              'Hide sensitive extensions by default',
+              style: TextStyle(color: c.textSecondary, fontSize: 12),
+            ),
+            value: theme.showNsfwExtensions,
+            onChanged: tn.setShowNsfwExtensions,
+          ),
+        ),
+        Material(
+          type: MaterialType.transparency,
+          child: SwitchListTile(
+            contentPadding: const EdgeInsets.symmetric(horizontal: 16),
+            title: const Text('Show obsolete extensions'),
+            subtitle: Text(
+              'Hide extensions marked as outdated',
+              style: TextStyle(color: c.textSecondary, fontSize: 12),
+            ),
+            value: theme.showObsoleteExtensions,
+            onChanged: tn.setShowObsoleteExtensions,
+          ),
+        ),
       ],
     );
   }
@@ -1423,7 +1535,7 @@ class _AboutSection extends StatelessWidget {
         SettingsRow(
           icon: Icons.info_outline,
           title: 'Koma',
-           subtitle: 'Version 2.19.13 · build 2.19.12+142',
+          subtitle: 'Version 2.19.43 · build 2.19.43+173',
         ),
         SettingsRow(
           icon: Icons.favorite_outline,
