@@ -53,6 +53,7 @@ typedef MangaReaderArgs = ({
   String mangaUrl,
   String chapterUrl,
   String chapterName,
+int? pageNumber,
 });
 
 typedef MangaDetailArgs = ({
@@ -151,6 +152,7 @@ final GoRouter appRouter = GoRouter(
           mangaUrl: a.mangaUrl,
           chapterUrl: a.chapterUrl,
           chapterName: a.chapterName,
+          pageNumber: a.pageNumber,
         );
       },
     ),

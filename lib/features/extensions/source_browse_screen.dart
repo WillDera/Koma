@@ -1,9 +1,11 @@
 import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../core/providers.dart';
 import '../../core/models/manga.dart';
+import '../../core/providers.dart';
+import '../../core/utils/custom_extended_image_provider.dart';
 import '../../eval/dispatch_service.dart';
 import '../../eval/models/filter_list.dart';
 import '../../eval/models/m_manga.dart';
@@ -11,7 +13,6 @@ import '../../eval/models/m_source.dart';
 import '../../theme/app_theme.dart';
 import '../../theme/tokens/app_spacing.dart';
 import '../../widgets/animated_press.dart';
-import '../../core/utils/custom_extended_image_provider.dart';
 import 'manga_detail_screen.dart';
 
 class SourceBrowseScreen extends ConsumerStatefulWidget {
@@ -113,6 +114,19 @@ class _SourceBrowseScreenState extends ConsumerState<SourceBrowseScreen>
         _searchResults = [];
       }
     });
+  }
+
+  void _toggleSort() {
+    final newTab = _tab == 'popular' ? 'latest' : 'popular';
+    setState(() {
+      _tab = newTab;
+      _mangas = [];
+      _page = 1;
+      _hasNext = true;
+      _error = null;
+    });
+    _tabCtrl.animateTo(newTab == 'latest' ? 1 : 0);
+    _loadPage();
   }
 
   void _onSearchChanged(String query) {
@@ -333,6 +347,13 @@ class _SourceBrowseScreenState extends ConsumerState<SourceBrowseScreen>
               icon: const Icon(Icons.filter_list),
               onPressed: _openFilterSheet,
             ),
+          IconButton(
+            icon: Icon(_tab == 'popular'
+                ? Icons.arrow_upward_rounded
+                : Icons.arrow_downward_rounded),
+            onPressed: _toggleSort,
+            tooltip: _tab == 'popular' ? 'Sort: Popular' : 'Sort: Latest',
+          ),
           IconButton(
             icon: Icon(_searchActive ? Icons.close : Icons.search),
             onPressed: _toggleSearch,
