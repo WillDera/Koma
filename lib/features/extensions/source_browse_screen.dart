@@ -174,9 +174,13 @@ class _SourceBrowseScreenState extends ConsumerState<SourceBrowseScreen>
         _filters = fl.filters;
         _filterValues = values;
         _filtersLoaded = true;
+        _error = null;
       });
-    } catch (_) {
-      if (mounted) setState(() => _filtersLoaded = true);
+    } catch (e) {
+      if (mounted) setState(() {
+        _filtersLoaded = true;
+        _error = 'Failed to load filters: $e';
+      });
     }
   }
 
