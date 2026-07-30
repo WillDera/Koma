@@ -1,8 +1,20 @@
 import 'package:flutter/material.dart';
 import '../../core/models/extension_source.dart';
+import '../../core/services/extension_icon_cache.dart';
+import '../../core/utils/custom_extended_image_provider.dart';
 import '../../core/utils/language.dart';
 import '../../theme/app_theme.dart';
 import 'source_browse_screen.dart';
+
+/// Extract the package name from an installed extension's on-disk APK path,
+/// where the file is stored as `{extensionsDir}/{pkg}.apk`.
+String _extractPkgFromApkPath(String apkPath) {
+  final fileName = apkPath.split('/').last;
+  if (fileName.endsWith('.apk')) {
+    return fileName.substring(0, fileName.length - 4);
+  }
+  return fileName;
+}
 
 /// Extension detail screen — ported from mangayomi's ExtensionDetail.
 ///
@@ -40,7 +52,7 @@ class ExtensionDetailScreen extends StatelessWidget {
                 color: c.surfaceMuted,
                 borderRadius: BorderRadius.circular(10),
               ),
-              child: _buildLargeIcon(source.iconUrl, c),
+              child: _buildLargeIcon(_extractPkgFromApkPath(source.apkPath), c),
             ),
             const SizedBox(height: 12),
             // Name
@@ -120,7 +132,7 @@ class ExtensionDetailScreen extends StatelessWidget {
                       context,
                       MaterialPageRoute(
                         builder: (_) => SourceBrowseScreen(
-                          sourceId: source.id,
+                          sourceId: source.sourceId,
                           sourceName: source.name,
                         ),
                       ),
@@ -147,7 +159,7 @@ class ExtensionDetailScreen extends StatelessWidget {
                   ),
                   icon: const Icon(Icons.delete_outline, color: Colors.redAccent),
                   label: const Text(
-                    'Uninstall',
+                     'Unload',
                     style: TextStyle(color: Colors.redAccent),
                   ),
                 ),
@@ -188,7 +200,7 @@ class ExtensionDetailScreen extends StatelessWidget {
         backgroundColor: c.surface,
         title: Text(source.name, style: TextStyle(color: c.textPrimary)),
         content: Text(
-          'Uninstall ${source.name}? This will remove all sources sharing its APK.',
+          'Unload ${source.name}? This will remove all sources sharing its APK.',
           style: TextStyle(color: c.textSecondary),
         ),
         actions: [
@@ -209,8 +221,48 @@ class ExtensionDetailScreen extends StatelessWidget {
     );
   }
 
-  Widget _buildLargeIcon(String? iconUrl, KomaColors c) {
-    if (iconUrl == null || iconUrl.isEmpty) {
+  Widget _buildLargeIcon(String pkg, KomaColors c) {
+    return _LargePkgExtensionIcon(pkg: pkg, colors: c);
+  }
+}
+
+/// Large (140×140) variant of the pkg-resolving icon widget for the detail
+/// screen. Resolves the icon URL via [ExtensionIconCache] (cache-first, with
+/// a deterministic CDN derivation fallback), so already-installed extensions
+/// with a stale `.../repo/icon/${pkg}.png` iconUrl self-heal. See Q5.
+class _LargePkgExtensionIcon extends StatefulWidget {
+  final String pkg;
+  final KomaColors colors;
+
+  const _LargePkgExtensionIcon({required this.pkg, required this.colors});
+
+  @override
+  State<_LargePkgExtensionIcon> createState() => _LargePkgExtensionIconState();
+}
+
+class _LargePkgExtensionIconState extends State<_LargePkgExtensionIcon> {
+  String? _url = ExtensionIconCache.iconUrlForPkg('');
+
+  @override
+  void initState() {
+    super.initState();
+    _url = ExtensionIconCache.iconUrlForPkg(widget.pkg);
+    _resolveFromCache();
+  }
+
+  Future<void> _resolveFromCache() async {
+    final cached =
+        await ExtensionIconCache.instance.cachedIconUrl(widget.pkg);
+    if (!mounted) return;
+    if (cached != null && cached.isNotEmpty && cached != _url) {
+      setState(() => _url = cached);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final url = _url;
+    if (url == null || url.isEmpty) {
       return const SizedBox(
         width: 140,
         height: 140,
@@ -219,12 +271,13 @@ class ExtensionDetailScreen extends StatelessWidget {
     }
     return ClipRRect(
       borderRadius: BorderRadius.circular(10),
-      child: Image.network(
-        iconUrl,
+      child: Image(
+        image: CustomExtendedNetworkImageProvider(url, printError: false),
         fit: BoxFit.contain,
         width: 140,
         height: 140,
-        errorBuilder: (_, __, ___) => const SizedBox(
+        gaplessPlayback: true,
+        errorBuilder: (_, _, _) => const SizedBox(
           width: 140,
           height: 140,
           child: Icon(Icons.source_outlined, size: 140),

@@ -140,6 +140,11 @@ class MangaRepository {
     return row == null ? null : _chapterToModel(row);
   }
 
+  Future<MangaChapter?> getMangaChapter(int id) async {
+    final row = await _isar.mangaChapters.get(id);
+    return row == null ? null : _chapterToModel(row);
+  }
+
   Future<void> insertMangaChapters(
       int mangaId, List<MangaChapter> chapters) async {
     await _isar.writeTxn(() => _isar.mangaChapters

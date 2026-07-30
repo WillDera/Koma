@@ -87,7 +87,8 @@ class ExtensionRepository {
   // ── Conversions ────────────────────────────────────────────────────
 
   static ExtensionSource _srcToModel(i.ExtensionSource s) => ExtensionSource(
-        id: s.sourceId, // logical ID is what callers expect
+        id: s.sourceId,
+        sourceId: s.sourceId, // logical ID is what callers expect
         name: s.name,
         version: s.version,
         versionLast: s.versionLast,
@@ -112,6 +113,7 @@ class ExtensionRepository {
         // Preserve the Isar row PK when updating (id != 0), else let
         // Isar autoIncrement. sourceId is always set from the model's id.
         sourceId: s.id,
+        id: int.tryParse(s.id),
         name: s.name,
         version: s.version,
         versionLast: s.versionLast,

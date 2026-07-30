@@ -1,12 +1,17 @@
+import 'package:collection/collection.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-import 'package:collection/collection.dart';
+
+import '../../core/models/bookmark.dart';
 import '../../core/models/snippet.dart';
 import '../../core/models/snippet_collection.dart';
 import '../../core/providers.dart';
+import '../../router/router.dart';
 import '../../theme/app_theme.dart';
 import '../../theme/theme_provider.dart';
+import '../../widgets/bookmark_card.dart';
+import '../../widgets/dialog_sheet.dart';
 import '../../widgets/empty_state.dart';
 import '../../widgets/highlight_color_picker.dart';
 import '../../widgets/icon_button_round.dart';
@@ -16,10 +21,9 @@ import '../../widgets/one_hand_spacer.dart';
 import '../../widgets/screen_chrome.dart';
 import '../../widgets/snippet_card.dart';
 import '../../widgets/snippet_detail_sheet.dart';
-import '../../widgets/dialog_sheet.dart';
 import '../../widgets/tag_filter_bar.dart';
 import '../../widgets/toast.dart';
-import '../../router/router.dart';
+import 'bookmarks_provider.dart';
 import 'snippets_provider.dart';
 
 class SnippetsScreen extends ConsumerStatefulWidget {
@@ -32,6 +36,7 @@ class SnippetsScreen extends ConsumerStatefulWidget {
 class _SnippetsScreenState extends ConsumerState<SnippetsScreen> {
   final ScrollController _scrollCtrl = ScrollController();
   double _scrollProgress = 0;
+  int _tab = 0;
 
   @override
   void initState() {
@@ -39,6 +44,7 @@ class _SnippetsScreenState extends ConsumerState<SnippetsScreen> {
     _scrollCtrl.addListener(_onScroll);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       ref.read(snippetsProvider.notifier).loadSnippets();
+      ref.read(bookmarksProvider.notifier).loadBookmarks();
     });
   }
 
@@ -64,15 +70,16 @@ class _SnippetsScreenState extends ConsumerState<SnippetsScreen> {
   Widget build(BuildContext context) {
     final leftHanded = ref.watch(themeProvider).handMode == HandMode.left;
     final p = ref.watch(snippetsProvider);
+    final bp = ref.watch(bookmarksProvider);
     final navClearance = MediaQuery.paddingOf(context).bottom + 84;
     return ScreenBackdrop(
       child: Stack(
         children: [
           SafeArea(
             bottom: false,
-            child: _body(context, p),
+            child: _body(context, p, bp),
           ),
-          if (!p.selectionMode)
+          if (!p.selectionMode && _tab == 0)
             Positioned(
               left: leftHanded ? 20 : null,
               right: leftHanded ? null : 20,
@@ -91,7 +98,11 @@ class _SnippetsScreenState extends ConsumerState<SnippetsScreen> {
     );
   }
 
-  Widget _body(BuildContext context, SnippetsState p) {
+  Widget _body(BuildContext context, SnippetsState p, BookmarksState bp) {
+    if (_tab == 1) {
+      return _buildBookmarksTab(context, bp);
+    }
+
     if (p.loading && p.snippets.isEmpty) return _loading();
     if (p.error != null) {
       return ListView(
@@ -104,6 +115,7 @@ class _SnippetsScreenState extends ConsumerState<SnippetsScreen> {
             titleSize: _oneHand ? 64 : 32,
             shrinkProgress: _oneHand ? _scrollProgress : 0.0,
           ),
+          _buildTabBar(),
           const SizedBox(height: 60),
           EmptyState(
             icon: Icons.error_outline,
@@ -116,6 +128,34 @@ class _SnippetsScreenState extends ConsumerState<SnippetsScreen> {
       );
     }
 
+    return _buildSnippetsTab(context, p);
+  }
+
+  Widget _buildTabBar() {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 20),
+      child: Row(
+        children: [
+          _TabButton(
+            label: 'Snippets',
+            selected: _tab == 0,
+            onTap: () => setState(() => _tab = 0),
+          ),
+          const SizedBox(width: 12),
+          _TabButton(
+            label: 'Bookmarks',
+            selected: _tab == 1,
+            onTap: () {
+              setState(() => _tab = 1);
+              ref.read(bookmarksProvider.notifier).loadBookmarks();
+            },
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSnippetsTab(BuildContext context, SnippetsState p) {
     final items = p.snippets;
     final hasFilter = p.filterTag != null ||
         p.filterCollectionId != null ||
@@ -132,6 +172,7 @@ class _SnippetsScreenState extends ConsumerState<SnippetsScreen> {
             titleSize: _oneHand ? 64 : 32,
             shrinkProgress: _oneHand ? _scrollProgress : 0.0,
           ),
+          _buildTabBar(),
           const SizedBox(height: 60),
           EmptyState(
             icon: Icons.format_quote_outlined,
@@ -152,6 +193,7 @@ class _SnippetsScreenState extends ConsumerState<SnippetsScreen> {
       children: [
         const OneHandSpacer(),
         _buildHeader(p),
+        _buildTabBar(),
         if (!p.selectionMode)
           StaggeredEntrance(
             child: FeaturePanel(
@@ -563,6 +605,96 @@ class _SnippetsScreenState extends ConsumerState<SnippetsScreen> {
     if (value == null) return const Color(0xFFFFE8A8);
     return Color(value + 0xFF000000);
   }
+
+  Widget _buildBookmarksTab(BuildContext context, BookmarksState bp) {
+    final bookmarks = bp.bookmarks;
+    return ListView(
+      controller: _scrollCtrl,
+      padding: EdgeInsets.zero,
+      children: [
+        const OneHandSpacer(),
+        LibraryHeader(
+          title: 'Bookmarks',
+          titleSize: _oneHand ? 64 : 32,
+          shrinkProgress: _oneHand ? _scrollProgress : 0.0,
+        ),
+        _buildTabBar(),
+        if (bp.loading && bookmarks.isEmpty)
+          const Padding(
+            padding: EdgeInsets.all(40),
+            child: Center(child: CircularProgressIndicator()),
+          )
+        else
+          if (bookmarks.isEmpty)
+            Padding(
+              padding: const EdgeInsets.all(40),
+              child: EmptyState(
+                icon: Icons.bookmark_border_outlined,
+                title: 'No bookmarks yet',
+                subtitle: 'Tap the bookmark icon while reading to save a page.',
+              ),
+            )
+          else
+            ...bookmarks.map((b) =>
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(20, 0, 20, 12),
+                  child: BookmarkCard(
+                    bookmark: b,
+                    onTap: () => _openBookmark(context, b),
+                    onDelete: () => _confirmDeleteBookmark(context, b.id),
+                  ),
+                )),
+        const SizedBox(height: 100),
+      ],
+    );
+  }
+
+  Future<void> _openBookmark(BuildContext context, Bookmark bookmark) async {
+    if (bookmark.bookId == null) return;
+    final repos = ref.read(repositoriesProvider);
+    final chapter = await repos.manga.getMangaChapter(bookmark.chapterId);
+    if (chapter == null || !context.mounted) return;
+    final book = await repos.books.getBook(bookmark.bookId!);
+    if (book == null) return;
+    context.pushNamed(
+      Routes.mangaReader,
+      extra: (
+      mangaId: bookmark.bookId,
+      sourceId: book.source,
+      mangaUrl: book.sourceUrl ?? '',
+      chapterUrl: chapter.url,
+      chapterName: chapter.name,
+      pageNumber: bookmark.pageNumber,
+      ) as MangaReaderArgs,
+    );
+  }
+
+  Future<void> _confirmDeleteBookmark(BuildContext context, int id) async {
+    final confirmed = await StashDialog.show<bool>(
+      context,
+      title: 'Remove bookmark?',
+      content: 'This cannot be undone.',
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context, false),
+          child: Text(
+              'Cancel', style: TextStyle(color: context.colors.textSecondary)),
+        ),
+        TextButton(
+          onPressed: () => Navigator.pop(context, true),
+          child: const Text(
+              'Remove', style: TextStyle(color: Color(0xFFC44C4C))),
+        ),
+      ],
+    );
+    if (confirmed == true && context.mounted) {
+      await ref.read(bookmarksProvider.notifier).deleteBookmark(id);
+      if (context.mounted) {
+        StashToast.show(
+            context, message: 'Bookmark removed', icon: Icons.check);
+      }
+    }
+  }
 }
 
 Color _parseHexColor(String hex) {
@@ -663,6 +795,42 @@ class _Chip extends StatelessWidget {
           style: TextStyle(
             color: fg,
             fontSize: 13,
+            fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _TabButton extends StatelessWidget {
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+
+  const _TabButton({
+    required this.label,
+    required this.selected,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.colors;
+    return GestureDetector(
+      onTap: onTap,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 200),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        decoration: BoxDecoration(
+          color: selected ? c.accentMuted : Colors.transparent,
+          borderRadius: BorderRadius.circular(10),
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+            color: selected ? c.accent : c.textSecondary,
+            fontSize: 14,
             fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
           ),
         ),

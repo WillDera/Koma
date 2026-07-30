@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:isolate';
 
 import 'package:http/http.dart' as http;
 import 'package:path/path.dart' as p;
@@ -9,6 +10,7 @@ import 'package:path_provider/path_provider.dart';
 import '../models/extension_repo.dart';
 import '../models/extension_source.dart';
 import '../repositories/repositories.dart';
+import 'extension_icon_cache.dart';
 import 'keiyoushi_service.dart';
 
 class ExtensionIndexEntry {
@@ -17,6 +19,9 @@ class ExtensionIndexEntry {
   final String apkUrl;
   final String version;
   final String lang;
+  final String contentWarning;
+  final String? baseUrl;
+  final String? iconUrl;
   final List<Map<String, dynamic>> sources;
 
   const ExtensionIndexEntry({
@@ -25,6 +30,9 @@ class ExtensionIndexEntry {
     required this.apkUrl,
     required this.version,
     required this.lang,
+    this.contentWarning = 'CONTENT_WARNING_SAFE',
+    this.baseUrl,
+    this.iconUrl,
     required this.sources,
   });
 
@@ -40,15 +48,79 @@ class ExtensionIndexEntry {
         .cast<Map>()
         .map((e) => Map<String, dynamic>.from(e))
         .toList(growable: false);
+
+    String pkg;
+    String name;
+    String apkUrl;
+    String version;
+    String lang;
+    String contentWarning;
+    String? baseUrl;
+    String? iconUrl;
+
+    final hasPackageName = j['packageName'] != null || j['pkg'] != null;
+    final hasSourceCodeUrl = j['sourceCodeUrl'] != null;
+    final hasId = j['id'] != null;
+
+    if (hasSourceCodeUrl || (hasId && !hasPackageName)) {
+      pkg = j['id']?.toString() ?? '';
+      name = (j['name'] as String?) ?? (pkg.isEmpty ? 'Unknown' : pkg);
+      apkUrl = j['sourceCodeUrl'] as String? ?? '';
+      version = j['version'] as String? ?? '0';
+      lang = j['lang'] as String? ?? 'en';
+      contentWarning = (j['isNsfw'] as bool? ?? false)
+          ? 'CONTENT_WARNING_NSFW'
+          : 'CONTENT_WARNING_SAFE';
+      baseUrl = j['baseUrl'] as String?;
+      iconUrl = j['iconUrl'] as String?;
+    } else {
+      pkg = j['packageName'] as String? ??
+          j['pkg'] as String? ??
+          '';
+      name = j['name'] as String? ??
+          pkg ??
+          'Unknown';
+
+      String apk;
+      if (j['resources'] is Map) {
+        final r = j['resources'] as Map;
+        apk = (r['apkUrl'] as String?) ?? '';
+      } else {
+        apk = j['apk'] as String? ?? '';
+      }
+      apkUrl = apk;
+
+      version = j['versionName'] as String? ??
+          j['version'] as String? ??
+          '0';
+
+      if (sources.isNotEmpty) {
+        lang = sources.first['language'] as String? ??
+            sources.first['lang'] as String? ??
+            'en';
+      } else {
+        lang = j['lang'] as String? ?? 'en';
+      }
+
+      contentWarning = j['contentWarning'] as String? ??
+          'CONTENT_WARNING_SAFE';
+
+      baseUrl = j['baseUrl'] as String? ??
+          (sources.isNotEmpty ? sources.first['baseUrl'] as String? : null);
+      iconUrl = j['resources'] is Map
+          ? (j['resources'] as Map)['iconUrl'] as String?
+          : null;
+    }
+
     return ExtensionIndexEntry(
-      pkg: j['pkg'] as String? ?? '',
-      name: j['name'] as String? ?? j['pkg'] as String? ?? 'Unknown',
-      apkUrl: j['apk'] as String? ?? '',
-      version: j['version'] as String? ?? '0',
-      lang: (sources.isNotEmpty
-              ? sources.first['lang']
-              : j['lang']) as String? ??
-          'en',
+      pkg: pkg,
+      name: name,
+      apkUrl: apkUrl,
+      version: version,
+      lang: lang,
+      contentWarning: contentWarning,
+      baseUrl: baseUrl,
+      iconUrl: iconUrl,
       sources: sources,
     );
   }
@@ -74,21 +146,29 @@ class ExtensionManager {
 
   Future<void> removeRepo(int id) => _repos.extensions.deleteExtensionRepo(id);
 
+  /// One-time fetch of the full Keiyoushi `index.json` (~1.3 MB) to populate
+  /// the persistent `pkg → iconUrl` cache ([ExtensionIconCache]). Subsequent
+  /// calls are no-ops once the cache is populated. Safe to call on app start
+  /// or on the extensions screen — failures are swallowed and reported via
+  /// [onError] so icon resolution degrades to the CDN derivation fallback.
+  ///
+  /// See Q5: the legacy `.../repo/icon/${pkg}.png` URLs always 404'd against
+  /// Keiyoushi; the authoritative icon URLs live in the full index's
+  /// `resources.iconUrl` field.
+  Future<void> refreshIconCache({
+    void Function(Object error)? onError,
+  }) {
+    return ExtensionIconCache.instance.ensurePopulated(onError: onError);
+  }
+
   Future<List<ExtensionIndexEntry>> fetchIndex(ExtensionRepo repo) async {
     final res = await _http.get(Uri.parse(repo.url));
     if (res.statusCode != 200) {
       throw HttpException('Repo returned ${res.statusCode}: ${repo.url}');
     }
-    final list = jsonDecode(res.body);
-    if (list is! List) {
-      throw FormatException(
-        'Repo JSON is not a list — got ${list.runtimeType}',
-      );
-    }
-    return list
-        .cast<Map>()
-        .map((e) => ExtensionIndexEntry.fromJson(Map<String, dynamic>.from(e)))
-        .toList(growable: false);
+    // Keiyoushi index is ~500KB / 1.3k entries — parse off the UI isolate so
+    // mid-range Android devices don't freeze (or black-screen) during fetch.
+    return Isolate.run(() => _parseIndexBody(res.body));
   }
 
   Future<ExtensionSource> install(
@@ -98,7 +178,7 @@ class ExtensionManager {
     final dir = await _extensionsDir();
     final apkPath = p.join(dir.path, '${entry.pkg}.apk');
     final baseUrl = repoUrl.replaceFirst(RegExp(r'/[^/]*$'), '');
-    final resolved = '$baseUrl/apk/${entry.apkUrl}';
+    final resolved = _resolveApkUrl(baseUrl, entry.apkUrl);
 
     final apkFile = File(apkPath);
     if (apkFile.existsSync()) {
@@ -107,14 +187,16 @@ class ExtensionManager {
     }
     await _downloadApk(resolved, apkPath);
 
-    final iconUrl = '$baseUrl/icon/${entry.pkg}.png';
-    final sourceCodeUrl = '$baseUrl/apk/${entry.apkUrl}';
+    final iconUrl =
+        ExtensionIconCache.iconUrlForPkg(entry.pkg) ?? '';
+    final sourceCodeUrl = resolved;
 
     final desc = await _keiyoushi.loadExtension(
       apkPath: apkPath,
       className: entry.className,
     );
     final nativeId = (desc['id'] as String?) ?? '';
+    final sourceId = (desc['sourceId'] as String?) ?? '';
     if (nativeId.isEmpty) {
       throw Exception('Native bridge returned no ID for ${entry.name}');
     }
@@ -122,13 +204,14 @@ class ExtensionManager {
     final firstSource = entry.sources.isNotEmpty ? entry.sources.first : null;
     final src = ExtensionSource(
       id: nativeId,
+      sourceId: sourceId,
       name: (desc['name'] as String?) ?? entry.name,
       version: entry.version,
       lang: (desc['lang'] as String?) ?? entry.lang,
       apkPath: apkPath,
       className: entry.className ?? '',
       iconUrl: iconUrl,
-      baseUrl: firstSource?['baseUrl'] as String?,
+      baseUrl: entry.baseUrl ?? firstSource?['baseUrl'] as String?,
       sourceCodeUrl: sourceCodeUrl,
       repoUrl: repoUrl,
     );
@@ -144,12 +227,47 @@ class ExtensionManager {
       }
     }
     try {
-      await _keiyoushi.unloadExtension(src.id);
+      await _keiyoushi.unloadExtension(src.sourceId);
     } catch (_) {}
     try {
       final f = File(src.apkPath);
       if (await f.exists()) await f.delete();
     } catch (_) {}
+  }
+
+  Future<void> updateSource(
+    ExtensionSource src,
+    ExtensionIndexEntry entry,
+    String repoUrl,
+  ) async {
+    await _keiyoushi.unloadExtension(src.sourceId);
+
+    final dir = await _extensionsDir();
+    final newApkPath = p.join(dir.path, '${entry.pkg}.apk');
+    final baseUrl = repoUrl.replaceFirst(RegExp(r'/[^/]*$'), '');
+    final resolved = _resolveApkUrl(baseUrl, entry.apkUrl);
+
+    final apkFile = File(newApkPath);
+    if (apkFile.existsSync()) {
+      try { await Process.run('chmod', ['+w', newApkPath]); } catch (_) {}
+      try { apkFile.deleteSync(); } catch (_) {}
+    }
+
+    await _downloadApk(resolved, newApkPath);
+
+    final desc = await _keiyoushi.loadExtension(
+      apkPath: newApkPath,
+      className: entry.className,
+    );
+    final newSourceId = (desc['sourceId'] as String?) ?? '';
+
+    await _repos.extensions.insertExtensionSource(src.copyWith(
+      sourceId: newSourceId,
+      apkPath: newApkPath,
+      version: entry.version,
+      versionLast: entry.version,
+      isObsolete: false,
+    ));
   }
 
   Future<void> checkForUpdates(
@@ -169,6 +287,7 @@ class ExtensionManager {
           (isrc) => isrc.className == className,
           orElse: () => ExtensionSource(
             id: '',
+            sourceId: '',
             name: '',
             version: '',
             lang: '',
@@ -209,6 +328,7 @@ class ExtensionManager {
       if (src.isObsolete != isNowObsolete) {
         toUpdate.add(ExtensionSource(
           id: src.id,
+          sourceId: src.sourceId,
           name: src.name,
           version: src.version,
           lang: src.lang,
@@ -229,6 +349,20 @@ class ExtensionManager {
 
   Future<List<ExtensionSource>> listInstalled() => _repos.extensions.getInstalledExtensions();
 
+  /// Translate any source identifier (old Mihon numeric ID or hex sourceId)
+  /// to the hex sourceId used by the DalvikServer cache. Falls back to
+  /// [sourceId] if no match is found in installed extensions.
+  Future<String> resolveSourceId(String sourceId) async {
+    final installed = await listInstalled();
+    // Direct hex match — already correct
+    if (installed.any((e) => e.sourceId == sourceId)) return sourceId;
+    // Look up by old Mihon numeric ID (stored in ext.id)
+    for (final ext in installed) {
+      if (ext.id == sourceId) return ext.sourceId;
+    }
+    return sourceId;
+  }
+
   Future<void> reloadAll() async {
     final installed = await listInstalled();
     for (final src in installed) {
@@ -242,11 +376,15 @@ class ExtensionManager {
           className: src.className.isEmpty ? null : src.className,
         );
         final nativeId = (desc['id'] as String?) ?? '';
+        final newSourceId = (desc['sourceId'] as String?) ?? '';
         if (nativeId.isEmpty) continue;
 
-        if (src.id != nativeId) {
+        if (src.id != nativeId || src.sourceId != newSourceId) {
           await _repos.extensions.deleteExtensionSource(src.id);
-          await _repos.extensions.insertExtensionSource(src.copyWith(id: nativeId));
+          await _repos.extensions.insertExtensionSource(src.copyWith(
+            id: nativeId,
+            sourceId: newSourceId,
+          ));
         }
       } catch (_) {}
     }
@@ -264,6 +402,17 @@ class ExtensionManager {
     return dir;
   }
 
+  String _resolveApkUrl(String baseUrl, String apkUrl) {
+    if (apkUrl.isEmpty) return '';
+    if (apkUrl.startsWith('http://') || apkUrl.startsWith('https://')) {
+      return apkUrl;
+    }
+    if (apkUrl.contains('/')) {
+      return '$baseUrl/$apkUrl';
+    }
+    return '$baseUrl/apk/$apkUrl';
+  }
+
   Future<void> _downloadApk(String url, String destPath) async {
     final res = await _http.get(Uri.parse(url));
     if (res.statusCode != 200) {
@@ -271,4 +420,30 @@ class ExtensionManager {
     }
     await File(destPath).writeAsBytes(res.bodyBytes);
   }
+}
+
+/// Top-level so [Isolate.run] can invoke it without capturing the manager.
+List<ExtensionIndexEntry> _parseIndexBody(String body) {
+  final decoded = jsonDecode(body);
+  if (decoded is List) {
+    return decoded
+        .cast<Map>()
+        .map((e) => ExtensionIndexEntry.fromJson(Map<String, dynamic>.from(e)))
+        .toList(growable: false);
+  }
+  if (decoded is Map) {
+    final extList = decoded['extensionList'];
+    if (extList is Map) {
+      final exts = extList['extensions'];
+      if (exts is List) {
+        return exts
+            .cast<Map>()
+            .map((e) => ExtensionIndexEntry.fromJson(Map<String, dynamic>.from(e)))
+            .toList(growable: false);
+      }
+    }
+  }
+  throw FormatException(
+    'Repo JSON is not a recognized format — got ${decoded.runtimeType}',
+  );
 }
