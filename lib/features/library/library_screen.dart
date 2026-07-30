@@ -1,26 +1,28 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+
 import 'package:crypto/crypto.dart';
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-import '../../core/providers.dart';
-import '../../router/router.dart';
-import 'package:file_picker/file_picker.dart';
 import 'package:path_provider/path_provider.dart';
+
+import '../../app.dart' show routeObserver;
 import '../../core/models/book.dart';
 import '../../core/models/chapter.dart';
 import '../../core/models/manga.dart';
+import '../../core/providers.dart';
+import '../../core/services/cache_service.dart';
 import '../../core/services/ebook_service.dart';
 import '../../core/services/web_scraper_service.dart';
-import '../../core/services/cache_service.dart';
+import '../../core/utils/benchmark_logger.dart';
 import '../../core/utils/image_cache.dart';
+import '../../router/router.dart';
 import '../../theme/app_theme.dart';
 import '../../theme/theme_provider.dart';
 import '../../theme/tokens/app_spacing.dart';
-
-import '../../app.dart' show routeObserver;
 import '../../widgets/animated_press.dart';
 import '../../widgets/dialog_sheet.dart';
 import '../../widgets/empty_state.dart';
@@ -34,7 +36,6 @@ import '../../widgets/premium_button.dart';
 import '../../widgets/screen_chrome.dart';
 import '../../widgets/segmented_control.dart';
 import '../../widgets/toast.dart';
-import '../../core/utils/benchmark_logger.dart';
 import 'library_provider.dart';
 
 class LibraryScreen extends ConsumerStatefulWidget {
@@ -1141,99 +1142,101 @@ class _LibraryFilterSheet extends StatelessWidget {
         borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
         border: Border(top: BorderSide(color: c.border, width: 0.5)),
       ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Center(
-            child: Container(
-              width: 36,
-              height: 4,
-              decoration: BoxDecoration(
-                color: c.textTertiary,
-                borderRadius: AppSpacing.brPill,
-              ),
-            ),
-          ),
-          const SizedBox(height: 20),
-          Text(
-            'Filter',
-            style: TextStyle(
-              color: Colors.white,
-              fontSize: 18,
-              fontWeight: FontWeight.bold,
-            ),
-          ),
-          const SizedBox(height: 6),
-          _FilterOption(
-            icon: Icons.markunread_outlined,
-            label: 'Unread',
-            mode: filters[_LibraryFilter.unread] ?? _FilterMode.none,
-            onTap: () => onFilterChanged(_LibraryFilter.unread),
-          ),
-          _FilterOption(
-            icon: Icons.fiber_new_rounded,
-            label: 'Newly added',
-            mode: filters[_LibraryFilter.newlyAdded] ?? _FilterMode.none,
-            onTap: () => onFilterChanged(_LibraryFilter.newlyAdded),
-          ),
-          Padding(
-            padding: const EdgeInsets.symmetric(vertical: 14),
-            child: Divider(color: c.border, height: 1),
-          ),
-          Row(
-            children: [
-              Expanded(
-                child: Text(
-                  'Show source pills',
-                  style: TextStyle(
-                    color: c.textPrimary,
-                    fontSize: 15,
-                    fontWeight: FontWeight.w600,
-                  ),
+      child: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Center(
+              child: Container(
+                width: 36,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: c.textTertiary,
+                  borderRadius: AppSpacing.brPill,
                 ),
               ),
-              Checkbox(
-                value: showSourcePills,
-                onChanged: (value) {
-                  if (value != null) onShowSourcePillsChanged(value);
-                },
-                activeColor: c.accent,
-              ),
-            ],
-          ),
-          Padding(
-            padding: const EdgeInsets.symmetric(vertical: 14),
-            child: Divider(color: c.border, height: 1),
-          ),
-          Text(
-            'Sort',
-            style: TextStyle(
-              color: c.textTertiary,
-              fontSize: 12,
-              fontWeight: FontWeight.w700,
             ),
-          ),
-          const SizedBox(height: 6),
-          _SortOption(
-            icon: Icons.sort_by_alpha_rounded,
-            label: 'Alphabetical order',
-            selected: sort == _LibrarySort.alphabetical,
-            onTap: () => onSortChanged(_LibrarySort.alphabetical),
-          ),
-          _SortOption(
-            icon: Icons.person_outline_rounded,
-            label: 'Author',
-            selected: sort == _LibrarySort.author,
-            onTap: () => onSortChanged(_LibrarySort.author),
-          ),
-          _SortOption(
-            icon: Icons.donut_large_rounded,
-            label: 'Progress',
-            selected: sort == _LibrarySort.progress,
-            onTap: () => onSortChanged(_LibrarySort.progress),
-          ),
-        ],
+            const SizedBox(height: 20),
+            Text(
+              'Filter',
+              style: TextStyle(
+                color: Colors.white,
+                fontSize: 18,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+            const SizedBox(height: 6),
+            _FilterOption(
+              icon: Icons.markunread_outlined,
+              label: 'Unread',
+              mode: filters[_LibraryFilter.unread] ?? _FilterMode.none,
+              onTap: () => onFilterChanged(_LibraryFilter.unread),
+            ),
+            _FilterOption(
+              icon: Icons.fiber_new_rounded,
+              label: 'Newly added',
+              mode: filters[_LibraryFilter.newlyAdded] ?? _FilterMode.none,
+              onTap: () => onFilterChanged(_LibraryFilter.newlyAdded),
+            ),
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 14),
+              child: Divider(color: c.border, height: 1),
+            ),
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    'Show source pills',
+                    style: TextStyle(
+                      color: c.textPrimary,
+                      fontSize: 15,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+                Checkbox(
+                  value: showSourcePills,
+                  onChanged: (value) {
+                    if (value != null) onShowSourcePillsChanged(value);
+                  },
+                  activeColor: c.accent,
+                ),
+              ],
+            ),
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 14),
+              child: Divider(color: c.border, height: 1),
+            ),
+            Text(
+              'Sort',
+              style: TextStyle(
+                color: c.textTertiary,
+                fontSize: 12,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+            const SizedBox(height: 6),
+            _SortOption(
+              icon: Icons.sort_by_alpha_rounded,
+              label: 'Alphabetical order',
+              selected: sort == _LibrarySort.alphabetical,
+              onTap: () => onSortChanged(_LibrarySort.alphabetical),
+            ),
+            _SortOption(
+              icon: Icons.person_outline_rounded,
+              label: 'Author',
+              selected: sort == _LibrarySort.author,
+              onTap: () => onSortChanged(_LibrarySort.author),
+            ),
+            _SortOption(
+              icon: Icons.donut_large_rounded,
+              label: 'Progress',
+              selected: sort == _LibrarySort.progress,
+              onTap: () => onSortChanged(_LibrarySort.progress),
+            ),
+          ],
+        ),
       ),
     );
   }
