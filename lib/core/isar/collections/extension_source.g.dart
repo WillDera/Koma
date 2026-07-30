@@ -43,32 +43,37 @@ const ExtensionSourceSchema = CollectionSchema(
       type: IsarType.bool,
     ),
     r'isPinned': PropertySchema(id: 9, name: r'isPinned', type: IsarType.bool),
-    r'lang': PropertySchema(id: 10, name: r'lang', type: IsarType.string),
-    r'name': PropertySchema(id: 11, name: r'name', type: IsarType.string),
-    r'repoUrl': PropertySchema(id: 12, name: r'repoUrl', type: IsarType.string),
+    r'isUpdateAvailable': PropertySchema(
+      id: 10,
+      name: r'isUpdateAvailable',
+      type: IsarType.bool,
+    ),
+    r'lang': PropertySchema(id: 11, name: r'lang', type: IsarType.string),
+    r'name': PropertySchema(id: 12, name: r'name', type: IsarType.string),
+    r'repoUrl': PropertySchema(id: 13, name: r'repoUrl', type: IsarType.string),
     r'sourceCodeLanguage': PropertySchema(
-      id: 13,
+      id: 14,
       name: r'sourceCodeLanguage',
       type: IsarType.string,
     ),
     r'sourceCodeUrl': PropertySchema(
-      id: 14,
+      id: 15,
       name: r'sourceCodeUrl',
       type: IsarType.string,
     ),
     r'sourceId': PropertySchema(
-      id: 15,
+      id: 16,
       name: r'sourceId',
       type: IsarType.string,
     ),
     r'updatedAt': PropertySchema(
-      id: 16,
+      id: 17,
       name: r'updatedAt',
       type: IsarType.dateTime,
     ),
-    r'version': PropertySchema(id: 17, name: r'version', type: IsarType.string),
+    r'version': PropertySchema(id: 18, name: r'version', type: IsarType.string),
     r'versionLast': PropertySchema(
-      id: 18,
+      id: 19,
       name: r'versionLast',
       type: IsarType.string,
     ),
@@ -165,15 +170,16 @@ void _extensionSourceSerialize(
   writer.writeBool(offsets[7], object.isNsfw);
   writer.writeBool(offsets[8], object.isObsolete);
   writer.writeBool(offsets[9], object.isPinned);
-  writer.writeString(offsets[10], object.lang);
-  writer.writeString(offsets[11], object.name);
-  writer.writeString(offsets[12], object.repoUrl);
-  writer.writeString(offsets[13], object.sourceCodeLanguage);
-  writer.writeString(offsets[14], object.sourceCodeUrl);
-  writer.writeString(offsets[15], object.sourceId);
-  writer.writeDateTime(offsets[16], object.updatedAt);
-  writer.writeString(offsets[17], object.version);
-  writer.writeString(offsets[18], object.versionLast);
+  writer.writeBool(offsets[10], object.isUpdateAvailable);
+  writer.writeString(offsets[11], object.lang);
+  writer.writeString(offsets[12], object.name);
+  writer.writeString(offsets[13], object.repoUrl);
+  writer.writeString(offsets[14], object.sourceCodeLanguage);
+  writer.writeString(offsets[15], object.sourceCodeUrl);
+  writer.writeString(offsets[16], object.sourceId);
+  writer.writeDateTime(offsets[17], object.updatedAt);
+  writer.writeString(offsets[18], object.version);
+  writer.writeString(offsets[19], object.versionLast);
 }
 
 ExtensionSource _extensionSourceDeserialize(
@@ -194,15 +200,15 @@ ExtensionSource _extensionSourceDeserialize(
     isNsfw: reader.readBoolOrNull(offsets[7]) ?? false,
     isObsolete: reader.readBoolOrNull(offsets[8]) ?? false,
     isPinned: reader.readBoolOrNull(offsets[9]) ?? false,
-    lang: reader.readString(offsets[10]),
-    name: reader.readString(offsets[11]),
-    repoUrl: reader.readStringOrNull(offsets[12]),
-    sourceCodeLanguage: reader.readStringOrNull(offsets[13]) ?? 'mihon',
-    sourceCodeUrl: reader.readStringOrNull(offsets[14]),
-    sourceId: reader.readString(offsets[15]),
-    updatedAt: reader.readDateTimeOrNull(offsets[16]),
-    version: reader.readString(offsets[17]),
-    versionLast: reader.readStringOrNull(offsets[18]),
+    lang: reader.readString(offsets[11]),
+    name: reader.readString(offsets[12]),
+    repoUrl: reader.readStringOrNull(offsets[13]),
+    sourceCodeLanguage: reader.readStringOrNull(offsets[14]) ?? 'mihon',
+    sourceCodeUrl: reader.readStringOrNull(offsets[15]),
+    sourceId: reader.readString(offsets[16]),
+    updatedAt: reader.readDateTimeOrNull(offsets[17]),
+    version: reader.readString(offsets[18]),
+    versionLast: reader.readStringOrNull(offsets[19]),
   );
   return object;
 }
@@ -235,22 +241,24 @@ P _extensionSourceDeserializeProp<P>(
     case 9:
       return (reader.readBoolOrNull(offset) ?? false) as P;
     case 10:
-      return (reader.readString(offset)) as P;
+      return (reader.readBool(offset)) as P;
     case 11:
       return (reader.readString(offset)) as P;
     case 12:
-      return (reader.readStringOrNull(offset)) as P;
+      return (reader.readString(offset)) as P;
     case 13:
-      return (reader.readStringOrNull(offset) ?? 'mihon') as P;
-    case 14:
       return (reader.readStringOrNull(offset)) as P;
+    case 14:
+      return (reader.readStringOrNull(offset) ?? 'mihon') as P;
     case 15:
-      return (reader.readString(offset)) as P;
+      return (reader.readStringOrNull(offset)) as P;
     case 16:
-      return (reader.readDateTimeOrNull(offset)) as P;
-    case 17:
       return (reader.readString(offset)) as P;
+    case 17:
+      return (reader.readDateTimeOrNull(offset)) as P;
     case 18:
+      return (reader.readString(offset)) as P;
+    case 19:
       return (reader.readStringOrNull(offset)) as P;
     default:
       throw IsarError('Unknown property with id $propertyId');
@@ -1252,6 +1260,15 @@ extension ExtensionSourceQueryFilter
     return QueryBuilder.apply(this, (query) {
       return query.addFilterCondition(
         FilterCondition.equalTo(property: r'isPinned', value: value),
+      );
+    });
+  }
+
+  QueryBuilder<ExtensionSource, ExtensionSource, QAfterFilterCondition>
+  isUpdateAvailableEqualTo(bool value) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.equalTo(property: r'isUpdateAvailable', value: value),
       );
     });
   }
@@ -2656,6 +2673,20 @@ extension ExtensionSourceQuerySortBy
     });
   }
 
+  QueryBuilder<ExtensionSource, ExtensionSource, QAfterSortBy>
+  sortByIsUpdateAvailable() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'isUpdateAvailable', Sort.asc);
+    });
+  }
+
+  QueryBuilder<ExtensionSource, ExtensionSource, QAfterSortBy>
+  sortByIsUpdateAvailableDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'isUpdateAvailable', Sort.desc);
+    });
+  }
+
   QueryBuilder<ExtensionSource, ExtensionSource, QAfterSortBy> sortByLang() {
     return QueryBuilder.apply(this, (query) {
       return query.addSortBy(r'lang', Sort.asc);
@@ -2929,6 +2960,20 @@ extension ExtensionSourceQuerySortThenBy
     });
   }
 
+  QueryBuilder<ExtensionSource, ExtensionSource, QAfterSortBy>
+  thenByIsUpdateAvailable() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'isUpdateAvailable', Sort.asc);
+    });
+  }
+
+  QueryBuilder<ExtensionSource, ExtensionSource, QAfterSortBy>
+  thenByIsUpdateAvailableDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'isUpdateAvailable', Sort.desc);
+    });
+  }
+
   QueryBuilder<ExtensionSource, ExtensionSource, QAfterSortBy> thenByLang() {
     return QueryBuilder.apply(this, (query) {
       return query.addSortBy(r'lang', Sort.asc);
@@ -3126,6 +3171,13 @@ extension ExtensionSourceQueryWhereDistinct
     });
   }
 
+  QueryBuilder<ExtensionSource, ExtensionSource, QDistinct>
+  distinctByIsUpdateAvailable() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addDistinctBy(r'isUpdateAvailable');
+    });
+  }
+
   QueryBuilder<ExtensionSource, ExtensionSource, QDistinct> distinctByLang({
     bool caseSensitive = true,
   }) {
@@ -3267,6 +3319,13 @@ extension ExtensionSourceQueryProperty
   QueryBuilder<ExtensionSource, bool, QQueryOperations> isPinnedProperty() {
     return QueryBuilder.apply(this, (query) {
       return query.addPropertyName(r'isPinned');
+    });
+  }
+
+  QueryBuilder<ExtensionSource, bool, QQueryOperations>
+  isUpdateAvailableProperty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addPropertyName(r'isUpdateAvailable');
     });
   }
 
