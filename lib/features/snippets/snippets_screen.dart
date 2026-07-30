@@ -661,11 +661,11 @@ class _SnippetsScreenState extends ConsumerState<SnippetsScreen> {
       extra: (
       mangaId: bookmark.bookId,
       sourceId: book.source,
-      mangaUrl: book.sourceUrl,
+      mangaUrl: book.sourceUrl ?? '',
       chapterUrl: chapter.url,
       chapterName: chapter.name,
       pageNumber: bookmark.pageNumber,
-      ),
+      ) as MangaReaderArgs,
     );
   }
 

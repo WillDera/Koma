@@ -1,25 +1,26 @@
 import 'dart:convert';
 import 'dart:io';
+
 import 'package:crypto/crypto.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import 'package:http/http.dart' as http;
 import 'package:intl/intl.dart';
 import 'package:path_provider/path_provider.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:go_router/go_router.dart';
 
-import '../../core/providers.dart';
 import '../../core/models/manga.dart';
 import '../../core/models/manga_chapter.dart';
+import '../../core/providers.dart';
 import '../../core/services/keiyoushi_service.dart';
 import '../../core/utils/image_cache.dart';
+import '../../router/router.dart';
 import '../../theme/app_theme.dart';
 import '../../theme/tokens/app_spacing.dart';
-import 'manga_detail_providers.dart';
-import '../../router/router.dart';
 import '../../widgets/animated_press.dart';
 import '../../widgets/icon_button_round.dart';
+import 'manga_detail_providers.dart';
 
 enum _DownloadMode { all, unread, range }
 
@@ -1303,7 +1304,8 @@ class _MangaDetailScreenState extends ConsumerState<MangaDetailScreen> {
                                     mangaUrl: widget.url,
                                     chapterUrl: ch['url'] as String? ?? '',
                                     chapterName: ch['name'] as String? ?? '',
-                                  ),
+                                  pageNumber: null,
+                                  ) as MangaReaderArgs,
                                 );
                                 if (detail.mangaId != null && mounted) {
                                   final repos = ref.read(repositoriesProvider);
