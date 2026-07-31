@@ -1,7 +1,7 @@
 name: koma
 description: "A hybrid reader + knowledge snippet manager."
 publish_to: 'none'
-version: 2.19.46+176
+version: 2.21.0+179
 
 environment:
   sdk: ^3.12.2
@@ -40,6 +40,9 @@ dependencies:
   go_router: ^17.3.0
   # Image viewer + cover disk cache (see PHASE 5 + PHASE 6).
   extended_image: ^10.0.1
+  # HTTP interception + Cloudflare bypass (mangayomi MClient parity).
+  http_interceptor: ^2.0.0
+  flutter_inappwebview: ^6.1.5
   # JS extension runtime (see PHASE 9).
   flutter_qjs:
     git:

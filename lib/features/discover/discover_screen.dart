@@ -1,14 +1,15 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+
 import '../../core/providers.dart';
-import '../../core/services/source_service.dart';
-import '../../core/services/ebook_service.dart';
 import '../../core/services/keiyoushi_service.dart';
+import '../../core/services/source_service.dart';
+import '../../core/utils/image_cache.dart';
+import '../../core/utils/image_headers.dart';
 import '../../router/router.dart';
 import '../../theme/app_theme.dart';
 import '../../theme/theme_provider.dart';
-
 import '../../theme/tokens/app_spacing.dart';
 import '../../widgets/animated_press.dart';
 import '../../widgets/empty_state.dart';
@@ -17,7 +18,6 @@ import '../../widgets/one_hand_spacer.dart';
 import '../../widgets/screen_chrome.dart';
 import '../../widgets/segmented_control.dart';
 import '../../widgets/toast.dart';
-import '../../core/utils/image_cache.dart';
 
 class DiscoverScreen extends ConsumerStatefulWidget {
   const DiscoverScreen({super.key});
@@ -569,7 +569,7 @@ class _DiscoverBookResults extends StatelessWidget {
         return ListView.separated(
       shrinkWrap: true,
       physics: const NeverScrollableScrollPhysics(),
-      padding: const EdgeInsets.symmetric(horizontal: 20),
+          padding: const EdgeInsets.symmetric(horizontal: 12),
       itemCount: results.length,
       separatorBuilder: (_, _) => const SizedBox(height: 8),
       itemBuilder: (_, i) => StaggeredEntrance(
@@ -662,6 +662,7 @@ class _DiscoverMangaResults extends StatelessWidget {
                       width: 132,
                       child: _MangaCard(
                         manga: manga,
+                        sourceId: srcResult['sourceId'] as String?,
                         onTap: () => onTap(srcResult, manga),
                       ),
                     ),
@@ -959,17 +960,27 @@ class _GridResultCard extends StatelessWidget {
   }
 }
 
-class _MangaCard extends StatelessWidget {
+class _MangaCard extends ConsumerWidget {
   final Map<String, dynamic> manga;
   final VoidCallback onTap;
+  final String? sourceId;
 
-  const _MangaCard({required this.manga, required this.onTap});
+  const _MangaCard({
+    required this.manga,
+    required this.onTap,
+    this.sourceId,
+  });
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final c = context.colors;
     final title = manga['title'] as String? ?? '';
     final thumb = manga['thumbnail_url'] as String?;
+    final headers = sourceId != null
+        ? ref
+        .watch(sourceImageHeadersProvider(sourceId!))
+        .value
+        : null;
     return AnimatedPress(
       onTap: onTap,
       child: Container(
@@ -983,9 +994,9 @@ class _MangaCard extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Expanded(
-                            child: thumb != null && thumb.isNotEmpty
+              child: thumb != null && thumb.isNotEmpty
                   ? Image(
-                      image: cachedCover(thumb),
+                image: cachedCover(thumb, headers: headers),
                       width: double.infinity,
                       fit: BoxFit.cover,
                       errorBuilder: (_, _, _) => _placeholder(c),

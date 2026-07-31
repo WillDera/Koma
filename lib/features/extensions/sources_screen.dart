@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../core/providers.dart';
 import '../../core/models/extension_source.dart';
+import '../../core/providers.dart';
 import '../../core/services/extension_icon_cache.dart';
 import '../../core/utils/custom_extended_image_provider.dart';
 import '../../core/utils/language.dart';
@@ -64,6 +64,7 @@ class _SourcesScreenState extends ConsumerState<SourcesScreen> {
         builder: (_) => SourceBrowseScreen(
           sourceId: src.sourceId,
           sourceName: src.name,
+          baseUrl: src.baseUrl,
         ),
       ),
     );
@@ -79,6 +80,7 @@ class _SourcesScreenState extends ConsumerState<SourcesScreen> {
         builder: (_) => SourceBrowseScreen(
           sourceId: src.sourceId,
           sourceName: src.name,
+          baseUrl: src.baseUrl,
         ),
       ),
     );

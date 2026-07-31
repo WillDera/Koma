@@ -490,6 +490,13 @@ class _MangaReaderScreenState extends ConsumerState<MangaReaderScreen>
         await _repos!.manga.markMangaChapterRead(chapterId);
       }
     }
+
+    // Notify history-aware screens that progress changed so they can
+    // refresh in real time (the shell-tab screens don't reliably receive
+    // RouteAware.didPopNext from this root-level reader route).
+    if (mounted) {
+      ref.read(historyRevisionProvider.notifier).bump();
+    }
   }
 
   // ── Seamless next-chapter preloading ──

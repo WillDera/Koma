@@ -1,9 +1,10 @@
 import 'dart:async';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+
 import '../../core/models/book.dart';
 import '../../core/models/chapter.dart';
 import '../../core/providers.dart';
-import '../../core/repositories/repositories.dart';
 
 /// Immutable state for the ebook reader.
 class ReaderState {
@@ -180,6 +181,8 @@ class ReaderNotifier extends Notifier<ReaderState> {
       currentChapterIndex: state.currentIndex,
       scrollPosition: state.scrollPosition,
     );
+    // Bump the history revision so the History tab refreshes in real time.
+    ref.read(historyRevisionProvider.notifier).bump();
   }
 
   void _startReadingTimer() {
