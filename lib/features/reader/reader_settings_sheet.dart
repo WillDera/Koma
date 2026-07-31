@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+
 import '../../theme/app_theme.dart';
 
 enum ReadingMode { defaultL2R, rightToLeft, webtoon, longStrip, longStripWithGaps }
@@ -166,7 +167,7 @@ class _ReaderSettingsSheetState extends State<ReaderSettingsSheet>
   @override
   void initState() {
     super.initState();
-    _tabs = TabController(length: 3, vsync: this);
+    _tabs = TabController(length: 2, vsync: this);
     _s = widget.settings;
   }
 
@@ -176,7 +177,12 @@ class _ReaderSettingsSheetState extends State<ReaderSettingsSheet>
     super.dispose();
   }
 
-  void _emit() => widget.onChanged(_s);
+  void _update(ReaderSettings v) {
+    setState(() {
+      _s = v;
+      widget.onChanged(_s);
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -198,7 +204,6 @@ class _ReaderSettingsSheetState extends State<ReaderSettingsSheet>
               tabs: const [
                 Tab(text: 'Reading'),
                 Tab(text: 'Display'),
-                Tab(text: 'Filters'),
               ],
             ),
           ),
@@ -206,9 +211,8 @@ class _ReaderSettingsSheetState extends State<ReaderSettingsSheet>
             child: TabBarView(
               controller: _tabs,
               children: [
-                _ReadingTab(settings: _s, onChanged: (v) { _s = v; _emit(); }),
-                _DisplayTab(settings: _s, onChanged: (v) { _s = v; _emit(); }),
-                _FilterTab(settings: _s, onChanged: (v) { _s = v; _emit(); }),
+                _ReadingTab(settings: _s, onChanged: _update),
+                _DisplayTab(settings: _s, onChanged: _update),
               ],
             ),
           ),
@@ -226,7 +230,6 @@ class _ReadingTab extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final c = context.colors;
     return SingleChildScrollView(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
       child: Column(
@@ -473,100 +476,5 @@ class _DisplayTab extends StatelessWidget {
 
   ReaderSettings _copy({bool? fullscreen, bool? keepScreenOn, bool? showPageNumber, bool? animatePageTransition}) {
     return settings.copyWith(fullscreen: fullscreen, keepScreenOn: keepScreenOn, showPageNumber: showPageNumber, animatePageTransition: animatePageTransition);
-  }
-}
-
-class _FilterTab extends StatelessWidget {
-  final ReaderSettings settings;
-  final ValueChanged<ReaderSettings> onChanged;
-
-  const _FilterTab({required this.settings, required this.onChanged});
-
-  @override
-  Widget build(BuildContext context) {
-    final c = Theme.of(context).colorScheme;
-    return SingleChildScrollView(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-      child: Column(
-        children: [
-          _slider(context, 'Brightness', settings.brightness, 0.5, 1.5, (v) => onChanged(ReaderSettings(
-            readingMode: settings.readingMode,
-            rotationMode: settings.rotationMode,
-            tapZones: settings.tapZones,
-            sidePadding: settings.sidePadding,
-            cropBorders: settings.cropBorders,
-            bookMode: settings.bookMode,
-            disableDoubleTap: settings.disableDoubleTap,
-            disableZoomOut: settings.disableZoomOut,
-            showPageNumber: settings.showPageNumber,
-            showPageNavigator: settings.showPageNavigator,
-            fullscreen: settings.fullscreen,
-            keepScreenOn: settings.keepScreenOn,
-            showActionsOnLongTap: settings.showActionsOnLongTap,
-            animatePageTransition: settings.animatePageTransition,
-            progressBarPlacement: settings.progressBarPlacement,
-            brightness: v,
-            contrast: settings.contrast,
-            saturation: settings.saturation,
-            tintColor: settings.tintColor,
-            tintOpacity: settings.tintOpacity,
-          ))),
-          _slider(context, 'Contrast', settings.contrast, 0.5, 1.5, (v) => onChanged(ReaderSettings(
-            readingMode: settings.readingMode,
-            rotationMode: settings.rotationMode,
-            tapZones: settings.tapZones,
-            sidePadding: settings.sidePadding,
-            cropBorders: settings.cropBorders,
-            bookMode: settings.bookMode,
-            disableDoubleTap: settings.disableDoubleTap,
-            disableZoomOut: settings.disableZoomOut,
-            showPageNumber: settings.showPageNumber,
-            showPageNavigator: settings.showPageNavigator,
-            fullscreen: settings.fullscreen,
-            keepScreenOn: settings.keepScreenOn,
-            showActionsOnLongTap: settings.showActionsOnLongTap,
-            animatePageTransition: settings.animatePageTransition,
-            progressBarPlacement: settings.progressBarPlacement,
-            brightness: settings.brightness,
-            contrast: v,
-            saturation: settings.saturation,
-            tintColor: settings.tintColor,
-            tintOpacity: settings.tintOpacity,
-          ))),
-          _slider(context, 'Saturation', settings.saturation, 0.0, 2.0, (v) => onChanged(ReaderSettings(
-            readingMode: settings.readingMode,
-            rotationMode: settings.rotationMode,
-            tapZones: settings.tapZones,
-            sidePadding: settings.sidePadding,
-            cropBorders: settings.cropBorders,
-            bookMode: settings.bookMode,
-            disableDoubleTap: settings.disableDoubleTap,
-            disableZoomOut: settings.disableZoomOut,
-            showPageNumber: settings.showPageNumber,
-            showPageNavigator: settings.showPageNavigator,
-            fullscreen: settings.fullscreen,
-            keepScreenOn: settings.keepScreenOn,
-            showActionsOnLongTap: settings.showActionsOnLongTap,
-            animatePageTransition: settings.animatePageTransition,
-            progressBarPlacement: settings.progressBarPlacement,
-            brightness: settings.brightness,
-            contrast: settings.contrast,
-            saturation: v,
-            tintColor: settings.tintColor,
-            tintOpacity: settings.tintOpacity,
-          ))),
-        ],
-      ),
-    );
-  }
-
-  Widget _slider(BuildContext context, String label, double value, double min, double max, ValueChanged<double> onChanged) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(label, style: TextStyle(fontSize: 13, color: Theme.of(context).colorScheme.onSurfaceVariant, fontWeight: FontWeight.w600)),
-        Slider(value: value, min: min, max: max, onChanged: onChanged),
-      ],
-    );
   }
 }

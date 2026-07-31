@@ -4,14 +4,16 @@ import 'dart:io';
 import 'dart:ui' as ui show Codec;
 
 import 'package:extended_image_library/src/extended_image_provider.dart';
-import 'package:extended_image_library/src/platform.dart';
 import 'package:extended_image_library/src/network/extended_network_image_provider.dart'
     as image_provider;
+import 'package:extended_image_library/src/platform.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/widgets.dart';
+import 'package:http/http.dart' as http;
 import 'package:http_client_helper/http_client_helper.dart';
 import 'package:path/path.dart';
 
+import '../services/http/m_client.dart';
 import 'cache_directory.dart';
 
 /// LRU Memory Cache for decoded image data.
@@ -156,11 +158,10 @@ class _CacheManager {
 /// 500 MB LRU eviction cap), same retry + exponential backoff, and the same
 /// `cacheMaxAge` expiry semantics.
 ///
-/// The only intentional divergence is the HTTP transport: mangayomi routes
-/// through `MClient.init` (a Cloudflare-aware intercepted http client),
-/// while LNStash has no Dart-side Cloudflare bypass, so this provider uses a
-/// plain `dart:io HttpClient` directly. The headers / chunk-progress /
-/// retry / cancellation flow is unchanged.
+/// HTTP transport is routed through [MClient.init] exactly like mangayomi:
+/// an [InterceptedClient] whose [MCookieManager] injects stored cookies and
+/// whose [ResolveCloudFlareChallenge] retry policy solves Cloudflare
+/// challenges with a headless WebView before re-issuing the request.
 ///
 /// Two folder-name conventions are emitted by callers and respected here:
 ///   - `cacheimagecover` (default) for library / detail cover thumbnails.
@@ -189,6 +190,7 @@ class CustomExtendedNetworkImageProvider
     this.imageCacheName,
     this.imageCacheFolderName,
     this.cacheMaxAge = const Duration(days: 30),
+    this.showCloudFlareError = false,
   });
 
   /// The name of [ImageCache], you can define custom [ImageCache] to store this provider.
@@ -252,6 +254,10 @@ class CustomExtendedNetworkImageProvider
   /// Use `cacheimagemanga` for full-resolution reader pages so they live in
   /// a separate folder with its own 500 MB eviction bucket.
   final String? imageCacheFolderName;
+
+  /// Enables the Cloudflare retry policy for this request. Pass `true` for
+  /// reader pages (matching mangayomi); covers leave it `false`.
+  final bool showCloudFlareError;
 
   @override
   ImageStreamCompleter loadImage(
@@ -397,21 +403,47 @@ class CustomExtendedNetworkImageProvider
     CustomExtendedNetworkImageProvider key,
     StreamController<ImageChunkEvent>? chunkEvents,
   ) async {
-    HttpClient? httpClient;
     try {
       final Uri resolved = Uri.base.resolve(key.url);
-      httpClient = HttpClient()
-        ..userAgent = null;
-      final Uint8List? data = await _tryGetBytes(httpClient, resolved, chunkEvents);
+      final StreamedResponse? response = await _tryGetResponse(resolved);
 
-      if (data == null || data.isEmpty) {
+      if (response == null || response.statusCode != HttpStatus.ok) {
         if (kDebugMode) {
           print('NetworkImage is an empty file: $resolved');
         }
         return null;
       }
 
-      return data;
+      // Pre-allocate list if content length is known.
+      final int total = response.contentLength ?? 0;
+      final List<int> bytes = total > 0
+          ? List<int>.filled(total, 0, growable: true)
+          : <int>[];
+      int received = 0;
+
+      await for (var chunk in response.stream) {
+        if (total > 0 && received + chunk.length <= total) {
+          bytes.setRange(received, received + chunk.length, chunk);
+        } else {
+          bytes.addAll(chunk);
+        }
+        received += chunk.length;
+        chunkEvents?.add(
+          ImageChunkEvent(
+            cumulativeBytesLoaded: received,
+            expectedTotalBytes: total,
+          ),
+        );
+      }
+
+      if (bytes.isEmpty) {
+        if (kDebugMode) {
+          print('NetworkImage is an empty file: $resolved');
+        }
+        return null;
+      }
+
+      return Uint8List.fromList(bytes);
     } on OperationCanceledError catch (_) {
       if (kDebugMode) {
         print('User cancel request $url.');
@@ -422,108 +454,79 @@ class CustomExtendedNetworkImageProvider
         print(e);
       }
     } finally {
-      httpClient?.close(force: true);
       await chunkEvents?.close();
     }
     return null;
   }
 
-  /// Issue the HTTP request and stream the bytes into a buffer, honouring the
-  /// [cancelToken] and emitting [ImageChunkEvent] progress. Mirrors mangayomi's
-  /// `_getResponse` + `_tryGetResponse` + body-collect pipeline, but built on
-  /// `dart:io HttpClient` directly (LNStash has no Cloudflare-aware [MClient]).
-  Future<Uint8List?> _tryGetBytes(
-    HttpClient httpClient,
-    Uri resolved,
-    StreamController<ImageChunkEvent>? chunkEvents,
-  ) async {
+  /// Issues the GET request through [MClient.init] (mangayomi's `_getResponse`).
+  ///
+  /// Routes through the intercepted client so [MCookieManager] injects stored
+  /// cookies and [ResolveCloudFlareChallenge] can solve a Cloudflare 403/503
+  /// before the retry. On any non-200 the request is re-issued through a fresh
+  /// intercepted client — if the retry policy just saved a `cf_clearance`
+  /// cookie, that second attempt now carries it.
+  Future<StreamedResponse> _getResponse(Uri resolved) async {
+    final http.Request request = http.Request('GET', resolved);
+
+    // Optimize headers for better caching and compression.
+    final optimizedHeaders = {
+      ...?headers,
+      'Accept-Encoding': 'gzip, deflate, br',
+      'Accept': 'image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8',
+      'Connection': 'keep-alive',
+    };
+    request.headers.addAll(optimizedHeaders);
+
+    StreamedResponse response = await MClient.init(
+      showCloudFlareError: showCloudFlareError,
+    ).send(request);
+
+    if (response.statusCode != HttpStatus.ok) {
+      final res = await MClient.init(
+        showCloudFlareError: showCloudFlareError,
+      ).send(response.request ?? request);
+      return res;
+    }
+
+    return response;
+  }
+
+  /// Http get with cancel + exponential backoff retry (mangayomi's
+  /// `_tryGetResponse`). Retries on exceptions only; non-200 responses are
+  /// handled by [_getResponse]'s fallback re-send.
+  Future<StreamedResponse?> _tryGetResponse(Uri resolved) async {
+    cancelToken?.throwIfCancellationRequested();
+
     int attempt = 0;
     while (attempt < retries) {
-      cancelToken?.throwIfCancellationRequested();
       try {
-        final HttpClientRequest request = await httpClient.getUrl(resolved);
-        final optimizedHeaders = {
-          ...?headers,
-          'Accept-Encoding': 'gzip, deflate, br',
-          'Accept': 'image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8',
-          'Connection': 'keep-alive',
-        };
-        optimizedHeaders.forEach((k, v) => request.headers.set(k, v));
-
-        final HttpClientResponse response = await CancellationTokenSource
-            .register(
+        return await CancellationTokenSource.register(
           cancelToken,
-          request.close(),
+          _getResponse(resolved),
         );
-
-        if (response.statusCode != HttpStatus.ok) {
-          // Drain the response so the socket can be reused.
-          await response.drain<void>();
-          attempt++;
-          if (attempt >= retries) {
-            return null;
-          }
-          final backoffDelay = Duration(
-            milliseconds: timeRetry.inMilliseconds * (1 << attempt),
-          );
-          if (kDebugMode) {
-            print(
-              'Retry attempt $attempt/$retries after ${backoffDelay.inMilliseconds}ms (status ${response.statusCode})',
-            );
-          }
-          await Future.delayed(backoffDelay);
-          continue;
-        }
-
-        // Pre-allocate list if content length is known.
-        // dart:io returns -1 when Content-Length is absent (int, not int?),
-        // so normalize to 0 to match mangayomi semantics (uses the `http`
-        // package whose StreamedResponse.contentLength IS nullable).
-        final int total = response.contentLength > 0 ? response.contentLength : 0;
-        final List<int> bytes = total > 0
-            ? List<int>.filled(total, 0, growable: true)
-            : <int>[];
-        int received = 0;
-
-        await for (var chunk in response) {
-          if (total > 0 && received + chunk.length <= total) {
-            bytes.setRange(received, received + chunk.length, chunk);
-          } else {
-            bytes.addAll(chunk);
-          }
-          received += chunk.length;
-          chunkEvents?.add(
-            ImageChunkEvent(
-              cumulativeBytesLoaded: received,
-              expectedTotalBytes: total,
-            ),
-          );
-        }
-
-        if (bytes.isEmpty) {
-          return null;
-        }
-        return Uint8List.fromList(bytes);
       } catch (e) {
-        if (e is OperationCanceledError) {
-          rethrow;
-        }
         attempt++;
         if (attempt >= retries) {
           rethrow;
         }
+
+        // Exponential backoff: 100ms, 200ms, 400ms, 800ms, etc.
         final backoffDelay = Duration(
           milliseconds: timeRetry.inMilliseconds * (1 << attempt),
         );
+
         if (kDebugMode) {
           print(
-            'Retry attempt $attempt/$retries after ${backoffDelay.inMilliseconds}ms ($e)',
+            'Retry attempt $attempt/$retries after ${backoffDelay.inMilliseconds}ms',
           );
         }
+
         await Future.delayed(backoffDelay);
         cancelToken?.throwIfCancellationRequested();
       }
     }
+
     return null;
   }
 

@@ -15,6 +15,7 @@ import '../../core/models/manga_chapter.dart';
 import '../../core/providers.dart';
 import '../../core/services/keiyoushi_service.dart';
 import '../../core/utils/image_cache.dart';
+import '../../core/utils/image_headers.dart';
 import '../../router/router.dart';
 import '../../theme/app_theme.dart';
 import '../../theme/tokens/app_spacing.dart';
@@ -2061,7 +2062,7 @@ class _SortOption extends StatelessWidget {
   }
 }
 
-class _HeroSection extends StatelessWidget {
+class _HeroSection extends ConsumerWidget {
   final String title;
   final String thumb;
   final String? author;
@@ -2090,7 +2091,8 @@ class _HeroSection extends StatelessWidget {
     this.lastChapterDate = '',
   });
 
-  Widget _buildImage({required BoxFit fit, double? width, double? height}) {
+  Widget _buildImage(BuildContext context, WidgetRef ref,
+      {required BoxFit fit, double? width, double? height}) {
     if (localThumbnail != null) {
       return Image.file(
         File(localThumbnail!),
@@ -2104,8 +2106,13 @@ class _HeroSection extends StatelessWidget {
         ),
       );
     }
-        return Image(
-      image: cachedCover(thumb, width: width?.toInt(), height: height?.toInt()),
+    final headers = ref
+        .watch(sourceImageHeadersProvider(sourceId))
+        .value;
+    return Image(
+      image: cachedCover(thumb, headers: headers,
+          width: width?.toInt(),
+          height: height?.toInt()),
       width: width,
       height: height,
       fit: fit,
@@ -2118,14 +2125,14 @@ class _HeroSection extends StatelessWidget {
   }
 
   @override
-  Widget build(BuildContext context) {
-    final height = appBarHeight + 24 + 300 + 24;
+  Widget build(BuildContext context, WidgetRef ref) {
+    final height = appBarHeight + 24 + 220 + 24;
     return SizedBox(
       height: height,
         child: Stack(
           children: [
             Positioned.fill(
-              child: _buildImage(fit: BoxFit.cover),
+              child: _buildImage(context, ref, fit: BoxFit.cover),
             ),
             Positioned(
               left: 0,
@@ -2159,7 +2166,9 @@ class _HeroSection extends StatelessWidget {
                     tag: 'manga-thumbnail-$sourceId-$url',
                     child: ClipRRect(
                       borderRadius: AppSpacing.brMd,
-                      child: _buildImage(width: 160, height: 300, fit: BoxFit.cover),
+                      child: _buildImage(context, ref, width: 220,
+                          height: 220,
+                          fit: BoxFit.cover),
                     ),
                   ),
                 const SizedBox(width: 16),

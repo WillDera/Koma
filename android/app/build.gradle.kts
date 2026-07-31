@@ -45,7 +45,7 @@ android {
                 signingConfig = signingConfigs.getByName("debug")
             }
         }
-        profile {
+        getByName("profile") {
             if (file("koma-debug.keystore").exists()) {
                 signingConfig = signingConfigs.getByName("koma")
             } else {

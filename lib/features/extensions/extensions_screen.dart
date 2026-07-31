@@ -3,9 +3,9 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../core/providers.dart';
 import '../../core/models/extension_repo.dart';
 import '../../core/models/extension_source.dart';
+import '../../core/providers.dart';
 import '../../core/services/extension_icon_cache.dart';
 import '../../core/services/extension_manager.dart';
 import '../../core/services/keiyoushi_service.dart';
@@ -285,6 +285,7 @@ class _ExtensionsScreenState extends ConsumerState<ExtensionsScreen>
                       builder: (_) => SourceBrowseScreen(
                         sourceId: src.sourceId,
                         sourceName: src.name,
+                        baseUrl: src.baseUrl,
                       ),
                     ),
                   ),
