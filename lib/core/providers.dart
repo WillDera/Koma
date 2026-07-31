@@ -1,17 +1,17 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:isar_community/isar.dart';
 
+import '../eval/dispatch_service.dart';
+import '../features/library/library_provider.dart';
+import '../features/reader/reader_provider.dart';
+import '../features/snippets/snippets_provider.dart';
+import 'repositories/repositories.dart';
 import 'services/ebook_service.dart';
 import 'services/extension_manager.dart';
 import 'services/keiyoushi_service.dart';
 import 'services/search_service.dart';
 import 'services/source_service.dart';
 import 'services/stats_service.dart';
-import 'repositories/repositories.dart';
-import '../eval/dispatch_service.dart';
-import '../features/library/library_provider.dart';
-import '../features/reader/reader_provider.dart';
-import '../features/snippets/snippets_provider.dart';
 
 // themeProvider is defined in theme/theme_provider.dart and re-exported
 // from there. Import it where needed, not from this file.
@@ -68,3 +68,19 @@ final readerProvider =
 
 final snippetsProvider =
     NotifierProvider<SnippetsNotifier, SnippetsState>(SnippetsNotifier.new);
+
+/// A monotonically increasing counter bumped whenever reading progress is
+/// written (manga reader save, chapter mark-read, etc.). Screens that show
+/// reading history/progress — which live inside the StatefulShellRoute
+/// branches and therefore do not reliably receive RouteAware.didPopNext
+/// from root-level detail routes like the reader — watch this and reload
+/// when it changes. This is the real-time update channel for history.
+class HistoryRevisionNotifier extends Notifier<int> {
+  @override
+  int build() => 0;
+
+  void bump() => state++;
+}
+
+final historyRevisionProvider =
+NotifierProvider<HistoryRevisionNotifier, int>(HistoryRevisionNotifier.new);

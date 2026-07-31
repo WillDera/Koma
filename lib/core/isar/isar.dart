@@ -10,6 +10,7 @@ import 'collections/extension_source.dart';
 import 'collections/highlight.dart';
 import 'collections/manga.dart';
 import 'collections/manga_chapter.dart';
+import 'collections/manga_cookie.dart';
 import 'collections/reading_stat.dart';
 import 'collections/snippet.dart';
 import 'collections/snippet_collection.dart';
@@ -25,6 +26,7 @@ export 'collections/extension_source.dart';
 export 'collections/highlight.dart';
 export 'collections/manga.dart';
 export 'collections/manga_chapter.dart';
+export 'collections/manga_cookie.dart';
 export 'collections/reading_stat.dart';
 export 'collections/snippet.dart';
 export 'collections/snippet_collection.dart';
@@ -41,6 +43,7 @@ const List<CollectionSchema<dynamic>> komaIsarSchemas = [
   ChapterSchema,
   MangaSchema,
   MangaChapterSchema,
+  MangaCookieSchema,
   SnippetSchema,
   SnippetCollectionSchema,
   TagSchema,

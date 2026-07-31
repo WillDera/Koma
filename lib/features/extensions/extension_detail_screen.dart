@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+
 import '../../core/models/extension_source.dart';
 import '../../core/services/extension_icon_cache.dart';
 import '../../core/utils/custom_extended_image_provider.dart';
@@ -134,6 +135,7 @@ class ExtensionDetailScreen extends StatelessWidget {
                         builder: (_) => SourceBrowseScreen(
                           sourceId: source.sourceId,
                           sourceName: source.name,
+                          baseUrl: source.baseUrl,
                         ),
                       ),
                     ),

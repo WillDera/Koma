@@ -637,7 +637,7 @@ class _SnippetsScreenState extends ConsumerState<SnippetsScreen> {
           else
             ...bookmarks.map((b) =>
                 Padding(
-                  padding: const EdgeInsets.fromLTRB(20, 0, 20, 12),
+                  padding: const EdgeInsets.fromLTRB(20, 12, 20, 12),
                   child: BookmarkCard(
                     bookmark: b,
                     onTap: () => _openBookmark(context, b),
@@ -650,12 +650,12 @@ class _SnippetsScreenState extends ConsumerState<SnippetsScreen> {
   }
 
   Future<void> _openBookmark(BuildContext context, Bookmark bookmark) async {
-    if (bookmark.bookId == null) return;
+    if (bookmark.bookId <= 0) return;
     final repos = ref.read(repositoriesProvider);
     final chapter = await repos.manga.getMangaChapter(bookmark.chapterId);
     if (chapter == null || !context.mounted) return;
-    final book = await repos.books.getBook(bookmark.bookId!);
-    if (book == null) return;
+    final book = await repos.books.getBook(bookmark.bookId);
+    if (book == null || !context.mounted) return;
     context.pushNamed(
       Routes.mangaReader,
       extra: (

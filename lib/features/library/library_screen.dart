@@ -19,6 +19,7 @@ import '../../core/services/ebook_service.dart';
 import '../../core/services/web_scraper_service.dart';
 import '../../core/utils/benchmark_logger.dart';
 import '../../core/utils/image_cache.dart';
+import '../../core/utils/image_headers.dart';
 import '../../router/router.dart';
 import '../../theme/app_theme.dart';
 import '../../theme/theme_provider.dart';
@@ -997,6 +998,8 @@ class _LibraryControlsState extends State<_LibraryControls> {
     showModalBottomSheet<void>(
       context: context,
       backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      useSafeArea: true,
       builder: (context) => StatefulBuilder(
         builder: (context, setSheetState) => _LibraryFilterSheet(
           filters: filters,
@@ -1136,7 +1139,7 @@ class _LibraryFilterSheet extends StatelessWidget {
   Widget build(BuildContext context) {
     final c = context.colors;
     return Container(
-      padding: const EdgeInsets.fromLTRB(20, 10, 20, 24),
+      padding: const EdgeInsets.fromLTRB(20, 10, 20, 32),
       decoration: BoxDecoration(
         color: c.surface,
         borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
@@ -1569,7 +1572,7 @@ class _MangaShelf extends StatelessWidget {
 
 // ── Manga library cards ────────────────────────────────────────────────
 
-class _MangaLibraryCard extends StatelessWidget {
+class _MangaLibraryCard extends ConsumerWidget {
   final Manga manga;
   final VoidCallback onTap;
   final String? localImagePath;
@@ -1593,8 +1596,11 @@ class _MangaLibraryCard extends StatelessWidget {
   });
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final c = context.colors;
+    final headers = ref
+        .watch(sourceImageHeadersProvider(manga.sourceId))
+        .value;
     if (variant == LibraryCardVariant.overlay) {
       return AnimatedPress(
         onTap: onTap,
@@ -1614,7 +1620,7 @@ class _MangaLibraryCard extends StatelessWidget {
                       )
                     : manga.imageUrl != null && manga.imageUrl!.isNotEmpty
                         ? Image(
-                            image: cachedCover(manga.imageUrl!),
+                  image: cachedCover(manga.imageUrl!, headers: headers),
                             width: double.infinity,
                             fit: BoxFit.cover,
                             errorBuilder: (_, __, ___) => _placeholder(c),
@@ -1730,7 +1736,7 @@ class _MangaLibraryCard extends StatelessWidget {
                           )
                         : manga.imageUrl != null && manga.imageUrl!.isNotEmpty
                             ? Image(
-                                image: cachedCover(manga.imageUrl!),
+                      image: cachedCover(manga.imageUrl!, headers: headers),
                                 width: double.infinity,
                                 fit: BoxFit.cover,
                                 errorBuilder: (_, __, ___) => _placeholder(c),
@@ -1805,7 +1811,7 @@ class _MangaLibraryCard extends StatelessWidget {
   );
 }
 
-class _MangaLibraryRow extends StatelessWidget {
+class _MangaLibraryRow extends ConsumerWidget {
   final Manga manga;
   final VoidCallback onTap;
   final String? localImagePath;
@@ -1827,8 +1833,11 @@ class _MangaLibraryRow extends StatelessWidget {
   });
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final c = context.colors;
+    final headers = ref
+        .watch(sourceImageHeadersProvider(manga.sourceId))
+        .value;
     return Padding(
       padding: const EdgeInsets.only(bottom: 4),
       child: AnimatedPress(
@@ -1866,7 +1875,9 @@ class _MangaLibraryRow extends StatelessWidget {
                           )
                         : manga.imageUrl != null && manga.imageUrl!.isNotEmpty
                             ? Image(
-                                image: cachedCover(manga.imageUrl!, width: 48, height: 64),
+                      image: cachedCover(manga.imageUrl!, headers: headers,
+                          width: 48,
+                          height: 64),
                                 width: 48,
                                 height: 64,
                                 fit: BoxFit.cover,
