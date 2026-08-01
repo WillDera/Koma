@@ -1,11 +1,13 @@
 import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+
+import '../../core/services/system_font_service.dart';
 import 'app_theme.dart';
 import 'theme_state.dart';
 import 'tokens/app_type.dart';
-import '../../core/services/system_font_service.dart';
 
 export 'theme_state.dart';
 
@@ -39,6 +41,7 @@ class ThemeNotifier extends Notifier<ThemeState> {
   static const _keyAmoledMode = 'amoled_mode';
   static const _keyShowNsfwExtensions = 'show_nsfw_extensions';
   static const _keyShowObsoleteExtensions = 'show_obsolete_extensions';
+  static const _keyImmersiveAutoHide = 'immersive_auto_hide';
 
   @override
   ThemeState build() {
@@ -72,6 +75,7 @@ class ThemeNotifier extends Notifier<ThemeState> {
       amoledMode: prefs.getBool(_keyAmoledMode) ?? false,
       showNsfwExtensions: prefs.getBool(_keyShowNsfwExtensions) ?? false,
       showObsoleteExtensions: prefs.getBool(_keyShowObsoleteExtensions) ?? false,
+      immersiveAutoHide: prefs.getBool(_keyImmersiveAutoHide) ?? false,
     );
     if (state.useDeviceFont) {
       unawaited(_resolveSystemFont());
@@ -259,6 +263,12 @@ class ThemeNotifier extends Notifier<ThemeState> {
     state = state.copyWith(showObsoleteExtensions: value);
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool(_keyShowObsoleteExtensions, value);
+  }
+
+  Future<void> setImmersiveAutoHide(bool value) async {
+    state = state.copyWith(immersiveAutoHide: value);
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_keyImmersiveAutoHide, value);
   }
 
   void toggleTheme() {

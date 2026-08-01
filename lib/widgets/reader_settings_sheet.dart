@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+
 import '../theme/app_theme.dart';
 import '../theme/theme_provider.dart';
 import '../theme/tokens/app_spacing.dart';
@@ -247,6 +248,13 @@ class _ReaderSettingsSheetState extends ConsumerState<ReaderSettingsSheet> {
           subtitle: 'Bold first half of each word',
           value: p.bionicReading,
           onChanged: (v) => tn.setBionicReading(v),
+        ),
+        const SizedBox(height: 16),
+        _ToggleRow(
+          title: 'Immersive auto-hide',
+          subtitle: 'Hide UI after 3 seconds of inactivity',
+          value: p.immersiveAutoHide,
+          onChanged: (v) => tn.setImmersiveAutoHide(v),
         ),
       ],
     );

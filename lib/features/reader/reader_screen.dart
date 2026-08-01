@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:math';
 
 import 'package:flutter/material.dart';
@@ -15,7 +16,7 @@ import '../../theme/tokens/app_motion.dart';
 import '../../theme/tokens/app_spacing.dart';
 import '../../theme/tokens/app_type.dart';
 import '../../widgets/bionic_text.dart';
-import '../../widgets/chapter_sheet.dart';
+import '../../widgets/chapter_nav_overlay.dart';
 import '../../widgets/empty_state.dart';
 import '../../widgets/highlight_color_picker.dart';
 import '../../widgets/reader_bottom_bar.dart';
@@ -79,6 +80,9 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
   late final AnimationController _toolbarCtrl;
   late final AnimationController _colorCtrl;
 
+  Timer? _uiHideTimer;
+  static const _autoHideDelay = Duration(seconds: 3);
+
   @override
   void initState() {
     super.initState();
@@ -98,6 +102,46 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
     Future.delayed(AppMotion.sheet, () {
       if (mounted) setState(() => _lastSwipeDirection = _SwipeDirection.none);
     });
+  }
+
+  void _cancelUiHideTimer() {
+    _uiHideTimer?.cancel();
+    _uiHideTimer = null;
+  }
+
+  void _resetUiHideTimer() {
+    _cancelUiHideTimer();
+    if (!_showUI) {
+      setState(() => _showUI = true);
+    }
+    _applySystemUiMode();
+    if (ref
+        .read(themeProvider)
+        .immersiveAutoHide &&
+        !_toolbarVisible &&
+        !_colorPickerVisible &&
+        !(_ttsProvider?.isActive ?? false)) {
+      _uiHideTimer = Timer(_autoHideDelay, () {
+        if (mounted &&
+            !_toolbarVisible &&
+            !_colorPickerVisible &&
+            !(_ttsProvider?.isActive ?? false)) {
+          setState(() => _showUI = false);
+          _applySystemUiMode();
+        }
+      });
+    }
+  }
+
+  void _applySystemUiMode() {
+    if (!mounted) return;
+    final showSystemUi = _showUI ||
+        _toolbarVisible ||
+        _colorPickerVisible ||
+        (_ttsProvider?.isActive ?? false);
+    SystemChrome.setEnabledSystemUIMode(
+      showSystemUi ? SystemUiMode.edgeToEdge : SystemUiMode.immersiveSticky,
+    );
   }
 
   @override
@@ -179,6 +223,7 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       setState(() {});
+      _applySystemUiMode();
       _scrollToTtsSentence();
       _autoAdvanceChapterOnTtsEnd();
     });
@@ -222,6 +267,7 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
 
   @override
   void dispose() {
+    _cancelUiHideTimer();
     if (!_didHandleBack) _provider?.stopReadingTimer();
     _ttsProvider?.removeListener(_onTtsChanged);
     _ttsProvider?.dispose();
@@ -250,6 +296,7 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
       }
       HapticFeedback.lightImpact();
       _scheduleDirectionReset();
+      _resetUiHideTimer();
     } else if (velocity > 500) {
       _lastSwipeDirection = _SwipeDirection.previous;
       _provider?.goToPreviousChapter();
@@ -261,6 +308,7 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
       }
       HapticFeedback.lightImpact();
       _scheduleDirectionReset();
+      _resetUiHideTimer();
     }
 
     _dragStartX = null;
@@ -282,7 +330,11 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
         }
         _lastScrollOffset = currentOffset;
       } else if (diff < -4 || currentOffset <= 0) {
-        if (!_showUI) setState(() => _showUI = true);
+        if (!_showUI) {
+          setState(() => _showUI = true);
+          _resetUiHideTimer();
+        }
+        _applySystemUiMode();
         _lastScrollOffset = currentOffset;
       }
     }
@@ -293,6 +345,7 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
     if (!mounted) return;
     if (_toolbarVisible) {
       _hideToolbar();
+      _resetUiHideTimer();
       return;
     }
     final RenderBox renderBox = context.findRenderObject()! as RenderBox;
@@ -309,6 +362,7 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
           _showUI = true;
         });
         _scheduleDirectionReset();
+        _resetUiHideTimer();
         return;
       } else if (localPos.dx > 2 * screenWidth / 3) {
         _lastSwipeDirection = _SwipeDirection.next;
@@ -318,17 +372,21 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
           _showUI = true;
         });
         _scheduleDirectionReset();
+        _resetUiHideTimer();
         return;
       }
     }
-    setState(() => _showUI = !_showUI);
+    // Middle tap: force show UI (not toggle).
+    _resetUiHideTimer();
   }
 
   void _showToolbar(Offset origin) {
+    _cancelUiHideTimer();
     setState(() {
       _toolbarVisible = true;
       _selectionOrigin = origin;
     });
+    _applySystemUiMode();
     _toolbarCtrl.forward(from: 0);
   }
 
@@ -338,10 +396,14 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
       _toolbarVisible = false;
       _colorPickerVisible = false;
     });
+    _applySystemUiMode();
+    _resetUiHideTimer();
   }
 
   void _showColorPicker() {
+    _cancelUiHideTimer();
     setState(() => _colorPickerVisible = true);
+    _applySystemUiMode();
     _colorCtrl.forward(from: 0);
   }
 
@@ -398,12 +460,13 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
             ),
             body: Stack(
               children: [
-                GestureDetector(
-                  onTapUp: _handleTapUp,
-                  onHorizontalDragStart: _onHorizontalDragStart,
-                  onHorizontalDragEnd: _onHorizontalDragEnd,
-                  behavior: HitTestBehavior.opaque,
-                  child: NotificationListener<ScrollStartNotification>(
+                Positioned.fill(
+                  child: GestureDetector(
+                    onTapUp: _handleTapUp,
+                    onHorizontalDragStart: _onHorizontalDragStart,
+                    onHorizontalDragEnd: _onHorizontalDragEnd,
+                    behavior: HitTestBehavior.opaque,
+                    child: NotificationListener<ScrollStartNotification>(
                     onNotification: (notification) {
                       if (_toolbarVisible) {
                         _hideToolbar();
@@ -503,7 +566,7 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
                                     );
                                   } else if (selection.isValid &&
                                       selection.isCollapsed) {
-                                    setState(() => _showUI = !_showUI);
+                                    _resetUiHideTimer();
                                   }
                                 },
                               ),
@@ -518,6 +581,7 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
                   ),                                // NotificationListener<ScrollUpdateNotification>
                 ),                                  // NotificationListener<ScrollStartNotification>
               ),                                    // GestureDetector
+                ), // Positioned.fill
 
                 // Top bar
                 Positioned(
@@ -983,9 +1047,8 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
 
   void _openChapters(BuildContext context, ReaderNotifier provider) {
     if (provider.chapters.length <= 1) return;
-    ChapterSheet.show(
+    ChapterNavOverlay.show(
       context,
-      bookTitle: provider.book?.title ?? '',
       chapters: provider.chapters,
       currentIndex: provider.currentIndex,
       onSelect: (i) {
@@ -995,6 +1058,8 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
           _showUI = true;
         });
       },
+      onPrevious: () => provider.goToPreviousChapter(),
+      onNext: () => provider.goToNextChapter(),
     );
   }
 }

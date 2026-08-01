@@ -17,8 +17,10 @@ import '../../core/services/keiyoushi_service.dart';
 import '../../core/utils/image_cache.dart';
 import '../../core/utils/image_headers.dart';
 import '../../router/router.dart';
+import '../../theme/app_icons.dart';
 import '../../theme/app_theme.dart';
 import '../../theme/tokens/app_spacing.dart';
+import '../../theme/tokens/app_type.dart';
 import '../../widgets/animated_press.dart';
 import '../../widgets/icon_button_round.dart';
 import 'manga_detail_providers.dart';
@@ -1687,7 +1689,9 @@ class _HeaderState extends State<_Header> {
                     ],
                     if (widget.lastChapterDate.isNotEmpty) ...[
                       const SizedBox(width: 8),
-                      Icon(Icons.calendar_today_outlined, size: 11, color: widget.c.textTertiary),
+                      AppIcon(data: AppIcons.calendar,
+                          size: 11,
+                          color: widget.c.textTertiary),
                       const SizedBox(width: 4),
                       Text(
                         widget.lastChapterDate,
@@ -1714,11 +1718,8 @@ class _HeaderState extends State<_Header> {
                   children: [
                     Text(
                       'Description',
-                      style: TextStyle(
-                        color: widget.c.textPrimary,
-                        fontSize: 14,
-                        fontWeight: FontWeight.w600,
-                      ),
+                      style: AppType.labelCaps(
+                          fontSize: 12, color: widget.c.textPrimary),
                     ),
                     TextButton(
                       onPressed: () => widget.onExpandedChanged(!widget.expanded),
@@ -1729,11 +1730,8 @@ class _HeaderState extends State<_Header> {
                       ),
                       child: Text(
                         widget.expanded ? 'READ LESS' : 'READ MORE',
-                        style: TextStyle(
-                          color: widget.c.accent,
-                          fontSize: 12,
-                          fontWeight: FontWeight.w600,
-                        ),
+                        style: AppType.labelCaps(
+                            fontSize: 12, color: widget.c.accent),
                       ),
                     ),
                   ],
@@ -1758,11 +1756,8 @@ class _HeaderState extends State<_Header> {
               children: [
                 Text(
                   'Tags',
-                  style: TextStyle(
-                    color: widget.c.textPrimary,
-                    fontSize: 14,
-                    fontWeight: FontWeight.w600,
-                  ),
+                  style: AppType.labelCaps(
+                      fontSize: 12, color: widget.c.textPrimary),
                 ),
                 const SizedBox(height: 8),
                 SingleChildScrollView(
@@ -1900,7 +1895,7 @@ Widget _detailInfoRow(KomaColors c, String label, String value) {
         children: [
           TextSpan(
             text: '$label: ',
-            style: TextStyle(color: c.textTertiary, fontSize: 12),
+            style: AppType.labelCaps(fontSize: 12, color: c.textTertiary),
           ),
           TextSpan(
             text: value,
@@ -2151,7 +2146,7 @@ class _HeroSection extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final height = appBarHeight + 24 + 220 + 24;
+    final height = appBarHeight + 24 + 240 + 24;
     return SizedBox(
       height: height,
         child: Stack(
@@ -2191,8 +2186,8 @@ class _HeroSection extends ConsumerWidget {
                     tag: 'manga-thumbnail-$sourceId-$url',
                     child: ClipRRect(
                       borderRadius: AppSpacing.brMd,
-                      child: _buildImage(context, ref, width: 220,
-                          height: 220,
+                      child: _buildImage(context, ref, width: 160,
+                          height: 240,
                           fit: BoxFit.cover),
                     ),
                   ),
@@ -2263,7 +2258,9 @@ class _HeroSection extends ConsumerWidget {
                             Row(
                               mainAxisSize: MainAxisSize.min,
                               children: [
-                                Icon(Icons.calendar_today_outlined, size: 11, color: Colors.white54),
+                                AppIcon(data: AppIcons.calendar,
+                                    size: 11,
+                                    color: Colors.white54),
                                 const SizedBox(width: 4),
                                 Text(
                                   lastChapterDate,
