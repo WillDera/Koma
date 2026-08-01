@@ -602,7 +602,9 @@ class _MangaGridCard extends StatelessWidget {
                             child: thumb != null && thumb.isNotEmpty
                   ? Image(
                               image: CustomExtendedNetworkImageProvider(
-                                  thumb, headers: headers),
+                                  thumb,
+                                  headers: headers,
+                                  showCloudFlareError: true),
                       width: double.infinity,
                       fit: BoxFit.cover,
                       errorBuilder: (_, _, _) => _placeholder(c),
