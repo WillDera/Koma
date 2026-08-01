@@ -160,16 +160,7 @@ class FeaturePanel extends StatelessWidget {
             Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Container(
-                  width: 44,
-                  height: 44,
-                  decoration: BoxDecoration(
-                    color: c.accent.withValues(alpha: 0.14),
-                    borderRadius: AppSpacing.brMd,
-                    border: Border.all(color: c.accent.withValues(alpha: 0.22)),
-                  ),
-                  child: AppIcon(data: icon, color: c.accent, size: 22),
-                ),
+                AppIcon(data: icon, color: c.accent, size: 44),
                 const SizedBox(width: 14),
                 Expanded(
                   child: Column(
