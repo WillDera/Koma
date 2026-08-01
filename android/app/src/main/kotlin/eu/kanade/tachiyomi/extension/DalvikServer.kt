@@ -90,6 +90,7 @@ class DalvikServer(
         File(context.cacheDir, "dex-extensions").also { it.mkdirs() }
     }
 
+    @Synchronized
     fun start(): Int {
         if (isRunning) return _port
         ensureInjekt()

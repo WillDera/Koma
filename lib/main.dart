@@ -7,14 +7,17 @@ import 'package:flutter_native_splash/flutter_native_splash.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
+import 'package:workmanager/workmanager.dart';
 
 import 'app.dart';
 import 'core/isar/isar.dart';
 import 'core/providers.dart';
 import 'core/repositories/repositories.dart';
+import 'core/services/background_task.dart';
 import 'core/services/extension_manager.dart';
 import 'core/services/http/m_client.dart';
 import 'core/services/keiyoushi_service.dart';
+import 'core/services/notification_service.dart';
 import 'core/services/stats_service.dart';
 import 'theme/theme_provider.dart';
 
@@ -29,6 +32,12 @@ void main() {
   runZonedGuarded(() async {
     final widgetsBinding = WidgetsFlutterBinding.ensureInitialized();
     FlutterNativeSplash.preserve(widgetsBinding: widgetsBinding);
+
+    // WorkManager periodic polling (library updates). Initialized once so the
+    // native side can wake the Dart callback in a background isolate.
+    unawaited(Workmanager().initialize(backgroundCallbackDispatcher));
+    // System notifications (library + extension updates).
+    unawaited(NotificationService.instance.init());
 
     final isar = await openIsar();
       final repos = Repositories(isar);
@@ -94,6 +103,10 @@ void main() {
     unawaited(_checkExtensionUpdates(extensionManager).then((_) async {
       try {
         await container.read(extensionUpdateCountProvider.notifier).refresh();
+        final count = container.read(extensionUpdateCountProvider);
+        if (count > 0) {
+          await NotificationService.instance.notifyExtensionUpdates(count);
+        }
       } catch (_) {}
     }));
   }, (error, stack) {

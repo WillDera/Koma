@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
+import 'package:shared_preferences/shared_preferences.dart';
 
 class KeiyoushiService {
   static const _channel = MethodChannel('eu.kanade.tachiyomi/keiyoushi');
@@ -11,8 +12,25 @@ class KeiyoushiService {
 
   Future<void> init() async {
     if (_initialized) return;
-    final port = await _channel.invokeMethod<int>('getDalvikPort');
-    if (port == null || port <= 0) {
+    // Primary path: the MainActivity engine exposes getDalvikPort. Background
+    // isolates (WorkManager) run on a separate engine with no such handler,
+    // so we fall back to the port persisted by DalvikRuntimeManager into
+    // Flutter's shared_preferences store.
+    int port = 0;
+    try {
+      port = await _channel.invokeMethod<int>('getDalvikPort') ?? 0;
+    } catch (_) {
+      port = 0;
+    }
+    if (port <= 0) {
+      try {
+        final prefs = await SharedPreferences.getInstance();
+        port = prefs.getInt('dalvik_port') ?? 0;
+      } catch (_) {
+        port = 0;
+      }
+    }
+    if (port <= 0) {
       throw Exception('Failed to get Dalvik server port');
     }
     _baseUrl = 'http://127.0.0.1:$port/dalvik';
