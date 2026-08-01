@@ -13,6 +13,11 @@ class MangaChapter {
   final bool isOpened;
   final DateTime? readAt;
 
+  /// Raw JSON of the source-side `SChapter.memo` — round-tripped back to the
+  /// Dalvik server so `getPageList` can resolve image URLs for sources that
+  /// derive them from memo (e.g. allanime).
+  final String? memo;
+
   MangaChapter({
     required this.id,
     required this.mangaId,
@@ -27,6 +32,7 @@ class MangaChapter {
     this.isDownloaded = false,
     this.isOpened = false,
     this.readAt,
+    this.memo,
   });
 
   MangaChapter copyWith({
@@ -43,6 +49,7 @@ class MangaChapter {
     bool? isDownloaded,
     bool? isOpened,
     DateTime? readAt,
+    String? memo,
   }) {
     return MangaChapter(
       id: id ?? this.id,
@@ -58,6 +65,7 @@ class MangaChapter {
       isDownloaded: isDownloaded ?? this.isDownloaded,
       isOpened: isOpened ?? this.isOpened,
       readAt: readAt ?? this.readAt,
+      memo: memo ?? this.memo,
     );
   }
 
@@ -75,7 +83,8 @@ class MangaChapter {
         'is_downloaded': isDownloaded ? 1 : 0,
         'is_opened': isOpened ? 1 : 0,
         'read_at': readAt?.toIso8601String(),
-      };
+    'memo': memo,
+  };
 
   factory MangaChapter.fromJson(Map<String, dynamic> json) => MangaChapter(
         id: json['id'] as int? ?? 0,
@@ -91,5 +100,6 @@ class MangaChapter {
         isDownloaded: (json['is_downloaded'] as int? ?? 0) == 1,
         isOpened: (json['is_opened'] as int? ?? 0) == 1,
         readAt: json['read_at'] != null ? DateTime.parse(json['read_at'] as String) : null,
-      );
+    memo: json['memo'] as String?,
+  );
 }

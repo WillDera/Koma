@@ -37,6 +37,12 @@ class MangaChapter {
 
   DateTime? readAt;
 
+  /// Raw JSON of the source-side `SChapter.memo` (e.g. allanime
+  /// `{"mangaId":..., "mangaSlug":...}`). Opaque to the UI — round-tripped
+  /// back to the Dalvik server so `getPageList` can resolve image URLs for
+  /// sources that derive them from memo.
+  String? memo;
+
   MangaChapter({
     this.id = Isar.autoIncrement,
     required this.mangaId,
@@ -51,6 +57,7 @@ class MangaChapter {
     this.isDownloaded = false,
     this.isOpened = false,
     this.readAt,
+    this.memo,
   });
 
   Map<String, dynamic> toJson() => {
@@ -67,7 +74,8 @@ class MangaChapter {
         'is_downloaded': isDownloaded ? 1 : 0,
         'is_opened': isOpened ? 1 : 0,
         'read_at': readAt?.toIso8601String(),
-      };
+    'memo': memo,
+  };
 
   factory MangaChapter.fromJson(Map<String, dynamic> json) => MangaChapter(
         id: json['id'] as int?,
@@ -85,5 +93,6 @@ class MangaChapter {
         readAt: json['read_at'] != null
             ? DateTime.parse(json['read_at'] as String)
             : null,
-      );
+    memo: json['memo'] as String?,
+  );
 }

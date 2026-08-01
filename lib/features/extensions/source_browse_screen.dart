@@ -440,6 +440,7 @@ class _SourceBrowseScreenState extends ConsumerState<SourceBrowseScreen>
                                   url: m.url,
                                   title: m.title,
                                   manga: existing,
+                                  memo: m.memo,
                                 ),
                               ),
                             );
@@ -467,6 +468,7 @@ class _SourceBrowseScreenState extends ConsumerState<SourceBrowseScreen>
                                 url: m.url,
                                 title: m.title,
                                 manga: manga.copyWith(id: id),
+                                memo: m.memo,
                               ),
                             ),
                           );
@@ -529,6 +531,7 @@ class _SourceBrowseScreenState extends ConsumerState<SourceBrowseScreen>
                     url: m.url,
                     title: m.title,
                     manga: existing,
+                    memo: m.memo,
                   ),
                 ),
               );
@@ -556,6 +559,7 @@ class _SourceBrowseScreenState extends ConsumerState<SourceBrowseScreen>
                   url: m.url,
                   title: m.title,
                   manga: manga.copyWith(id: id),
+                  memo: m.memo,
                 ),
               ),
             );

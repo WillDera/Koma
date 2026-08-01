@@ -1,6 +1,7 @@
 import 'dart:convert';
-import 'package:http/http.dart' as http;
+
 import 'package:flutter/services.dart';
+import 'package:http/http.dart' as http;
 
 class KeiyoushiService {
   static const _channel = MethodChannel('eu.kanade.tachiyomi/keiyoushi');
@@ -124,11 +125,16 @@ class KeiyoushiService {
   }
 
   Future<({Map<String, dynamic> details, List<Map<String, dynamic>> chapters})>
-      getMangaUpdate({required String sourceId, required String url}) async {
+  getMangaUpdate({
+    required String sourceId,
+    required String url,
+    String? memo,
+  }) async {
     final res = await _post({
       'method': 'getMangaUpdate',
       'sourceId': sourceId,
       'url': url,
+      if (memo != null) 'memo': memo,
     });
     final Map<String, dynamic> raw = res is Map ? Map<String, dynamic>.from(res) : <String, dynamic>{};
     final details = Map<String, dynamic>.from(raw['manga'] ?? {});
@@ -142,11 +148,13 @@ class KeiyoushiService {
   Future<Map<String, dynamic>> getMangaDetails({
     required String sourceId,
     required String url,
+    String? memo,
   }) async {
     final res = await _post({
       'method': 'getMangaDetails',
       'sourceId': sourceId,
       'url': url,
+      if (memo != null) 'memo': memo,
     });
     if (res is! Map) return {};
     if (res.containsKey('error')) return {};
@@ -156,11 +164,13 @@ class KeiyoushiService {
   Future<List<Map<String, dynamic>>> getChapterList({
     required String sourceId,
     required String url,
+    String? memo,
   }) async {
     final res = await _post({
       'method': 'getChapterList',
       'sourceId': sourceId,
       'url': url,
+      if (memo != null) 'memo': memo,
     });
     if (res is! List) return [];
     return res
@@ -185,11 +195,13 @@ class KeiyoushiService {
   Future<List<Map<String, dynamic>>> getPageList({
     required String sourceId,
     required String url,
+    String? memo,
   }) async {
     final res = await _post({
       'method': 'getPageList',
       'sourceId': sourceId,
       'url': url,
+      if (memo != null) 'memo': memo,
     });
     if (res is! List) return [];
     return res.cast<Map<String, dynamic>>();
@@ -202,12 +214,14 @@ class KeiyoushiService {
   }) async {
     final urls = chapters.map((ch) => ch['url'] as String? ?? '').toList();
     final names = chapters.map((ch) => ch['name'] as String? ?? '').toList();
+    final memos = chapters.map((ch) => ch['memo'] as String? ?? '').toList();
     final res = await _post({
       'method': 'downloadChapters',
       'sourceId': sourceId,
       'mangaUrl': mangaUrl,
       'chapterUrls': urls,
       'chapterNames': names,
+      'chapterMemos': memos,
     });
     if (res is! Map) return {};
     return res.map((k, v) => MapEntry(k, (v as List).cast<String>()));

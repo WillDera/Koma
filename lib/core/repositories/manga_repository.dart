@@ -285,6 +285,7 @@ class MangaRepository {
         isDownloaded: c.isDownloaded,
         isOpened: c.isOpened,
         readAt: c.readAt,
+    memo: c.memo,
       );
 
   static i.MangaChapter _chapterFromModel(MangaChapter c) => i.MangaChapter(
@@ -301,6 +302,7 @@ class MangaRepository {
         isDownloaded: c.isDownloaded,
         isOpened: c.isOpened,
         readAt: c.readAt,
+    memo: c.memo,
       );
 }
 
