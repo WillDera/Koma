@@ -65,6 +65,24 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> with RouteAware {
       ref.read(libraryProvider.notifier).loadBooks();
       _loadThumbnails();
     });
+    // In-app notification when an auto poll discovers new chapters. Cleared
+    // by checkForNewChapters' loadBooks rebuild; a system notification is
+    // deferred to the infra task (workmanager + flutter_local_notifications).
+    ref.listenManual(libraryUpdateResultProvider, (prev, next) {
+      if (next == null || next.totalNew == 0) return;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        StashToast.show(
+          context,
+          message:
+          '${next.totalNew} new chapter${next.totalNew == 1
+              ? ''
+              : 's'} in ${next.updatedNames.length} manga',
+          icon: Icons.auto_awesome,
+          duration: const Duration(seconds: 3),
+        );
+      });
+    });
   }
 
   Future<void> _loadThumbnails() async {
@@ -1520,13 +1538,15 @@ class _MangaShelf extends StatelessWidget {
               index: i + 1,
               child: _MangaLibraryCard(
                 manga: manga,
+                newChapterCount: provider.newChapters[manga.id] ?? 0,
                 localImagePath: mangaThumbnails[manga.id],
                 selected: provider.selectedIds.contains('m:${manga.id}'),
                 selectionMode: provider.selectionMode,
                 extensionName: extensionNames[manga.sourceId] ?? manga.sourceId,
                 showSourcePills: showSourcePills,
                 variant: provider.cardVariant,
-                onTap: () => provider.selectionMode
+                onTap: () =>
+                provider.selectionMode
                     ? notifier.toggleSelection('m:${manga.id}')
                     : onOpen(manga),
                 onLongPress: () => notifier.toggleSelection('m:${manga.id}'),
@@ -1551,6 +1571,7 @@ class _MangaShelf extends StatelessWidget {
           index: i + 1,
           child: _MangaLibraryRow(
             manga: manga,
+            newChapterCount: provider.newChapters[manga.id] ?? 0,
             localImagePath: mangaThumbnails[manga.id],
             selected: provider.selectedIds.contains('m:${manga.id}'),
             selectionMode: provider.selectionMode,
@@ -1582,6 +1603,7 @@ class _MangaLibraryCard extends ConsumerWidget {
   final String? extensionName;
   final bool showSourcePills;
   final LibraryCardVariant variant;
+  final int newChapterCount;
 
   const _MangaLibraryCard({
     required this.manga,
@@ -1593,6 +1615,7 @@ class _MangaLibraryCard extends ConsumerWidget {
     this.extensionName,
     this.showSourcePills = true,
     this.variant = LibraryCardVariant.grid,
+    this.newChapterCount = 0,
   });
 
   @override
@@ -1662,6 +1685,12 @@ class _MangaLibraryCard extends ConsumerWidget {
                       ),
                     ),
                   ),
+                ),
+              if (newChapterCount > 0)
+                Positioned(
+                  top: 6,
+                  right: 6,
+                  child: _NewChapterBadge(count: newChapterCount),
                 ),
               if (selectionMode)
                 Positioned(
@@ -1763,6 +1792,12 @@ class _MangaLibraryCard extends ConsumerWidget {
                          ),
                        ),
                      ),
+                  if (newChapterCount > 0)
+                    Positioned(
+                      top: 6,
+                      right: 6,
+                      child: _NewChapterBadge(count: newChapterCount),
+                    ),
                    if (selectionMode)
                      Positioned(
                        top: 8,
@@ -1820,6 +1855,7 @@ class _MangaLibraryRow extends ConsumerWidget {
   final VoidCallback? onLongPress;
   final String? extensionName;
   final bool showSourcePills;
+  final int newChapterCount;
 
   const _MangaLibraryRow({
     required this.manga,
@@ -1830,6 +1866,7 @@ class _MangaLibraryRow extends ConsumerWidget {
     this.onLongPress,
     this.extensionName,
     this.showSourcePills = true,
+    this.newChapterCount = 0,
   });
 
   @override
@@ -1890,7 +1927,8 @@ class _MangaLibraryRow extends ConsumerWidget {
                       top: 2,
                       left: 2,
                       child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 4, vertical: 1),
                         decoration: BoxDecoration(
                           color: Colors.black.withValues(alpha: 0.7),
                           borderRadius: AppSpacing.brPill,
@@ -1904,6 +1942,13 @@ class _MangaLibraryRow extends ConsumerWidget {
                           ),
                         ),
                       ),
+                    ),
+                  if (newChapterCount > 0)
+                    Positioned(
+                      bottom: 2,
+                      right: 2,
+                      child: _NewChapterBadge(
+                          count: newChapterCount, small: true),
                     ),
                 ],
               ),
@@ -1950,4 +1995,47 @@ class _MangaLibraryRow extends ConsumerWidget {
       child: Icon(Icons.image_outlined, size: 24, color: c.textTertiary),
     ),
   );
+}
+
+/// Accent "N" pill shown on library manga cards when a poll has discovered
+/// chapters that haven't been opened yet.
+class _NewChapterBadge extends StatelessWidget {
+  final int count;
+  final bool small;
+
+  const _NewChapterBadge({required this.count, this.small = false});
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.colors;
+    return Container(
+      padding: EdgeInsets.symmetric(
+        horizontal: small ? 5 : 7,
+        vertical: small ? 1 : 2,
+      ),
+      decoration: BoxDecoration(
+        color: c.accent,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(
+          color: Colors.white.withValues(alpha: 0.6),
+          width: 0.8,
+        ),
+        boxShadow: const [
+          BoxShadow(
+            color: Colors.black45,
+            blurRadius: 4,
+            offset: Offset(0, 1),
+          ),
+        ],
+      ),
+      child: Text(
+        '$count',
+        style: TextStyle(
+          color: c.onAccent,
+          fontSize: small ? 9 : 11,
+          fontWeight: FontWeight.bold,
+        ),
+      ),
+    );
+  }
 }

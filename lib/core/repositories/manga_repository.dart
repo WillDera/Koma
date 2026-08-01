@@ -151,6 +151,44 @@ class MangaRepository {
         .putAll(chapters.map(_chapterFromModel).toList()));
   }
 
+  /// Insert only the chapters whose URL is not already persisted, keeping
+  /// existing rows (and their read/download/open state) untouched. Returns
+  /// the newly added chapters — these are "new" (`isOpened == false`) and
+  /// drive the library badge. Used by the library chapter poller.
+  Future<List<MangaChapter>> mergeNewChapters(int mangaId,
+      List<MangaChapter> incoming) async {
+    final existing = await getMangaChapters(mangaId);
+    final existingUrls = <String>{
+      for (final c in existing)
+        if (c.url.isNotEmpty) c.url.trim(),
+    };
+    final fresh = incoming
+        .where((c) => !existingUrls.contains(c.url.trim()))
+        .toList(growable: false);
+    if (fresh.isNotEmpty) {
+      await _isar.writeTxn(() =>
+          _isar.mangaChapters
+              .putAll(fresh.map(_chapterFromModel).toList()));
+    }
+    return fresh;
+  }
+
+  /// mangaId → count of chapters that have never been opened. A chapter is
+  /// "new" when `isOpened == false`; the reader flips it on first open, which
+  /// clears the library badge (mangayomi first-open parity).
+  Future<Map<int, int>> countNewChaptersByManga() async {
+    final rows = await _isar.mangaChapters
+        .filter()
+        .isOpenedEqualTo(false)
+        .findAll();
+    final map = <int, int>{};
+    for (final r in rows) {
+      final mangaId = r.mangaId;
+      map[mangaId] = (map[mangaId] ?? 0) + 1;
+    }
+    return map;
+  }
+
   Future<void> deleteMangaChapters(int mangaId) async {
     await _isar.writeTxn(
         () => _isar.mangaChapters.where().mangaIdEqualTo(mangaId).deleteAll());
