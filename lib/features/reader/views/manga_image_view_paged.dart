@@ -104,6 +104,7 @@ class MangaImageViewPaged extends StatelessWidget {
         headers: page.headers,
         cacheMaxAge: const Duration(days: 7),
         imageCacheFolderName: 'cacheimagemanga',
+        showCloudFlareError: true,
       );
       resolvedFilePath = null;
     } else {
@@ -173,6 +174,19 @@ class ReaderTapZones extends StatelessWidget {
                     onTap: next,
                     onLongPress: props.onLongPress,
                     behavior: HitTestBehavior.translucent,
+                  ),
+                ),
+              ),
+              // Center tap region to toggle the toolbar/overview so the
+              // L/T/R/B layout never fully locks the user out of settings.
+              Center(
+                child: GestureDetector(
+                  onTap: props.onToggleToolbar,
+                  onLongPress: props.onLongPress,
+                  behavior: HitTestBehavior.translucent,
+                  child: SizedBox(
+                    width: constraints.maxWidth * 0.34,
+                    height: constraints.maxHeight * 0.34,
                   ),
                 ),
               ),

@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/models/manga.dart';
 import '../../core/providers.dart';
 import '../../core/utils/custom_extended_image_provider.dart';
+import '../../core/utils/image_headers.dart';
 import '../../eval/dispatch_service.dart';
 import '../../eval/models/filter_list.dart';
 import '../../eval/models/m_manga.dart';
@@ -18,11 +19,13 @@ import 'manga_detail_screen.dart';
 class SourceBrowseScreen extends ConsumerStatefulWidget {
   final String sourceId;
   final String sourceName;
+  final String? baseUrl;
 
   const SourceBrowseScreen({
     super.key,
     required this.sourceId,
     required this.sourceName,
+    this.baseUrl,
   });
 
   @override
@@ -63,7 +66,7 @@ class _SourceBrowseScreenState extends ConsumerState<SourceBrowseScreen>
       sourceId: widget.sourceId,
       name: widget.sourceName,
       lang: 'en',
-      baseUrl: '',
+      baseUrl: widget.baseUrl ?? '',
       sourceType: SourceType.mihon,
     );
     _tabCtrl = TabController(length: 2, vsync: this);
@@ -324,6 +327,9 @@ class _SourceBrowseScreenState extends ConsumerState<SourceBrowseScreen>
   @override
   Widget build(BuildContext context) {
     final c = context.colors;
+    final headers = ref.watch(
+      imageHeadersProvider(_source.baseUrl.isNotEmpty ? _source.baseUrl : null),
+    );
     return Scaffold(
       backgroundColor: c.bg,
       appBar: AppBar(
@@ -373,7 +379,7 @@ class _SourceBrowseScreenState extends ConsumerState<SourceBrowseScreen>
               ),
       ),
       body: _searchActive
-          ? _buildSearchBody(c)
+          ? _buildSearchBody(c, headers)
           : _mangas.isEmpty && !_loading && _error == null
               ? ListView(
                   children: [
@@ -417,6 +423,7 @@ class _SourceBrowseScreenState extends ConsumerState<SourceBrowseScreen>
                       final m = _mangas[i];
                       return _MangaGridCard(
                         manga: m,
+                        headers: headers,
                         onTap: () async {
                           final repos = ref.read(repositoriesProvider);
                           final existing = await repos.manga.getMangaByKey(
@@ -433,6 +440,7 @@ class _SourceBrowseScreenState extends ConsumerState<SourceBrowseScreen>
                                   url: m.url,
                                   title: m.title,
                                   manga: existing,
+                                  memo: m.memo,
                                 ),
                               ),
                             );
@@ -460,6 +468,7 @@ class _SourceBrowseScreenState extends ConsumerState<SourceBrowseScreen>
                                 url: m.url,
                                 title: m.title,
                                 manga: manga.copyWith(id: id),
+                                memo: m.memo,
                               ),
                             ),
                           );
@@ -471,7 +480,7 @@ class _SourceBrowseScreenState extends ConsumerState<SourceBrowseScreen>
     );
   }
 
-  Widget _buildSearchBody(KomaColors c) {
+  Widget _buildSearchBody(KomaColors c, Map<String, String> headers) {
     if (_searchLoading) {
       return const Center(child: CircularProgressIndicator(strokeWidth: 2));
     }
@@ -505,6 +514,7 @@ class _SourceBrowseScreenState extends ConsumerState<SourceBrowseScreen>
         final m = _searchResults[i];
         return _MangaGridCard(
           manga: m,
+          headers: headers,
           onTap: () async {
             final repos = ref.read(repositoriesProvider);
             final existing = await repos.manga.getMangaByKey(
@@ -521,6 +531,7 @@ class _SourceBrowseScreenState extends ConsumerState<SourceBrowseScreen>
                     url: m.url,
                     title: m.title,
                     manga: existing,
+                    memo: m.memo,
                   ),
                 ),
               );
@@ -548,6 +559,7 @@ class _SourceBrowseScreenState extends ConsumerState<SourceBrowseScreen>
                   url: m.url,
                   title: m.title,
                   manga: manga.copyWith(id: id),
+                  memo: m.memo,
                 ),
               ),
             );
@@ -561,8 +573,13 @@ class _SourceBrowseScreenState extends ConsumerState<SourceBrowseScreen>
 class _MangaGridCard extends StatelessWidget {
   final MManga manga;
   final VoidCallback onTap;
+  final Map<String, String>? headers;
 
-  const _MangaGridCard({required this.manga, required this.onTap});
+  const _MangaGridCard({
+    required this.manga,
+    required this.onTap,
+    this.headers,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -584,7 +601,10 @@ class _MangaGridCard extends StatelessWidget {
             Expanded(
                             child: thumb != null && thumb.isNotEmpty
                   ? Image(
-                      image: CustomExtendedNetworkImageProvider(thumb),
+                              image: CustomExtendedNetworkImageProvider(
+                                  thumb,
+                                  headers: headers,
+                                  showCloudFlareError: true),
                       width: double.infinity,
                       fit: BoxFit.cover,
                       errorBuilder: (_, _, _) => _placeholder(c),

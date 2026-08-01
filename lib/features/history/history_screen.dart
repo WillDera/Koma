@@ -1,14 +1,17 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-import '../../core/providers.dart';
+
+import '../../app.dart' show routeObserver;
 import '../../core/models/book.dart';
-import '../../core/models/manga.dart';
+import '../../core/providers.dart';
 import '../../core/repositories/manga_repository.dart';
+import '../../core/utils/image_cache.dart';
+import '../../core/utils/image_headers.dart';
+import '../../router/router.dart';
 import '../../theme/app_theme.dart';
 import '../../theme/theme_provider.dart';
 import '../../theme/tokens/app_spacing.dart';
-import '../../app.dart' show routeObserver;
 import '../../widgets/animated_press.dart';
 import '../../widgets/book_cover.dart';
 import '../../widgets/dialog_sheet.dart';
@@ -17,7 +20,6 @@ import '../../widgets/library_header.dart';
 import '../../widgets/one_hand_spacer.dart';
 import '../../widgets/progress_ring.dart';
 import '../../widgets/screen_chrome.dart';
-import '../../router/router.dart';
 
 class HistoryScreen extends ConsumerStatefulWidget {
   const HistoryScreen({super.key});
@@ -32,11 +34,13 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> with RouteAware {
   List<Book> _books = [];
   List<InProgressManga> _mangaRows = [];
   bool _loading = true;
+  int _lastSeenRevision = 0;
 
   @override
   void initState() {
     super.initState();
     _scrollCtrl.addListener(_onScroll);
+    _lastSeenRevision = ref.read(historyRevisionProvider);
     _load();
   }
 
@@ -61,6 +65,14 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> with RouteAware {
   void didChangeDependencies() {
     super.didChangeDependencies();
     routeObserver.subscribe(this, ModalRoute.of(context)!);
+    // Watch the global history revision so we reload in real time when the
+    // reader writes progress (shell-tab screens don't reliably get
+    // RouteAware.didPopNext from root-level reader routes).
+    final rev = ref.read(historyRevisionProvider);
+    if (rev != _lastSeenRevision) {
+      _lastSeenRevision = rev;
+      _load();
+    }
   }
 
   @override
@@ -109,6 +121,13 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> with RouteAware {
   @override
   Widget build(BuildContext context) {
     final c = context.colors;
+    // React to reader progress writes in real time.
+    ref.listen<int>(historyRevisionProvider, (prev, next) {
+      if (next != _lastSeenRevision) {
+        _lastSeenRevision = next;
+        _load();
+      }
+    });
     if (_loading) {
       return const Center(child: CircularProgressIndicator());
     }
@@ -312,6 +331,9 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> with RouteAware {
     final name = manga.name;
     final author = manga.author;
     final imageUrl = manga.imageUrl;
+    final headers = ref
+        .watch(sourceImageHeadersProvider(manga.sourceId))
+        .value;
     final id = manga.id;
     final sourceId = manga.sourceId;
     final url = manga.url;
@@ -352,8 +374,17 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> with RouteAware {
                     width: 48,
                     height: 64,
                     child: imageUrl != null && imageUrl.isNotEmpty
-                        ? Image.network(imageUrl, fit: BoxFit.cover,
-                            errorBuilder: (_, _, _) => Container(color: c.surfaceMuted, child: Icon(Icons.broken_image, size: 24, color: c.textTertiary)))
+                        ? Image(
+                      image: cachedCover(
+                          imageUrl, headers: headers, width: 48, height: 64),
+                      width: 48,
+                      height: 64,
+                      fit: BoxFit.cover,
+                      errorBuilder: (_, _, _) =>
+                          Container(color: c.surfaceMuted, child: Icon(
+                              Icons.broken_image, size: 24,
+                              color: c.textTertiary)),
+                    )
                         : Container(color: c.surfaceMuted, child: Icon(Icons.auto_stories, size: 24, color: c.textTertiary)),
                   ),
                 ),
