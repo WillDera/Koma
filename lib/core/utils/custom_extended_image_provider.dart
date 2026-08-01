@@ -488,14 +488,42 @@ class CustomExtendedNetworkImageProvider
     };
     request.headers.addAll(optimizedHeaders);
 
+    if (kDebugMode) {
+      debugPrint(
+        'IMG first attempt: ${request.method} ${request.url}\n'
+        'headers: ${request.headers}',
+      );
+    }
+
     StreamedResponse response = await MClient.init(
       showCloudFlareError: showCloudFlareError,
     ).send(request);
+
+    if (kDebugMode) {
+      debugPrint(
+        'IMG first response: ${response.statusCode} '
+        'server=${response.headers['server']} '
+        'cf-mitigated=${response.headers['cf-mitigated']} '
+        'cf-ray=${response.headers['cf-ray']}',
+      );
+    }
 
     if (response.statusCode != HttpStatus.ok) {
       final res = await MClient.init(
         showCloudFlareError: showCloudFlareError,
       ).send(response.request ?? request);
+      if (kDebugMode) {
+        debugPrint(
+          'IMG retry request: ${res.request?.method} ${res.request?.url}\n'
+          'headers: ${res.request?.headers}',
+        );
+        debugPrint(
+          'IMG retry response: ${res.statusCode} '
+          'server=${res.headers['server']} '
+          'cf-mitigated=${res.headers['cf-mitigated']} '
+          'cf-ray=${res.headers['cf-ray']}',
+        );
+      }
       return res;
     }
 
