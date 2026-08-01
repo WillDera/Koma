@@ -35,12 +35,18 @@ class MangaDetailScreen extends ConsumerStatefulWidget {
   /// Pre-loaded manga data from library — if set, shown instantly without DB query.
   final Manga? manga;
 
+  /// Raw JSON of the source-side `SManga.memo` (e.g. allanime `{"slug":...}`).
+  /// Round-tripped to the Dalvik server so `getMangaUpdate`/`getChapterList`
+  /// work for sources that derive URLs from memo.
+  final String? memo;
+
   const MangaDetailScreen({
     super.key,
     required this.sourceId,
     required this.url,
     required this.title,
     this.manga,
+    this.memo,
   });
 
   @override
@@ -374,7 +380,9 @@ class _MangaDetailScreenState extends ConsumerState<MangaDetailScreen> {
     }
   }
 
-  Future<void> _cacheThumbnail(String url) async {
+  Future<void> _cacheThumbnail(String url, {
+    Map<String, String>? headers,
+  }) async {
     try {
       final appDir = await getApplicationDocumentsDirectory();
       final hash = sha256.convert(utf8.encode(url)).toString();
@@ -382,7 +390,7 @@ class _MangaDetailScreenState extends ConsumerState<MangaDetailScreen> {
       if (!await thumbDir.exists()) await thumbDir.create(recursive: true);
       final path = '${thumbDir.path}/$hash.jpg';
       if (File(path).existsSync()) return;
-      final response = await http.get(Uri.parse(url));
+      final response = await http.get(Uri.parse(url), headers: headers);
       if (response.statusCode == 200) {
         await File(path).writeAsBytes(response.bodyBytes);
       }
@@ -408,6 +416,7 @@ class _MangaDetailScreenState extends ConsumerState<MangaDetailScreen> {
       final result = await _service.getMangaUpdate(
         sourceId: widget.sourceId,
         url: widget.url,
+        memo: widget.memo,
       );
       if (!mounted) return;
       final details = result.details;
@@ -418,6 +427,7 @@ class _MangaDetailScreenState extends ConsumerState<MangaDetailScreen> {
           final fallback = await _service.getChapterList(
             sourceId: widget.sourceId,
             url: widget.url,
+            memo: widget.memo,
           );
           if (fallback.isNotEmpty) chapters = fallback;
         } catch (_) {}
@@ -425,8 +435,18 @@ class _MangaDetailScreenState extends ConsumerState<MangaDetailScreen> {
 
       final thumb = details['thumbnail_url'] as String?;
       if (thumb != null && thumb.isNotEmpty) {
-        _cacheThumbnail(thumb);
-        precacheImage(cachedCover(thumb), context);
+        // The extension's `thumbnail_url` can be a bare site root (e.g. mangadna
+        // returns `https://mangadna.com/` when the card's `data-src` is empty) —
+        // fetching it yields HTML, not an image. Treat root URLs as "no cover".
+        final uri = Uri.tryParse(thumb);
+        final isRoot = uri != null &&
+            (uri.path.isEmpty || uri.path == '/');
+        if (!isRoot) {
+          final headers = await ref
+              .read(sourceImageHeadersProvider(widget.sourceId).future);
+          _cacheThumbnail(thumb, headers: headers);
+          precacheImage(cachedCover(thumb, headers: headers), context);
+        }
       }
       if (!mounted) return;
       if (_mangaId != null) {
@@ -481,6 +501,7 @@ class _MangaDetailScreenState extends ConsumerState<MangaDetailScreen> {
           scanlator: ch['scanlator'] as String? ?? existing.scanlator,
           dateUpload: ch['date_upload'] as int? ?? existing.dateUpload,
           index: i,
+          memo: ch['memo'] as String? ?? existing.memo,
         ));
       } else {
         merged.add(MangaChapter(
@@ -491,6 +512,7 @@ class _MangaDetailScreenState extends ConsumerState<MangaDetailScreen> {
           scanlator: ch['scanlator'] as String?,
           dateUpload: ch['date_upload'] as int? ?? 0,
           index: i,
+          memo: ch['memo'] as String?,
         ));
       }
     }
@@ -549,6 +571,7 @@ class _MangaDetailScreenState extends ConsumerState<MangaDetailScreen> {
         'last_page_read': c.lastPageRead,
         'is_opened': c.isOpened,
         'is_downloaded': c.isDownloaded,
+        'memo': c.memo,
         if (c.readAt != null) 'read_at': c.readAt!.toIso8601String(),
       }).toList();
     } else {
@@ -592,6 +615,7 @@ class _MangaDetailScreenState extends ConsumerState<MangaDetailScreen> {
               lastPageRead: local?['last_page_read'] as int? ?? 0,
               isDownloaded: detail.downloadProgress[url] == 'done',
               isOpened: local?['is_opened'] as bool? ?? false,
+              memo: e.value['memo'] as String?,
             );
           }).toList();
           await repos.manga.deleteMangaChapters(_mangaId!);
@@ -646,6 +670,7 @@ class _MangaDetailScreenState extends ConsumerState<MangaDetailScreen> {
           lastPageRead: local?['last_page_read'] as int? ?? 0,
           isDownloaded: detail.downloadProgress[url] == 'done',
           isOpened: local?['is_opened'] as bool? ?? false,
+          memo: e.value['memo'] as String?,
         );
       }).toList();
       await repos.manga.insertMangaChapters(id, chapterModels);
