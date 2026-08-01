@@ -488,6 +488,31 @@ class CustomExtendedNetworkImageProvider
     };
     request.headers.addAll(optimizedHeaders);
 
+    // Some sources serve images from their own site / a subdomain of it
+    // (e.g. readcomicsonline.ru serving from cdn.readcomicsonline.ru) and their
+    // Cloudflare config challenges ANY request that carries a Referer — even
+    // the source's own — so strip the Referer when the image host is the
+    // source host or one of its subdomains. Cross-site CDNs (fmcdn.mfcdn.net
+    // for mangafox) instead REQUIRE the Referer, which is kept here.
+    String? refererKey;
+    String? referer;
+    request.headers.forEach((key, value) {
+      if (key.toLowerCase() == 'referer') {
+        refererKey = key;
+        referer = value;
+      }
+    });
+    if (referer != null && referer!.isNotEmpty) {
+      final sourceHost = Uri.tryParse(referer!)?.host;
+      final imageHost = resolved.host;
+      if (sourceHost != null &&
+          sourceHost.isNotEmpty &&
+          imageHost.isNotEmpty &&
+          (imageHost == sourceHost || imageHost.endsWith('.$sourceHost'))) {
+        request.headers.remove(refererKey);
+      }
+    }
+
     if (kDebugMode) {
       debugPrint(
         'IMG first attempt: ${request.method} ${request.url}\n'
