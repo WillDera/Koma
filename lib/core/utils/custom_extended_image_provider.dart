@@ -256,7 +256,7 @@ class CustomExtendedNetworkImageProvider
   final String? imageCacheFolderName;
 
   /// Enables the Cloudflare retry policy for this request. Pass `true` for
-  /// reader pages (matching mangayomi); covers leave it `false`.
+  /// reader pages and covers (matching mangayomi).
   final bool showCloudFlareError;
 
   @override
