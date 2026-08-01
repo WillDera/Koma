@@ -84,6 +84,15 @@ void main() {
     );
 
     FlutterNativeSplash.remove();
+
+    // Surface the extension-update badge once the startup index check has
+    // written versionLast flags for every repo (mangayomi parity: it shows a
+    // system notification when updates are found on app start).
+    unawaited(_checkExtensionUpdates(extensionManager).then((_) async {
+      try {
+        await container.read(extensionUpdateCountProvider.notifier).refresh();
+      } catch (_) {}
+    }));
   }, (error, stack) {
     debugPrint('Unhandled error: $error\n$stack');
   });

@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:collection/collection.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -53,7 +54,13 @@ class _ExtensionsScreenState extends ConsumerState<ExtensionsScreen>
 
   List<ExtensionRepo> _repos = const [];
   List<ExtensionSource> _installed = const [];
-  // Map<repoId, List<ExtensionIndexEntry>>
+
+  // Map<repoId, List<ExtensionIndexEntry>> (all entries, installed or not).
+  // Needed to resolve an `ExtensionIndexEntry` + repo when updating an
+  // already-installed extension via ExtensionManager.updateSource.
+  final Map<int, List<ExtensionIndexEntry>> _fullIndexCache = {};
+
+  // Map<repoId, List<ExtensionIndexEntry>> (only not-installed entries).
   final Map<int, List<ExtensionIndexEntry>> _indexCache = {};
   final Set<int> _loadingIndex = {};
   String? _error;
@@ -85,6 +92,7 @@ class _ExtensionsScreenState extends ConsumerState<ExtensionsScreen>
         _installed = installed;
         _error = null;
       });
+      ref.read(extensionUpdateCountProvider.notifier).refresh();
       // One-time population of the pkg→iconUrl cache from the full Keiyoushi
       // index. No-op after the first run; failures are swallowed internally
       // so icon resolution degrades to the CDN derivation fallback.
@@ -118,12 +126,14 @@ class _ExtensionsScreenState extends ConsumerState<ExtensionsScreen>
       if (!mounted) return;
       final loadedPkgs = _installedPkgs(installed);
       setState(() {
+        _fullIndexCache[repo.id] = entries;
         _indexCache[repo.id] = entries
             .where((e) => !loadedPkgs.contains(e.pkg))
             .toList(growable: false);
         _installed = installed;
         _error = null;
       });
+      ref.read(extensionUpdateCountProvider.notifier).refresh();
     } catch (e) {
       if (!mounted) return;
       setState(() => _error = '$e');
@@ -238,6 +248,75 @@ class _ExtensionsScreenState extends ConsumerState<ExtensionsScreen>
     }
   }
 
+  /// Find the index entry + repo for an installed source so its APK can be
+  /// re-downloaded and re-loaded at a newer version.
+  ({ExtensionIndexEntry entry, ExtensionRepo repo})?
+  _resolveUpdate(ExtensionSource src) {
+    final pkg = _extractPkgFromApkPath(src.apkPath);
+    for (final repo in _repos) {
+      final entries = _fullIndexCache[repo.id];
+      if (entries == null) continue;
+      for (final e in entries) {
+        // Match by className first (survives repo pkg renames), then by the
+        // APK-derived package name.
+        if (e.className != null && e.className == src.className) {
+          return (entry: e, repo: repo);
+        }
+        if (e.pkg == pkg) return (entry: e, repo: repo);
+      }
+    }
+    return null;
+  }
+
+  Future<void> _update(ExtensionSource src) async {
+    final messenger = ScaffoldMessenger.of(context);
+    var resolved = _resolveUpdate(src);
+    if (resolved == null) {
+      // Badges surface from versionLast flags written at app start, before
+      // any index was cached — fetch the owning repo's index so we can
+      // resolve the entry, then retry.
+      final repo = _repos
+          .where((r) => src.repoUrl != null && r.url == src.repoUrl)
+          .firstOrNull;
+      if (repo != null && !_loadingIndex.contains(repo.id)) {
+        await _fetchIndex(repo);
+        resolved = _resolveUpdate(src);
+      }
+    }
+    if (resolved == null) {
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text(
+              'No update info for ${src.name} — fetch the repo index first'),
+        ),
+      );
+      return;
+    }
+    messenger.showSnackBar(
+      SnackBar(content: Text('Updating ${src.name}…')),
+    );
+    try {
+      await _mgr.updateSource(src, resolved.entry, resolved.repo.url);
+      messenger.showSnackBar(
+        SnackBar(
+            content: Text('Updated ${src.name} to v${resolved.entry.version}')),
+      );
+      await _refresh();
+    } catch (e) {
+      messenger.showSnackBar(
+        SnackBar(content: Text('Update failed: $e')),
+      );
+    }
+  }
+
+  Future<void> _updateAll() async {
+    final updatable = _installed.where((s) => s.isUpdateAvailable).toList();
+    for (final src in updatable) {
+      if (!mounted) return;
+      await _update(src);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final c = context.colors;
@@ -279,6 +358,8 @@ class _ExtensionsScreenState extends ConsumerState<ExtensionsScreen>
                 _InstalledTab(
                   installed: _installed,
                   onUninstall: _uninstall,
+                  onUpdate: _update,
+                  onUpdateAll: _updateAll,
                   onBrowse: (src) => Navigator.push(
                     context,
                     MaterialPageRoute(
@@ -319,11 +400,15 @@ class _ExtensionsScreenState extends ConsumerState<ExtensionsScreen>
 class _InstalledTab extends StatelessWidget {
   final List<ExtensionSource> installed;
   final void Function(ExtensionSource) onUninstall;
+  final void Function(ExtensionSource) onUpdate;
+  final VoidCallback onUpdateAll;
   final void Function(ExtensionSource) onBrowse;
 
   const _InstalledTab({
     required this.installed,
     required this.onUninstall,
+    required this.onUpdate,
+    required this.onUpdateAll,
     required this.onBrowse,
   });
 
@@ -337,20 +422,33 @@ class _InstalledTab extends StatelessWidget {
         subtitle: 'Open the Available tab to load your first extension.',
       );
     }
+
+    final updates = installed.where((s) => s.isUpdateAvailable).toList();
+
     return ListView.separated(
       padding: const EdgeInsets.all(16),
-      itemCount: installed.length,
+      itemCount: installed.length + (updates.isNotEmpty ? 1 : 0),
       separatorBuilder: (_, _) => const SizedBox(height: 8),
       itemBuilder: (_, i) {
-        final src = installed[i];
+        if (updates.isNotEmpty && i == 0) {
+          return _UpdateAllBanner(
+              count: updates.length, onUpdateAll: onUpdateAll);
+        }
+        final src = installed[i - (updates.isNotEmpty ? 1 : 0)];
+        final hasUpdate = src.isUpdateAvailable;
         return AnimatedPress(
           onTap: () => onBrowse(src),
           child: Container(
             padding: const EdgeInsets.all(14),
             decoration: BoxDecoration(
-              color: c.surface,
+              color: hasUpdate ? c.accentMuted.withValues(alpha: 0.35) : c
+                  .surface,
               borderRadius: AppSpacing.brMd,
-              border: Border.all(color: c.border),
+              border: Border.all(
+                color: hasUpdate
+                    ? c.accent.withValues(alpha: 0.6)
+                    : c.border,
+              ),
             ),
             child: Row(
               children: [
@@ -369,13 +467,64 @@ class _InstalledTab extends StatelessWidget {
                         ),
                       ),
                       const SizedBox(height: 2),
-                      Text(
-                        'v${src.version} · ${src.lang}',
-                        style: TextStyle(color: c.textSecondary, fontSize: 12),
-                      ),
+                      if (hasUpdate && src.versionLast != null)
+                        Row(
+                          children: [
+                            Text(
+                              'v${src.version} → v${src.versionLast}',
+                              style: TextStyle(
+                                color: c.accent,
+                                fontSize: 12,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                            const SizedBox(width: 6),
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 6,
+                                vertical: 1,
+                              ),
+                              decoration: BoxDecoration(
+                                color: c.accent,
+                                borderRadius: BorderRadius.circular(4),
+                              ),
+                              child: Text(
+                                'Update available',
+                                style: TextStyle(
+                                  fontSize: 9,
+                                  fontWeight: FontWeight.bold,
+                                  color: c.bg,
+                                ),
+                              ),
+                            ),
+                          ],
+                        )
+                      else
+                        Text(
+                          'v${src.version} · ${src.lang}',
+                          style: TextStyle(
+                            color: c.textSecondary,
+                            fontSize: 12,
+                          ),
+                        ),
                     ],
                   ),
                 ),
+                if (hasUpdate) ...[
+                  TextButton(
+                    onPressed: () => onUpdate(src),
+                    style: TextButton.styleFrom(
+                      backgroundColor: c.accent.withValues(alpha: 0.12),
+                      padding: const EdgeInsets.symmetric(horizontal: 10),
+                      minimumSize: const Size(0, 32),
+                    ),
+                    child: Text(
+                      'Update',
+                      style: TextStyle(color: c.accent, fontSize: 12),
+                    ),
+                  ),
+                  const SizedBox(width: 4),
+                ],
                 IconButton(
                   icon: Icon(Icons.info_outline, color: c.textSecondary, size: 20),
                   onPressed: () => Navigator.push(context,
@@ -401,8 +550,64 @@ class _InstalledTab extends StatelessWidget {
   }
 }
 
-// ─── Available tab — mangayomi 3-section layout ──────────────────────
+// ─── Update-all banner ──────────────────────────────────────────────────
+class _UpdateAllBanner extends StatelessWidget {
+  final int count;
+  final VoidCallback onUpdateAll;
 
+  const _UpdateAllBanner({required this.count, required this.onUpdateAll});
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.colors;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      decoration: BoxDecoration(
+        color: c.accentMuted.withValues(alpha: 0.5),
+        borderRadius: AppSpacing.brMd,
+        border: Border.all(color: c.accent.withValues(alpha: 0.6)),
+      ),
+      child: Row(
+        children: [
+          Icon(Icons.system_update_alt, size: 20, color: c.accent),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  '$count update${count == 1 ? '' : 's'} available',
+                  style: TextStyle(
+                    color: c.textPrimary,
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  'Tap Update all to download and reload newer versions.',
+                  style: TextStyle(color: c.textSecondary, fontSize: 11),
+                ),
+              ],
+            ),
+          ),
+          TextButton(
+            onPressed: onUpdateAll,
+            style: TextButton.styleFrom(
+              backgroundColor: c.accent,
+              foregroundColor: c.bg,
+              padding: const EdgeInsets.symmetric(horizontal: 12),
+              minimumSize: const Size(0, 34),
+            ),
+            child: const Text('Update all'),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ─── Available tab — mangayomi 3-section layout ──────────────────────
 class _AvailableTab extends StatefulWidget {
   final List<ExtensionRepo> repos;
   final Map<int, List<ExtensionIndexEntry>> indexCache;

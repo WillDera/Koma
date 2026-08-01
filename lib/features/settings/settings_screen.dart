@@ -43,7 +43,7 @@ class SettingsScreen extends StatelessWidget {
             const OneHandSpacer(),
             const LibraryHeader(
               title: 'Settings',
-              subtitle: 'Version 2.21.7',
+              subtitle: 'Version 2.22.0',
               padding: EdgeInsets.fromLTRB(24, 20, 20, 12),
             ),
             const StaggeredEntrance(
@@ -1493,11 +1493,13 @@ class _StatsSectionState extends ConsumerState<_StatsSection> {
 }
 
 // ─── Plugins ───────────────────────────────────────────────────────────
-class _PluginsSection extends StatelessWidget {
+class _PluginsSection extends ConsumerWidget {
   const _PluginsSection();
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final c = context.colors;
+    final updateCount = ref.watch(extensionUpdateCountProvider);
     return SettingsSection(
       title: 'Plugins',
       footer:
@@ -1506,8 +1508,34 @@ class _PluginsSection extends StatelessWidget {
         SettingsRow(
           icon: Icons.extension_outlined,
           title: 'Manage plugins',
-          subtitle: 'Browse, install, and remove extensions',
-          trailing: const Icon(Icons.chevron_right, size: 18),
+          subtitle: updateCount > 0
+              ? 'Browse, install, and remove extensions · $updateCount update${updateCount ==
+              1 ? '' : 's'} available'
+              : 'Browse, install, and remove extensions',
+          trailing: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (updateCount > 0)
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 7, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: c.accent,
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Text(
+                    '$updateCount',
+                    style: TextStyle(
+                      color: c.bg,
+                      fontSize: 12,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+              const SizedBox(width: 4),
+              const Icon(Icons.chevron_right, size: 18),
+            ],
+          ),
           onTap: () {
             context.pushNamed(Routes.extensions);
           },
@@ -1535,7 +1563,7 @@ class _AboutSection extends StatelessWidget {
         SettingsRow(
           icon: Icons.info_outline,
           title: 'Koma',
-          subtitle: 'Version 2.19.46 · build 2.19.46+176',
+          subtitle: 'Version 2.22.0 · build 2.22.0+187',
         ),
         SettingsRow(
           icon: Icons.favorite_outline,
