@@ -71,6 +71,7 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
 
   TtsProvider? _ttsProvider;
   bool _ttsListening = false;
+  int _highlightColorIndex = 0;
 
   /// Index of the chapter we're currently showing. Used to detect a
   /// chapter change after navigation so we can jump the scroll back
@@ -265,6 +266,18 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
     return ch != null ? TextExtractor.extractFromHtml(ch.content) : '';
   }
 
+  String get _nextHighlightColor {
+    final palette = HighlightColorPicker.palette;
+    if (palette.isEmpty) return 'yellow';
+    return palette[_highlightColorIndex % palette.length];
+  }
+
+  void _advanceHighlightColor() {
+    final palette = HighlightColorPicker.palette;
+    if (palette.isEmpty) return;
+    _highlightColorIndex = (_highlightColorIndex + 1) % palette.length;
+  }
+
   @override
   void dispose() {
     _cancelUiHideTimer();
@@ -398,13 +411,6 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
     });
     _applySystemUiMode();
     _resetUiHideTimer();
-  }
-
-  void _showColorPicker() {
-    _cancelUiHideTimer();
-    setState(() => _colorPickerVisible = true);
-    _applySystemUiMode();
-    _colorCtrl.forward(from: 0);
   }
 
   @override
@@ -622,7 +628,7 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
                         children: [
                           ReaderSelectionToolbar(
                             selectedText: _selectedText ?? '',
-                            defaultHighlightColor: themeProv.defaultHighlight,
+                            defaultHighlightColor: _nextHighlightColor,
                             position: _selectionOrigin,
                             onHighlight: (color) {
                               _saveHighlight(color);
@@ -668,9 +674,12 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
                                   ),
                                   child: HighlightColorPicker(
                                     colors: HighlightColorPicker.palette,
-                                    selected: themeProv.defaultHighlight,
+                                    selected: _nextHighlightColor,
                                     onChanged: (color) {
                                       ref.read(themeProvider.notifier).setDefaultHighlight(color);
+                                      final idx = HighlightColorPicker.palette
+                                          .indexOf(color);
+                                      if (idx >= 0) _highlightColorIndex = idx;
                                       _saveHighlight(color);
                                     },
                                   ),
@@ -864,10 +873,6 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
   Future<void> _saveHighlight(String color) async {
     final p = _provider!;
     if (_selectedText == null || _selectedText!.trim().isEmpty) return;
-    if (!_colorPickerVisible) {
-      _showColorPicker();
-      return;
-    }
     try {
       final repos = ref.watch(repositoriesProvider);
       final ch = p.currentChapter;
@@ -921,6 +926,8 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
         );
       }
     } finally {
+      // Cycle to the next highlight color for the next mark.
+      _advanceHighlightColor();
       // Discard the old selection so the next long-press can create
       // fresh selection handles.
       // The highlight toolbar just saved — hide it, then increment the

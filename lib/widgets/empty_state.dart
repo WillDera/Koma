@@ -38,17 +38,7 @@ class EmptyState extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Container(
-              width: 88,
-              height: 88,
-              decoration: BoxDecoration(
-                color: c.accentMuted,
-                borderRadius: BorderRadius.circular(28),
-              ),
-              child: AppIcon(data: icon, size: 40,
-                color: c.accent,
-              ),
-            ),
+            AppIcon(data: icon, size: 90, color: c.accent),
             const SizedBox(height: 24),
             Text(
               title,
@@ -71,9 +61,10 @@ class EmptyState extends StatelessWidget {
             ],
             if (primaryActionLabel != null && onPrimaryAction != null) ...[
               const SizedBox(height: 28),
-              PremiumButton(abel: primaryActionLabel,
+              PremiumButton(
+                label: primaryActionLabel,
                 leading: primaryActionIcon != null
-                    ? ? AppIcon(data: primaryActionIcon!, size: 20)
+                    ? AppIcon(data: primaryActionIcon!, size: 20)
                     : null,
                 onPressed: onPrimaryAction,
                 size: PremiumButtonSize.lg,
