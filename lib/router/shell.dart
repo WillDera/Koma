@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import '../theme/app_icons.dart';
 import '../theme/theme_provider.dart';
 import '../widgets/glass_pill_nav.dart';
+import '../widgets/nav_drawer.dart';
 
 /// The bottom-nav shell. Wraps go_router's [StatefulNavigationShell]
 /// (an IndexedStack of the six tab branches, each with its own Navigator
@@ -72,6 +73,11 @@ class MainShell extends ConsumerWidget {
         items: _navItems,
         currentIndex: navigationShell.currentIndex,
         onTap: _onTap,
+      ),
+      drawer: NavDrawer(
+        currentIndex: navigationShell.currentIndex,
+        onTap: _onTap,
+        version: '2.24.2',
       ),
     );
   }

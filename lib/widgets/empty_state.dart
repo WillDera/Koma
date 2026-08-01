@@ -71,11 +71,11 @@ class EmptyState extends StatelessWidget {
             ],
             if (primaryActionLabel != null && onPrimaryAction != null) ...[
               const SizedBox(height: 28),
-              PremiumButton(
-                label: primaryActionLabel,eading: primaryActionIcon != null
-                    ? AppIcon(data: primaryActionIcon!, size: 20)
+              PremiumButton(abel: primaryActionLabel,
+                leading: primaryActionIcon != null
+                    ? ? AppIcon(data: primaryActionIcon!, size: 20)
                     : null,
-                oonPressed: onPrimaryAction,
+                onPressed: onPrimaryAction,
                 size: PremiumButtonSize.lg,
               ),
             ],
