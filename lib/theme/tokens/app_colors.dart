@@ -106,6 +106,18 @@ class AppColors {
   static const Color accentForest = Color(0xFF4F7A55);
   static const Color accentForestDark = Color(0xFF7AAE82);
 
+  // ─── Aethelgard "Electric Blue" accent (Cinematic Neo-Noir redesign) ──
+  // The primary glow color from the Aethelgard design system. Used for
+  // active states, FABs, and iconography when the aethelgard preset is
+  // selected. #d9e2ff (light) / #afc6ff (dim/container).
+  static const Color aethelgardPrimary = Color(0xFFD9E2FF);
+  static const Color aethelgardPrimaryDim = Color(0xFFAFC6FF);
+  static const Color aethelgardOnPrimary = Color(0xFF152F5E);
+
+  // Dark-mode variant: the glow itself becomes the accent.
+  static const Color aethelgardPrimaryDark = Color(0xFFAFC6FF);
+  static const Color aethelgardOnPrimaryDark = Color(0xFF1A1815);
+
   /// Returns the appropriate highlight color for the given triple key
   /// (one of 'yellow' | 'blue' | 'pink' | 'green') for the given brightness.
   static Color highlight(String key, Brightness brightness, {bool isSepia = false}) {

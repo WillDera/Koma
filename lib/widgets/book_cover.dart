@@ -1,5 +1,7 @@
 import 'dart:io';
+
 import 'package:flutter/material.dart';
+
 import '../core/models/book.dart';
 import '../theme/app_theme.dart';
 import '../theme/tokens/app_motion.dart';
@@ -55,7 +57,7 @@ class BookCover extends StatelessWidget {
     if (variant == BookCoverVariant.grid ||
         variant == BookCoverVariant.hero) {
       return AspectRatio(
-        aspectRatio: 3 / 4,
+        aspectRatio: AppSpacing.coverAspectRatio,
         child: child,
       );
     }

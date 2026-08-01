@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+
+import '../theme/app_icons.dart';
 import '../theme/app_theme.dart';
 import '../theme/tokens/app_motion.dart';
 import '../theme/tokens/app_spacing.dart';
@@ -7,8 +9,11 @@ import 'animated_press.dart';
 enum IconButtonVariant { plain, filled, tonal }
 
 /// A round icon button. 36 / 40 / 44 sizes. Three variants.
+/// Accepts either an [AppIconData] (Hugeicon or Material) via [iconData]
+/// or a plain [IconData] via [icon] for backward compatibility.
 class IconButtonRound extends StatelessWidget {
-  final IconData icon;
+  final IconData? icon;
+  final AppIconData? iconData;
   final VoidCallback? onPressed;
   final double size;
   final IconButtonVariant variant;
@@ -18,14 +23,16 @@ class IconButtonRound extends StatelessWidget {
 
   const IconButtonRound({
     super.key,
-    required this.icon,
+    this.icon,
+    this.iconData,
     this.onPressed,
     this.size = 40,
     this.variant = IconButtonVariant.tonal,
     this.tooltip,
     this.iconColor,
     this.backgroundColor,
-  });
+  }) : assert(icon != null || iconData != null,
+  'Either icon or iconData must be provided');
 
   @override
   Widget build(BuildContext context) {
@@ -37,6 +44,10 @@ class IconButtonRound extends StatelessWidget {
       IconButtonVariant.filled => (backgroundColor ?? c.surfaceMuted, iconColor ?? c.textPrimary),
       IconButtonVariant.tonal => (Colors.transparent, iconColor ?? c.textSecondary),
     };
+
+    final iconWidget = iconData != null
+        ? AppIcon(data: iconData!, size: size * 0.46, color: fg)
+        : Icon(icon, size: size * 0.48, color: fg);
 
     final btn = AnimatedPress(
       onTap: onPressed,
@@ -50,7 +61,7 @@ class IconButtonRound extends StatelessWidget {
           color: bg,
           borderRadius: AppSpacing.brPill,
         ),
-        child: Icon(icon, size: size * 0.48, color: fg),
+        child: iconWidget,
       ),
     );
 
