@@ -45,7 +45,7 @@ android {
                 signingConfig = signingConfigs.getByName("debug")
             }
         }
-        profile {
+        getByName("profile") {
             if (file("koma-debug.keystore").exists()) {
                 signingConfig = signingConfigs.getByName("koma")
             } else {
@@ -84,7 +84,13 @@ dependencies {
     implementation("com.squareup.okhttp3:okhttp-brotli:5.4.0")
     implementation("com.squareup.okhttp3:okhttp-zstd:5.4.0")
     implementation("com.squareup.okio:okio:3.9.0")
-    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.7.3")
+    // Keiyoushi extensions are compiled against mihon's coroutines bundle (1.11.0).
+    // Newer extensions use `BuildersKt.runBlockingK` (concurrent source set), which
+    // does not exist before 1.10 — pinning below 1.11.0 causes NoSuchMethodError
+    // when the Dalvik server calls extension headersBuilder/getMangaUpdate etc.
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.11.0")
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.11.0")
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-guava:1.11.0")
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.11.0")
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json-okio:1.11.0")
     // RxJava 1 — source-api uses rx.Observable for deprecated fetch* methods

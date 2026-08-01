@@ -15,7 +15,6 @@ import eu.kanade.tachiyomi.source.model.MangasPage
 import eu.kanade.tachiyomi.source.model.Page
 import eu.kanade.tachiyomi.source.model.SChapter
 import eu.kanade.tachiyomi.source.model.SManga
-import eu.kanade.tachiyomi.source.model.SMangaUpdate
 import eu.kanade.tachiyomi.source.model.toMap
 import eu.kanade.tachiyomi.source.online.HttpSource
 import eu.kanade.tachiyomi.util.system.ChildFirstPathClassLoader
@@ -31,7 +30,9 @@ import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.put
+import mihon.core.common.extensions.EMPTY
 import okhttp3.OkHttpClient
 import uy.kohesive.injekt.Injekt
 import uy.kohesive.injekt.api.InjektModule
@@ -459,7 +460,10 @@ class DalvikServer(
                 "getMangaDetails" -> {
                     val url = root.str("url") ?: return errorJson("missing url")
                     withLoadedExtension(root.str("sourceId"), data) { src ->
-                        val manga = SManga.create().apply { this.url = url }
+                        val manga = SManga.create().apply {
+                            this.url = url
+                            memo = root.memo()
+                        }
                         val result = try {
                             runBlocking { src.getMangaUpdate(manga, emptyList(), fetchDetails = true, fetchChapters = false) }
                         } catch (e: Exception) {
@@ -475,7 +479,10 @@ class DalvikServer(
                 "getMangaUpdate" -> {
                     val url = root.str("url") ?: return errorJson("missing url")
                     withLoadedExtension(root.str("sourceId"), data) { src ->
-                        val manga = SManga.create().apply { this.url = url }
+                        val manga = SManga.create().apply {
+                            this.url = url
+                            memo = root.memo()
+                        }
                         val update = try {
                             runBlocking { src.getMangaUpdate(manga, emptyList(), fetchDetails = true, fetchChapters = true) }
                         } catch (e: Exception) {
@@ -495,7 +502,10 @@ class DalvikServer(
                 "getChapterList" -> {
                     val url = root.str("url") ?: return errorJson("missing url")
                     withLoadedExtension(root.str("sourceId"), data) { src ->
-                        val manga = SManga.create().apply { this.url = url }
+                        val manga = SManga.create().apply {
+                            this.url = url
+                            memo = root.memo()
+                        }
                         val update = try {
                             runBlocking { src.getMangaUpdate(manga, emptyList(), fetchDetails = false, fetchChapters = true) }
                         } catch (e: Exception) {
@@ -508,7 +518,10 @@ class DalvikServer(
                 "getPageList" -> {
                     val url = root.str("url") ?: return errorJson("missing url")
                     withLoadedExtension(root.str("sourceId"), data) { src ->
-                        val chapter = SChapter.create().apply { this.url = url }
+                        val chapter = SChapter.create().apply {
+                            this.url = url
+                            memo = root.memo()
+                        }
                         val pages = runBlocking {
                             src.getPageList(chapter).map { page ->
                                 val headers = try {
@@ -526,6 +539,9 @@ class DalvikServer(
                     val mangaUrl = root.str("mangaUrl") ?: return errorJson("missing mangaUrl")
                     val chapterUrls = (root["chapterUrls"] as? JsonArray)?.map { (it as? JsonPrimitive)?.content ?: "" } ?: emptyList()
                     val chapterNames = (root["chapterNames"] as? JsonArray)?.map { (it as? JsonPrimitive)?.content ?: "" } ?: emptyList()
+                    val chapterMemos = (root["chapterMemos"] as? JsonArray)?.map {
+                        (it as? JsonPrimitive)?.content ?: ""
+                    } ?: emptyList()
                     val sourceId = root.str("sourceId") ?: ""
                     withLoadedExtension(root.str("sourceId"), data) { src ->
                         val mangaKey = sha256(mangaUrl).take(16)
@@ -542,7 +558,15 @@ class DalvikServer(
                                 result[chapterUrl] = existing.map { it.toURI().toString() }
                                 continue
                             }
-                            val chapter = SChapter.create().apply { url = chapterUrl; name = chName }
+                            val chapter = SChapter.create().apply {
+                                url = chapterUrl
+                                name = chName
+                                memo = chapterMemos.getOrElse(i) { "" }.let {
+                                    if (it.isBlank()) JsonObject.EMPTY
+                                    else runCatching { json.parseToJsonElement(it).jsonObject }
+                                        .getOrDefault(JsonObject.EMPTY)
+                                }
+                            }
                             val pages: List<Page> = runBlocking { src.getPageList(chapter) }
                             val localPaths = mutableListOf<String>()
                             for (page in pages) {
@@ -624,6 +648,16 @@ class DalvikServer(
     private fun JsonObject.str(key: String): String? = (this[key] as? JsonPrimitive)?.content
 
     private fun JsonObject.int(key: String): Int? = str(key)?.toIntOrNull()
+
+    /// Reads the optional `memo` field, accepting either a nested JsonObject
+    /// or a JSON-encoded string (as marshalled by BridgeMappings.toMap()).
+    private fun JsonObject.memo(key: String = "memo"): JsonObject = when (val v = this[key]) {
+        is JsonObject -> v
+        is JsonPrimitive -> runCatching { json.parseToJsonElement(v.content).jsonObject }
+            .getOrDefault(JsonObject.EMPTY)
+
+        else -> JsonObject.EMPTY
+    }
 
     private fun errorJson(message: String): String = json.encodeToString(buildJsonObject {
         put("error", message)

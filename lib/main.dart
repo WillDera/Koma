@@ -2,16 +2,21 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_inappwebview/flutter_inappwebview.dart' as webview;
+import 'package:flutter_native_splash/flutter_native_splash.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:path/path.dart' as p;
+import 'package:path_provider/path_provider.dart';
+
 import 'app.dart';
 import 'core/isar/isar.dart';
 import 'core/providers.dart';
 import 'core/repositories/repositories.dart';
 import 'core/services/extension_manager.dart';
+import 'core/services/http/m_client.dart';
 import 'core/services/keiyoushi_service.dart';
 import 'core/services/stats_service.dart';
 import 'theme/theme_provider.dart';
-import 'package:flutter_native_splash/flutter_native_splash.dart';
 
 void main() {
   FlutterError.onError = (details) {
@@ -26,13 +31,30 @@ void main() {
     FlutterNativeSplash.preserve(widgetsBinding: widgetsBinding);
 
     final isar = await openIsar();
+      final repos = Repositories(isar);
 
-    final statsService = StatsService(Repositories(isar));
+      // Wire the Cloudflare / cookie HTTP pipeline (mangayomi parity): the
+    // intercepted client reads cookies through MClient.cookies, and the local
+    // loopback server drives the headless-WebView challenge solver.
+    MClient.cookies = repos.cookies;
+    unawaited(webviewServer());
+    if (!kIsWeb && defaultTargetPlatform == TargetPlatform.windows) {
+      final availableVersion = await webview.WebViewEnvironment
+          .getAvailableVersion();
+      if (availableVersion != null) {
+        final document = await getApplicationDocumentsDirectory();
+        webViewEnvironment = await webview.WebViewEnvironment.create(
+          settings: webview.WebViewEnvironmentSettings(
+            userDataFolder: p.join(document.path, 'flutter_inappwebview'),
+          ),
+        );
+      }
+    }
+
+    final statsService = StatsService(repos);
 
     final keiyoushiService = KeiyoushiService();
-    final extensionManager = ExtensionManager(
-      Repositories(isar),
-      keiyoushiService,
+    final extensionManager = ExtensionManager(repos, keiyoushiService,
     );
     unawaited(extensionManager.reloadAll().then((_) {
       unawaited(_checkExtensionUpdates(extensionManager));

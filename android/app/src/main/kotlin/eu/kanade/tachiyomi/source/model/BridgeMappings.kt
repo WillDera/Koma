@@ -10,6 +10,7 @@ fun SManga.toMap(): Map<String, Any?> = mapOf(
     "status" to status,
     "thumbnail_url" to thumbnail_url,
     "initialized" to initialized,
+    "memo" to memo.toString(),
 )
 
 fun SChapter.toMap(): Map<String, Any?> = mapOf(
@@ -18,6 +19,7 @@ fun SChapter.toMap(): Map<String, Any?> = mapOf(
     "chapter_number" to chapter_number.toDouble(),
     "scanlator" to scanlator,
     "date_upload" to date_upload,
+    "memo" to memo.toString(),
 )
 
 fun Page.toMap(): Map<String, Any?> = mapOf(
