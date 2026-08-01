@@ -10,6 +10,11 @@ import '../services/http/m_client.dart';
 /// [User-Agent] is always included. If [baseUrl] is null or empty only the
 /// User-Agent is returned.
 ///
+/// The `Referer` always ends with `/` to match the extensions' own
+/// `headersBuilder()` (e.g. mmrcms adds `"$baseUrl/"`). Hotlink-protected CDNs
+/// (readcomicsonline) reject a slash-less referer even though the same-origin
+/// page URL includes it; fmcdn accepts both forms.
+///
 /// Cookies are NOT injected here: [MCookieManager] (via `MClient.init`) adds
 /// the stored `Cookie` header at request time, so a freshly-solved
 /// `cf_clearance` cookie is always picked up on the retry (mangayomi parity).
@@ -19,7 +24,7 @@ final imageHeadersProvider = Provider.family<Map<String, String>, String?>((
 ) {
   final headers = <String, String>{'User-Agent': kBrowserUserAgent};
   if (baseUrl != null && baseUrl.isNotEmpty) {
-    headers['Referer'] = baseUrl;
+    headers['Referer'] = baseUrl.endsWith('/') ? baseUrl : '$baseUrl/';
   }
   return headers;
 });
@@ -38,7 +43,7 @@ final sourceImageHeadersProvider =
       final baseUrl = source?.baseUrl;
       final headers = <String, String>{'User-Agent': kBrowserUserAgent};
       if (baseUrl != null && baseUrl.isNotEmpty) {
-        headers['Referer'] = baseUrl;
+        headers['Referer'] = baseUrl.endsWith('/') ? baseUrl : '$baseUrl/';
       }
       return headers;
     });
