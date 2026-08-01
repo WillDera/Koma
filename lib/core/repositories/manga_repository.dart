@@ -75,25 +75,65 @@ class MangaRepository {
   /// "Continue reading" shelf query — manga with at least one read
   /// chapter, ordered by most-recent read_at. Returns manga + the
   /// read/total counts the UI shows as a progress ring.
+  ///
+  /// Chapter aggregation runs as two scans instead of one `findAll()` per
+  /// manga: read chapters only (a small subset), plus a property-only scan of
+  /// every chapter's mangaId for the totals. Only the manga rows that actually
+  /// have a read chapter are then fetched.
   Future<List<InProgressManga>> getInProgressManga() async {
-    final mangas = await _isar.mangas.where().findAll();
+    // A chapter counts as read when isRead is set or it carries a readAt
+    // stamp — same predicate as before. Only read chapters are materialized
+    // (a small subset), so mangaId/readAt stay paired on the same object
+    // rather than across two independently-ordered property scans.
+    final readChapters = await _isar.mangaChapters
+        .filter()
+        .isReadEqualTo(true)
+        .or()
+        .readAtIsNotNull()
+        .findAll();
+
+    if (readChapters.isEmpty) return const [];
+
+    // Every chapter's mangaId as a primitive scan — drives totalChapters
+    // without materializing the full chapter table.
+    final allMangaIds =
+    await _isar.mangaChapters.where().mangaIdProperty().findAll();
+
+    final readCounts = <int, int>{};
+    final lastReadAt = <int, DateTime>{};
+    for (final c in readChapters) {
+      readCounts[c.mangaId] = (readCounts[c.mangaId] ?? 0) + 1;
+      final stamp = c.readAt;
+      if (stamp != null) {
+        final current = lastReadAt[c.mangaId];
+        if (current == null || stamp.isAfter(current)) {
+          lastReadAt[c.mangaId] = stamp;
+        }
+      }
+    }
+
+    final totalCounts = <int, int>{};
+    for (final mangaId in allMangaIds) {
+      totalCounts[mangaId] = (totalCounts[mangaId] ?? 0) + 1;
+    }
+
+    // Fetch only the manga that have progress, preserving read-count keys.
+    final ids = readCounts.keys.toList(growable: false);
+    final rows = await _isar.mangas.getAll(ids);
+
     final result = <InProgressManga>[];
-    for (final m in mangas) {
-      final chapters =
-          await _isar.mangaChapters.where().mangaIdEqualTo(m.id ?? 0).findAll();
-      final readCount = chapters.where((c) => c.isRead || c.readAt != null).length;
-      if (readCount == 0) continue;
-      final lastReadAt = chapters
-          .where((c) => c.readAt != null)
-          .map((c) => c.readAt!)
-          .fold<DateTime?>(null, (a, b) => (a == null || b.isAfter(a)) ? b : a);
+    for (var i = 0; i < ids.length; i++) {
+      final row = rows[i];
+      if (row == null) continue; // orphaned chapters — manga was deleted
+      final mangaId = ids[i];
       result.add(InProgressManga(
-        manga: _toModel(m),
-        readCount: readCount,
-        totalChapters: chapters.length,
-        lastReadAt: lastReadAt,
+        manga: _toModel(row),
+        readCount: readCounts[mangaId] ?? 0,
+        totalChapters: totalCounts[mangaId] ?? 0,
+        lastReadAt: lastReadAt[mangaId],
       ));
     }
+
     result.sort((a, b) {
       final at = a.lastReadAt ?? DateTime.fromMillisecondsSinceEpoch(0);
       final bt = b.lastReadAt ?? DateTime.fromMillisecondsSinceEpoch(0);
