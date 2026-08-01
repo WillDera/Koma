@@ -11,9 +11,12 @@ import '../services/http/m_client.dart';
 /// User-Agent is returned.
 ///
 /// The `Referer` always ends with `/` to match the extensions' own
-/// `headersBuilder()` (e.g. mmrcms adds `"$baseUrl/"`). Hotlink-protected CDNs
-/// (readcomicsonline) reject a slash-less referer even though the same-origin
-/// page URL includes it; fmcdn accepts both forms.
+/// `headersBuilder()` (e.g. mmrcms adds `"$baseUrl/"`). Note that
+/// `custom_extended_image_provider.dart` strips the Referer at request time
+/// when the image host is the source's own site or a subdomain of it —
+/// same-site CDNs like readcomicsonline's `cdn.readcomicsonline.ru` challenge
+/// ANY Referer, while cross-site CDNs like mangafox's `fmcdn.mfcdn.net`
+/// require one.
 ///
 /// Cookies are NOT injected here: [MCookieManager] (via `MClient.init`) adds
 /// the stored `Cookie` header at request time, so a freshly-solved
