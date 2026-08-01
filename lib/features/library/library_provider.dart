@@ -4,14 +4,18 @@ import 'dart:io';
 
 import 'package:collection/collection.dart';
 import 'package:crypto/crypto.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:workmanager/workmanager.dart';
 
 import '../../core/models/book.dart';
 import '../../core/models/manga.dart';
 import '../../core/providers.dart';
+import '../../core/services/background_task.dart';
 import '../../core/services/library_update_service.dart';
+import '../../core/services/notification_service.dart';
 import '../../widgets/library_book_card.dart';
 
 /// Immutable state for the library screen.
@@ -325,7 +329,9 @@ class LibraryUpdateNotifier extends Notifier<LibraryUpdateState> {
 
   @override
   LibraryUpdateState build() {
-    ref.onDispose(() => _timer?.cancel());
+    ref.onDispose(() {
+      _timer?.cancel();
+    });
     return const LibraryUpdateState();
   }
 
@@ -339,6 +345,7 @@ class LibraryUpdateNotifier extends Notifier<LibraryUpdateState> {
       interval: Duration(hours: intervalHours),
     );
     _reschedule();
+    await _syncBackgroundTask();
   }
 
   Future<void> setEnabled(bool value) async {
@@ -346,6 +353,7 @@ class LibraryUpdateNotifier extends Notifier<LibraryUpdateState> {
     await prefs.setBool(_keyEnabled, value);
     state = state.copyWith(enabled: value);
     _reschedule();
+    await _syncBackgroundTask();
   }
 
   Future<void> setInterval(Duration value) async {
@@ -354,6 +362,7 @@ class LibraryUpdateNotifier extends Notifier<LibraryUpdateState> {
     await prefs.setInt(_keyIntervalHours, hours);
     state = state.copyWith(interval: Duration(hours: hours));
     _reschedule();
+    await _syncBackgroundTask();
   }
 
   void _reschedule() {
@@ -361,6 +370,31 @@ class LibraryUpdateNotifier extends Notifier<LibraryUpdateState> {
     _timer = null;
     if (!state.enabled) return;
     _timer = Timer.periodic(state.interval, (_) => checkForNewChapters());
+  }
+
+  /// Mirror the in-app timer into a WorkManager periodic task so polling keeps
+  /// happening while the app is backgrounded (or killed). Android's minimum
+  /// period is 15 minutes; our smallest interval is 1h so the value passes
+  /// through unchanged.
+  Future<void> _syncBackgroundTask() async {
+    if (kIsWeb || defaultTargetPlatform != TargetPlatform.android) {
+      return;
+    }
+    try {
+      if (state.enabled) {
+        await Workmanager().registerPeriodicTask(
+          kLibraryPollTaskName,
+          kLibraryPollTaskName,
+          frequency: state.interval,
+          existingWorkPolicy: ExistingPeriodicWorkPolicy.update,
+        );
+      } else {
+        await Workmanager().cancelByUniqueName(kLibraryPollTaskName);
+      }
+    } catch (_) {
+      // Background scheduling is best-effort (e.g. unavailable in tests or
+      // on some emulators); the in-app timer still covers the foreground.
+    }
   }
 
   /// Poll every library manga for new chapters. Safe to call manually (the
@@ -378,6 +412,9 @@ class LibraryUpdateNotifier extends Notifier<LibraryUpdateState> {
       await ref.read(libraryProvider.notifier).loadBooks();
       if (report.totalNew > 0) {
         ref.read(libraryUpdateResultProvider.notifier).setReport(report);
+        // Foreground path: also surface a system notification. The background
+        // isolate posts its own (NotificationService is self-contained).
+        unawaited(NotificationService.instance.notifyNewChapters(report));
       }
       state = state.copyWith(
         checking: false,
