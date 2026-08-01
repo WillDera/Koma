@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -6,9 +7,11 @@ import 'package:crypto/crypto.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+
 import '../../core/models/book.dart';
 import '../../core/models/manga.dart';
 import '../../core/providers.dart';
+import '../../core/services/library_update_service.dart';
 import '../../widgets/library_book_card.dart';
 
 /// Immutable state for the library screen.
@@ -25,6 +28,7 @@ class LibraryState {
     this.cardVariant = LibraryCardVariant.grid,
     this.showSourcePills = true,
     this.extensionNames = const {},
+    this.newChapters = const {},
   });
 
   final List<Book> books;
@@ -39,6 +43,12 @@ class LibraryState {
   final bool showSourcePills;
   final Map<String, String> extensionNames;
 
+  /// mangaId → count of unopened (new) chapters. Populated by loadBooks.
+  final Map<int, int> newChapters;
+
+  int get totalNewChapters =>
+      newChapters.values.fold(0, (a, b) => a + b);
+
   LibraryState copyWith({
     List<Book>? books,
     List<Manga>? mangas,
@@ -51,6 +61,7 @@ class LibraryState {
     LibraryCardVariant? cardVariant,
     bool? showSourcePills,
     Map<String, String>? extensionNames,
+    Map<int, int>? newChapters,
   }) {
     return LibraryState(
       books: books ?? this.books,
@@ -64,6 +75,7 @@ class LibraryState {
       cardVariant: cardVariant ?? this.cardVariant,
       showSourcePills: showSourcePills ?? this.showSourcePills,
       extensionNames: extensionNames ?? this.extensionNames,
+      newChapters: newChapters ?? this.newChapters,
     );
   }
 }
@@ -123,6 +135,7 @@ class LibraryNotifier extends Notifier<LibraryState> {
     try {
       final books = await repos.books.getBooks();
       final mangas = await repos.manga.getMangasInLibrary();
+      final newChapters = await repos.manga.countNewChaptersByManga();
       final extNames = <String, String>{};
       final extensions = await repos.extensions.getInstalledExtensions();
       for (final ext in extensions) {
@@ -132,6 +145,7 @@ class LibraryNotifier extends Notifier<LibraryState> {
         books: books,
         mangas: mangas,
         extensionNames: extNames,
+        newChapters: newChapters,
         loading: false,
       );
     } catch (e) {
@@ -261,4 +275,126 @@ class LibraryNotifier extends Notifier<LibraryState> {
     state = state.copyWith(selectedIds: {}, selectionMode: false);
     await loadBooks();
   }
+}
+
+/// Auto-update state + poller for library manga (mangayomi's LibUpdatesAlarm
+/// parity). Watched by the library screen for the "new chapters" badge and
+/// by settings for the interval toggle.
+class LibraryUpdateState {
+  final bool enabled;
+  final Duration interval;
+  final DateTime? lastCheckedAt;
+  final int lastNewChapterCount;
+  final bool checking;
+  final String? error;
+
+  const LibraryUpdateState({
+    this.enabled = false,
+    this.interval = const Duration(hours: 6),
+    this.lastCheckedAt,
+    this.lastNewChapterCount = 0,
+    this.checking = false,
+    this.error,
+  });
+
+  LibraryUpdateState copyWith({
+    bool? enabled,
+    Duration? interval,
+    DateTime? Function()? lastCheckedAt,
+    int? lastNewChapterCount,
+    bool? checking,
+    String? Function()? error,
+  }) {
+    return LibraryUpdateState(
+      enabled: enabled ?? this.enabled,
+      interval: interval ?? this.interval,
+      lastCheckedAt:
+      lastCheckedAt != null ? lastCheckedAt() : this.lastCheckedAt,
+      lastNewChapterCount: lastNewChapterCount ?? this.lastNewChapterCount,
+      checking: checking ?? this.checking,
+      error: error != null ? error() : this.error,
+    );
+  }
+}
+
+class LibraryUpdateNotifier extends Notifier<LibraryUpdateState> {
+  static const _keyEnabled = 'library_auto_update_enabled';
+  static const _keyIntervalHours = 'library_auto_update_interval_hours';
+
+  Timer? _timer;
+
+  @override
+  LibraryUpdateState build() {
+    ref.onDispose(() => _timer?.cancel());
+    return const LibraryUpdateState();
+  }
+
+  Future<void> init() async {
+    final prefs = await SharedPreferences.getInstance();
+    final enabled = prefs.getBool(_keyEnabled) ?? false;
+    final intervalHours =
+        prefs.getInt(_keyIntervalHours) ?? state.interval.inHours;
+    state = state.copyWith(
+      enabled: enabled,
+      interval: Duration(hours: intervalHours),
+    );
+    _reschedule();
+  }
+
+  Future<void> setEnabled(bool value) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_keyEnabled, value);
+    state = state.copyWith(enabled: value);
+    _reschedule();
+  }
+
+  Future<void> setInterval(Duration value) async {
+    final prefs = await SharedPreferences.getInstance();
+    final hours = value.inHours < 1 ? 1 : value.inHours;
+    await prefs.setInt(_keyIntervalHours, hours);
+    state = state.copyWith(interval: Duration(hours: hours));
+    _reschedule();
+  }
+
+  void _reschedule() {
+    _timer?.cancel();
+    _timer = null;
+    if (!state.enabled) return;
+    _timer = Timer.periodic(state.interval, (_) => checkForNewChapters());
+  }
+
+  /// Poll every library manga for new chapters. Safe to call manually (the
+  /// library screen's refresh) or from the periodic timer.
+  Future<void> checkForNewChapters() async {
+    if (state.checking) return;
+    state = state.copyWith(checking: true, error: () => null);
+    try {
+      final service = LibraryUpdateService(
+        ref.read(repositoriesProvider),
+        ref.read(keiyoushiServiceProvider),
+      );
+      final report = await service.checkForNewChapters();
+      // Reload library so the new-chapter badges + card state refresh.
+      await ref.read(libraryProvider.notifier).loadBooks();
+      if (report.totalNew > 0) {
+        ref.read(libraryUpdateResultProvider.notifier).setReport(report);
+      }
+      state = state.copyWith(
+        checking: false,
+        lastCheckedAt: () => DateTime.now(),
+        lastNewChapterCount: report.totalNew,
+      );
+    } catch (e) {
+      state = state.copyWith(checking: false, error: () => '$e');
+    }
+  }
+}
+
+/// Holds the most recent update report so the library screen can surface an
+/// in-app "N new chapters" toast when a poll discovers something new.
+class LibraryUpdateResultNotifier extends Notifier<LibraryUpdateReport?> {
+  @override
+  LibraryUpdateReport? build() => null;
+
+  void setReport(LibraryUpdateReport report) => state = report;
 }

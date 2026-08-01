@@ -75,6 +75,9 @@ void main() {
     // automatically — we just call their init() methods.
     await container.read(themeProvider.notifier).init();
     await container.read(libraryProvider.notifier).init();
+    // Start the library chapter poller (reads its enabled/interval prefs and
+    // schedules a periodic check if auto-update is on).
+    await container.read(libraryUpdateProvider.notifier).init();
 
     runApp(
       UncontrolledProviderScope(

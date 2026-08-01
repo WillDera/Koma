@@ -9,6 +9,7 @@ import 'repositories/repositories.dart';
 import 'services/ebook_service.dart';
 import 'services/extension_manager.dart';
 import 'services/keiyoushi_service.dart';
+import 'services/library_update_service.dart';
 import 'services/search_service.dart';
 import 'services/source_service.dart';
 import 'services/stats_service.dart';
@@ -83,6 +84,16 @@ NotifierProvider<ExtensionUpdateCountNotifier, int>(
 
 final libraryProvider =
     NotifierProvider<LibraryNotifier, LibraryState>(LibraryNotifier.new);
+
+final libraryUpdateProvider =
+NotifierProvider<LibraryUpdateNotifier, LibraryUpdateState>(
+  LibraryUpdateNotifier.new,
+);
+
+final libraryUpdateResultProvider =
+NotifierProvider<LibraryUpdateResultNotifier, LibraryUpdateReport?>(
+  LibraryUpdateResultNotifier.new,
+);
 
 final readerProvider =
     NotifierProvider<ReaderNotifier, ReaderState>(ReaderNotifier.new);
