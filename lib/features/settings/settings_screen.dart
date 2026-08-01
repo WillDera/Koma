@@ -43,7 +43,7 @@ class SettingsScreen extends StatelessWidget {
             const OneHandSpacer(),
             const LibraryHeader(
               title: 'Settings',
-              subtitle: 'Version 2.22.0',
+              subtitle: 'Version 2.23.0',
               padding: EdgeInsets.fromLTRB(24, 20, 20, 12),
             ),
             const StaggeredEntrance(
@@ -154,7 +154,13 @@ class _DataAndStatsPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return const Column(
-      children: [_DataSection(), SizedBox(height: 24), _StatsSection()],
+      children: [
+        _DataSection(),
+        SizedBox(height: 24),
+        _LibraryUpdateSection(),
+        SizedBox(height: 24),
+        _StatsSection(),
+      ],
     );
   }
 }
@@ -884,6 +890,87 @@ class _TypographySection extends ConsumerWidget {
   }
 }
 
+// ─── Library updates (chapter polling) ─────────────────────────────────
+class _LibraryUpdateSection extends ConsumerWidget {
+  const _LibraryUpdateSection();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final c = context.colors;
+    final update = ref.watch(libraryUpdateProvider);
+    final lastReport = ref.watch(libraryUpdateResultProvider);
+    final lastChecked = update.lastCheckedAt;
+    return SettingsSection(
+      title: 'Library updates',
+      footer:
+      'Automatically check library manga for new chapters and surface a badge on each card. A system notification is planned.',
+      children: [
+        SettingsRow(
+          icon: Icons.autorenew,
+          title: 'Auto-check for new chapters',
+          subtitle: update.enabled ? 'On' : 'Off',
+          trailing: Switch(
+            value: update.enabled,
+            activeThumbColor: c.accent,
+            onChanged: (v) =>
+                ref.read(libraryUpdateProvider.notifier).setEnabled(v),
+          ),
+        ),
+        SettingsRow(
+          icon: Icons.schedule_outlined,
+          title: 'Check every',
+          subtitle: '${update.interval.inHours} hour${update.interval.inHours ==
+              1 ? '' : 's'}',
+          trailing: PopupMenuButton<int>(
+            icon: Icon(Icons.keyboard_arrow_down, color: c.textSecondary),
+            tooltip: 'Interval',
+            onSelected: (hours) =>
+                ref
+                    .read(libraryUpdateProvider.notifier)
+                    .setInterval(Duration(hours: hours)),
+            itemBuilder: (_) =>
+            const [
+              PopupMenuItem(value: 1, child: Text('1 hour')),
+              PopupMenuItem(value: 6, child: Text('6 hours')),
+              PopupMenuItem(value: 12, child: Text('12 hours')),
+              PopupMenuItem(value: 24, child: Text('24 hours')),
+            ],
+          ),
+        ),
+        SettingsRow(
+          icon: Icons.refresh,
+          title: 'Check now',
+          subtitle: update.checking
+              ? 'Checking…'
+              : lastChecked != null
+              ? 'Last checked ${_timeAgo(lastChecked)} · ${lastReport
+              ?.totalNew ?? update.lastNewChapterCount} new'
+              : 'Never checked',
+          trailing: update.checking
+              ? const SizedBox(
+            width: 18,
+            height: 18,
+            child: CircularProgressIndicator(strokeWidth: 2),
+          )
+              : null,
+          onTap: update.checking
+              ? null
+              : () =>
+              ref.read(libraryUpdateProvider.notifier).checkForNewChapters(),
+        ),
+      ],
+    );
+  }
+}
+
+String _timeAgo(DateTime t) {
+  final diff = DateTime.now().difference(t);
+  if (diff.inMinutes < 1) return 'just now';
+  if (diff.inMinutes < 60) return '${diff.inMinutes}m ago';
+  if (diff.inHours < 24) return '${diff.inHours}h ago';
+  return '${diff.inDays}d ago';
+}
+
 // ─── Data ────────────────────────────────────────────────────────────────
 class _DataSection extends ConsumerStatefulWidget {
   const _DataSection();
@@ -1563,7 +1650,7 @@ class _AboutSection extends StatelessWidget {
         SettingsRow(
           icon: Icons.info_outline,
           title: 'Koma',
-          subtitle: 'Version 2.22.0 · build 2.22.0+187',
+          subtitle: 'Version 2.23.0 · build 2.23.0+188',
         ),
         SettingsRow(
           icon: Icons.favorite_outline,
