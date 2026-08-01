@@ -1,5 +1,7 @@
 import 'dart:ui';
+
 import 'package:flutter/material.dart';
+
 import '../theme/app_theme.dart';
 import '../theme/tokens/app_colors.dart';
 import '../theme/tokens/app_motion.dart';
@@ -35,7 +37,8 @@ class ReaderSelectionToolbar extends StatelessWidget {
       defaultHighlightColor,
       Theme.of(context).brightness,
       isSepia: c.bg == AppColors.sepiaBg,
-    )return Positioned(
+    );
+    return Positioned(
       left: 16,
       right: 16,
       bottom: 120,

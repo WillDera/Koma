@@ -5,13 +5,13 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:isar_community/isar.dart';
 import 'package:koma/core/isar/isar.dart'
     show openIsarInMemory;
-import 'package:koma/core/repositories/book_repository.dart';
-import 'package:koma/core/repositories/manga_repository.dart';
-import 'package:koma/core/repositories/snippet_repository.dart';
 import 'package:koma/core/models/book.dart';
 import 'package:koma/core/models/chapter.dart';
 import 'package:koma/core/models/manga.dart';
 import 'package:koma/core/models/manga_chapter.dart';
+import 'package:koma/core/repositories/book_repository.dart';
+import 'package:koma/core/repositories/manga_repository.dart';
+import 'package:koma/core/repositories/snippet_repository.dart';
 
 /// Point Isar at the macOS dylib shipped in isar_community_flutter_libs.
 Future<void> _initIsarCore() async {
@@ -166,6 +166,122 @@ void main() {
       expect(inProgress.first.totalChapters, 2);
       expect(inProgress.first.progress, 0.5);
     });
+
+    test('getInProgressManga excludes manga with no read chapters', () async {
+      final repo = MangaRepository(isar);
+      final mid = await repo.insertManga(
+          Manga(id: 0, name: 'Untouched', url: '/u', sourceId: 's'));
+      await repo.insertMangaChapters(mid, [
+        MangaChapter(id: 0,
+            mangaId: mid,
+            name: 'c1',
+            url: '/c1',
+            index: 0),
+        MangaChapter(id: 0,
+            mangaId: mid,
+            name: 'c2',
+            url: '/c2',
+            index: 1),
+      ]);
+      expect(await repo.getInProgressManga(), isEmpty);
+    });
+
+    test('getInProgressManga counts isRead even without a readAt stamp',
+            () async {
+          final repo = MangaRepository(isar);
+          final mid = await repo.insertManga(
+              Manga(id: 0, name: 'M', url: '/m', sourceId: 's'));
+          await repo.insertMangaChapters(mid, [
+            MangaChapter(id: 0,
+                mangaId: mid,
+                name: 'c1',
+                url: '/c1',
+                index: 0,
+                isRead: true),
+            MangaChapter(id: 0,
+                mangaId: mid,
+                name: 'c2',
+                url: '/c2',
+                index: 1),
+          ]);
+          final inProgress = await repo.getInProgressManga();
+          expect(inProgress.length, 1);
+          expect(inProgress.first.readCount, 1);
+          expect(inProgress.first.totalChapters, 2);
+          expect(inProgress.first.lastReadAt, isNull);
+        });
+
+    test('getInProgressManga groups per manga and orders by lastReadAt desc',
+            () async {
+          final repo = MangaRepository(isar);
+          final older = DateTime(2026, 1, 1);
+          final newer = DateTime(2026, 6, 1);
+
+          final aId = await repo.insertManga(
+              Manga(id: 0, name: 'A-older', url: '/a', sourceId: 's'));
+          final bId = await repo.insertManga(
+              Manga(id: 0, name: 'B-newer', url: '/b', sourceId: 's'));
+          // Has chapters but none read — must not appear at all.
+          final cId = await repo.insertManga(
+              Manga(id: 0, name: 'C-unread', url: '/c', sourceId: 's'));
+
+          await repo.insertMangaChapters(aId, [
+            MangaChapter(id: 0,
+                mangaId: aId,
+                name: 'a1',
+                url: '/a1',
+                index: 0,
+                isRead: true,
+                readAt: older),
+            MangaChapter(id: 0,
+                mangaId: aId,
+                name: 'a2',
+                url: '/a2',
+                index: 1),
+            MangaChapter(id: 0,
+                mangaId: aId,
+                name: 'a3',
+                url: '/a3',
+                index: 2),
+          ]);
+          await repo.insertMangaChapters(bId, [
+            MangaChapter(id: 0,
+                mangaId: bId,
+                name: 'b1',
+                url: '/b1',
+                index: 0,
+                isRead: true,
+                readAt: older),
+            // Latest stamp for B — drives ordering ahead of A.
+            MangaChapter(id: 0,
+                mangaId: bId,
+                name: 'b2',
+                url: '/b2',
+                index: 1,
+                isRead: true,
+                readAt: newer),
+          ]);
+          await repo.insertMangaChapters(cId, [
+            MangaChapter(id: 0,
+                mangaId: cId,
+                name: 'c1',
+                url: '/c1',
+                index: 0),
+          ]);
+
+          final inProgress = await repo.getInProgressManga();
+          expect(inProgress.map((e) => e.manga.name), ['B-newer', 'A-older']);
+
+          final b = inProgress[0];
+          expect(b.readCount, 2);
+          expect(b.totalChapters, 2);
+          expect(b.lastReadAt, newer);
+
+          final a = inProgress[1];
+          expect(a.readCount, 1);
+          expect(a.totalChapters, 3);
+          expect(a.lastReadAt, older);
+        });
 
     test('setMangaInLibrary toggles library membership', () async {
       final repo = MangaRepository(isar);
