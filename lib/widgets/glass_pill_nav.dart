@@ -1,12 +1,15 @@
 import 'dart:ui';
+
 import 'package:flutter/material.dart';
+
+import '../theme/app_icons.dart';
 import '../theme/app_theme.dart';
 import '../theme/tokens/app_motion.dart';
 import '../theme/tokens/app_spacing.dart';
 
 class NavItem {
-  final IconData icon;
-  final IconData? activeIcon;
+  final AppIconData icon;
+  final AppIconData? activeIcon;
   final String label;
   const NavItem({required this.icon, this.activeIcon, required this.label});
 }
@@ -72,8 +75,8 @@ class GlassPillNav extends StatelessWidget {
                             mainAxisSize: MainAxisSize.min,
                             mainAxisAlignment: MainAxisAlignment.center,
                             children: [
-                              Icon(
-                                isActive
+                              AppIcon(
+                                data: isActive
                                     ? (item.activeIcon ?? item.icon)
                                     : item.icon,
                                 size: 22,
@@ -86,9 +89,9 @@ class GlassPillNav extends StatelessWidget {
                                   color: isActive ? c.accent : c.textTertiary,
                                   fontSize: 10,
                                   fontWeight: isActive
-                                      ? FontWeight.w600
+                                      ? FontWeight.w700
                                       : FontWeight.w500,
-                                  letterSpacing: 0.1,
+                                  letterSpacing: 0.5,
                                 ),
                               ),
                             ],

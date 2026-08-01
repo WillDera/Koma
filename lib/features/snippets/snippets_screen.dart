@@ -8,6 +8,7 @@ import '../../core/models/snippet.dart';
 import '../../core/models/snippet_collection.dart';
 import '../../core/providers.dart';
 import '../../router/router.dart';
+import '../../theme/app_icons.dart';
 import '../../theme/app_theme.dart';
 import '../../theme/theme_provider.dart';
 import '../../widgets/bookmark_card.dart';
@@ -118,7 +119,7 @@ class _SnippetsScreenState extends ConsumerState<SnippetsScreen> {
           _buildTabBar(),
           const SizedBox(height: 60),
           EmptyState(
-            icon: Icons.error_outline,
+            icon: AppIcons.alert,
             title: 'Could not load snippets',
             subtitle: p.error!,
             primaryActionLabel: 'Try again',
@@ -175,11 +176,11 @@ class _SnippetsScreenState extends ConsumerState<SnippetsScreen> {
           _buildTabBar(),
           const SizedBox(height: 60),
           EmptyState(
-            icon: Icons.format_quote_outlined,
+            icon: AppIcons.bookmark,
             title: 'No snippets yet',
             subtitle: 'Highlight text while reading, or tap + to create one.',
             primaryActionLabel: 'New snippet',
-            primaryActionIcon: Icons.add,
+            primaryActionIcon: AppIcons.add,
             onPrimaryAction: () => _createSnippet(context),
           ),
         ],
@@ -197,7 +198,7 @@ class _SnippetsScreenState extends ConsumerState<SnippetsScreen> {
         if (!p.selectionMode)
           StaggeredEntrance(
             child: FeaturePanel(
-              icon: Icons.format_quote_rounded,
+              icon: AppIcons.note,
               title: 'Captured thoughts',
               subtitle:
                   'Highlights, notes, and quotes with just enough structure to find them again.',
@@ -225,7 +226,7 @@ class _SnippetsScreenState extends ConsumerState<SnippetsScreen> {
           SizedBox(
             height: 200,
             child: EmptyState(
-              icon: Icons.format_quote_outlined,
+              icon: AppIcons.note,
               title: 'No matching snippets',
               subtitle: 'Try a different tag or remove the filter.',
             ),
@@ -629,7 +630,7 @@ class _SnippetsScreenState extends ConsumerState<SnippetsScreen> {
             Padding(
               padding: const EdgeInsets.all(40),
               child: EmptyState(
-                icon: Icons.bookmark_border_outlined,
+                icon: AppIcons.bookmark,
                 title: 'No bookmarks yet',
                 subtitle: 'Tap the bookmark icon while reading to save a page.',
               ),

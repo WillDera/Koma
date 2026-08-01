@@ -9,6 +9,7 @@ import '../../core/repositories/manga_repository.dart';
 import '../../core/utils/image_cache.dart';
 import '../../core/utils/image_headers.dart';
 import '../../router/router.dart';
+import '../../theme/app_icons.dart';
 import '../../theme/app_theme.dart';
 import '../../theme/theme_provider.dart';
 import '../../theme/tokens/app_spacing.dart';
@@ -151,7 +152,7 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> with RouteAware {
               ),
               const SizedBox(height: 80),
               const EmptyState(
-                icon: Icons.history,
+                icon: AppIcons.history,
                 title: 'No reading history',
                 subtitle: 'Books and manga you\'re reading will appear here',
               ),
@@ -184,7 +185,7 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> with RouteAware {
                   ),
                   StaggeredEntrance(
                     child: FeaturePanel(
-                      icon: Icons.local_library_outlined,
+                      icon: AppIcons.bookshelf,
                       title: 'Pick up where you left off',
                       subtitle:
                           'Your active books and manga are ordered for quick returns and clean resets.',

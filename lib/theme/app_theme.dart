@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+
 import 'tokens/app_colors.dart';
 import 'tokens/app_spacing.dart';
 import 'tokens/app_type.dart';
@@ -245,9 +246,7 @@ class AppTheme {
         focusElevation: 0,
         hoverElevation: 0,
         highlightElevation: 0,
-        shape: RoundedRectangleBorder(
-          borderRadius: AppSpacing.brLg,
-        ),
+        shape: const CircleBorder(),
         extendedTextStyle: textTheme.labelLarge?.copyWith(color: onAccent),
       ),
       dividerTheme: DividerThemeData(

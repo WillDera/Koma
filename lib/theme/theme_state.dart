@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+
 import 'tokens/app_colors.dart';
 import 'tokens/app_type.dart';
 
@@ -74,6 +75,10 @@ class ThemeState {
         return dark ? AppColors.accentAmberDark : AppColors.accentAmber;
       case AccentPreset.forest:
         return dark ? AppColors.accentForestDark : AppColors.accentForest;
+      case AccentPreset.aethelgard:
+        return dark
+            ? AppColors.aethelgardPrimaryDark
+            : AppColors.aethelgardPrimary;
     }
   }
 
@@ -164,7 +169,7 @@ class ThemeState {
 
 enum HandMode { left, right }
 
-enum AccentPreset { indigo, amber, forest }
+enum AccentPreset { indigo, amber, forest, aethelgard }
 
 /// Reading fonts the user can choose from.
 enum ReadingFont {

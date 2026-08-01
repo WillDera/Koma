@@ -122,4 +122,51 @@ class AppSpacing {
       top: BorderSide(color: color, width: 0.5),
     );
   }
+
+  // ─── Aethelgard-specific tokens ────────────────────────────────────────
+
+  /// Book cover aspect ratio — Aethelgard spec mandates 2:3 for all artwork
+  /// cards. (Previous value was 3:4.)
+  static const double coverAspectRatio = 2 / 3;
+
+  /// Tactile scale-down on active touch for artwork cards (Aethelgard spec).
+  static const double artworkScaleDown = 0.96;
+
+  /// FAB glow — the only element in the Aethelgard system that uses a
+  /// physical shadow. Simulates a light source emitting from the primary
+  /// color: `0 0 20px rgba(accent, 0.3)`.
+  static List<BoxShadow> fabGlow({required Color accent}) {
+    return [
+      BoxShadow(
+        color: accent.withValues(alpha: 0.3),
+        blurRadius: 20,
+        spreadRadius: 0,
+        offset: Offset.zero,
+      ),
+    ];
+  }
+
+  /// Glass surface decoration — 5% white fill + hairline border, matching
+  /// the Aethelgard glass-surface / glass-border tokens. Apply inside a
+  /// ClipRRect with BackdropFilter for the full glass effect.
+  static BoxDecoration glassSurface({
+    required Color surface,
+    required Color border,
+    BorderRadius? borderRadius,
+    bool isDark = true,
+  }) {
+    final radius = borderRadius ?? brXl;
+    return BoxDecoration(
+      color: isDark
+          ? const Color(0x0DFFFFFF) // 5% white
+          : surface.withValues(alpha: 0.7),
+      borderRadius: radius,
+      border: Border.all(
+        color: isDark
+            ? const Color(0x14FFFFFF) // 8% white
+            : border.withValues(alpha: 0.5),
+        width: 0.5,
+      ),
+    );
+  }
 }
