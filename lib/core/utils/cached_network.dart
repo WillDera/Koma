@@ -43,6 +43,7 @@ ImageProvider coverProvider(
       headers: headers,
       cache: cache,
       cacheMaxAge: cacheMaxAge,
+      showCloudFlareError: true,
     ),
     maxBytes: maxBytes,
   );
@@ -64,7 +65,8 @@ Widget cachedNetworkImage({
 }) {
   return ExtendedImage(
     image: useCustomNetworkImage
-        ? CustomExtendedNetworkImageProvider(imageUrl, headers: headers)
+        ? CustomExtendedNetworkImageProvider(imageUrl,
+        headers: headers, showCloudFlareError: true)
         : ExtendedNetworkImageProvider(imageUrl, headers: headers),
     width: width,
     height: height,
@@ -100,7 +102,8 @@ Widget cachedCompressedNetworkImage({
   return ExtendedImage(
     image: ExtendedResizeImage(
       useCustomNetworkImage
-          ? CustomExtendedNetworkImageProvider(imageUrl, headers: headers)
+          ? CustomExtendedNetworkImageProvider(imageUrl,
+          headers: headers, showCloudFlareError: true)
           : ExtendedNetworkImageProvider(imageUrl, headers: headers),
       maxBytes: maxBytes,
     ),
