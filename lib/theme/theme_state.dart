@@ -31,6 +31,7 @@ class ThemeState {
     this.systemFontFamily,
     this.showNsfwExtensions = false,
     this.showObsoleteExtensions = false,
+    this.immersiveAutoHide = false,
   });
 
   final ThemeMode themeMode;
@@ -55,6 +56,7 @@ class ThemeState {
   final String? systemFontFamily;
   final bool showNsfwExtensions;
   final bool showObsoleteExtensions;
+  final bool immersiveAutoHide;
 
   // ── Derived getters ────────────────────────────────────────────────
 
@@ -137,7 +139,8 @@ class ThemeState {
       String? systemFontFamily,
       bool? showNsfwExtensions,
       bool? showObsoleteExtensions,
-    }) {
+    bool? immersiveAutoHide,
+  }) {
       return ThemeState(
       themeMode: themeMode ?? this.themeMode,
       sepiaMode: sepiaMode ?? this.sepiaMode,
@@ -163,6 +166,7 @@ class ThemeState {
       systemFontFamily: systemFontFamily ?? this.systemFontFamily,
       showNsfwExtensions: showNsfwExtensions ?? this.showNsfwExtensions,
       showObsoleteExtensions: showObsoleteExtensions ?? this.showObsoleteExtensions,
+      immersiveAutoHide: immersiveAutoHide ?? this.immersiveAutoHide,
     );
   }
 }

@@ -11,6 +11,7 @@ import '../../router/router.dart';
 import '../../theme/app_icons.dart';
 import '../../theme/app_theme.dart';
 import '../../theme/theme_provider.dart';
+import '../../widgets/aethelgard_fab.dart';
 import '../../widgets/bookmark_card.dart';
 import '../../widgets/dialog_sheet.dart';
 import '../../widgets/empty_state.dart';
@@ -20,6 +21,7 @@ import '../../widgets/library_header.dart';
 import '../../widgets/loading_skeleton.dart';
 import '../../widgets/one_hand_spacer.dart';
 import '../../widgets/screen_chrome.dart';
+import '../../widgets/segmented_control.dart';
 import '../../widgets/snippet_card.dart';
 import '../../widgets/snippet_detail_sheet.dart';
 import '../../widgets/tag_filter_bar.dart';
@@ -85,12 +87,8 @@ class _SnippetsScreenState extends ConsumerState<SnippetsScreen> {
               left: leftHanded ? 20 : null,
               right: leftHanded ? null : 20,
               bottom: navClearance,
-              child: IconButtonRound(
-                icon: Icons.add,
-                size: 52,
-                variant: IconButtonVariant.filled,
-                backgroundColor: context.colors.accent,
-                iconColor: context.colors.onAccent,
+              child: AethelgardFab(
+                iconData: AppIcons.add,
                 onPressed: () => _createSnippet(context),
               ),
             ),
@@ -134,24 +132,16 @@ class _SnippetsScreenState extends ConsumerState<SnippetsScreen> {
 
   Widget _buildTabBar() {
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 20),
-      child: Row(
-        children: [
-          _TabButton(
-            label: 'Snippets',
-            selected: _tab == 0,
-            onTap: () => setState(() => _tab = 0),
-          ),
-          const SizedBox(width: 12),
-          _TabButton(
-            label: 'Bookmarks',
-            selected: _tab == 1,
-            onTap: () {
-              setState(() => _tab = 1);
-              ref.read(bookmarksProvider.notifier).loadBookmarks();
-            },
-          ),
-        ],
+      padding: const EdgeInsets.fromLTRB(20, 4, 20, 8),
+      child: SegmentedControl<int>(
+        segments: const {0: 'Snippets', 1: 'Bookmarks'},
+        value: _tab,
+        onChanged: (v) {
+          setState(() => _tab = v);
+          if (v == 1) {
+            ref.read(bookmarksProvider.notifier).loadBookmarks();
+          }
+        },
       ),
     );
   }
@@ -796,42 +786,6 @@ class _Chip extends StatelessWidget {
           style: TextStyle(
             color: fg,
             fontSize: 13,
-            fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _TabButton extends StatelessWidget {
-  final String label;
-  final bool selected;
-  final VoidCallback onTap;
-
-  const _TabButton({
-    required this.label,
-    required this.selected,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final c = context.colors;
-    return GestureDetector(
-      onTap: onTap,
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 200),
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-        decoration: BoxDecoration(
-          color: selected ? c.accentMuted : Colors.transparent,
-          borderRadius: BorderRadius.circular(10),
-        ),
-        child: Text(
-          label,
-          style: TextStyle(
-            color: selected ? c.accent : c.textSecondary,
-            fontSize: 14,
             fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
           ),
         ),

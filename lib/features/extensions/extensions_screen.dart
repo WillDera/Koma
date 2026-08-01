@@ -12,9 +12,11 @@ import '../../core/services/extension_manager.dart';
 import '../../core/services/keiyoushi_service.dart';
 import '../../core/utils/custom_extended_image_provider.dart';
 import '../../core/utils/language.dart';
+import '../../theme/app_icons.dart';
 import '../../theme/app_theme.dart';
 import '../../theme/theme_provider.dart';
 import '../../theme/tokens/app_spacing.dart';
+import '../../widgets/aethelgard_fab.dart';
 import '../../widgets/animated_press.dart';
 import 'extension_detail_screen.dart';
 import 'source_browse_screen.dart';
@@ -1275,11 +1277,9 @@ class _ReposTab extends StatelessWidget {
         Positioned(
           right: 16,
           bottom: 16,
-          child: FloatingActionButton.extended(
+          child: AethelgardFab(
+            iconData: AppIcons.add,
             onPressed: onAdd,
-            backgroundColor: c.accent,
-            icon: const Icon(Icons.add),
-            label: const Text('Add repo'),
           ),
         ),
       ],

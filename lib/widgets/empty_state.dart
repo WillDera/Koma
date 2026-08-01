@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+
 import '../theme/app_icons.dart';
 import '../theme/app_theme.dart';
 import 'animated_press.dart';
@@ -71,10 +72,10 @@ class EmptyState extends StatelessWidget {
             if (primaryActionLabel != null && onPrimaryAction != null) ...[
               const SizedBox(height: 28),
               PremiumButton(
-                label: primaryActionLabel,
-                leading: primaryActionIcon != null AppIcon(data: primaryActionIcon!, size: 20)
-                    : : null,
-                onPressed: onPrimaryAction,
+                label: primaryActionLabel,eading: primaryActionIcon != null
+                    ? AppIcon(data: primaryActionIcon!, size: 20)
+                    : null,
+                oonPressed: onPrimaryAction,
                 size: PremiumButtonSize.lg,
               ),
             ],

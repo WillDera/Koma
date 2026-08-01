@@ -203,6 +203,8 @@ class AppIcons {
     HugeIcons.strokeRoundedLockPassword,
   );
   static const AppIconData clock = HugeIconData(HugeIcons.strokeRoundedClock01);
+  static const AppIconData calendar = MaterialIconData(
+      Icons.calendar_today_outlined);
   static const AppIconData schedule = HugeIconData(
     HugeIcons.strokeRoundedClock02,
   );
