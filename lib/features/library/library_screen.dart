@@ -21,6 +21,7 @@ import '../../core/utils/benchmark_logger.dart';
 import '../../core/utils/image_cache.dart';
 import '../../core/utils/image_headers.dart';
 import '../../router/router.dart';
+import '../../theme/app_icons.dart';
 import '../../theme/app_theme.dart';
 import '../../theme/theme_provider.dart';
 import '../../theme/tokens/app_spacing.dart';
@@ -151,9 +152,9 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> with RouteAware {
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   IconButtonRound(
-                    icon: provider.isGridView
-                        ? Icons.list
-                        : Icons.grid_view_rounded,
+                    iconData: provider.isGridView
+                        ? AppIcons.list
+                        : AppIcons.grid,
                     size: 44,
                     variant: IconButtonVariant.filled,
                     backgroundColor: context.colors.surfaceMuted,
@@ -161,12 +162,8 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> with RouteAware {
                     onPressed: ln.toggleLayout,
                   ),
                   const SizedBox(height: 10),
-                  IconButtonRound(
-                    icon: Icons.add,
-                    size: 52,
-                    variant: IconButtonVariant.filled,
-                    backgroundColor: context.colors.accent,
-                    iconColor: context.colors.onAccent,
+                  _AethelgardFab(
+                    iconData: AppIcons.add,
                     onPressed: () => _showImportOptions(context),
                   ),
                 ],
@@ -266,11 +263,11 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> with RouteAware {
         _header(context, provider),
         Expanded(
           child: EmptyState(
-            icon: Icons.error_outline,
+            icon: AppIcons.alert,
             title: 'Something went wrong',
             subtitle: provider.error!,
             primaryActionLabel: 'Try again',
-            primaryActionIcon: Icons.refresh,
+            primaryActionIcon: AppIcons.refresh,
             onPrimaryAction: () => ref.read(libraryProvider.notifier).loadBooks(),
           ),
         ),
@@ -284,12 +281,12 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> with RouteAware {
         _header(context, ref.read(libraryProvider)),
         Expanded(
           child: EmptyState(
-            icon: Icons.auto_stories_outlined,
+            icon: AppIcons.bookOpen,
             title: 'Your library is empty',
             subtitle:
                 'Import an EPUB, paste a URL, or write a note to begin your reading collection.',
             primaryActionLabel: 'Add to library',
-            primaryActionIcon: Icons.add,
+            primaryActionIcon: AppIcons.add,
             onPrimaryAction: () => _showImportOptions(context),
           ),
         ),
@@ -323,7 +320,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> with RouteAware {
             StaggeredEntrance(
               index: 0,
               child: FeaturePanel(
-                icon: Icons.auto_stories_outlined,
+                icon: AppIcons.books,
                 title: 'Your reading stack',
                 subtitle:
                     'Books, manga, web saves, and notes arranged for fast return.',
@@ -1417,7 +1414,7 @@ class _BookShelf extends StatelessWidget {
       return const SizedBox(
         height: 260,
         child: EmptyState(
-          icon: Icons.search_off,
+          icon: AppIcons.search,
           title: 'No books found',
           subtitle: 'Try another title, author, genre, or format.',
         ),
@@ -1512,7 +1509,7 @@ class _MangaShelf extends StatelessWidget {
       return const SizedBox(
         height: 260,
         child: EmptyState(
-          icon: Icons.search_off,
+          icon: AppIcons.search,
           title: 'No manga found',
           subtitle: 'Try another title, author, source, or genre.',
         ),
@@ -2034,6 +2031,40 @@ class _NewChapterBadge extends StatelessWidget {
           color: c.onAccent,
           fontSize: small ? 9 : 11,
           fontWeight: FontWeight.bold,
+        ),
+      ),
+    );
+  }
+}
+
+/// Aethelgard-style FAB — circular, primary-colored, with the signature
+/// soft outer glow (`0 0 20px rgba(accent, 0.3)`). Uses Hugeicons.
+class _AethelgardFab extends StatelessWidget {
+  final AppIconData iconData;
+  final VoidCallback? onPressed;
+
+  const _AethelgardFab({required this.iconData, this.onPressed});
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.colors;
+    return AnimatedPress(
+      onTap: onPressed,
+      scaleDown: 0.90,
+      child: Container(
+        width: 56,
+        height: 56,
+        decoration: BoxDecoration(
+          color: c.accent,
+          shape: BoxShape.circle,
+          boxShadow: AppSpacing.fabGlow(accent: c.accent),
+        ),
+        child: Center(
+          child: AppIcon(
+            data: iconData,
+            size: 26,
+            color: c.onAccent,
+          ),
         ),
       ),
     );

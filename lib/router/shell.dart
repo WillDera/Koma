@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../theme/app_icons.dart';
 import '../theme/theme_provider.dart';
 import '../widgets/glass_pill_nav.dart';
 
@@ -20,33 +21,33 @@ class MainShell extends ConsumerWidget {
 
   static const _navItems = [
     NavItem(
-      icon: Icons.menu_book_outlined,
-      activeIcon: Icons.menu_book,
+      icon: AppIcons.library,
+      activeIcon: AppIcons.libraryActive,
       label: 'Library',
     ),
     NavItem(
-      icon: Icons.history,
-      activeIcon: Icons.history,
+      icon: AppIcons.history,
+      activeIcon: AppIcons.historyActive,
       label: 'History',
     ),
     NavItem(
-      icon: Icons.bookmark_outline,
-      activeIcon: Icons.bookmark,
+      icon: AppIcons.snippets,
+      activeIcon: AppIcons.snippetsActive,
       label: 'Snippets',
     ),
     NavItem(
-      icon: Icons.explore_outlined,
-      activeIcon: Icons.explore,
+      icon: AppIcons.discover,
+      activeIcon: AppIcons.discoverActive,
       label: 'Discover',
     ),
     NavItem(
-      icon: Icons.search,
-      activeIcon: Icons.search,
+      icon: AppIcons.search,
+      activeIcon: AppIcons.searchActive,
       label: 'Search',
     ),
     NavItem(
-      icon: Icons.tune,
-      activeIcon: Icons.tune,
+      icon: AppIcons.settings,
+      activeIcon: AppIcons.settingsActive,
       label: 'Settings',
     ),
   ];

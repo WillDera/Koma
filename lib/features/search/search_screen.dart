@@ -1,13 +1,15 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-import '../../core/providers.dart';
-import '../../router/router.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+
 import '../../core/models/book.dart';
 import '../../core/models/chapter.dart' as ch_model;
 import '../../core/models/snippet.dart';
+import '../../core/providers.dart';
 import '../../core/services/search_service.dart';
+import '../../router/router.dart';
+import '../../theme/app_icons.dart';
 import '../../theme/app_theme.dart';
 import '../../theme/theme_provider.dart';
 import '../../theme/tokens/app_spacing.dart';
@@ -169,7 +171,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
     if (_query.isEmpty) return _buildIdle(context);
     if (_results.isEmpty) {
       return EmptyState(
-        icon: Icons.search_off,
+        icon: AppIcons.search,
         title: 'No results',
         subtitle: 'Nothing matched "$_query". Try a different keyword.',
       );
@@ -181,7 +183,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
     final c = context.colors;
     if (_recentSearches.isEmpty) {
       return EmptyState(
-        icon: Icons.search,
+        icon: AppIcons.search,
         title: 'Search your library',
         subtitle:
             'Type a title, author, phrase, or tag. Results stream as you type.',

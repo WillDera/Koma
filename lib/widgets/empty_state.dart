@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../theme/app_icons.dart';
 import '../theme/app_theme.dart';
 import 'animated_press.dart';
 import 'premium_button.dart';
@@ -6,11 +7,11 @@ import 'premium_button.dart';
 /// A refined empty state. Icon (line, 1.5px stroke feel), title, subtitle,
 /// optional primary CTA. Used on Library / Snippets / Search.
 class EmptyState extends StatelessWidget {
-  final IconData icon;
+  final AppIconData icon;
   final String title;
   final String? subtitle;
   final String? primaryActionLabel;
-  final IconData? primaryActionIcon;
+  final AppIconData? primaryActionIcon;
   final VoidCallback? onPrimaryAction;
   final String? secondaryActionLabel;
   final VoidCallback? onSecondaryAction;
@@ -43,9 +44,7 @@ class EmptyState extends StatelessWidget {
                 color: c.accentMuted,
                 borderRadius: BorderRadius.circular(28),
               ),
-              child: Icon(
-                icon,
-                size: 40,
+              child: AppIcon(data: icon, size: 40,
                 color: c.accent,
               ),
             ),
@@ -73,9 +72,8 @@ class EmptyState extends StatelessWidget {
               const SizedBox(height: 28),
               PremiumButton(
                 label: primaryActionLabel,
-                leading: primaryActionIcon != null
-                    ? Icon(primaryActionIcon)
-                    : null,
+                leading: primaryActionIcon != null AppIcon(data: primaryActionIcon!, size: 20)
+                    : : null,
                 onPressed: onPrimaryAction,
                 size: PremiumButtonSize.lg,
               ),

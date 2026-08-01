@@ -8,6 +8,7 @@ import '../../core/services/source_service.dart';
 import '../../core/utils/image_cache.dart';
 import '../../core/utils/image_headers.dart';
 import '../../router/router.dart';
+import '../../theme/app_icons.dart';
 import '../../theme/app_theme.dart';
 import '../../theme/theme_provider.dart';
 import '../../theme/tokens/app_spacing.dart';
@@ -318,7 +319,7 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
             ),
             StaggeredEntrance(
               child: FeaturePanel(
-                icon: Icons.travel_explore_rounded,
+                icon: AppIcons.compass,
                 title: 'Search across every shelf',
                 subtitle:
                     'Pull from book sources and installed manga extensions without leaving your desk.',
@@ -536,7 +537,7 @@ class _DiscoverBookResults extends StatelessWidget {
       return const SizedBox(
         height: 240,
         child: EmptyState(
-          icon: Icons.search_off,
+          icon: AppIcons.search,
           title: 'No book results',
           subtitle: 'Try another title or switch to manga.',
         ),
@@ -609,7 +610,7 @@ class _DiscoverMangaResults extends StatelessWidget {
       return const SizedBox(
         height: 240,
         child: EmptyState(
-          icon: Icons.search_off,
+          icon: AppIcons.search,
           title: 'No manga results',
           subtitle: 'Try another title or switch to books.',
         ),

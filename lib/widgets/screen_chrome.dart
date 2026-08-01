@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+
+import '../theme/app_icons.dart';
 import '../theme/app_theme.dart';
 import '../theme/tokens/app_motion.dart';
 import '../theme/tokens/app_spacing.dart';
@@ -113,7 +115,7 @@ class _StaggeredEntranceState extends State<StaggeredEntrance>
 }
 
 class FeaturePanel extends StatelessWidget {
-  final IconData icon;
+  final AppIconData icon;
   final String title;
   final String subtitle;
   final List<Widget> stats;
@@ -166,7 +168,7 @@ class FeaturePanel extends StatelessWidget {
                     borderRadius: AppSpacing.brMd,
                     border: Border.all(color: c.accent.withValues(alpha: 0.22)),
                   ),
-                  child: Icon(icon, color: c.accent, size: 22),
+                  child: AppIcon(data: icon, color: c.accent, size: 22),
                 ),
                 const SizedBox(width: 14),
                 Expanded(

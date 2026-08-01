@@ -11,6 +11,7 @@ import '../../core/providers.dart';
 import '../../core/services/export_service.dart';
 import '../../core/services/source_service.dart';
 import '../../router/router.dart';
+import '../../theme/app_icons.dart';
 import '../../theme/app_theme.dart';
 import '../../theme/theme_provider.dart';
 import '../../theme/tokens/app_colors.dart';
@@ -44,13 +45,13 @@ class SettingsScreen extends StatelessWidget {
             const OneHandSpacer(),
             const LibraryHeader(
               title: 'Settings',
-              subtitle: 'Version 2.24.0',
+              subtitle: 'Version 2.24.1',
               padding: EdgeInsets.fromLTRB(24, 20, 20, 12),
             ),
             const StaggeredEntrance(
               index: 0,
               child: FeaturePanel(
-                icon: Icons.tune_rounded,
+                icon: AppIcons.tune,
                 title: 'Tune the reading room',
                 subtitle:
                     'Shape the app around your eyes, your thumb, your sources, and your backups.',
@@ -300,6 +301,12 @@ class _AppearanceSection extends ConsumerWidget {
                       AppColors.accentForest,
                       AppColors.accentForestDark,
                       'Forest',
+                    ),
+                    (
+                    AccentPreset.aethelgard,
+                    AppColors.aethelgardPrimary,
+                    AppColors.aethelgardPrimaryDark,
+                    'Neo-Noir',
                     ),
                   ]) ...[
                     _AccentSwatch(
@@ -1727,7 +1734,7 @@ class _AboutSection extends StatelessWidget {
         SettingsRow(
           icon: Icons.info_outline,
           title: 'Koma',
-          subtitle: 'Version 2.24.0 · build 2.24.0+189',
+          subtitle: 'Version 2.24.1 · build 2.24.1+190',
         ),
         SettingsRow(
           icon: Icons.favorite_outline,

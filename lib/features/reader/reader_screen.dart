@@ -1,8 +1,13 @@
 import 'dart:math';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+
+import '../../core/models/highlight.dart';
 import '../../core/providers.dart';
+import '../../core/utils/text_extractor.dart';
+import '../../theme/app_icons.dart';
 import '../../theme/app_theme.dart';
 import '../../theme/theme_provider.dart';
 import '../../theme/tokens/app_colors.dart';
@@ -18,8 +23,6 @@ import '../../widgets/reader_settings_sheet.dart';
 import '../../widgets/reader_top_bar.dart';
 import '../../widgets/text_selection_toolbar.dart';
 import '../../widgets/toast.dart';
-import '../../core/models/highlight.dart';
-import '../../core/utils/text_extractor.dart';
 import '../../widgets/tts_controls.dart';
 import 'reader_provider.dart';
 import 'tts_provider.dart';
@@ -361,7 +364,7 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
                 ? AppColors.sepiaBg
                 : (themeProv.isDark ? AppColors.darkBg : AppColors.lightBg),
             body: EmptyState(
-              icon: Icons.error_outline,
+              icon: AppIcons.alert,
               title: 'Content not available',
               subtitle: provider.error ?? 'This chapter could not be loaded.',
               primaryActionLabel: 'Back to library',
