@@ -8,6 +8,11 @@ class MManga {
   final int status;
   final List<String> genres;
 
+  /// Raw JSON of the source-side `SManga.memo` (e.g. allanime `{"slug":...}`).
+  /// Opaque to the UI — round-tripped back to the Dalvik server so sources
+  /// that derive URLs from memo can work.
+  final String? memo;
+
   const MManga({
     required this.url,
     required this.title,
@@ -16,6 +21,7 @@ class MManga {
     this.artist,
     this.description,
     this.status = 0,
+    this.memo,
     List<String>? genres,
   }) : genres = genres ?? const [];
 
@@ -28,7 +34,8 @@ class MManga {
         'description': description,
         'status': status,
         'genre': genres.join(', '),
-      };
+    'memo': memo,
+  };
 
   factory MManga.fromJson(Map<String, dynamic> json) => MManga(
         url: json['url'] as String? ?? '',
@@ -38,7 +45,8 @@ class MManga {
         artist: json['artist'] as String?,
         description: json['description'] as String?,
         status: json['status'] as int? ?? 0,
-        genres: json['genre'] != null
+    memo: json['memo'] as String?,
+    genres: json['genre'] != null
             ? (json['genre'] as String).split(',').map((g) => g.trim()).toList()
             : null,
       );

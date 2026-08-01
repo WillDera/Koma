@@ -65,18 +65,40 @@ class MClient {
   /// Returns the `Cookie` header for [url]'s host if a stored cookie matches.
   /// Host matching mirrors mangayomi: exact host OR the request host contains
   /// the stored host as a substring.
+  ///
+  /// Cookies are read from two stores and merged:
+  /// 1. The [CookieRepository] (Isar) — written by this Dart-side resolver.
+  /// 2. The platform WebKit [CookieManager] — the same store the Kotlin Dalvik
+  ///    server's [AndroidCookieJar] writes to when its `CloudflareInterceptor`
+  ///    solves a challenge. Without this fallback a `cf_clearance` obtained by
+  ///    the Kotlin source-request path never reaches Dart image requests.
   static Future<Map<String, String>> getCookiesPref(String url) async {
     final repo = cookies;
-    if (repo == null) return {};
-    final stored = await repo.getAll();
-    if (stored.isEmpty) return {};
-    final host = Uri.parse(url).host;
     String cookie = '';
-    for (final element in stored) {
-      if (element.host == host || host.contains(element.host)) {
-        cookie = element.cookie;
-        break;
+    if (repo != null) {
+      final stored = await repo.getAll();
+      if (stored.isNotEmpty) {
+        final host = Uri.parse(url).host;
+        for (final element in stored) {
+          if (element.host == host || host.contains(element.host)) {
+            cookie = element.cookie;
+            break;
+          }
+        }
       }
+    }
+    if (!Platform.isLinux) {
+      try {
+        final webCookies = await webview.CookieManager.instance().getCookies(
+          url: webview.WebUri(url),
+        );
+        if (webCookies.isNotEmpty) {
+          final webCookie = webCookies
+              .map((e) => '${e.name}=${e.value}')
+              .join('; ');
+          cookie = cookie.isNotEmpty ? '$cookie; $webCookie' : webCookie;
+        }
+      } catch (_) {}
     }
     if (cookie.isEmpty) return {};
     return {HttpHeaders.cookieHeader: cookie};
@@ -243,6 +265,7 @@ class ResolveCloudFlareChallenge extends RetryPolicy {
     if (!showCloudFlareError) return false;
     if (!isCloudflare(response)) return false;
     final url = response.request!.url.toString();
+    final userAgent = response.request!.headers[HttpHeaders.userAgentHeader];
 
     if (Platform.isLinux) return false;
     try {
@@ -250,7 +273,7 @@ class ResolveCloudFlareChallenge extends RetryPolicy {
           .post(
             Uri.parse('http://localhost:$cfPort/resolve_cf'),
             headers: {HttpHeaders.contentTypeHeader: 'application/json'},
-            body: jsonEncode({'url': url}),
+            body: jsonEncode({'url': url, 'userAgent': userAgent}),
           )
           .then((res) {
             if (res.statusCode == 200) {
@@ -322,6 +345,7 @@ void _handleResolveCf(HttpRequest request) async {
     final body = await utf8.decoder.bind(request).join();
     final data = jsonDecode(body) as Map<String, dynamic>;
     final url = data['url'] as String?;
+    final userAgent = data['userAgent'] as String?;
 
     if (url == null) {
       request.response
@@ -334,6 +358,13 @@ void _handleResolveCf(HttpRequest request) async {
     webview.HeadlessInAppWebView? headlessWebView;
     headlessWebView = webview.HeadlessInAppWebView(
       webViewEnvironment: webViewEnvironment,
+      // `cf_clearance` is bound to the User-Agent that solved the challenge, so
+      // the webview must solve with the same UA the retried request will send
+      // (mihon's WebViewInterceptor does the same). Otherwise Cloudflare rejects
+      // the cookie even though it was solved successfully.
+      initialSettings: userAgent == null || userAgent.isEmpty
+          ? null
+          : webview.InAppWebViewSettings(userAgent: userAgent),
       initialUrlRequest: webview.URLRequest(url: webview.WebUri(url)),
       onLoadStop: (controller, url) async {
         try {

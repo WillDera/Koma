@@ -405,6 +405,16 @@ class CustomExtendedNetworkImageProvider
   ) async {
     try {
       final Uri resolved = Uri.base.resolve(key.url);
+      // Some extensions emit a bare site-root as the image URL (e.g. mangadna's
+      // `thumbnail_url` becomes `https://mangadna.com/` when a card's
+      // `data-src` is empty). Fetching the root yields an HTML page, not an
+      // image, so short-circuit before the request is even issued.
+      if (resolved.path.isEmpty || resolved.path == '/') {
+        if (kDebugMode) {
+          print('NetworkImage URL is a site root, skipping: $resolved');
+        }
+        return null;
+      }
       final StreamedResponse? response = await _tryGetResponse(resolved);
 
       if (response == null || response.statusCode != HttpStatus.ok) {

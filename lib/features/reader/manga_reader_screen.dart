@@ -180,6 +180,7 @@ class _MangaReaderScreenState extends ConsumerState<MangaReaderScreen>
       final raw = await _service.getPageList(
         sourceId: sourceId,
         url: widget.chapterUrl,
+        memo: _currentChapter?.memo,
       );
       if (!mounted) return;
 
@@ -531,6 +532,7 @@ class _MangaReaderScreenState extends ConsumerState<MangaReaderScreen>
       final raw = await _service.getPageList(
         sourceId: await _resolveSourceId(),
         url: nextChapter.url,
+        memo: nextChapter.memo,
       );
       if (!mounted) {
         _isNextChapterPreloading = false;
