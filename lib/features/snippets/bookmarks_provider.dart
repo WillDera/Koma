@@ -1,4 +1,3 @@
-import 'package:collection/collection.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/models/bookmark.dart';
@@ -42,7 +41,7 @@ class BookmarksNotifier extends Notifier<BookmarksState> {
       if (bookId != null) {
         bookmarks = await _repos.getBookmarksForBook(bookId);
       } else {
-        bookmarks = [];
+        bookmarks = await _repos.getAllBookmarks();
       }
       state = state.copyWith(bookmarks: bookmarks, loading: false);
     } catch (e) {
@@ -91,8 +90,19 @@ class BookmarksNotifier extends Notifier<BookmarksState> {
 
   Future<void> deleteBookmark(int id) async {
     await _repos.deleteBookmark(id);
-    final bookId = state.bookmarks.firstWhereOrNull((b) => b.id == id)?.bookId;
-    await loadBookmarks(bookId: bookId);
+    // Reload whichever scope is active: if the current state was loaded for a
+    // specific book (filterBookId set), keep that scope; otherwise reload all.
+    final bookId = state.filterBookId;
+    if (bookId != null) {
+      await loadBookmarks(bookId: bookId);
+    } else {
+      // Drop the deleted bookmark from the in-memory list immediately so the
+      // all-bookmarks view updates without a full reload.
+      state = state.copyWith(
+        bookmarks: state.bookmarks.where((b) => b.id != id).toList(),
+        loading: false,
+      );
+    }
   }
 }
 

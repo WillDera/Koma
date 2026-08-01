@@ -20,6 +20,12 @@ class BookmarkRepository {
     return rows.map(_toModel).toList(growable: false);
   }
 
+  /// Returns every bookmark across all books/chapters, newest first.
+  Future<List<Bookmark>> getAllBookmarks() async {
+    final rows = await _isar.bookmarks.where().sortByCreatedAtDesc().findAll();
+    return rows.map(_toModel).toList(growable: false);
+  }
+
   Future<List<Bookmark>> getBookmarksForChapter(
     int bookId,
     int chapterId,

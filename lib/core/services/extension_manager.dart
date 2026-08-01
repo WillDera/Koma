@@ -106,7 +106,10 @@ class ExtensionIndexEntry {
           'CONTENT_WARNING_SAFE';
 
       baseUrl = j['baseUrl'] as String? ??
-          (sources.isNotEmpty ? sources.first['baseUrl'] as String? : null);
+          (sources.isNotEmpty
+              ? (sources.first['baseUrl'] as String?) ??
+              (sources.first['homeUrl'] as String?)
+              : null);
       iconUrl = j['resources'] is Map
           ? (j['resources'] as Map)['iconUrl'] as String?
           : null;
@@ -201,6 +204,12 @@ class ExtensionManager {
       throw Exception('Native bridge returned no ID for ${entry.name}');
     }
 
+    // Prefer the baseUrl the loaded extension reports itself (authoritative
+    // `source.baseUrl` from the APK) over the index entry — keiyoushi's v2
+    // index format only exposes `sources[].homeUrl`, and not every repo entry
+    // carries a `baseUrl`, so the installed source's Referer would otherwise
+    // be missing and hotlink-protected image CDNs (fmcdn, etc.) return 403.
+    final nativeBaseUrl = (desc['baseUrl'] as String?) ?? '';
     final firstSource = entry.sources.isNotEmpty ? entry.sources.first : null;
     final src = ExtensionSource(
       id: nativeId,
@@ -211,7 +220,9 @@ class ExtensionManager {
       apkPath: apkPath,
       className: entry.className ?? '',
       iconUrl: iconUrl,
-      baseUrl: entry.baseUrl ?? firstSource?['baseUrl'] as String?,
+      baseUrl: nativeBaseUrl.isNotEmpty
+          ? nativeBaseUrl
+          : entry.baseUrl ?? firstSource?['baseUrl'] as String?,
       sourceCodeUrl: sourceCodeUrl,
       repoUrl: repoUrl,
     );
@@ -260,6 +271,7 @@ class ExtensionManager {
       className: entry.className,
     );
     final newSourceId = (desc['sourceId'] as String?) ?? '';
+    final nativeBaseUrl = (desc['baseUrl'] as String?) ?? '';
 
     await _repos.extensions.insertExtensionSource(src.copyWith(
       sourceId: newSourceId,
@@ -267,6 +279,11 @@ class ExtensionManager {
       version: entry.version,
       versionLast: entry.version,
       isObsolete: false,
+      // Backfill the extension's authoritative baseUrl when the index entry
+      // didn't carry one (see install() for the v2-format rationale).
+      baseUrl: nativeBaseUrl.isNotEmpty
+          ? nativeBaseUrl
+          : src.baseUrl,
     ));
   }
 
@@ -334,6 +351,7 @@ class ExtensionManager {
           lang: src.lang,
           apkPath: src.apkPath,
           className: src.className,
+          baseUrl: src.baseUrl,
           isObsolete: isNowObsolete,
           isActive: src.isActive,
           isInstalled: src.isInstalled,
@@ -385,6 +403,20 @@ class ExtensionManager {
             id: nativeId,
             sourceId: newSourceId,
           ));
+        }
+
+        // Backfill baseUrl from the loaded extension's own `source.baseUrl`
+        // when it's missing — sources installed before keiyoushi's v2 index
+        // (which exposes `sources[].homeUrl`, not `baseUrl`) have an empty
+        // baseUrl, so their image requests carried no Referer and hotlink-
+        // protected CDNs (fmcdn.mfcdn.net for mangafox) returned 403.
+        final nativeBaseUrl = (desc['baseUrl'] as String?) ?? '';
+        if (src.baseUrl == null || src.baseUrl!.isEmpty) {
+          if (nativeBaseUrl.isNotEmpty) {
+            await _repos.extensions.insertExtensionSource(
+              src.copyWith(baseUrl: nativeBaseUrl),
+            );
+          }
         }
       } catch (_) {}
     }
