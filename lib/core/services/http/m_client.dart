@@ -42,6 +42,17 @@ class MClient {
   /// global `isar` reference.
   static CookieRepository? cookies;
 
+  /// Per-host User-Agent resolved by a Cloudflare bypass WebView, keyed by
+  /// host. `cf_clearance` cookies are bound to the exact UA that solved the
+  /// challenge, so the retried request must reuse it (mangayomi stores the same
+  /// value in its settings singleton). Cleared together with [deleteAllCookies].
+  static final Map<String, String> _solvedUserAgents = {};
+
+  /// Returns the WebView-resolved User-Agent for [url]'s host, or null.
+  static String? getSolvedUserAgent(String url) {
+    return _solvedUserAgents[Uri.parse(url).host];
+  }
+
   /// Shared plain HTTP client used as the inner transport for intercepted
   /// clients. Mirrors mangayomi's `MClient.defaultClient`.
   static final http.Client defaultClient = IOClient(HttpClient());
@@ -109,6 +120,11 @@ class MClient {
   /// Either the caller supplies [cookie] directly (joined `name=value; ...`
   /// string), or the cookies are read from the platform [CookieManager] for
   /// the given [webViewController]. Both paths match mangayomi's `setCookie`.
+  ///
+  /// The resolved webview User-Agent [ua] is stored per-host alongside the
+  /// cookies: Cloudflare's `cf_clearance` is bound to the exact UA that solved
+  /// the challenge, so the retried request must reuse it. Mirrors mangayomi,
+  /// which persists the resolved UA into the settings singleton.
   static Future<void> setCookie(
     String url,
     String ua,
@@ -117,6 +133,7 @@ class MClient {
   }) async {
     final repo = cookies;
     if (repo == null) return;
+    final host = Uri.parse(url).host;
     List<String> cookieList = [];
     if (cookie != null && cookie.isNotEmpty) {
       cookieList = cookie
@@ -130,12 +147,10 @@ class MClient {
       )).map((e) => '${e.name}=${e.value}').toList();
     }
     if (cookieList.isNotEmpty) {
-      final host = Uri.parse(url).host;
       await repo.setCookie(host, cookieList.join('; '));
     }
     if (ua.isNotEmpty) {
-      // mangayomi also persists the UA to the Settings singleton. LNStash has
-      // no user-agent setting (Phase 4 skipped) — nothing to store.
+      _solvedUserAgents[host] = ua;
     }
   }
 
@@ -145,6 +160,7 @@ class MClient {
     final repo = cookies;
     if (repo == null) return;
     final host = Uri.parse(url).host;
+    _solvedUserAgents.remove(host);
     await repo.deleteCookie(host);
   }
 }
@@ -165,7 +181,15 @@ class MCookieManager extends InterceptorContract {
       if (request.headers[HttpHeaders.cookieHeader] == null) {
         request.headers.addAll(cookie);
       }
-      if (request.headers[HttpHeaders.userAgentHeader] == null) {
+      // Reuse the exact UA the Cloudflare-bypass WebView resolved with, since
+      // `cf_clearance` is bound to it. The extension's own headers usually set
+      // a User-Agent, so the solved UA must take precedence (mangayomi applies
+      // settings.userAgent here). Fall back to the app's browser UA only when
+      // the solved UA isn't available.
+      final solved = MClient.getSolvedUserAgent(request.url.toString());
+      if (solved != null && solved.isNotEmpty) {
+        request.headers[HttpHeaders.userAgentHeader] = solved;
+      } else if (request.headers[HttpHeaders.userAgentHeader] == null) {
         request.headers[HttpHeaders.userAgentHeader] = kBrowserUserAgent;
       }
     }
@@ -265,7 +289,6 @@ class ResolveCloudFlareChallenge extends RetryPolicy {
     if (!showCloudFlareError) return false;
     if (!isCloudflare(response)) return false;
     final url = response.request!.url.toString();
-    final userAgent = response.request!.headers[HttpHeaders.userAgentHeader];
 
     if (Platform.isLinux) return false;
     try {
@@ -273,7 +296,7 @@ class ResolveCloudFlareChallenge extends RetryPolicy {
           .post(
             Uri.parse('http://localhost:$cfPort/resolve_cf'),
             headers: {HttpHeaders.contentTypeHeader: 'application/json'},
-            body: jsonEncode({'url': url, 'userAgent': userAgent}),
+            body: jsonEncode({'url': url}),
           )
           .then((res) {
             if (res.statusCode == 200) {
@@ -345,7 +368,6 @@ void _handleResolveCf(HttpRequest request) async {
     final body = await utf8.decoder.bind(request).join();
     final data = jsonDecode(body) as Map<String, dynamic>;
     final url = data['url'] as String?;
-    final userAgent = data['userAgent'] as String?;
 
     if (url == null) {
       request.response
@@ -358,13 +380,11 @@ void _handleResolveCf(HttpRequest request) async {
     webview.HeadlessInAppWebView? headlessWebView;
     headlessWebView = webview.HeadlessInAppWebView(
       webViewEnvironment: webViewEnvironment,
-      // `cf_clearance` is bound to the User-Agent that solved the challenge, so
-      // the webview must solve with the same UA the retried request will send
-      // (mihon's WebViewInterceptor does the same). Otherwise Cloudflare rejects
-      // the cookie even though it was solved successfully.
-      initialSettings: userAgent == null || userAgent.isEmpty
-          ? null
-          : webview.InAppWebViewSettings(userAgent: userAgent),
+      // Let the WebView solve with its default User-Agent (mangayomi does the
+      // same — no UA override). The resolved UA is read back from
+      // `navigator.userAgent` and persisted via setCookie so the retried
+      // request can reuse it, since `cf_clearance` is bound to the exact UA
+      // that solved the challenge.
       initialUrlRequest: webview.URLRequest(url: webview.WebUri(url)),
       onLoadStop: (controller, url) async {
         try {
