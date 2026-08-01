@@ -273,7 +273,15 @@ class ExtensionManager {
     final newSourceId = (desc['sourceId'] as String?) ?? '';
     final nativeBaseUrl = (desc['baseUrl'] as String?) ?? '';
 
+    // The new APK can report a different sourceId (keiyoushi rotates IDs on
+    // release). delete-then-insert rather than relying on Isar's
+    // `@Index(unique, replace)` — that only collapses rows sharing the SAME
+    // sourceId, so a rotated ID would otherwise leave a stale duplicate row.
+    if (src.sourceId.isNotEmpty) {
+      await _repos.extensions.deleteExtensionSource(src.sourceId);
+    }
     await _repos.extensions.insertExtensionSource(src.copyWith(
+      id: newSourceId,
       sourceId: newSourceId,
       apkPath: newApkPath,
       version: entry.version,
