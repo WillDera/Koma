@@ -58,6 +58,27 @@ final extensionManagerProvider = Provider<ExtensionManager>(
   ),
 );
 
+/// Number of installed extensions that have a newer version available
+/// (`versionLast != version`). Refreshed by [extensionUpdateCountNotifier].
+/// Watched by the Settings plugins row badge and the extensions screen.
+class ExtensionUpdateCountNotifier extends Notifier<int> {
+  @override
+  int build() => 0;
+
+  Future<void> refresh() async {
+    final mgr = ref.read(extensionManagerProvider);
+    final installed = await mgr.listInstalled();
+    state = installed
+        .where((s) => s.isUpdateAvailable)
+        .length;
+  }
+}
+
+final extensionUpdateCountProvider =
+NotifierProvider<ExtensionUpdateCountNotifier, int>(
+  ExtensionUpdateCountNotifier.new,
+);
+
 // ── Notifier providers ──────────────────────────────────────────────
 
 final libraryProvider =

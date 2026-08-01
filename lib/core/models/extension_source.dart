@@ -19,6 +19,11 @@ class ExtensionSource {
   final DateTime createdAt;
   final DateTime updatedAt;
 
+  /// True when a newer version is available in the repo index. `versionLast`
+  /// is written by [checkForUpdates] on app start / index fetch.
+  bool get isUpdateAvailable =>
+      versionLast != null && versionLast!.isNotEmpty && versionLast != version;
+
   ExtensionSource({
     required this.id,
     required this.sourceId,
