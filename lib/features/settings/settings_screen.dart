@@ -4,6 +4,7 @@ import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../core/models/source.dart';
 import '../../core/providers.dart';
@@ -43,7 +44,7 @@ class SettingsScreen extends StatelessWidget {
             const OneHandSpacer(),
             const LibraryHeader(
               title: 'Settings',
-              subtitle: 'Version 2.23.0',
+              subtitle: 'Version 2.24.0',
               padding: EdgeInsets.fromLTRB(24, 20, 20, 12),
             ),
             const StaggeredEntrance(
@@ -903,7 +904,7 @@ class _LibraryUpdateSection extends ConsumerWidget {
     return SettingsSection(
       title: 'Library updates',
       footer:
-      'Automatically check library manga for new chapters and surface a badge on each card. A system notification is planned.',
+      'Automatically check library manga for new chapters and surface a badge on each card. A system notification can be sent when new chapters are found.',
       children: [
         SettingsRow(
           icon: Icons.autorenew,
@@ -915,6 +916,14 @@ class _LibraryUpdateSection extends ConsumerWidget {
             onChanged: (v) =>
                 ref.read(libraryUpdateProvider.notifier).setEnabled(v),
           ),
+        ),
+        _PrefSwitchRow(
+          key: const Key('notify_new_chapters'),
+          icon: Icons.notifications_outlined,
+          title: 'Notify on new chapters',
+          subtitle: 'Send a system notification when a check finds new chapters',
+          prefKey: 'notify_new_chapters',
+          defaultValue: true,
         ),
         SettingsRow(
           icon: Icons.schedule_outlined,
@@ -959,6 +968,66 @@ class _LibraryUpdateSection extends ConsumerWidget {
               ref.read(libraryUpdateProvider.notifier).checkForNewChapters(),
         ),
       ],
+    );
+  }
+}
+
+/// A SettingsRow whose Switch persists to a SharedPreferences boolean.
+class _PrefSwitchRow extends StatefulWidget {
+  const _PrefSwitchRow({
+    super.key,
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    required this.prefKey,
+    this.defaultValue = false,
+  });
+
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  final String prefKey;
+  final bool defaultValue;
+
+  @override
+  State<_PrefSwitchRow> createState() => _PrefSwitchRowState();
+}
+
+class _PrefSwitchRowState extends State<_PrefSwitchRow> {
+  bool _value = false;
+  bool _loaded = false;
+
+  @override
+  void initState() {
+    super.initState();
+    SharedPreferences.getInstance().then((prefs) {
+      if (!mounted) return;
+      setState(() {
+        _value = prefs.getBool(widget.prefKey) ?? widget.defaultValue;
+        _loaded = true;
+      });
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.colors;
+    return SettingsRow(
+      icon: widget.icon,
+      title: widget.title,
+      subtitle: widget.subtitle,
+      trailing: Switch(
+        value: _loaded ? _value : widget.defaultValue,
+        activeThumbColor: c.accent,
+        onChanged: (v) async {
+          setState(() {
+            _value = v;
+            _loaded = true;
+          });
+          final prefs = await SharedPreferences.getInstance();
+          await prefs.setBool(widget.prefKey, v);
+        },
+      ),
     );
   }
 }
@@ -1633,6 +1702,14 @@ class _PluginsSection extends ConsumerWidget {
           subtitle: 'Documentation for authors',
           trailing: const Icon(Icons.chevron_right, size: 18),
         ),
+        _PrefSwitchRow(
+          key: const Key('notify_extension_updates'),
+          icon: Icons.notifications_outlined,
+          title: 'Notify on plugin updates',
+          subtitle: 'Send a system notification when updates are found on launch',
+          prefKey: 'notify_extension_updates',
+          defaultValue: true,
+        ),
       ],
     );
   }
@@ -1650,7 +1727,7 @@ class _AboutSection extends StatelessWidget {
         SettingsRow(
           icon: Icons.info_outline,
           title: 'Koma',
-          subtitle: 'Version 2.23.0 · build 2.23.0+188',
+          subtitle: 'Version 2.24.0 · build 2.24.0+189',
         ),
         SettingsRow(
           icon: Icons.favorite_outline,
