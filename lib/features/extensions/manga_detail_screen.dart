@@ -64,7 +64,19 @@ class _MangaDetailScreenState extends ConsumerState<MangaDetailScreen> {
   String? _localThumbnail;
   bool _inLibrary = false;
 
+  /// Bumped on every [_init] so in-flight network/Isar work from a previous
+  /// open (or a superseded refresh) cannot mutate the current screen.
+  int _loadGen = 0;
+
+  /// False until [prepareFor] runs after the first frame. Prevents painting
+  /// the previous manga from the global provider before this screen binds.
+  bool _sessionReady = false;
+
   static const _keySortMode = 'manga_chapter_sort_mode';
+
+  bool get _isCurrentBinding => ref
+      .read(mangaDetailProvider.notifier)
+      .isBoundTo(sourceId: widget.sourceId, url: widget.url);
 
   List<Map<String, dynamic>> _sortedChapters(
     List<Map<String, dynamic>> chapters,
@@ -267,26 +279,44 @@ class _MangaDetailScreenState extends ConsumerState<MangaDetailScreen> {
   @override
   void initState() {
     super.initState();
-    _loadSortMode();
-    WidgetsBinding.instance.addPostFrameCallback((_) => _init());
+    // Provider writes are illegal in initState/build. Bind + load after the
+    // first frame; until then show a spinner so stale global state is hidden.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      _loadSortMode();
+      _init();
+    });
   }
 
   Future<void> _init() async {
     if (!mounted) return;
+    final gen = ++_loadGen;
+    ref.read(mangaDetailProvider.notifier).prepareFor(
+      sourceId: widget.sourceId,
+      url: widget.url,
+      title: widget.title,
+    );
+    _mangaId = null;
+    _inLibrary = false;
+    _localThumbnail = null;
+    if (mounted) setState(() => _sessionReady = true);
 
     final m = widget.manga;
     if (m != null && m.id > 0) {
       // Library manga or pre-inserted from source browse
       await _ensureIsarManga(m);
+      if (!mounted || gen != _loadGen) return;
       await _loadFromIsarById(m.id);
+      if (!mounted || gen != _loadGen) return;
       // Fetch fresh data + chapters in background. Mirrors mangayomi's
       // updateMangaDetailProvider(mangaId, isInit: true): skips network
       // fetch if chapters are already cached (checked inside).
-      _refreshFromSource();
+      _refreshFromSource(gen: gen);
     } else if (m != null) {
       // Source browse / non-library: pre-populate from passed metadata,
       // no DB write needed — show instantly, fetch fresh data in background.
       final repos = ref.read(repositoriesProvider);
+      if (!mounted || gen != _loadGen || !_isCurrentBinding) return;
       final notifier = ref.read(mangaDetailProvider.notifier);
       notifier
         ..setDetails({
@@ -300,26 +330,34 @@ class _MangaDetailScreenState extends ConsumerState<MangaDetailScreen> {
         })
         ..setSourceName(
           (await repos.extensions.getInstalledExtensions())
-                  .where((e) => e.id == widget.sourceId)
+                  .where(
+                    (e) =>
+                        e.sourceId == widget.sourceId || e.id == widget.sourceId,
+                  )
                   .firstOrNull
                   ?.name ??
               '',
         )
         ..setLoading(false)
         ..setError(null);
+      if (!mounted || gen != _loadGen) return;
       // Fetch fresh data + chapters in background
-      _refreshFromSource();
+      _refreshFromSource(gen: gen);
     } else {
-      final repos = ref.watch(repositoriesProvider);
+      final repos = ref.read(repositoriesProvider);
       final existing = await repos.manga.getMangaByKey(
         widget.sourceId,
         widget.url,
       );
+      if (!mounted || gen != _loadGen) return;
       if (existing != null) {
         await _ensureIsarManga(existing);
+        if (!mounted || gen != _loadGen) return;
         await _loadFromIsarById(existing.id);
+        if (!mounted || gen != _loadGen) return;
+        _refreshFromSource(gen: gen);
       } else {
-        _loadFromIsarByKey();
+        _loadFromIsarByKey(gen: gen);
       }
     }
   }
@@ -344,7 +382,8 @@ class _MangaDetailScreenState extends ConsumerState<MangaDetailScreen> {
   Future<void> _loadFromIsarById(int mangaId) async {
     final repos = ref.read(repositoriesProvider);
     final m = await repos.manga.getMangaById(mangaId);
-    if (m == null || !mounted) return;
+    if (m == null || !mounted || !_isCurrentBinding) return;
+    if (m.sourceId != widget.sourceId || m.url != widget.url) return;
     _mangaId = m.id;
     _inLibrary = m.inLibrary;
     final notifier = ref.read(mangaDetailProvider.notifier);
@@ -359,10 +398,11 @@ class _MangaDetailScreenState extends ConsumerState<MangaDetailScreen> {
         'genre': m.genres.join(', '),
       })
       ..setMangaId(m.id)
+      ..setInLibrary(m.inLibrary, m.id)
       ..setLoading(false);
 
     final chapters = await repos.manga.getMangaChapters(mangaId);
-    if (chapters.isNotEmpty && mounted) {
+    if (chapters.isNotEmpty && mounted && _isCurrentBinding) {
       final chList = chapters
           .map(
             (c) => <String, dynamic>{
@@ -396,27 +436,30 @@ class _MangaDetailScreenState extends ConsumerState<MangaDetailScreen> {
 
   /// Look up manga by sourceId + url in Isar, then delegate to
   /// [_loadFromIsarById]. Also loads extension source name.
-  void _loadFromIsarByKey() {
+  void _loadFromIsarByKey({required int gen}) {
     final repos = ref.read(repositoriesProvider);
     repos.manga.getMangaByKey(widget.sourceId, widget.url).then((m) {
-      if (m != null && mounted) {
-        _loadFromIsarById(m.id);
+      if (!mounted || gen != _loadGen || !_isCurrentBinding) return;
+      if (m != null) {
+        _loadFromIsarById(m.id).then((_) {
+          if (mounted && gen == _loadGen) _refreshFromSource(gen: gen);
+        });
         return;
       }
       // Non-library manga: still need source name, then show loading
-      if (!mounted) return;
-      final repos = ref.watch(repositoriesProvider);
       repos.extensions.getInstalledExtensions().then((exts) {
+        if (!mounted || gen != _loadGen || !_isCurrentBinding) return;
         for (final ext in exts) {
-          if (ext.id == widget.sourceId) {
-            if (mounted)
-              ref.read(mangaDetailProvider.notifier).setSourceName(ext.name);
+          if (ext.sourceId == widget.sourceId || ext.id == widget.sourceId) {
+            ref.read(mangaDetailProvider.notifier).setSourceName(ext.name);
             break;
           }
         }
       });
       // Trigger network fetch since no cached data
-      WidgetsBinding.instance.addPostFrameCallback((_) => _refreshFromSource());
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted && gen == _loadGen) _refreshFromSource(gen: gen);
+      });
     });
   }
 
@@ -454,7 +497,8 @@ class _MangaDetailScreenState extends ConsumerState<MangaDetailScreen> {
   /// After the write, [mangaDetailStreamProvider] and
   /// [mangaChaptersStreamProvider] re-emit automatically — the UI updates
   /// reactively via [_syncManga] / [_syncChapters].
-  Future<void> _refreshFromSource() async {
+  Future<void> _refreshFromSource({int? gen}) async {
+    final expectedGen = gen ?? _loadGen;
     // Mirrors mangayomi's updateMangaDetailProvider: if chapters already
     // exist in Isar (cached), skip the network fetch. The Isar reactive
     // streams already have the data.
@@ -463,13 +507,14 @@ class _MangaDetailScreenState extends ConsumerState<MangaDetailScreen> {
       final existing = await repos.manga.getMangaChapters(_mangaId!);
       if (existing.isNotEmpty) return;
     }
+    if (!mounted || expectedGen != _loadGen || !_isCurrentBinding) return;
     try {
       final result = await _service.getMangaUpdate(
         sourceId: widget.sourceId,
         url: widget.url,
         memo: widget.memo,
       );
-      if (!mounted) return;
+      if (!mounted || expectedGen != _loadGen || !_isCurrentBinding) return;
       final details = result.details;
       var chapters = result.chapters;
 
@@ -480,6 +525,9 @@ class _MangaDetailScreenState extends ConsumerState<MangaDetailScreen> {
             url: widget.url,
             memo: widget.memo,
           );
+          if (!mounted || expectedGen != _loadGen || !_isCurrentBinding) {
+            return;
+          }
           if (fallback.isNotEmpty) chapters = fallback;
         } catch (_) {}
       }
@@ -495,14 +543,18 @@ class _MangaDetailScreenState extends ConsumerState<MangaDetailScreen> {
           final headers = await ref.read(
             sourceImageHeadersProvider(widget.sourceId).future,
           );
+          if (!mounted || expectedGen != _loadGen || !_isCurrentBinding) {
+            return;
+          }
           _cacheThumbnail(thumb, headers: headers);
           precacheImage(cachedCover(thumb, headers: headers), context);
         }
       }
-      if (!mounted) return;
+      if (!mounted || expectedGen != _loadGen || !_isCurrentBinding) return;
       if (_mangaId != null) {
         await _persistChapters(_mangaId!, details, chapters);
       }
+      if (!mounted || expectedGen != _loadGen || !_isCurrentBinding) return;
       final notifier = ref.read(mangaDetailProvider.notifier);
       notifier
         ..setDetails(details)
@@ -512,10 +564,12 @@ class _MangaDetailScreenState extends ConsumerState<MangaDetailScreen> {
         ..setError(null)
         ..setLoading(false);
     } catch (e) {
-      if (!mounted) return;
+      if (!mounted || expectedGen != _loadGen || !_isCurrentBinding) return;
       ref.read(mangaDetailProvider.notifier).setError('$e');
     } finally {
-      if (mounted) ref.read(mangaDetailProvider.notifier).setLoading(false);
+      if (mounted && expectedGen == _loadGen && _isCurrentBinding) {
+        ref.read(mangaDetailProvider.notifier).setLoading(false);
+      }
     }
   }
 
@@ -590,7 +644,10 @@ class _MangaDetailScreenState extends ConsumerState<MangaDetailScreen> {
   /// whenData inside ref.watch). No setState needed — ref.watch triggers the
   /// rebuild automatically when the stream emits a new value.
   void _applyManga(Manga? manga) {
-    if (manga == null) return;
+    if (manga == null || !mounted || !_isCurrentBinding) return;
+    // Reject emissions for a different row (stale global mangaId).
+    if (manga.sourceId != widget.sourceId || manga.url != widget.url) return;
+    if (_mangaId != null && manga.id != _mangaId) return;
     final notifier = ref.read(mangaDetailProvider.notifier);
     notifier
       ..setDetails({
@@ -604,13 +661,17 @@ class _MangaDetailScreenState extends ConsumerState<MangaDetailScreen> {
       })
       ..setLoading(false)
       ..setError(null);
-    if (mounted) setState(() => _inLibrary = manga.inLibrary);
+    setState(() {
+      _mangaId = manga.id;
+      _inLibrary = manga.inLibrary;
+    });
   }
 
   /// Merges chapter progress from Isar stream into the display chapter maps.
   /// Also updates localChapters and downloadProgress. Called from whenData
   /// on the mangaChaptersStreamProvider watch.
   void _applyChapters(List<MangaChapter> chapters) {
+    if (!mounted || !_isCurrentBinding) return;
     final chMap = <String, Map<String, dynamic>>{};
     final downloadProgress = <String, String>{};
     for (final lc in chapters) {
@@ -665,11 +726,14 @@ class _MangaDetailScreenState extends ConsumerState<MangaDetailScreen> {
   }
 
   Future<void> _addToLibrary() async {
+    if (!_isCurrentBinding) return;
     final repos = ref.read(repositoriesProvider);
+    final gen = _loadGen;
 
     if (_mangaId != null) {
       // Ensure chapters are in Isar before marking as library
       final existingChapters = await repos.manga.getMangaChapters(_mangaId!);
+      if (!mounted || gen != _loadGen || !_isCurrentBinding) return;
       if (existingChapters.isEmpty) {
         final detail = ref.read(mangaDetailProvider);
         if (detail.chapters.isNotEmpty) {
@@ -694,12 +758,15 @@ class _MangaDetailScreenState extends ConsumerState<MangaDetailScreen> {
           await repos.manga.deleteMangaChapters(_mangaId!);
           await repos.manga.insertMangaChapters(_mangaId!, chapterModels);
         } else {
-          await _refreshFromSource();
+          await _refreshFromSource(gen: gen);
         }
+      }
+      if (!mounted || gen != _loadGen || !_isCurrentBinding || _mangaId == null) {
+        return;
       }
       await repos.manga.setMangaInLibrary(_mangaId!, true);
       final m = await repos.manga.getMangaById(_mangaId!);
-      if (m != null) {
+      if (m != null && m.sourceId == widget.sourceId && m.url == widget.url) {
         final d = ref.read(mangaDetailProvider).details;
         await repos.manga.updateManga(
           m.copyWith(
@@ -717,14 +784,15 @@ class _MangaDetailScreenState extends ConsumerState<MangaDetailScreen> {
           ),
         );
       }
-      if (!mounted) return;
+      if (!mounted || gen != _loadGen) return;
       setState(() => _inLibrary = true);
       if (mounted) ref.read(libraryProvider.notifier).loadBooks();
     } else {
       // First time insertion — ensure chapters exist before creating manga row
       var detail = ref.read(mangaDetailProvider);
       if (detail.chapters.isEmpty) {
-        await _refreshFromSource();
+        await _refreshFromSource(gen: gen);
+        if (!mounted || gen != _loadGen || !_isCurrentBinding) return;
         detail = ref.read(mangaDetailProvider);
       }
       final d = detail.details ?? {};
@@ -746,6 +814,7 @@ class _MangaDetailScreenState extends ConsumerState<MangaDetailScreen> {
         inLibrary: true,
       );
       final id = await repos.manga.insertManga(manga);
+      if (!mounted || gen != _loadGen || !_isCurrentBinding) return;
       await repos.manga.deleteMangaChapters(id);
       final chapterModels = detail.chapters.asMap().entries.map((e) {
         final url = e.value['url'] as String? ?? '';
@@ -766,12 +835,12 @@ class _MangaDetailScreenState extends ConsumerState<MangaDetailScreen> {
         );
       }).toList();
       await repos.manga.insertMangaChapters(id, chapterModels);
-      if (!mounted) return;
+      if (!mounted || gen != _loadGen || !_isCurrentBinding) return;
       setState(() {
         _inLibrary = true;
         _mangaId = id;
       });
-      ref.read(mangaDetailProvider.notifier).setMangaId(id);
+      ref.read(mangaDetailProvider.notifier).setInLibrary(true, id);
       if (mounted) ref.read(libraryProvider.notifier).loadBooks();
     }
     if (!mounted) return;
@@ -1288,17 +1357,37 @@ class _MangaDetailScreenState extends ConsumerState<MangaDetailScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final detail = ref.watch(mangaDetailProvider);
-    final mangaId = detail.mangaId;
-
-    if (mangaId != null) {
-      ref.watch(mangaDetailStreamProvider(mangaId)).whenData(_applyManga);
-      ref.watch(mangaChaptersStreamProvider(mangaId)).whenData(_applyChapters);
-    }
-
     final c = context.colors;
     final appBarHeight = MediaQuery.of(context).padding.top + kToolbarHeight;
 
+    // Prefer the screen-local id. Never fall back to a stale provider mangaId
+    // from a previously opened title (Discover A → B bug).
+    final mangaId = _mangaId;
+    if (_sessionReady && mangaId != null && _isCurrentBinding) {
+      // Side effects belong in listen, not whenData-during-build (which
+      // writes mangaDetailProvider and trips Riverpod's build-phase guard).
+      ref.listen<AsyncValue<Manga?>>(mangaDetailStreamProvider(mangaId), (
+        _,
+        next,
+      ) {
+        next.whenData(_applyManga);
+      });
+      ref.listen<AsyncValue<List<MangaChapter>>>(
+        mangaChaptersStreamProvider(mangaId),
+        (_, next) {
+          next.whenData(_applyChapters);
+        },
+      );
+    }
+
+    if (!_sessionReady) {
+      return Scaffold(
+        backgroundColor: c.bg,
+        body: const Center(child: CircularProgressIndicator()),
+      );
+    }
+
+    final detail = ref.watch(mangaDetailProvider);
     final filteredChapters = _sortedChapters(
       detail.chapters
           .where(

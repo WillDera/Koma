@@ -184,35 +184,43 @@ class MangaDetailState {
     this.expanded = false,
   });
 
+  /// Sentinel so nullable fields can be explicitly cleared (plain `??` cannot
+  /// distinguish "omitted" from "set to null").
+  static const Object _unset = Object();
+
   MangaDetailState copyWith({
     bool? loading,
-    String? error,
+    Object? error = _unset,
     bool? inLibrary,
-    int? mangaId,
+    Object? mangaId = _unset,
     String? sourceName,
     SortMode? sortMode,
     Map<ChapterFilter, FilterMode>? filterModes,
     bool? offlineMode,
-    Map<String, dynamic>? details,
+    Object? details = _unset,
     List<Map<String, dynamic>>? chapters,
     Map<String, Map<String, dynamic>>? localChapters,
-    String? localThumbnail,
+    Object? localThumbnail = _unset,
     Map<String, String>? downloadProgress,
     bool? expanded,
   }) {
     return MangaDetailState(
       loading: loading ?? this.loading,
-      error: error ?? this.error,
+      error: identical(error, _unset) ? this.error : error as String?,
       inLibrary: inLibrary ?? this.inLibrary,
-      mangaId: mangaId ?? this.mangaId,
+      mangaId: identical(mangaId, _unset) ? this.mangaId : mangaId as int?,
       sourceName: sourceName ?? this.sourceName,
       sortMode: sortMode ?? this.sortMode,
       filterModes: filterModes ?? this.filterModes,
       offlineMode: offlineMode ?? this.offlineMode,
-      details: details ?? this.details,
+      details: identical(details, _unset)
+          ? this.details
+          : details as Map<String, dynamic>?,
       chapters: chapters ?? this.chapters,
       localChapters: localChapters ?? this.localChapters,
-      localThumbnail: localThumbnail ?? this.localThumbnail,
+      localThumbnail: identical(localThumbnail, _unset)
+          ? this.localThumbnail
+          : localThumbnail as String?,
       downloadProgress: downloadProgress ?? this.downloadProgress,
       expanded: expanded ?? this.expanded,
     );
@@ -223,9 +231,37 @@ class MangaDetailNotifier extends Notifier<MangaDetailState> {
   static const _keySortMode = 'manga_chapter_sort_mode';
   static const _keyFilterModes = 'manga_chapter_filter_modes';
 
+  /// Tracks which manga the global state currently belongs to so a late
+  /// async response from a previous detail screen cannot overwrite the next.
+  String? _boundSourceId;
+  String? _boundUrl;
+
   @override
   MangaDetailState build() {
     return const MangaDetailState();
+  }
+
+  bool isBoundTo({required String sourceId, required String url}) =>
+      _boundSourceId == sourceId && _boundUrl == url;
+
+  /// Wipe per-manga fields before opening another title. Keeps sort/filter
+  /// prefs. Must run synchronously at the start of detail [_init] so build()
+  /// does not keep watching the previous manga's Isar streams.
+  void prepareFor({
+    required String sourceId,
+    required String url,
+    String? title,
+  }) {
+    _boundSourceId = sourceId;
+    _boundUrl = url;
+    state = MangaDetailState(
+      loading: true,
+      sortMode: state.sortMode,
+      filterModes: state.filterModes,
+      details: title != null && title.isNotEmpty
+          ? <String, dynamic>{'title': title}
+          : null,
+    );
   }
 
   Future<void> init({
@@ -233,8 +269,9 @@ class MangaDetailNotifier extends Notifier<MangaDetailState> {
     required String url,
     Map<String, dynamic>? manga,
   }) async {
-    state = state.copyWith(loading: true, error: null);
+    prepareFor(sourceId: sourceId, url: url);
     final prefs = await SharedPreferences.getInstance();
+    if (!isBoundTo(sourceId: sourceId, url: url)) return;
     final sortIdx = prefs.getInt(_keySortMode) ?? SortMode.chapterAsc.index;
     state = state.copyWith(sortMode: SortMode.values[sortIdx]);
     final filterRaw = prefs.getString(_keyFilterModes);
