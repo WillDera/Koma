@@ -51,7 +51,9 @@ class TtsControls extends StatelessWidget {
                           ),
                         )
                       : IconButtonRound(
-                          icon: provider.isPaused ? Icons.play_arrow : Icons.pause,
+                          icon: provider.isPaused
+                              ? Icons.play_arrow
+                              : Icons.pause,
                           size: 36,
                           variant: IconButtonVariant.filled,
                           iconColor: c.onAccent,
@@ -69,7 +71,8 @@ class TtsControls extends StatelessWidget {
                     icon: Icons.skip_next,
                     size: 36,
                     variant: IconButtonVariant.tonal,
-                    onPressed: provider.currentIndex < provider.totalSentences - 1
+                    onPressed:
+                        provider.currentIndex < provider.totalSentences - 1
                         ? () => provider.nextSentence()
                         : null,
                   ),
@@ -77,10 +80,7 @@ class TtsControls extends StatelessWidget {
                   Expanded(
                     child: Text(
                       '${provider.currentIndex + 1} / ${provider.totalSentences}',
-                      style: TextStyle(
-                        color: c.textSecondary,
-                        fontSize: 12,
-                      ),
+                      style: TextStyle(color: c.textSecondary, fontSize: 12),
                     ),
                   ),
                   IconButtonRound(
@@ -229,16 +229,29 @@ class _TtsSettingsSheetState extends State<_TtsSettingsSheet> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text('Engine', style: TextStyle(color: c.textSecondary, fontSize: 13)),
+                Text(
+                  'Engine',
+                  style: TextStyle(color: c.textSecondary, fontSize: 13),
+                ),
                 const SizedBox(height: 6),
                 SegmentedButton<TtsEngineType>(
                   segments: const [
-                    ButtonSegment(value: TtsEngineType.device, label: Text('Device')),
-                    ButtonSegment(value: TtsEngineType.googleCloud, label: Text('Google')),
-                    ButtonSegment(value: TtsEngineType.edge, label: Text('Edge')),
+                    ButtonSegment(
+                      value: TtsEngineType.device,
+                      label: Text('Device'),
+                    ),
+                    ButtonSegment(
+                      value: TtsEngineType.googleCloud,
+                      label: Text('Google'),
+                    ),
+                    ButtonSegment(
+                      value: TtsEngineType.edge,
+                      label: Text('Edge'),
+                    ),
                   ],
                   selected: {_engineType},
-                  onSelectionChanged: (selected) => _onEngineChanged(selected.first),
+                  onSelectionChanged: (selected) =>
+                      _onEngineChanged(selected.first),
                 ),
               ],
             ),
@@ -252,7 +265,10 @@ class _TtsSettingsSheetState extends State<_TtsSettingsSheet> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text('API Key', style: TextStyle(color: c.textSecondary, fontSize: 13)),
+                  Text(
+                    'API Key',
+                    style: TextStyle(color: c.textSecondary, fontSize: 13),
+                  ),
                   const SizedBox(height: 6),
                   TextField(
                     controller: _apiCtrl,
@@ -277,7 +293,10 @@ class _TtsSettingsSheetState extends State<_TtsSettingsSheet> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text('Voice', style: TextStyle(color: c.textSecondary, fontSize: 13)),
+                  Text(
+                    'Voice',
+                    style: TextStyle(color: c.textSecondary, fontSize: 13),
+                  ),
                   const SizedBox(height: 6),
                   ListenableBuilder(
                     listenable: widget.provider,
@@ -290,11 +309,16 @@ class _TtsSettingsSheetState extends State<_TtsSettingsSheet> {
                         dropdownColor: c.bgElevated,
                         style: TextStyle(color: c.textPrimary, fontSize: 14),
                         underline: const SizedBox(),
-                        items: List.generate(widget.provider.voices.length, (i) {
+                        items: List.generate(widget.provider.voices.length, (
+                          i,
+                        ) {
                           final v = widget.provider.voices[i];
                           return DropdownMenuItem(
                             value: i,
-                            child: Text(v.displayName, overflow: TextOverflow.ellipsis),
+                            child: Text(
+                              v.displayName,
+                              overflow: TextOverflow.ellipsis,
+                            ),
                           );
                         }),
                         onChanged: (idx) {
@@ -315,7 +339,10 @@ class _TtsSettingsSheetState extends State<_TtsSettingsSheet> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text('Speed', style: TextStyle(color: c.textSecondary, fontSize: 13)),
+                Text(
+                  'Speed',
+                  style: TextStyle(color: c.textSecondary, fontSize: 13),
+                ),
                 Slider(
                   value: _rate,
                   min: _engineType == TtsEngineType.device ? 0.0 : 0.25,
@@ -333,7 +360,10 @@ class _TtsSettingsSheetState extends State<_TtsSettingsSheet> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text('Pitch', style: TextStyle(color: c.textSecondary, fontSize: 13)),
+                Text(
+                  'Pitch',
+                  style: TextStyle(color: c.textSecondary, fontSize: 13),
+                ),
                 Slider(
                   value: _pitch.clamp(
                     _engineType == TtsEngineType.device ? 0.5 : -0.5,
@@ -350,7 +380,8 @@ class _TtsSettingsSheetState extends State<_TtsSettingsSheet> {
             ),
           ),
           // Save API key if Google Cloud
-          if (_engineType == TtsEngineType.googleCloud && _apiCtrl.text.isNotEmpty)
+          if (_engineType == TtsEngineType.googleCloud &&
+              _apiCtrl.text.isNotEmpty)
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 20),
               child: SizedBox(

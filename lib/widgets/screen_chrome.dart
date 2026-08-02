@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+
+import '../theme/app_icons.dart';
 import '../theme/app_theme.dart';
 import '../theme/tokens/app_motion.dart';
 import '../theme/tokens/app_spacing.dart';
@@ -113,7 +115,7 @@ class _StaggeredEntranceState extends State<StaggeredEntrance>
 }
 
 class FeaturePanel extends StatelessWidget {
-  final IconData icon;
+  final AppIconData icon;
   final String title;
   final String subtitle;
   final List<Widget> stats;
@@ -158,16 +160,7 @@ class FeaturePanel extends StatelessWidget {
             Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Container(
-                  width: 44,
-                  height: 44,
-                  decoration: BoxDecoration(
-                    color: c.accent.withValues(alpha: 0.14),
-                    borderRadius: AppSpacing.brMd,
-                    border: Border.all(color: c.accent.withValues(alpha: 0.22)),
-                  ),
-                  child: Icon(icon, color: c.accent, size: 22),
-                ),
+                AppIcon(data: icon, color: c.accent, size: 44),
                 const SizedBox(width: 14),
                 Expanded(
                   child: Column(

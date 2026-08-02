@@ -68,7 +68,7 @@ class ReaderBottomBar extends StatelessWidget {
                     ),
                     child: ValueListenableBuilder<int>(
                       valueListenable: pageListenable,
-                      builder: (_, page, __) => Row(
+                      builder: (_, page, _) => Row(
                         children: [
                           // Prev page arrow
                           _PageButton(
@@ -122,8 +122,9 @@ class ReaderBottomBar extends StatelessWidget {
                                 value: page.toDouble(),
                                 min: 0,
                                 max: max(0, (totalPages - 1).toDouble()),
-                                divisions:
-                                    totalPages > 1 ? totalPages - 1 : null,
+                                divisions: totalPages > 1
+                                    ? totalPages - 1
+                                    : null,
                                 onChanged: (v) => onPageChanged(v.round()),
                               ),
                             ),

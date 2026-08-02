@@ -149,10 +149,8 @@ class _SourceBrowseScreenState extends ConsumerState<SourceBrowseScreen>
     setState(() => _loading = true);
     try {
       final result = switch (_tab) {
-        'latest' => await _service.getLatestUpdates(
-            _page, source: _source),
-        _ => await _service.getPopular(
-            _page, source: _source),
+        'latest' => await _service.getLatestUpdates(_page, source: _source),
+        _ => await _service.getPopular(_page, source: _source),
       };
       if (!mounted) return;
       setState(() {
@@ -194,10 +192,12 @@ class _SourceBrowseScreenState extends ConsumerState<SourceBrowseScreen>
         _error = null;
       });
     } catch (e) {
-      if (mounted) setState(() {
-        _filtersLoaded = true;
-        _error = 'Failed to load filters: $e';
-      });
+      if (mounted) {
+        setState(() {
+          _filtersLoaded = true;
+          _error = 'Failed to load filters: $e';
+        });
+      }
     }
   }
 
@@ -265,7 +265,12 @@ class _SourceBrowseScreenState extends ConsumerState<SourceBrowseScreen>
     setState(() => _searchLoading = true);
     try {
       final filterList = _buildFilterList();
-      final mangas = await _service.search(_source, 1, query, filters: filterList);
+      final mangas = await _service.search(
+        _source,
+        1,
+        query,
+        filters: filterList,
+      );
       if (!mounted) return;
       setState(() {
         _searchResults = mangas;
@@ -296,26 +301,57 @@ class _SourceBrowseScreenState extends ConsumerState<SourceBrowseScreen>
     final value = values[f.name];
     switch (f.type) {
       case FilterType.text:
-        return Filter(key: f.name, name: f.name, type: f.type, value: value as String? ?? '');
+        return Filter(
+          key: f.name,
+          name: f.name,
+          type: f.type,
+          value: value as String? ?? '',
+        );
       case FilterType.check:
-        return Filter(key: f.name, name: f.name, type: f.type, value: value as bool? ?? false);
+        return Filter(
+          key: f.name,
+          name: f.name,
+          type: f.type,
+          value: value as bool? ?? false,
+        );
       case FilterType.triState:
-        return Filter(key: f.name, name: f.name, type: f.type, value: value as int? ?? 0);
+        return Filter(
+          key: f.name,
+          name: f.name,
+          type: f.type,
+          value: value as int? ?? 0,
+        );
       case FilterType.select:
-        return Filter(key: f.name, name: f.name, type: f.type, value: value as int? ?? 0, options: f.options);
+        return Filter(
+          key: f.name,
+          name: f.name,
+          type: f.type,
+          value: value as int? ?? 0,
+          options: f.options,
+        );
       case FilterType.sort:
-        return Filter(key: f.name, name: f.name, type: f.type, value: value, options: f.options);
+        return Filter(
+          key: f.name,
+          name: f.name,
+          type: f.type,
+          value: value,
+          options: f.options,
+        );
       case FilterType.group:
         final subValuesList = value as List<Map<String, dynamic>>? ?? [];
         final subFilters = <Filter>[];
         for (var i = 0; i < (f.subFilters?.length ?? 0); i++) {
           final sf = f.subFilters![i];
-          final sv = i < subValuesList.length ? subValuesList[i] : <String, dynamic>{};
+          final sv = i < subValuesList.length
+              ? subValuesList[i]
+              : <String, dynamic>{};
           final builtSub = _buildFilterFromValue(sf, sv);
           if (builtSub != null) subFilters.add(builtSub);
         }
         return Filter(
-          key: f.name, name: f.name, type: f.type,
+          key: f.name,
+          name: f.name,
+          type: f.type,
           subFilters: subFilters,
         );
       case FilterType.header:
@@ -354,9 +390,11 @@ class _SourceBrowseScreenState extends ConsumerState<SourceBrowseScreen>
               onPressed: _openFilterSheet,
             ),
           IconButton(
-            icon: Icon(_tab == 'popular'
-                ? Icons.arrow_upward_rounded
-                : Icons.arrow_downward_rounded),
+            icon: Icon(
+              _tab == 'popular'
+                  ? Icons.arrow_upward_rounded
+                  : Icons.arrow_downward_rounded,
+            ),
             onPressed: _toggleSort,
             tooltip: _tab == 'popular' ? 'Sort: Popular' : 'Sort: Latest',
           ),
@@ -381,102 +419,99 @@ class _SourceBrowseScreenState extends ConsumerState<SourceBrowseScreen>
       body: _searchActive
           ? _buildSearchBody(c, headers)
           : _mangas.isEmpty && !_loading && _error == null
-              ? ListView(
-                  children: [
-                    if (_error != null)
-                      Padding(
-                        padding: const EdgeInsets.all(16),
-                        child: Text(
-                          _error!,
-                          style: TextStyle(color: c.accent, fontSize: 12),
-                        ),
-                      ),
-                    const SizedBox(height: 120),
-                    const Center(child: Text('Nothing found')),
-                  ],
-                )
-              : RefreshIndicator(
-                  onRefresh: _refresh,
-                  child: GridView.builder(
-                    controller: _scrollCtrl,
+          ? ListView(
+              children: [
+                if (_error != null)
+                  Padding(
                     padding: const EdgeInsets.all(16),
-                    gridDelegate:
-                        const SliverGridDelegateWithFixedCrossAxisCount(
-                      crossAxisCount: 3,
-                      mainAxisSpacing: 12,
-                      crossAxisSpacing: 12,
-                      childAspectRatio: 0.65,
+                    child: Text(
+                      _error!,
+                      style: TextStyle(color: c.accent, fontSize: 12),
                     ),
-                    itemCount: _mangas.length + (_hasNext ? 1 : 0),
-                    itemBuilder: (_, i) {
-                      if (i >= _mangas.length) {
-                        return const Center(
-                          child: SizedBox(
-                            width: 24,
-                            height: 24,
-                            child: CircularProgressIndicator(
-                              strokeWidth: 2,
+                  ),
+                const SizedBox(height: 120),
+                const Center(child: Text('Nothing found')),
+              ],
+            )
+          : RefreshIndicator(
+              onRefresh: _refresh,
+              child: GridView.builder(
+                controller: _scrollCtrl,
+                padding: const EdgeInsets.all(16),
+                gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                  crossAxisCount: 3,
+                  mainAxisSpacing: 12,
+                  crossAxisSpacing: 12,
+                  childAspectRatio: 0.65,
+                ),
+                itemCount: _mangas.length + (_hasNext ? 1 : 0),
+                itemBuilder: (_, i) {
+                  if (i >= _mangas.length) {
+                    return const Center(
+                      child: SizedBox(
+                        width: 24,
+                        height: 24,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      ),
+                    );
+                  }
+                  final m = _mangas[i];
+                  return _MangaGridCard(
+                    manga: m,
+                    headers: headers,
+                    onTap: () async {
+                      final repos = ref.read(repositoriesProvider);
+                      final existing = await repos.manga.getMangaByKey(
+                        widget.sourceId,
+                        m.url,
+                      );
+                      if (existing != null) {
+                        if (!context.mounted) return;
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) => MangaDetailScreen(
+                              sourceId: widget.sourceId,
+                              url: m.url,
+                              title: m.title,
+                              manga: existing,
+                              memo: m.memo,
                             ),
                           ),
                         );
+                        return;
                       }
-                      final m = _mangas[i];
-                      return _MangaGridCard(
-                        manga: m,
-                        headers: headers,
-                        onTap: () async {
-                          final repos = ref.read(repositoriesProvider);
-                          final existing = await repos.manga.getMangaByKey(
-                            widget.sourceId,
-                            m.url,
-                          );
-                          if (existing != null) {
-                            if (!context.mounted) return;
-                            Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                builder: (_) => MangaDetailScreen(
-                                  sourceId: widget.sourceId,
-                                  url: m.url,
-                                  title: m.title,
-                                  manga: existing,
-                                  memo: m.memo,
-                                ),
-                              ),
-                            );
-                            return;
-                          }
-                          final manga = Manga(
-                            id: 0,
-                            name: m.title,
-                            url: m.url,
-                            imageUrl: m.thumbnailUrl,
-                            author: m.author,
-                            artist: m.artist,
-                            description: m.description,
-                            status: m.status,
-                            genres: m.genres,
+                      final manga = Manga(
+                        id: 0,
+                        name: m.title,
+                        url: m.url,
+                        imageUrl: m.thumbnailUrl,
+                        author: m.author,
+                        artist: m.artist,
+                        description: m.description,
+                        status: m.status,
+                        genres: m.genres,
+                        sourceId: widget.sourceId,
+                      );
+                      final id = await repos.manga.insertManga(manga);
+                      if (!context.mounted) return;
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => MangaDetailScreen(
                             sourceId: widget.sourceId,
-                          );
-                          final id = await repos.manga.insertManga(manga);
-                          if (!context.mounted) return;
-                          Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (_) => MangaDetailScreen(
-                                sourceId: widget.sourceId,
-                                url: m.url,
-                                title: m.title,
-                                manga: manga.copyWith(id: id),
-                                memo: m.memo,
-                              ),
-                            ),
-                          );
-                        },
+                            url: m.url,
+                            title: m.title,
+                            manga: manga.copyWith(id: id),
+                            memo: m.memo,
+                          ),
+                        ),
                       );
                     },
-                  ),
-                ),
+                  );
+                },
+              ),
+            ),
     );
   }
 
@@ -599,12 +634,13 @@ class _MangaGridCard extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Expanded(
-                            child: thumb != null && thumb.isNotEmpty
+              child: thumb != null && thumb.isNotEmpty
                   ? Image(
-                              image: CustomExtendedNetworkImageProvider(
-                                  thumb,
-                                  headers: headers,
-                                  showCloudFlareError: true),
+                      image: CustomExtendedNetworkImageProvider(
+                        thumb,
+                        headers: headers,
+                        showCloudFlareError: true,
+                      ),
                       width: double.infinity,
                       fit: BoxFit.cover,
                       errorBuilder: (_, _, _) => _placeholder(c),
@@ -679,13 +715,26 @@ class _FilterSheetState extends State<_FilterSheet> {
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Text('Filters', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600, color: c.textPrimary)),
+                Text(
+                  'Filters',
+                  style: TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.w600,
+                    color: c.textPrimary,
+                  ),
+                ),
                 TextButton(
                   onPressed: () {
                     widget.onApply(_values);
                     Navigator.of(context).pop();
                   },
-                  child: Text('Apply', style: TextStyle(color: c.accent, fontWeight: FontWeight.w600)),
+                  child: Text(
+                    'Apply',
+                    style: TextStyle(
+                      color: c.accent,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
                 ),
               ],
             ),
@@ -695,7 +744,9 @@ class _FilterSheetState extends State<_FilterSheet> {
             child: ListView(
               controller: scrollCtrl,
               padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
-              children: widget.filters.map((f) => _buildFilterWidget(f, _values)).toList(),
+              children: widget.filters
+                  .map((f) => _buildFilterWidget(f, _values))
+                  .toList(),
             ),
           ),
         ],
@@ -709,7 +760,14 @@ class _FilterSheetState extends State<_FilterSheet> {
       case FilterType.header:
         return Padding(
           padding: const EdgeInsets.only(top: 16, bottom: 4),
-          child: Text(f.name, style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: c.textPrimary)),
+          child: Text(
+            f.name,
+            style: TextStyle(
+              fontSize: 14,
+              fontWeight: FontWeight.w600,
+              color: c.textPrimary,
+            ),
+          ),
         );
       case FilterType.separator:
         return const Divider(height: 24);
@@ -719,10 +777,17 @@ class _FilterSheetState extends State<_FilterSheet> {
           child: TextField(
             decoration: InputDecoration(
               labelText: f.name,
-              border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
-              contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(10),
+              ),
+              contentPadding: const EdgeInsets.symmetric(
+                horizontal: 12,
+                vertical: 10,
+              ),
             ),
-            controller: TextEditingController(text: values[f.name] as String? ?? ''),
+            controller: TextEditingController(
+              text: values[f.name] as String? ?? '',
+            ),
             onChanged: (v) => setState(() => values[f.name] = v),
           ),
         );
@@ -739,7 +804,10 @@ class _FilterSheetState extends State<_FilterSheet> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(f.name, style: TextStyle(fontSize: 14, color: c.textPrimary)),
+              Text(
+                f.name,
+                style: TextStyle(fontSize: 14, color: c.textPrimary),
+              ),
               const SizedBox(height: 4),
               SegmentedButton<int>(
                 segments: const [
@@ -748,7 +816,8 @@ class _FilterSheetState extends State<_FilterSheet> {
                   ButtonSegment(value: 2, label: Text('Exclude')),
                 ],
                 selected: {triValue},
-                onSelectionChanged: (s) => setState(() => values[f.name] = s.first),
+                onSelectionChanged: (s) =>
+                    setState(() => values[f.name] = s.first),
               ),
             ],
           ),
@@ -761,13 +830,19 @@ class _FilterSheetState extends State<_FilterSheet> {
           child: DropdownButtonFormField<int>(
             decoration: InputDecoration(
               labelText: f.name,
-              border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(10),
+              ),
             ),
-            value: selIdx < opts.length ? selIdx : 0,
-            items: opts.asMap().entries.map((e) => DropdownMenuItem(
-              value: e.key,
-              child: Text(e.value.name),
-            )).toList(),
+            initialValue: selIdx < opts.length ? selIdx : 0,
+            items: opts
+                .asMap()
+                .entries
+                .map(
+                  (e) =>
+                      DropdownMenuItem(value: e.key, child: Text(e.value.name)),
+                )
+                .toList(),
             onChanged: (v) {
               if (v != null) setState(() => values[f.name] = v);
             },
@@ -783,18 +858,28 @@ class _FilterSheetState extends State<_FilterSheet> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(f.name, style: TextStyle(fontSize: 14, color: c.textPrimary)),
-              ...opts.asMap().entries.map((e) => RadioListTile<int>(
-                title: Text(e.value.name, style: TextStyle(color: c.textPrimary, fontSize: 14)),
-                value: e.key,
-                groupValue: selIdx,
-                onChanged: (v) {
-                  if (v != null) setState(() {
-                    values[f.name] = {'index': v, 'ascending': ascending};
-                  });
-                },
-                dense: true,
-              )),
+              Text(
+                f.name,
+                style: TextStyle(fontSize: 14, color: c.textPrimary),
+              ),
+              ...opts.asMap().entries.map(
+                (e) => RadioListTile<int>(
+                  title: Text(
+                    e.value.name,
+                    style: TextStyle(color: c.textPrimary, fontSize: 14),
+                  ),
+                  value: e.key,
+                  groupValue: selIdx,
+                  onChanged: (v) {
+                    if (v != null) {
+                      setState(() {
+                        values[f.name] = {'index': v, 'ascending': ascending};
+                      });
+                    }
+                  },
+                  dense: true,
+                ),
+              ),
               SwitchListTile(
                 title: const Text('Ascending', style: TextStyle(fontSize: 14)),
                 value: ascending,
@@ -807,14 +892,17 @@ class _FilterSheetState extends State<_FilterSheet> {
           ),
         );
       case FilterType.group:
-        final subValuesList = (values[f.name] as List<Map<String, dynamic>>?) ?? [];
+        final subValuesList =
+            (values[f.name] as List<Map<String, dynamic>>?) ?? [];
         return Padding(
           padding: const EdgeInsets.symmetric(vertical: 6),
           child: ExpansionTile(
             title: Text(f.name, style: TextStyle(color: c.textPrimary)),
             children: (f.subFilters ?? []).asMap().entries.map((e) {
               final sf = e.value;
-              final sv = e.key < subValuesList.length ? subValuesList[e.key] : <String, dynamic>{};
+              final sv = e.key < subValuesList.length
+                  ? subValuesList[e.key]
+                  : <String, dynamic>{};
               return Padding(
                 padding: const EdgeInsets.only(left: 16),
                 child: _buildFilterWidget(sf, sv),

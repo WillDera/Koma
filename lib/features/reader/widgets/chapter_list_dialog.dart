@@ -4,7 +4,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/providers.dart';
 import '../../../core/models/manga_chapter.dart';
 import '../../../core/models/manga.dart';
-import '../../../core/repositories/repositories.dart';
 
 /// Dialog for viewing and jumping to chapters from within the reader.
 ///
@@ -49,7 +48,8 @@ class _ChapterListDialogState extends ConsumerState<ChapterListDialog> {
     if (mounted) {
       setState(() {
         _manga = manga;
-        _chapters = chapters.reversed.toList(); // newest first, matching detail page
+        _chapters = chapters.reversed
+            .toList(); // newest first, matching detail page
         _loading = false;
       });
     }
@@ -59,9 +59,7 @@ class _ChapterListDialogState extends ConsumerState<ChapterListDialog> {
   Widget build(BuildContext context) {
     return Dialog(
       backgroundColor: Theme.of(context).scaffoldBackgroundColor,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(20),
-      ),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
       child: Container(
         constraints: BoxConstraints(
           maxHeight: MediaQuery.of(context).size.height * 0.75,
@@ -75,9 +73,9 @@ class _ChapterListDialogState extends ConsumerState<ChapterListDialog> {
               decoration: BoxDecoration(
                 border: Border(
                   bottom: BorderSide(
-                    color: Theme.of(context)
-                        .dividerColor
-                        .withValues(alpha: 0.1),
+                    color: Theme.of(
+                      context,
+                    ).dividerColor.withValues(alpha: 0.1),
                   ),
                 ),
               ),
@@ -89,8 +87,8 @@ class _ChapterListDialogState extends ConsumerState<ChapterListDialog> {
                     child: Text(
                       _manga?.name ?? 'Chapters',
                       style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                            fontWeight: FontWeight.w600,
-                          ),
+                        fontWeight: FontWeight.w600,
+                      ),
                       overflow: TextOverflow.ellipsis,
                     ),
                   ),
@@ -173,10 +171,7 @@ class _ChapterTile extends StatelessWidget {
             onTap();
           },
           child: Padding(
-            padding: const EdgeInsets.symmetric(
-              horizontal: 12,
-              vertical: 10,
-            ),
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
             child: Row(
               children: [
                 // Read indicator
@@ -200,11 +195,13 @@ class _ChapterTile extends StatelessWidget {
                         chapter.name,
                         style: TextStyle(
                           fontSize: 13,
-                          fontWeight:
-                              isCurrent ? FontWeight.w600 : FontWeight.w400,
+                          fontWeight: isCurrent
+                              ? FontWeight.w600
+                              : FontWeight.w400,
                           color: isRead
-                              ? theme.textTheme.bodySmall?.color
-                                  ?.withValues(alpha: 0.4)
+                              ? theme.textTheme.bodySmall?.color?.withValues(
+                                  alpha: 0.4,
+                                )
                               : null,
                         ),
                         maxLines: 2,

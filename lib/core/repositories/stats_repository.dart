@@ -21,10 +21,7 @@ class StatsRepository {
   /// upsertStatsForDate behaviour).
   Future<ReadingStat?> getStatsForDate(DateTime date) async {
     final day = DateTime(date.year, date.month, date.day);
-    final row = await _isar.readingStats
-        .where()
-        .dateEqualTo(day)
-        .findFirst();
+    final row = await _isar.readingStats.where().dateEqualTo(day).findFirst();
     return row == null ? null : _statToModel(row);
   }
 
@@ -41,12 +38,14 @@ class StatsRepository {
           .dateEqualTo(day)
           .findFirst();
       if (existing == null) {
-        await _isar.readingStats.put(i.ReadingStat(
-          date: day,
-          readingTimeSeconds: readingTimeSeconds,
-          snippetsCreated: snippetsCreated,
-          booksCompleted: booksCompleted,
-        ));
+        await _isar.readingStats.put(
+          i.ReadingStat(
+            date: day,
+            readingTimeSeconds: readingTimeSeconds,
+            snippetsCreated: snippetsCreated,
+            booksCompleted: booksCompleted,
+          ),
+        );
       } else {
         existing.readingTimeSeconds += readingTimeSeconds;
         existing.snippetsCreated += snippetsCreated;
@@ -69,12 +68,14 @@ class StatsRepository {
           .dateEqualTo(day)
           .findFirst();
       if (existing == null) {
-        await _isar.readingStats.put(i.ReadingStat(
-          date: day,
-          readingTimeSeconds: readingTimeSeconds,
-          snippetsCreated: snippetsCreated,
-          booksCompleted: booksCompleted,
-        ));
+        await _isar.readingStats.put(
+          i.ReadingStat(
+            date: day,
+            readingTimeSeconds: readingTimeSeconds,
+            snippetsCreated: snippetsCreated,
+            booksCompleted: booksCompleted,
+          ),
+        );
       } else {
         existing.readingTimeSeconds = readingTimeSeconds;
         existing.snippetsCreated = snippetsCreated;
@@ -84,8 +85,7 @@ class StatsRepository {
     });
   }
 
-  Future<List<ReadingStat>> getStatsRange(
-      DateTime start, DateTime end) async {
+  Future<List<ReadingStat>> getStatsRange(DateTime start, DateTime end) async {
     final rows = await _isar.readingStats
         .where()
         .dateBetween(start, end)
@@ -95,7 +95,10 @@ class StatsRepository {
   }
 
   Stream<List<ReadingStat>> watchStatsRange(
-      DateTime start, DateTime end, {bool fireImmediately = true}) {
+    DateTime start,
+    DateTime end, {
+    bool fireImmediately = true,
+  }) {
     return _isar.readingStats
         .where()
         .dateBetween(start, end)
@@ -135,26 +138,40 @@ class StatsRepository {
 
   /// Returns true if a cached copy of [urlHash] exists.
   Future<bool> isCached(String urlHash) async {
-    final row = await _isar.webCaches.where().urlHashEqualTo(urlHash).findFirst();
+    final row = await _isar.webCaches
+        .where()
+        .urlHashEqualTo(urlHash)
+        .findFirst();
     return row != null;
   }
 
   /// Returns a triple (title, content) or null if not cached.
   Future<({String title, String content})?> getCached(String urlHash) async {
-    final row = await _isar.webCaches.where().urlHashEqualTo(urlHash).findFirst();
+    final row = await _isar.webCaches
+        .where()
+        .urlHashEqualTo(urlHash)
+        .findFirst();
     if (row == null) return null;
     return (title: row.title, content: row.content);
   }
 
   Future<void> cacheContent(
-      String url, String urlHash, String title, String htmlContent) async {
-    await _isar.writeTxn(() => _isar.webCaches.put(i.WebCache(
+    String url,
+    String urlHash,
+    String title,
+    String htmlContent,
+  ) async {
+    await _isar.writeTxn(
+      () => _isar.webCaches.put(
+        i.WebCache(
           urlHash: urlHash,
           url: url,
           title: title,
           content: htmlContent,
           cachedAt: DateTime.now(),
-        )));
+        ),
+      ),
+    );
   }
 
   Future<void> clearCache() async {
@@ -164,28 +181,28 @@ class StatsRepository {
   // ── Conversions ────────────────────────────────────────────────────
 
   static ReadingStat _statToModel(i.ReadingStat s) => ReadingStat(
-        id: s.id ?? 0,
-        date: s.date,
-        readingTimeSeconds: s.readingTimeSeconds,
-        snippetsCreated: s.snippetsCreated,
-        booksCompleted: s.booksCompleted,
-      );
+    id: s.id ?? 0,
+    date: s.date,
+    readingTimeSeconds: s.readingTimeSeconds,
+    snippetsCreated: s.snippetsCreated,
+    booksCompleted: s.booksCompleted,
+  );
 
   static Source _sourceToModel(i.Source s) => Source(
-        id: s.id ?? 0,
-        name: s.name,
-        tag: s.tag,
-        baseUrl: s.baseUrl,
-        enabled: s.enabled,
-        language: s.language,
-      );
+    id: s.id ?? 0,
+    name: s.name,
+    tag: s.tag,
+    baseUrl: s.baseUrl,
+    enabled: s.enabled,
+    language: s.language,
+  );
 
   static i.Source _sourceFromModel(Source s) => i.Source(
-        id: s.id == 0 ? Isar.autoIncrement : s.id,
-        name: s.name,
-        tag: s.tag,
-        baseUrl: s.baseUrl,
-        enabled: s.enabled,
-        language: s.language,
-      );
+    id: s.id == 0 ? Isar.autoIncrement : s.id,
+    name: s.name,
+    tag: s.tag,
+    baseUrl: s.baseUrl,
+    enabled: s.enabled,
+    language: s.language,
+  );
 }

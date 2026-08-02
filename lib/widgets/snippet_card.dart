@@ -50,9 +50,7 @@ class SnippetCard extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            if (selectionMode) ...[
-              const SizedBox(height: 4),
-            ],
+            if (selectionMode) ...[const SizedBox(height: 4)],
             // Top row with color hairline + optional checkbox
             Row(
               children: [
@@ -71,7 +69,9 @@ class SnippetCard extends StatelessWidget {
                     width: 22,
                     height: 22,
                     decoration: BoxDecoration(
-                      color: selected ? c.accent : Colors.black.withValues(alpha: 0.2),
+                      color: selected
+                          ? c.accent
+                          : Colors.black.withValues(alpha: 0.2),
                       shape: BoxShape.circle,
                       border: Border.all(
                         color: selected ? c.accent : c.textTertiary,
@@ -128,11 +128,13 @@ class SnippetCard extends StatelessWidget {
                     child: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        Icon(Icons.book_outlined,
-                            size: 13,
-                            color: onOpenSource != null
-                                ? c.accent
-                                : c.textTertiary),
+                        Icon(
+                          Icons.book_outlined,
+                          size: 13,
+                          color: onOpenSource != null
+                              ? c.accent
+                              : c.textTertiary,
+                        ),
                         const SizedBox(width: 5),
                         Flexible(
                           child: Text(
@@ -162,16 +164,15 @@ class SnippetCard extends StatelessWidget {
                 const SizedBox(width: 8),
                 Text(
                   _relativeDate(snippet.createdAt),
-                  style: TextStyle(
-                    color: c.textTertiary,
-                    fontSize: 12,
-                  ),
+                  style: TextStyle(color: c.textTertiary, fontSize: 12),
                 ),
                 const Spacer(),
                 if (snippet.tags.isNotEmpty)
                   Container(
                     padding: const EdgeInsets.symmetric(
-                        horizontal: 8, vertical: 3),
+                      horizontal: 8,
+                      vertical: 3,
+                    ),
                     decoration: BoxDecoration(
                       color: c.surfaceMuted,
                       borderRadius: AppSpacing.brPill,

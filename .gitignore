@@ -54,3 +54,8 @@ graphify-out/
 /docs/
 /Ebook and Manga Reader App/
 /stitch_modern_ebook_library_redesign/
+
+# Rust metadata engine
+/rust/target/
+/tools/
+TASKS.md

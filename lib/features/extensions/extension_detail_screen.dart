@@ -37,10 +37,7 @@ class ExtensionDetailScreen extends StatelessWidget {
       backgroundColor: c.bg,
       appBar: AppBar(
         backgroundColor: c.bg,
-        title: Text(
-          'Extension Detail',
-          style: TextStyle(color: c.textPrimary),
-        ),
+        title: Text('Extension Detail', style: TextStyle(color: c.textPrimary)),
         iconTheme: IconThemeData(color: c.textPrimary),
       ),
       body: SingleChildScrollView(
@@ -83,11 +80,7 @@ class ExtensionDetailScreen extends StatelessWidget {
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
                     _infoCard(c, source.version, 'Version'),
-                    _infoCard(
-                      c,
-                      completeLanguageName(source.lang),
-                      'Language',
-                    ),
+                    _infoCard(c, completeLanguageName(source.lang), 'Language'),
                   ],
                 ),
               ),
@@ -159,9 +152,12 @@ class ExtensionDetailScreen extends StatelessWidget {
                   style: OutlinedButton.styleFrom(
                     side: BorderSide(color: Colors.redAccent.withAlpha(128)),
                   ),
-                  icon: const Icon(Icons.delete_outline, color: Colors.redAccent),
+                  icon: const Icon(
+                    Icons.delete_outline,
+                    color: Colors.redAccent,
+                  ),
                   label: const Text(
-                     'Unload',
+                    'Unload',
                     style: TextStyle(color: Colors.redAccent),
                   ),
                 ),
@@ -186,10 +182,7 @@ class ExtensionDetailScreen extends StatelessWidget {
           ),
         ),
         const SizedBox(height: 2),
-        Text(
-          label,
-          style: TextStyle(color: c.textSecondary, fontSize: 11),
-        ),
+        Text(label, style: TextStyle(color: c.textSecondary, fontSize: 11)),
       ],
     );
   }
@@ -253,8 +246,7 @@ class _LargePkgExtensionIconState extends State<_LargePkgExtensionIcon> {
   }
 
   Future<void> _resolveFromCache() async {
-    final cached =
-        await ExtensionIconCache.instance.cachedIconUrl(widget.pkg);
+    final cached = await ExtensionIconCache.instance.cachedIconUrl(widget.pkg);
     if (!mounted) return;
     if (cached != null && cached.isNotEmpty && cached != _url) {
       setState(() => _url = cached);

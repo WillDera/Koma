@@ -4,12 +4,15 @@ import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../core/models/source.dart';
 import '../../core/providers.dart';
 import '../../core/services/export_service.dart';
+import '../../core/services/metadata_enrichment_service.dart';
 import '../../core/services/source_service.dart';
 import '../../router/router.dart';
+import '../../theme/app_icons.dart';
 import '../../theme/app_theme.dart';
 import '../../theme/theme_provider.dart';
 import '../../theme/tokens/app_colors.dart';
@@ -43,13 +46,13 @@ class SettingsScreen extends StatelessWidget {
             const OneHandSpacer(),
             const LibraryHeader(
               title: 'Settings',
-              subtitle: 'Version 2.21.7',
+              subtitle: 'Version 2.25.8',
               padding: EdgeInsets.fromLTRB(24, 20, 20, 12),
             ),
             const StaggeredEntrance(
               index: 0,
               child: FeaturePanel(
-                icon: Icons.tune_rounded,
+                icon: AppIcons.tune,
                 title: 'Tune the reading room',
                 subtitle:
                     'Shape the app around your eyes, your thumb, your sources, and your backups.',
@@ -154,7 +157,15 @@ class _DataAndStatsPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return const Column(
-      children: [_DataSection(), SizedBox(height: 24), _StatsSection()],
+      children: [
+        _DataSection(),
+        SizedBox(height: 24),
+        _LibraryUpdateSection(),
+        SizedBox(height: 24),
+        _BookMetadataSection(),
+        SizedBox(height: 24),
+        _StatsSection(),
+      ],
     );
   }
 }
@@ -294,6 +305,12 @@ class _AppearanceSection extends ConsumerWidget {
                       AppColors.accentForestDark,
                       'Forest',
                     ),
+                    (
+                      AccentPreset.aethelgard,
+                      AppColors.aethelgardPrimary,
+                      AppColors.aethelgardPrimaryDark,
+                      'Neo-Noir',
+                    ),
                   ]) ...[
                     _AccentSwatch(
                       light: entry.$2,
@@ -378,10 +395,7 @@ class _AppearanceSection extends ConsumerWidget {
               ),
               const SizedBox(height: 10),
               SegmentedControl<int>(
-                segments: const {
-                  2: '2 cols',
-                  3: '3 cols',
-                },
+                segments: const {2: '2 cols', 3: '3 cols'},
                 value: library.gridColumns,
                 onChanged: (v) => ln.setGridColumns(v),
               ),
@@ -884,6 +898,261 @@ class _TypographySection extends ConsumerWidget {
   }
 }
 
+// ─── Book metadata (Open Library / Google Books via Rust engine) ───────
+class _BookMetadataSection extends ConsumerStatefulWidget {
+  const _BookMetadataSection();
+
+  @override
+  ConsumerState<_BookMetadataSection> createState() =>
+      _BookMetadataSectionState();
+}
+
+class _BookMetadataSectionState extends ConsumerState<_BookMetadataSection> {
+  late final TextEditingController _apiKeyCtrl;
+  bool _loaded = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _apiKeyCtrl = TextEditingController();
+    SharedPreferences.getInstance().then((prefs) {
+      if (!mounted) return;
+      _apiKeyCtrl.text = prefs.getString(kGoogleBooksApiKeyPref) ?? '';
+      setState(() => _loaded = true);
+    });
+  }
+
+  @override
+  void dispose() {
+    _apiKeyCtrl.dispose();
+    super.dispose();
+  }
+
+  Future<void> _saveKey(String value) async {
+    final prefs = await SharedPreferences.getInstance();
+    final trimmed = value.trim();
+    if (trimmed.isEmpty) {
+      await prefs.remove(kGoogleBooksApiKeyPref);
+    } else {
+      await prefs.setString(kGoogleBooksApiKeyPref, trimmed);
+    }
+  }
+
+  Future<void> _fetchAll() async {
+    final books = ref.read(libraryProvider).books;
+    if (books.isEmpty) {
+      if (!mounted) return;
+      StashToast.show(
+        context,
+        message: 'No books in library',
+        icon: Icons.info_outline,
+      );
+      return;
+    }
+    final enrichment = ref.read(metadataEnrichmentProvider.notifier);
+    await enrichment.enrichAll(books);
+    await ref.read(libraryProvider.notifier).loadBooks();
+    if (!mounted) return;
+    final progress = ref.read(metadataEnrichmentProvider);
+    StashToast.show(
+      context,
+      message: progress.lastMessage ?? 'Done',
+      icon: progress.errors.isEmpty ? Icons.auto_awesome : Icons.error_outline,
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.colors;
+    final progress = ref.watch(metadataEnrichmentProvider);
+    return SettingsSection(
+      title: 'Book metadata',
+      footer:
+          'Looks up author, cover, genres, and release date via Open Library (primary) and Google Books (fallback). An API key improves Google Books rate limits but is optional.',
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+          child: TextField(
+            controller: _apiKeyCtrl,
+            enabled: _loaded && !progress.running,
+            obscureText: true,
+            decoration: InputDecoration(
+              labelText: 'Google Books API key (optional)',
+              labelStyle: TextStyle(color: c.textSecondary),
+              border: const OutlineInputBorder(),
+              isDense: true,
+            ),
+            onChanged: _saveKey,
+          ),
+        ),
+        SettingsRow(
+          icon: Icons.auto_awesome,
+          title: 'Fetch metadata for all books',
+          subtitle: progress.running
+              ? 'Fetching ${progress.current}/${progress.total}…'
+              : (progress.lastMessage ?? 'Enrich library books from the web'),
+          trailing: progress.running
+              ? const SizedBox(
+                  width: 18,
+                  height: 18,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              : null,
+          onTap: progress.running ? null : _fetchAll,
+        ),
+      ],
+    );
+  }
+}
+
+// ─── Library updates (chapter polling) ─────────────────────────────────
+class _LibraryUpdateSection extends ConsumerWidget {
+  const _LibraryUpdateSection();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final c = context.colors;
+    final update = ref.watch(libraryUpdateProvider);
+    final lastReport = ref.watch(libraryUpdateResultProvider);
+    final lastChecked = update.lastCheckedAt;
+    return SettingsSection(
+      title: 'Library updates',
+      footer:
+          'Automatically check library manga for new chapters and surface a badge on each card. A system notification can be sent when new chapters are found.',
+      children: [
+        SettingsRow(
+          icon: Icons.autorenew,
+          title: 'Auto-check for new chapters',
+          subtitle: update.enabled ? 'On' : 'Off',
+          trailing: Switch(
+            value: update.enabled,
+            activeThumbColor: c.accent,
+            onChanged: (v) =>
+                ref.read(libraryUpdateProvider.notifier).setEnabled(v),
+          ),
+        ),
+        _PrefSwitchRow(
+          key: const Key('notify_new_chapters'),
+          icon: Icons.notifications_outlined,
+          title: 'Notify on new chapters',
+          subtitle:
+              'Send a system notification when a check finds new chapters',
+          prefKey: 'notify_new_chapters',
+          defaultValue: true,
+        ),
+        SettingsRow(
+          icon: Icons.schedule_outlined,
+          title: 'Check every',
+          subtitle:
+              '${update.interval.inHours} hour${update.interval.inHours == 1 ? '' : 's'}',
+          trailing: PopupMenuButton<int>(
+            icon: Icon(Icons.keyboard_arrow_down, color: c.textSecondary),
+            tooltip: 'Interval',
+            onSelected: (hours) => ref
+                .read(libraryUpdateProvider.notifier)
+                .setInterval(Duration(hours: hours)),
+            itemBuilder: (_) => const [
+              PopupMenuItem(value: 1, child: Text('1 hour')),
+              PopupMenuItem(value: 6, child: Text('6 hours')),
+              PopupMenuItem(value: 12, child: Text('12 hours')),
+              PopupMenuItem(value: 24, child: Text('24 hours')),
+            ],
+          ),
+        ),
+        SettingsRow(
+          icon: Icons.refresh,
+          title: 'Check now',
+          subtitle: update.checking
+              ? 'Checking…'
+              : lastChecked != null
+              ? 'Last checked ${_timeAgo(lastChecked)} · ${lastReport?.totalNew ?? update.lastNewChapterCount} new'
+              : 'Never checked',
+          trailing: update.checking
+              ? const SizedBox(
+                  width: 18,
+                  height: 18,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              : null,
+          onTap: update.checking
+              ? null
+              : () => ref
+                    .read(libraryUpdateProvider.notifier)
+                    .checkForNewChapters(),
+        ),
+      ],
+    );
+  }
+}
+
+/// A SettingsRow whose Switch persists to a SharedPreferences boolean.
+class _PrefSwitchRow extends StatefulWidget {
+  const _PrefSwitchRow({
+    super.key,
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    required this.prefKey,
+    this.defaultValue = false,
+  });
+
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  final String prefKey;
+  final bool defaultValue;
+
+  @override
+  State<_PrefSwitchRow> createState() => _PrefSwitchRowState();
+}
+
+class _PrefSwitchRowState extends State<_PrefSwitchRow> {
+  bool _value = false;
+  bool _loaded = false;
+
+  @override
+  void initState() {
+    super.initState();
+    SharedPreferences.getInstance().then((prefs) {
+      if (!mounted) return;
+      setState(() {
+        _value = prefs.getBool(widget.prefKey) ?? widget.defaultValue;
+        _loaded = true;
+      });
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.colors;
+    return SettingsRow(
+      icon: widget.icon,
+      title: widget.title,
+      subtitle: widget.subtitle,
+      trailing: Switch(
+        value: _loaded ? _value : widget.defaultValue,
+        activeThumbColor: c.accent,
+        onChanged: (v) async {
+          setState(() {
+            _value = v;
+            _loaded = true;
+          });
+          final prefs = await SharedPreferences.getInstance();
+          await prefs.setBool(widget.prefKey, v);
+        },
+      ),
+    );
+  }
+}
+
+String _timeAgo(DateTime t) {
+  final diff = DateTime.now().difference(t);
+  if (diff.inMinutes < 1) return 'just now';
+  if (diff.inMinutes < 60) return '${diff.inMinutes}m ago';
+  if (diff.inHours < 24) return '${diff.inHours}h ago';
+  return '${diff.inDays}d ago';
+}
+
 // ─── Data ────────────────────────────────────────────────────────────────
 class _DataSection extends ConsumerStatefulWidget {
   const _DataSection();
@@ -1052,8 +1321,10 @@ class _SourcesSectionState extends ConsumerState<_SourcesSection> {
         children: [
           Padding(
             padding: const EdgeInsets.all(16),
-            child: Text('Failed to load sources: $_error',
-                style: TextStyle(color: context.colors.accentMuted)),
+            child: Text(
+              'Failed to load sources: $_error',
+              style: TextStyle(color: context.colors.accentMuted),
+            ),
           ),
         ],
       );
@@ -1493,11 +1764,13 @@ class _StatsSectionState extends ConsumerState<_StatsSection> {
 }
 
 // ─── Plugins ───────────────────────────────────────────────────────────
-class _PluginsSection extends StatelessWidget {
+class _PluginsSection extends ConsumerWidget {
   const _PluginsSection();
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final c = context.colors;
+    final updateCount = ref.watch(extensionUpdateCountProvider);
     return SettingsSection(
       title: 'Plugins',
       footer:
@@ -1506,8 +1779,35 @@ class _PluginsSection extends StatelessWidget {
         SettingsRow(
           icon: Icons.extension_outlined,
           title: 'Manage plugins',
-          subtitle: 'Browse, install, and remove extensions',
-          trailing: const Icon(Icons.chevron_right, size: 18),
+          subtitle: updateCount > 0
+              ? 'Browse, install, and remove extensions · $updateCount update${updateCount == 1 ? '' : 's'} available'
+              : 'Browse, install, and remove extensions',
+          trailing: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (updateCount > 0)
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 7,
+                    vertical: 2,
+                  ),
+                  decoration: BoxDecoration(
+                    color: c.accent,
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Text(
+                    '$updateCount',
+                    style: TextStyle(
+                      color: c.bg,
+                      fontSize: 12,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+              const SizedBox(width: 4),
+              const Icon(Icons.chevron_right, size: 18),
+            ],
+          ),
           onTap: () {
             context.pushNamed(Routes.extensions);
           },
@@ -1517,6 +1817,15 @@ class _PluginsSection extends StatelessWidget {
           title: 'Plugin SDK',
           subtitle: 'Documentation for authors',
           trailing: const Icon(Icons.chevron_right, size: 18),
+        ),
+        _PrefSwitchRow(
+          key: const Key('notify_extension_updates'),
+          icon: Icons.notifications_outlined,
+          title: 'Notify on plugin updates',
+          subtitle:
+              'Send a system notification when updates are found on launch',
+          prefKey: 'notify_extension_updates',
+          defaultValue: true,
         ),
       ],
     );
@@ -1535,7 +1844,7 @@ class _AboutSection extends StatelessWidget {
         SettingsRow(
           icon: Icons.info_outline,
           title: 'Koma',
-          subtitle: 'Version 2.19.46 · build 2.19.46+176',
+          subtitle: 'Version 2.25.8 · build 2.25.8+204',
         ),
         SettingsRow(
           icon: Icons.favorite_outline,

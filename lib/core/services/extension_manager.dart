@@ -74,12 +74,8 @@ class ExtensionIndexEntry {
       baseUrl = j['baseUrl'] as String?;
       iconUrl = j['iconUrl'] as String?;
     } else {
-      pkg = j['packageName'] as String? ??
-          j['pkg'] as String? ??
-          '';
-      name = j['name'] as String? ??
-          pkg ??
-          'Unknown';
+      pkg = j['packageName'] as String? ?? j['pkg'] as String? ?? '';
+      name = j['name'] as String? ?? pkg ?? 'Unknown';
 
       String apk;
       if (j['resources'] is Map) {
@@ -90,25 +86,24 @@ class ExtensionIndexEntry {
       }
       apkUrl = apk;
 
-      version = j['versionName'] as String? ??
-          j['version'] as String? ??
-          '0';
+      version = j['versionName'] as String? ?? j['version'] as String? ?? '0';
 
       if (sources.isNotEmpty) {
-        lang = sources.first['language'] as String? ??
+        lang =
+            sources.first['language'] as String? ??
             sources.first['lang'] as String? ??
             'en';
       } else {
         lang = j['lang'] as String? ?? 'en';
       }
 
-      contentWarning = j['contentWarning'] as String? ??
-          'CONTENT_WARNING_SAFE';
+      contentWarning = j['contentWarning'] as String? ?? 'CONTENT_WARNING_SAFE';
 
-      baseUrl = j['baseUrl'] as String? ??
+      baseUrl =
+          j['baseUrl'] as String? ??
           (sources.isNotEmpty
               ? (sources.first['baseUrl'] as String?) ??
-              (sources.first['homeUrl'] as String?)
+                    (sources.first['homeUrl'] as String?)
               : null);
       iconUrl = j['resources'] is Map
           ? (j['resources'] as Map)['iconUrl'] as String?
@@ -134,13 +129,11 @@ class ExtensionManager {
   final KeiyoushiService _keiyoushi;
   final http.Client _http;
 
-  ExtensionManager(
-    this._repos,
-    this._keiyoushi, {
-    http.Client? httpClient,
-  }) : _http = httpClient ?? http.Client();
+  ExtensionManager(this._repos, this._keiyoushi, {http.Client? httpClient})
+    : _http = httpClient ?? http.Client();
 
-  Future<List<ExtensionRepo>> listRepos() => _repos.extensions.getExtensionRepos();
+  Future<List<ExtensionRepo>> listRepos() =>
+      _repos.extensions.getExtensionRepos();
 
   Future<void> addRepo({required String name, required String url}) async {
     final repo = ExtensionRepo(name: name, url: url);
@@ -158,9 +151,7 @@ class ExtensionManager {
   /// See Q5: the legacy `.../repo/icon/${pkg}.png` URLs always 404'd against
   /// Keiyoushi; the authoritative icon URLs live in the full index's
   /// `resources.iconUrl` field.
-  Future<void> refreshIconCache({
-    void Function(Object error)? onError,
-  }) {
+  Future<void> refreshIconCache({void Function(Object error)? onError}) {
     return ExtensionIconCache.instance.ensurePopulated(onError: onError);
   }
 
@@ -185,13 +176,16 @@ class ExtensionManager {
 
     final apkFile = File(apkPath);
     if (apkFile.existsSync()) {
-      try { await Process.run('chmod', ['+w', apkPath]); } catch (_) {}
-      try { apkFile.deleteSync(); } catch (_) {}
+      try {
+        await Process.run('chmod', ['+w', apkPath]);
+      } catch (_) {}
+      try {
+        apkFile.deleteSync();
+      } catch (_) {}
     }
     await _downloadApk(resolved, apkPath);
 
-    final iconUrl =
-        ExtensionIconCache.iconUrlForPkg(entry.pkg) ?? '';
+    final iconUrl = ExtensionIconCache.iconUrlForPkg(entry.pkg) ?? '';
     final sourceCodeUrl = resolved;
 
     final desc = await _keiyoushi.loadExtension(
@@ -260,8 +254,12 @@ class ExtensionManager {
 
     final apkFile = File(newApkPath);
     if (apkFile.existsSync()) {
-      try { await Process.run('chmod', ['+w', newApkPath]); } catch (_) {}
-      try { apkFile.deleteSync(); } catch (_) {}
+      try {
+        await Process.run('chmod', ['+w', newApkPath]);
+      } catch (_) {}
+      try {
+        apkFile.deleteSync();
+      } catch (_) {}
     }
 
     await _downloadApk(resolved, newApkPath);
@@ -273,18 +271,26 @@ class ExtensionManager {
     final newSourceId = (desc['sourceId'] as String?) ?? '';
     final nativeBaseUrl = (desc['baseUrl'] as String?) ?? '';
 
-    await _repos.extensions.insertExtensionSource(src.copyWith(
-      sourceId: newSourceId,
-      apkPath: newApkPath,
-      version: entry.version,
-      versionLast: entry.version,
-      isObsolete: false,
-      // Backfill the extension's authoritative baseUrl when the index entry
-      // didn't carry one (see install() for the v2-format rationale).
-      baseUrl: nativeBaseUrl.isNotEmpty
-          ? nativeBaseUrl
-          : src.baseUrl,
-    ));
+    // The new APK can report a different sourceId (keiyoushi rotates IDs on
+    // release). delete-then-insert rather than relying on Isar's
+    // `@Index(unique, replace)` — that only collapses rows sharing the SAME
+    // sourceId, so a rotated ID would otherwise leave a stale duplicate row.
+    if (src.sourceId.isNotEmpty) {
+      await _repos.extensions.deleteExtensionSource(src.sourceId);
+    }
+    await _repos.extensions.insertExtensionSource(
+      src.copyWith(
+        id: newSourceId,
+        sourceId: newSourceId,
+        apkPath: newApkPath,
+        version: entry.version,
+        versionLast: entry.version,
+        isObsolete: false,
+        // Backfill the extension's authoritative baseUrl when the index entry
+        // didn't carry one (see install() for the v2-format rationale).
+        baseUrl: nativeBaseUrl.isNotEmpty ? nativeBaseUrl : src.baseUrl,
+      ),
+    );
   }
 
   Future<void> checkForUpdates(
@@ -315,9 +321,9 @@ class ExtensionManager {
         if (match.id.isEmpty) continue;
         if (match.version == entry.version) continue;
 
-        await _repos.extensions.insertExtensionSource(match.copyWith(
-          versionLast: entry.version,
-        ));
+        await _repos.extensions.insertExtensionSource(
+          match.copyWith(versionLast: entry.version),
+        );
       }
     }
   }
@@ -343,21 +349,23 @@ class ExtensionManager {
       if (src.repoUrl != repoUrl) continue;
       final isNowObsolete = !knownClassNames.contains(src.className);
       if (src.isObsolete != isNowObsolete) {
-        toUpdate.add(ExtensionSource(
-          id: src.id,
-          sourceId: src.sourceId,
-          name: src.name,
-          version: src.version,
-          lang: src.lang,
-          apkPath: src.apkPath,
-          className: src.className,
-          baseUrl: src.baseUrl,
-          isObsolete: isNowObsolete,
-          isActive: src.isActive,
-          isInstalled: src.isInstalled,
-          isNsfw: src.isNsfw,
-          isPinned: src.isPinned,
-        ));
+        toUpdate.add(
+          ExtensionSource(
+            id: src.id,
+            sourceId: src.sourceId,
+            name: src.name,
+            version: src.version,
+            lang: src.lang,
+            apkPath: src.apkPath,
+            className: src.className,
+            baseUrl: src.baseUrl,
+            isObsolete: isNowObsolete,
+            isActive: src.isActive,
+            isInstalled: src.isInstalled,
+            isNsfw: src.isNsfw,
+            isPinned: src.isPinned,
+          ),
+        );
       }
     }
     for (final s in toUpdate) {
@@ -365,7 +373,8 @@ class ExtensionManager {
     }
   }
 
-  Future<List<ExtensionSource>> listInstalled() => _repos.extensions.getInstalledExtensions();
+  Future<List<ExtensionSource>> listInstalled() =>
+      _repos.extensions.getInstalledExtensions();
 
   /// Translate any source identifier (old Mihon numeric ID or hex sourceId)
   /// to the hex sourceId used by the DalvikServer cache. Falls back to
@@ -399,10 +408,9 @@ class ExtensionManager {
 
         if (src.id != nativeId || src.sourceId != newSourceId) {
           await _repos.extensions.deleteExtensionSource(src.id);
-          await _repos.extensions.insertExtensionSource(src.copyWith(
-            id: nativeId,
-            sourceId: newSourceId,
-          ));
+          await _repos.extensions.insertExtensionSource(
+            src.copyWith(id: nativeId, sourceId: newSourceId),
+          );
         }
 
         // Backfill baseUrl from the loaded extension's own `source.baseUrl`
@@ -470,7 +478,9 @@ List<ExtensionIndexEntry> _parseIndexBody(String body) {
       if (exts is List) {
         return exts
             .cast<Map>()
-            .map((e) => ExtensionIndexEntry.fromJson(Map<String, dynamic>.from(e)))
+            .map(
+              (e) => ExtensionIndexEntry.fromJson(Map<String, dynamic>.from(e)),
+            )
             .toList(growable: false);
       }
     }

@@ -17,12 +17,7 @@ class HighlightColorPicker extends StatelessWidget {
     required this.onChanged,
   });
 
-  static const List<String> palette = [
-    'yellow',
-    'blue',
-    'pink',
-    'green',
-  ];
+  static const List<String> palette = ['yellow', 'blue', 'pink', 'green'];
 
   @override
   Widget build(BuildContext context) {
@@ -33,15 +28,17 @@ class HighlightColorPicker extends StatelessWidget {
       decoration: BoxDecoration(
         color: c.textPrimary.withValues(alpha: 0.92),
         borderRadius: AppSpacing.brPill,
-        boxShadow: AppSpacing.shadow2(
-          isDark: c.bg.computeLuminance() < 0.5,
-        ),
+        boxShadow: AppSpacing.shadow2(isDark: c.bg.computeLuminance() < 0.5),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: palette.map((key) {
           final isSelected = selected == key;
-          final color = AppColors.highlight(key, Brightness.light, isSepia: isSepia);
+          final color = AppColors.highlight(
+            key,
+            Brightness.light,
+            isSepia: isSepia,
+          );
           return AnimatedPress(
             onTap: () => onChanged(key),
             scaleDown: 0.85,
@@ -63,11 +60,7 @@ class HighlightColorPicker extends StatelessWidget {
                 ),
               ),
               child: isSelected
-                  ? Icon(
-                      Icons.check,
-                      size: 16,
-                      color: c.textPrimary,
-                    )
+                  ? Icon(Icons.check, size: 16, color: c.textPrimary)
                   : null,
             ),
           );

@@ -42,14 +42,13 @@ class JsUnpacker {
       final unbaser = _Unbaser(radix);
 
       if (symtab != null && symtab.length == count) {
-        final unpackedPayload = payload!.replaceAllMapped(
-          _unpackReplaceRegex,
-          (match) {
-            final word = match.group(0)!;
-            final unbased = symtab[unbaser.unbase(word)];
-            return unbased.isEmpty ? word : unbased;
-          },
-        );
+        final unpackedPayload = payload!.replaceAllMapped(_unpackReplaceRegex, (
+          match,
+        ) {
+          final word = match.group(0)!;
+          final unbased = symtab[unbaser.unbase(word)];
+          return unbased.isEmpty ? word : unbased;
+        });
         yield unpackedPayload;
       }
     }
