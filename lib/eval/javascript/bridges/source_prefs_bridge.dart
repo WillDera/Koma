@@ -73,7 +73,11 @@ Future<void> injectSourcePrefsBridge(QuickJsRuntime2 engine) async {
   engine.evaluate(sourcePrefsBridgeCode);
 }
 
-Future<void> _sourcePrefsGetInstance(QuickJsRuntime2 engine, String sourceId, int callbackId) async {
+Future<void> _sourcePrefsGetInstance(
+  QuickJsRuntime2 engine,
+  String sourceId,
+  int callbackId,
+) async {
   final prefs = await SharedPreferences.getInstance();
   final sourceKey = 'source_prefs_$sourceId';
   final map = <String, String>{};
@@ -86,23 +90,38 @@ Future<void> _sourcePrefsGetInstance(QuickJsRuntime2 engine, String sourceId, in
       }
     } catch (_) {}
   }
-  engine.evaluate('__sourcePrefsCallbacks[$callbackId].resolve(_sourcePrefsWrap(${jsonEncode(map)}))');
+  engine.evaluate(
+    '__sourcePrefsCallbacks[$callbackId].resolve(_sourcePrefsWrap(${jsonEncode(map)}))',
+  );
 }
 
-Future<void> _sourcePrefsGetString(QuickJsRuntime2 engine, String key, int callbackId) async {
+Future<void> _sourcePrefsGetString(
+  QuickJsRuntime2 engine,
+  String key,
+  int callbackId,
+) async {
   final prefs = await SharedPreferences.getInstance();
   final value = prefs.getString('source_prefs_$key');
   final result = jsonEncode(value);
   engine.evaluate('__sourcePrefsCallbacks[$callbackId].resolve($result)');
 }
 
-Future<void> _sourcePrefsPutString(QuickJsRuntime2 engine, String key, String value, int callbackId) async {
+Future<void> _sourcePrefsPutString(
+  QuickJsRuntime2 engine,
+  String key,
+  String value,
+  int callbackId,
+) async {
   final prefs = await SharedPreferences.getInstance();
   await prefs.setString('source_prefs_$key', value);
   engine.evaluate('__sourcePrefsCallbacks[$callbackId].resolve(null)');
 }
 
-Future<void> _sourcePrefsRemove(QuickJsRuntime2 engine, String key, int callbackId) async {
+Future<void> _sourcePrefsRemove(
+  QuickJsRuntime2 engine,
+  String key,
+  int callbackId,
+) async {
   final prefs = await SharedPreferences.getInstance();
   await prefs.remove('source_prefs_$key');
   engine.evaluate('__sourcePrefsCallbacks[$callbackId].resolve(null)');

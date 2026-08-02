@@ -248,13 +248,12 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> with RouteAware {
     }
     return ValueListenableBuilder<double>(
       valueListenable: _scrollProgress,
-      builder: (_, progress, _) =>
-          LibraryHeader(
-            title: title,
-            subtitle: subtitle,
-            titleSize: titleSize,
-            shrinkProgress: progress,
-          ),
+      builder: (_, progress, _) => LibraryHeader(
+        title: title,
+        subtitle: subtitle,
+        titleSize: titleSize,
+        shrinkProgress: progress,
+      ),
     );
   }
 
@@ -278,13 +277,15 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> with RouteAware {
         child: AnimatedPress(
           onTap: () => context.pushNamed(
             Routes.reader,
-            extra: (
-              bookId: book.id,
-              snippetChapterId: null,
-              snippetScrollOffset: null,
-            snippetStartOffset: null,
-            snippetEndOffset: null,
-            ) as ReaderArgs,
+            extra:
+                (
+                      bookId: book.id,
+                      snippetChapterId: null,
+                      snippetScrollOffset: null,
+                      snippetStartOffset: null,
+                      snippetEndOffset: null,
+                    )
+                    as ReaderArgs,
           ),
           child: Container(
             padding: const EdgeInsets.all(12),
@@ -387,9 +388,7 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> with RouteAware {
     final name = manga.name;
     final author = manga.author;
     final imageUrl = manga.imageUrl;
-    final headers = ref
-        .watch(sourceImageHeadersProvider(manga.sourceId))
-        .value;
+    final headers = ref.watch(sourceImageHeadersProvider(manga.sourceId)).value;
     final id = manga.id;
     final sourceId = manga.sourceId;
     final url = manga.url;
@@ -410,8 +409,12 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> with RouteAware {
       if (cached != null) {
         coverProvider = cached;
       } else {
-        coverProvider =
-            cachedCover(imageUrl, headers: headers, width: 48, height: 64);
+        coverProvider = cachedCover(
+          imageUrl,
+          headers: headers,
+          width: 48,
+          height: 64,
+        );
         if (headers != null) _coverCache[id] = coverProvider;
       }
     }
@@ -423,12 +426,9 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> with RouteAware {
         child: AnimatedPress(
           onTap: () => context.pushNamed(
             Routes.mangaDetail,
-            extra: (
-              sourceId: sourceId,
-              url: url,
-              title: name,
-              manga: null,
-            ) as MangaDetailArgs,
+            extra:
+                (sourceId: sourceId, url: url, title: name, manga: null)
+                    as MangaDetailArgs,
           ),
           child: Container(
             padding: const EdgeInsets.all(12),
@@ -449,16 +449,27 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> with RouteAware {
                     height: 64,
                     child: coverProvider != null
                         ? Image(
-                      image: coverProvider,
-                      width: 48,
-                      height: 64,
-                      fit: BoxFit.cover,
-                      errorBuilder: (_, _, _) =>
-                          Container(color: c.surfaceMuted, child: Icon(
-                              Icons.broken_image, size: 24,
-                              color: c.textTertiary)),
-                    )
-                        : Container(color: c.surfaceMuted, child: Icon(Icons.auto_stories, size: 24, color: c.textTertiary)),
+                            image: coverProvider,
+                            width: 48,
+                            height: 64,
+                            fit: BoxFit.cover,
+                            errorBuilder: (_, _, _) => Container(
+                              color: c.surfaceMuted,
+                              child: Icon(
+                                Icons.broken_image,
+                                size: 24,
+                                color: c.textTertiary,
+                              ),
+                            ),
+                          )
+                        : Container(
+                            color: c.surfaceMuted,
+                            child: Icon(
+                              Icons.auto_stories,
+                              size: 24,
+                              color: c.textTertiary,
+                            ),
+                          ),
                   ),
                 ),
                 const SizedBox(width: 14),

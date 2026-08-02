@@ -3,9 +3,11 @@ import 'dart:async';
 import 'package:isar_community/isar.dart';
 
 import '../isar/collections/book.dart' as i;
+import '../isar/collections/book_metadata.dart' as i;
 import '../isar/collections/chapter.dart' as i;
 import '../isar/collections/highlight.dart' as i;
 import '../models/book.dart';
+import '../models/book_metadata.dart';
 import '../models/chapter.dart';
 import '../models/highlight.dart';
 
@@ -59,7 +61,8 @@ class BookRepository {
 
   Future<void> insertBooks(List<Book> books) async {
     await _isar.writeTxn(
-        () => _isar.books.putAll(books.map(_fromModel).toList()));
+      () => _isar.books.putAll(books.map(_fromModel).toList()),
+    );
   }
 
   Future<void> updateBook(Book book) async {
@@ -86,8 +89,12 @@ class BookRepository {
   }
 
   Future<void> clearProgress(int bookId) async {
-    await updateProgress(bookId, 0.0,
-        currentChapterIndex: 0, scrollPosition: 0.0);
+    await updateProgress(
+      bookId,
+      0.0,
+      currentChapterIndex: 0,
+      scrollPosition: 0.0,
+    );
   }
 
   Future<void> deleteBook(int id) async {
@@ -97,7 +104,65 @@ class BookRepository {
       // Drift schema's ON DELETE CASCADE.)
       await _isar.chapters.where().bookIdEqualTo(id).deleteAll();
       await _isar.highlights.where().bookIdEqualTo(id).deleteAll();
+      await _isar.bookMetadatas.where().bookIdEqualTo(id).deleteAll();
       await _isar.books.delete(id);
+    });
+  }
+
+  Future<BookMetadata?> getMetadataForBook(int bookId) async {
+    final row =
+        await _isar.bookMetadatas.filter().bookIdEqualTo(bookId).findFirst();
+    return row == null ? null : _metadataToModel(row);
+  }
+
+  /// Apply engine enrichment to [Book] display fields and upsert provenance.
+  Future<void> applyEnrichment({
+    required int bookId,
+    required String? author,
+    required String? localCoverPath,
+    required List<String> genres,
+    required DateTime? releaseDate,
+    required String source,
+    required String? remoteId,
+    required String? coverUrl,
+    required String? rawTitle,
+  }) async {
+    await _isar.writeTxn(() async {
+      final book = await _isar.books.get(bookId);
+      if (book == null) return;
+
+      if (author != null && author.trim().isNotEmpty) {
+        book.author = author.trim();
+      }
+      if (localCoverPath != null && localCoverPath.isNotEmpty) {
+        book.coverPath = localCoverPath;
+      }
+      if (genres.isNotEmpty) {
+        book.genre = genres.join(', ');
+      }
+      if (releaseDate != null) {
+        book.releaseDate = releaseDate;
+      }
+      book.updatedAt = DateTime.now();
+      await _isar.books.put(book);
+
+      final existing = await _isar.bookMetadatas
+          .filter()
+          .bookIdEqualTo(bookId)
+          .findFirst();
+      final meta = existing ??
+          i.BookMetadata(
+            bookId: bookId,
+            source: source,
+          );
+      meta.source = source;
+      meta.remoteId = remoteId;
+      meta.coverUrl = coverUrl;
+      meta.genres = List<String>.from(genres);
+      meta.releaseDate = releaseDate;
+      meta.fetchedAt = DateTime.now();
+      meta.rawTitle = rawTitle;
+      await _isar.bookMetadatas.put(meta);
     });
   }
 
@@ -194,13 +259,13 @@ class BookRepository {
   }
 
   Future<int> insertChapter(Chapter chapter) async {
-    return _isar.writeTxn(
-        () => _isar.chapters.put(_chapterFromModel(chapter)));
+    return _isar.writeTxn(() => _isar.chapters.put(_chapterFromModel(chapter)));
   }
 
   Future<void> insertChapters(List<Chapter> chapters) async {
     await _isar.writeTxn(
-        () => _isar.chapters.putAll(chapters.map(_chapterFromModel).toList()));
+      () => _isar.chapters.putAll(chapters.map(_chapterFromModel).toList()),
+    );
   }
 
   Future<void> markChapterRead(int chapterId) async {
@@ -226,8 +291,7 @@ class BookRepository {
   /// Kept separate from [updateChapterScroll] so the two layout modes never
   /// clobber each other's position: scroll mode writes pixels, paginated mode
   /// writes character offsets, and switching modes reads whichever it needs.
-  Future<void> updateChapterReadingOffset(int chapterId,
-      int charOffset,) async {
+  Future<void> updateChapterReadingOffset(int chapterId, int charOffset) async {
     await _isar.writeTxn(() async {
       final row = await _isar.chapters.get(chapterId);
       if (row == null) return;
@@ -247,8 +311,10 @@ class BookRepository {
 
   // ── Chapters: Stream API ───────────────────────────────────────────
 
-  Stream<List<Chapter>> watchChapters(int bookId,
-      {bool fireImmediately = true}) {
+  Stream<List<Chapter>> watchChapters(
+    int bookId, {
+    bool fireImmediately = true,
+  }) {
     return _isar.chapters
         .where()
         .bookIdEqualTo(bookId)
@@ -271,8 +337,7 @@ class BookRepository {
   /// in-memory copy can keep it in step with the stored row rather than
   /// carrying a placeholder id.
   Future<int> insertHighlight(Highlight hl) async {
-    return _isar.writeTxn(
-        () => _isar.highlights.put(_highlightFromModel(hl)));
+    return _isar.writeTxn(() => _isar.highlights.put(_highlightFromModel(hl)));
   }
 
   Future<void> deleteHighlight(int id) async {
@@ -297,6 +362,7 @@ class BookRepository {
         updatedAt: b.updatedAt,
         genre: b.genre,
         fileExtension: b.fileExtension,
+        releaseDate: b.releaseDate,
       );
 
   static i.Book _fromModel(Book b) => i.Book(
@@ -313,55 +379,68 @@ class BookRepository {
         scrollPosition: b.scrollPosition,
         genre: b.genre,
         fileExtension: b.fileExtension,
+        releaseDate: b.releaseDate,
         createdAt: b.createdAt,
         updatedAt: b.updatedAt,
       );
 
-  static Chapter _chapterToModel(i.Chapter c) => Chapter(
-        id: c.id ?? 0,
-        bookId: c.bookId,
-        title: c.title,
-        content: c.content,
-        index: c.index,
-        readAt: c.readAt,
-        scrollPosition: c.scrollPosition,
-    readingCharOffset: c.readingCharOffset,
+  static BookMetadata _metadataToModel(i.BookMetadata m) => BookMetadata(
+        id: m.id ?? 0,
+        bookId: m.bookId,
+        source: m.source,
+        remoteId: m.remoteId,
+        coverUrl: m.coverUrl,
+        genres: m.genres,
+        releaseDate: m.releaseDate,
+        fetchedAt: m.fetchedAt,
+        rawTitle: m.rawTitle,
       );
+
+  static Chapter _chapterToModel(i.Chapter c) => Chapter(
+    id: c.id ?? 0,
+    bookId: c.bookId,
+    title: c.title,
+    content: c.content,
+    index: c.index,
+    readAt: c.readAt,
+    scrollPosition: c.scrollPosition,
+    readingCharOffset: c.readingCharOffset,
+  );
 
   static i.Chapter _chapterFromModel(Chapter c) => i.Chapter(
-        id: c.id == 0 ? Isar.autoIncrement : c.id,
-        bookId: c.bookId,
-        title: c.title,
-        content: c.content,
-        index: c.index,
-        readAt: c.readAt,
-        scrollPosition: c.scrollPosition,
+    id: c.id == 0 ? Isar.autoIncrement : c.id,
+    bookId: c.bookId,
+    title: c.title,
+    content: c.content,
+    index: c.index,
+    readAt: c.readAt,
+    scrollPosition: c.scrollPosition,
     readingCharOffset: c.readingCharOffset,
-      );
+  );
 
   static Highlight _highlightToModel(i.Highlight h) => Highlight(
-        id: h.id ?? 0,
-        snippetId: h.snippetId,
-        bookId: h.bookId,
-        chapterId: h.chapterId,
-        startOffset: h.startOffset,
-        endOffset: h.endOffset,
-        color: h.color,
-        text: h.text,
-        createdAt: h.createdAt,
-        updatedAt: h.updatedAt,
-      );
+    id: h.id ?? 0,
+    snippetId: h.snippetId,
+    bookId: h.bookId,
+    chapterId: h.chapterId,
+    startOffset: h.startOffset,
+    endOffset: h.endOffset,
+    color: h.color,
+    text: h.text,
+    createdAt: h.createdAt,
+    updatedAt: h.updatedAt,
+  );
 
   static i.Highlight _highlightFromModel(Highlight h) => i.Highlight(
-        id: h.id == 0 ? Isar.autoIncrement : h.id,
-        snippetId: h.snippetId,
-        bookId: h.bookId,
-        chapterId: h.chapterId,
-        startOffset: h.startOffset,
-        endOffset: h.endOffset,
-        color: h.color,
-        text: h.text,
-        createdAt: h.createdAt,
-        updatedAt: h.updatedAt,
-      );
+    id: h.id == 0 ? Isar.autoIncrement : h.id,
+    snippetId: h.snippetId,
+    bookId: h.bookId,
+    chapterId: h.chapterId,
+    startOffset: h.startOffset,
+    endOffset: h.endOffset,
+    color: h.color,
+    text: h.text,
+    createdAt: h.createdAt,
+    updatedAt: h.updatedAt,
+  );
 }

@@ -42,27 +42,26 @@ class Chapter {
   });
 
   Map<String, dynamic> toJson() => {
-        'id': id,
-        'book_id': bookId,
-        'title': title,
-        'content': content,
-        'index': index,
-        'read_at': readAt?.toIso8601String(),
-        'scroll_position': scrollPosition,
+    'id': id,
+    'book_id': bookId,
+    'title': title,
+    'content': content,
+    'index': index,
+    'read_at': readAt?.toIso8601String(),
+    'scroll_position': scrollPosition,
     'reading_char_offset': readingCharOffset,
   };
 
   factory Chapter.fromJson(Map<String, dynamic> json) => Chapter(
-        id: json['id'] as int?,
-        bookId: json['book_id'] as int,
-        title: json['title'] as String,
-        content: json['content'] as String? ?? '',
-        index: json['index'] as int,
-        readAt: json['read_at'] != null
-            ? DateTime.parse(json['read_at'] as String)
-            : null,
-        scrollPosition:
-            (json['scroll_position'] as num?)?.toDouble() ?? 0.0,
+    id: json['id'] as int?,
+    bookId: json['book_id'] as int,
+    title: json['title'] as String,
+    content: json['content'] as String? ?? '',
+    index: json['index'] as int,
+    readAt: json['read_at'] != null
+        ? DateTime.parse(json['read_at'] as String)
+        : null,
+    scrollPosition: (json['scroll_position'] as num?)?.toDouble() ?? 0.0,
     readingCharOffset: (json['reading_char_offset'] as num?)?.toInt(),
   );
 }

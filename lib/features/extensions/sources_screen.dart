@@ -111,18 +111,18 @@ class _SourcesScreenState extends ConsumerState<SourcesScreen> {
       body: _loading
           ? const Center(child: CircularProgressIndicator())
           : _sources.isEmpty
-              ? _EmptyState(c)
-              : ListView(
-                  padding: const EdgeInsets.all(16),
-                  children: [
-                    // ── Last Used ──
-                    ..._buildLastUsedSection(c),
-                    // ── Pinned ──
-                    ..._buildPinnedSection(c),
-                    // ── By Language ──
-                    ..._buildLanguageSection(c),
-                  ],
-                ),
+          ? _EmptyState(c)
+          : ListView(
+              padding: const EdgeInsets.all(16),
+              children: [
+                // ── Last Used ──
+                ..._buildLastUsedSection(c),
+                // ── Pinned ──
+                ..._buildPinnedSection(c),
+                // ── By Language ──
+                ..._buildLanguageSection(c),
+              ],
+            ),
     );
   }
 
@@ -149,16 +149,18 @@ class _SourcesScreenState extends ConsumerState<SourcesScreen> {
     // Remove the last used from pinned to avoid dupes (mangayomi allows dupes though)
     return [
       _sectionHeader(c, 'Pinned'),
-      ...pinned.map((src) => Padding(
-            padding: const EdgeInsets.only(bottom: 6),
-            child: _SourceTile(
-              source: src,
-              c: c,
-              onTap: () => _navigateToSource(src),
-              onLatest: () => _navigateToLatest(src),
-              onPinToggle: () => _togglePin(src),
-            ),
-          )),
+      ...pinned.map(
+        (src) => Padding(
+          padding: const EdgeInsets.only(bottom: 6),
+          child: _SourceTile(
+            source: src,
+            c: c,
+            onTap: () => _navigateToSource(src),
+            onLatest: () => _navigateToLatest(src),
+            onPinToggle: () => _togglePin(src),
+          ),
+        ),
+      ),
       const SizedBox(height: 16),
     ];
   }
@@ -178,7 +180,9 @@ class _SourcesScreenState extends ConsumerState<SourcesScreen> {
     }
 
     final sortedKeys = groups.keys.toList()
-      ..sort((a, b) => completeLanguageName(a).compareTo(completeLanguageName(b)));
+      ..sort(
+        (a, b) => completeLanguageName(a).compareTo(completeLanguageName(b)),
+      );
 
     final widgets = <Widget>[];
     for (final langKey in sortedKeys) {
@@ -188,16 +192,18 @@ class _SourcesScreenState extends ConsumerState<SourcesScreen> {
 
       widgets.add(_sectionHeader(c, langName));
       for (final src in group) {
-        widgets.add(Padding(
-          padding: const EdgeInsets.only(bottom: 6),
-          child: _SourceTile(
-            source: src,
-            c: c,
-            onTap: () => _navigateToSource(src),
-            onLatest: () => _navigateToLatest(src),
-            onPinToggle: () => _togglePin(src),
+        widgets.add(
+          Padding(
+            padding: const EdgeInsets.only(bottom: 6),
+            child: _SourceTile(
+              source: src,
+              c: c,
+              onTap: () => _navigateToSource(src),
+              onLatest: () => _navigateToLatest(src),
+              onPinToggle: () => _togglePin(src),
+            ),
           ),
-        ));
+        );
       }
       widgets.add(const SizedBox(height: 8));
     }
@@ -270,14 +276,21 @@ class _SourceTile extends StatelessWidget {
                       if (source.isNsfw) ...[
                         const SizedBox(width: 4),
                         Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 4,
+                            vertical: 1,
+                          ),
                           decoration: BoxDecoration(
                             color: Colors.red.withAlpha(204),
                             borderRadius: BorderRadius.circular(4),
                           ),
                           child: const Text(
                             'NSFW',
-                            style: TextStyle(fontSize: 8, fontWeight: FontWeight.bold, color: Colors.white),
+                            style: TextStyle(
+                              fontSize: 8,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.white,
+                            ),
                           ),
                         ),
                       ],
@@ -286,16 +299,25 @@ class _SourceTile extends StatelessWidget {
                   const SizedBox(height: 2),
                   Text(
                     completeLanguageName(source.lang),
-                    style: TextStyle(fontSize: 12, fontWeight: FontWeight.w300, color: c.textSecondary),
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w300,
+                      color: c.textSecondary,
+                    ),
                   ),
                 ],
               ),
             ),
             // "Latest" button (mangayomi pattern)
             TextButton(
-              style: ButtonStyle(padding: WidgetStateProperty.all(const EdgeInsets.all(10))),
+              style: ButtonStyle(
+                padding: WidgetStateProperty.all(const EdgeInsets.all(10)),
+              ),
               onPressed: onLatest,
-              child: Text('Latest', style: TextStyle(fontSize: 12, color: c.accent)),
+              child: Text(
+                'Latest',
+                style: TextStyle(fontSize: 12, color: c.accent),
+              ),
             ),
             const SizedBox(width: 4),
             // Pin toggle (mangayomi pattern)
@@ -315,7 +337,12 @@ class _SourceTile extends StatelessWidget {
     );
   }
 
-  Widget _buildIcon(String pkg, KomaColors c, {double size = 37, String? iconUrl}) {
+  Widget _buildIcon(
+    String pkg,
+    KomaColors c, {
+    double size = 37,
+    String? iconUrl,
+  }) {
     return _PkgExtensionIcon(pkg: pkg, colors: c, size: size, iconUrl: iconUrl);
   }
 }
@@ -336,7 +363,11 @@ class _EmptyState extends StatelessWidget {
             const SizedBox(height: 16),
             Text(
               'No sources installed',
-              style: TextStyle(color: c.textPrimary, fontSize: 16, fontWeight: FontWeight.w600),
+              style: TextStyle(
+                color: c.textPrimary,
+                fontSize: 16,
+                fontWeight: FontWeight.w600,
+              ),
             ),
             const SizedBox(height: 6),
             Text(
@@ -388,8 +419,7 @@ class _PkgExtensionIconState extends State<_PkgExtensionIcon> {
 
   Future<void> _resolveFromCache() async {
     if (_url != null && _url!.isNotEmpty) return;
-    final cached =
-        await ExtensionIconCache.instance.cachedIconUrl(widget.pkg);
+    final cached = await ExtensionIconCache.instance.cachedIconUrl(widget.pkg);
     if (!mounted) return;
     if (cached != null && cached.isNotEmpty) {
       setState(() => _url = cached);
@@ -405,7 +435,11 @@ class _PkgExtensionIconState extends State<_PkgExtensionIcon> {
       return SizedBox(
         width: size,
         height: size,
-        child: Icon(Icons.extension_rounded, color: c.accent, size: size * 0.75),
+        child: Icon(
+          Icons.extension_rounded,
+          color: c.accent,
+          size: size * 0.75,
+        ),
       );
     }
     return Container(
@@ -426,11 +460,14 @@ class _PkgExtensionIconState extends State<_PkgExtensionIcon> {
           errorBuilder: (_, _, _) => SizedBox(
             width: size,
             height: size,
-            child: Icon(Icons.extension_rounded, color: c.accent, size: size * 0.75),
+            child: Icon(
+              Icons.extension_rounded,
+              color: c.accent,
+              size: size * 0.75,
+            ),
           ),
         ),
       ),
     );
   }
 }
-

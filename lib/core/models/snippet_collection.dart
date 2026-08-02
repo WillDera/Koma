@@ -11,8 +11,8 @@ class SnippetCollection {
     this.color = '#FFD700',
     DateTime? createdAt,
     DateTime? updatedAt,
-  })  : createdAt = createdAt ?? DateTime.now(),
-        updatedAt = updatedAt ?? DateTime.now();
+  }) : createdAt = createdAt ?? DateTime.now(),
+       updatedAt = updatedAt ?? DateTime.now();
 
   SnippetCollection copyWith({
     int? id,
@@ -31,14 +31,15 @@ class SnippetCollection {
   }
 
   Map<String, dynamic> toJson() => {
-        'id': id,
-        'name': name,
-        'color': color,
-        'created_at': createdAt.toIso8601String(),
-        'updated_at': updatedAt.toIso8601String(),
-      };
+    'id': id,
+    'name': name,
+    'color': color,
+    'created_at': createdAt.toIso8601String(),
+    'updated_at': updatedAt.toIso8601String(),
+  };
 
-  factory SnippetCollection.fromJson(Map<String, dynamic> json) => SnippetCollection(
+  factory SnippetCollection.fromJson(Map<String, dynamic> json) =>
+      SnippetCollection(
         id: json['id'] as int,
         name: json['name'] as String,
         color: json['color'] as String? ?? '#FFD700',

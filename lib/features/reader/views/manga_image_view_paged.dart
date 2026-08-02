@@ -79,10 +79,7 @@ class MangaImageViewPaged extends StatelessWidget {
     final page = pages[index];
 
     if (page.isTransitionPage) {
-      return TransitionViewPaged(
-        data: page,
-        readerMode: settings.readingMode,
-      );
+      return TransitionViewPaged(data: page, readerMode: settings.readingMode);
     }
 
     // ── Build the image provider / path for the subsampling viewer ──────
@@ -299,10 +296,7 @@ class _BrokenPage extends StatelessWidget {
           TextButton.icon(
             onPressed: onRetry,
             icon: const Icon(Icons.refresh, color: Colors.white54),
-            label: const Text(
-              'Retry',
-              style: TextStyle(color: Colors.white54),
-            ),
+            label: const Text('Retry', style: TextStyle(color: Colors.white54)),
           ),
         ],
       ),

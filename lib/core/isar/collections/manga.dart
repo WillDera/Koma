@@ -60,42 +60,42 @@ class Manga {
   });
 
   Map<String, dynamic> toJson() => {
-        'id': id,
-        'name': name,
-        'url': url,
-        'image_url': imageUrl,
-        'author': author,
-        'artist': artist,
-        'description': description,
-        'status': status,
-        'genre': genres?.join(', ') ?? '',
-        'source_id': sourceId,
-        'in_library': inLibrary ? 1 : 0,
-        'reading_status': readingStatus,
-        'created_at': createdAt?.toIso8601String(),
-        'updated_at': updatedAt?.toIso8601String(),
-      };
+    'id': id,
+    'name': name,
+    'url': url,
+    'image_url': imageUrl,
+    'author': author,
+    'artist': artist,
+    'description': description,
+    'status': status,
+    'genre': genres?.join(', ') ?? '',
+    'source_id': sourceId,
+    'in_library': inLibrary ? 1 : 0,
+    'reading_status': readingStatus,
+    'created_at': createdAt?.toIso8601String(),
+    'updated_at': updatedAt?.toIso8601String(),
+  };
 
   factory Manga.fromJson(Map<String, dynamic> json) => Manga(
-        id: json['id'] as int?,
-        name: json['name'] as String? ?? '',
-        url: json['url'] as String? ?? '',
-        imageUrl: json['image_url'] as String?,
-        author: json['author'] as String?,
-        artist: json['artist'] as String?,
-        description: json['description'] as String?,
-        status: json['status'] as int? ?? 0,
-        genres: _splitGenres(json['genre'] as String? ?? ''),
-        sourceId: json['source_id'] as String? ?? '',
-        inLibrary: (json['in_library'] as int? ?? 0) == 1,
-        readingStatus: json['reading_status'] as int? ?? 0,
-        createdAt: json['created_at'] != null
-            ? DateTime.parse(json['created_at'] as String)
-            : null,
-        updatedAt: json['updated_at'] != null
-            ? DateTime.parse(json['updated_at'] as String)
-            : null,
-      );
+    id: json['id'] as int?,
+    name: json['name'] as String? ?? '',
+    url: json['url'] as String? ?? '',
+    imageUrl: json['image_url'] as String?,
+    author: json['author'] as String?,
+    artist: json['artist'] as String?,
+    description: json['description'] as String?,
+    status: json['status'] as int? ?? 0,
+    genres: _splitGenres(json['genre'] as String? ?? ''),
+    sourceId: json['source_id'] as String? ?? '',
+    inLibrary: (json['in_library'] as int? ?? 0) == 1,
+    readingStatus: json['reading_status'] as int? ?? 0,
+    createdAt: json['created_at'] != null
+        ? DateTime.parse(json['created_at'] as String)
+        : null,
+    updatedAt: json['updated_at'] != null
+        ? DateTime.parse(json['updated_at'] as String)
+        : null,
+  );
 }
 
 List<String> _splitGenres(String raw) {

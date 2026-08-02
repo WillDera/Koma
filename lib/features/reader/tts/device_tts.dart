@@ -39,21 +39,18 @@ class DeviceTtsEngine implements TtsEngine {
   Future<void> init() async {
     try {
       final raw = await _tts.getVoices;
-      _voices = raw
-          .whereType<Map>()
-          .map((v) {
-            final m = Map<String, String>.from(v);
-            final name = m['name'] ?? '';
-            return TtsVoice(
-              id: name,
-              name: _friendlyName(m),
-              gender: _genderFromName(name),
-              isNeural: name.contains('wavenet') || name.contains('neural'),
-              locale: m['locale'] ?? '',
-              engineType: TtsEngineType.device,
-            );
-          })
-          .toList();
+      _voices = raw.whereType<Map>().map((v) {
+        final m = Map<String, String>.from(v);
+        final name = m['name'] ?? '';
+        return TtsVoice(
+          id: name,
+          name: _friendlyName(m),
+          gender: _genderFromName(name),
+          isNeural: name.contains('wavenet') || name.contains('neural'),
+          locale: m['locale'] ?? '',
+          engineType: TtsEngineType.device,
+        );
+      }).toList();
     } catch (_) {
       _voices = [];
     }
@@ -174,9 +171,8 @@ class DeviceTtsEngine implements TtsEngine {
   Future<Map<String, String>?> _findNativeVoice(String id) async {
     try {
       final raw = await _tts.getVoices;
-      return raw.whereType<Map>().firstWhere(
-        (v) => (v['name'] ?? '') == id,
-      ) as Map<String, String>?;
+      return raw.whereType<Map>().firstWhere((v) => (v['name'] ?? '') == id)
+          as Map<String, String>?;
     } catch (_) {
       return null;
     }
@@ -198,7 +194,7 @@ class DeviceTtsEngine implements TtsEngine {
   void dispose() {
     _cleanup();
     _tts.stop();
-    _tts.setProgressHandler((_, __, ___, ____) {});
+    _tts.setProgressHandler((_, _, _, _) {});
     _tts.setCompletionHandler(() {});
     _tts.setErrorHandler((_) {});
   }
@@ -215,9 +211,15 @@ class DeviceTtsEngine implements TtsEngine {
     final parts = locale.split('-');
     if (parts.length >= 2 && parts[0].length == 2) {
       const langs = {
-        'en': 'English', 'es': 'Spanish', 'fr': 'French',
-        'de': 'German', 'it': 'Italian', 'pt': 'Portuguese',
-        'ru': 'Russian', 'ja': 'Japanese', 'ko': 'Korean',
+        'en': 'English',
+        'es': 'Spanish',
+        'fr': 'French',
+        'de': 'German',
+        'it': 'Italian',
+        'pt': 'Portuguese',
+        'ru': 'Russian',
+        'ja': 'Japanese',
+        'ko': 'Korean',
       };
       return '${langs[parts[0]] ?? parts[0].toUpperCase()} (${parts[1].toUpperCase()})';
     }
@@ -228,9 +230,13 @@ class DeviceTtsEngine implements TtsEngine {
     final m = RegExp(r'x-([a-z]+)-local').firstMatch(name);
     if (m == null) return null;
     const labels = <String, String>{
-      'sfb': 'Default', 'sfd': 'Default 2', 'sfg': 'Default 3',
-      'tpd': 'Variant B', 'wavenet': 'Wavenet',
-      'standard': 'Standard', 'network': 'Network',
+      'sfb': 'Default',
+      'sfd': 'Default 2',
+      'sfg': 'Default 3',
+      'tpd': 'Variant B',
+      'wavenet': 'Wavenet',
+      'standard': 'Standard',
+      'network': 'Network',
     };
     return labels[m.group(1)!] ?? m.group(1)!.toUpperCase();
   }

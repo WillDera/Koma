@@ -138,7 +138,9 @@ Future<void> injectDomBridge(QuickJsRuntime2 engine) async {
       final doc = html_parser.parse(html);
       final rootEl = doc.documentElement ?? doc.body;
       final key = state.store(rootEl);
-      engine.evaluate('__domCallbacks[$callbackId].resolve(new Document($key))');
+      engine.evaluate(
+        '__domCallbacks[$callbackId].resolve(new Document($key))',
+      );
     } catch (_) {
       engine.evaluate('__domCallbacks[$callbackId].reject("Parse error")');
     }
@@ -208,7 +210,8 @@ Future<void> injectDomBridge(QuickJsRuntime2 engine) async {
     final list = args as List;
     final name = list[0] as String;
     final rootKey = list[1] as int;
-    return (state.get(rootKey)?.attributes.containsKey(name) ?? false).toString();
+    return (state.get(rootKey)?.attributes.containsKey(name) ?? false)
+        .toString();
   });
 
   engine.onMessage('doc_xpath', (args) {
@@ -348,7 +351,9 @@ List<String> _xpathStrings(html_dom.Element? root, String expr) {
   try {
     final results = <String>[];
     // //tag[@attr='value'] or //tag
-    final tagAttr = RegExp("^//(\\w+)(?:\\[@(\\w+)=['\"]([^'\"]*)['\"])?(?:/text\\(\\))?\$");
+    final tagAttr = RegExp(
+      "^//(\\w+)(?:\\[@(\\w+)=['\"]([^'\"]*)['\"])?(?:/text\\(\\))?\$",
+    );
     final attrOnly = RegExp(r'^//@(\w+)$');
     final m = tagAttr.firstMatch(expr);
     if (m != null) {

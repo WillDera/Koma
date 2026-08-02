@@ -96,8 +96,10 @@ class MangaRepository {
 
     // Every chapter's mangaId as a primitive scan — drives totalChapters
     // without materializing the full chapter table.
-    final allMangaIds =
-    await _isar.mangaChapters.where().mangaIdProperty().findAll();
+    final allMangaIds = await _isar.mangaChapters
+        .where()
+        .mangaIdProperty()
+        .findAll();
 
     final readCounts = <int, int>{};
     final lastReadAt = <int, DateTime>{};
@@ -126,12 +128,14 @@ class MangaRepository {
       final row = rows[i];
       if (row == null) continue; // orphaned chapters — manga was deleted
       final mangaId = ids[i];
-      result.add(InProgressManga(
-        manga: _toModel(row),
-        readCount: readCounts[mangaId] ?? 0,
-        totalChapters: totalCounts[mangaId] ?? 0,
-        lastReadAt: lastReadAt[mangaId],
-      ));
+      result.add(
+        InProgressManga(
+          manga: _toModel(row),
+          readCount: readCounts[mangaId] ?? 0,
+          totalChapters: totalCounts[mangaId] ?? 0,
+          lastReadAt: lastReadAt[mangaId],
+        ),
+      );
     }
 
     result.sort((a, b) {
@@ -186,17 +190,23 @@ class MangaRepository {
   }
 
   Future<void> insertMangaChapters(
-      int mangaId, List<MangaChapter> chapters) async {
-    await _isar.writeTxn(() => _isar.mangaChapters
-        .putAll(chapters.map(_chapterFromModel).toList()));
+    int mangaId,
+    List<MangaChapter> chapters,
+  ) async {
+    await _isar.writeTxn(
+      () =>
+          _isar.mangaChapters.putAll(chapters.map(_chapterFromModel).toList()),
+    );
   }
 
   /// Insert only the chapters whose URL is not already persisted, keeping
   /// existing rows (and their read/download/open state) untouched. Returns
   /// the newly added chapters — these are "new" (`isOpened == false`) and
   /// drive the library badge. Used by the library chapter poller.
-  Future<List<MangaChapter>> mergeNewChapters(int mangaId,
-      List<MangaChapter> incoming) async {
+  Future<List<MangaChapter>> mergeNewChapters(
+    int mangaId,
+    List<MangaChapter> incoming,
+  ) async {
     final existing = await getMangaChapters(mangaId);
     final existingUrls = <String>{
       for (final c in existing)
@@ -206,9 +216,9 @@ class MangaRepository {
         .where((c) => !existingUrls.contains(c.url.trim()))
         .toList(growable: false);
     if (fresh.isNotEmpty) {
-      await _isar.writeTxn(() =>
-          _isar.mangaChapters
-              .putAll(fresh.map(_chapterFromModel).toList()));
+      await _isar.writeTxn(
+        () => _isar.mangaChapters.putAll(fresh.map(_chapterFromModel).toList()),
+      );
     }
     return fresh;
   }
@@ -231,7 +241,8 @@ class MangaRepository {
 
   Future<void> deleteMangaChapters(int mangaId) async {
     await _isar.writeTxn(
-        () => _isar.mangaChapters.where().mangaIdEqualTo(mangaId).deleteAll());
+      () => _isar.mangaChapters.where().mangaIdEqualTo(mangaId).deleteAll(),
+    );
   }
 
   Future<void> markMangaChapterRead(int chapterId) async {
@@ -264,7 +275,9 @@ class MangaRepository {
   }
 
   Future<void> updateMangaChapterScrollPosition(
-      int chapterId, double position) async {
+    int chapterId,
+    double position,
+  ) async {
     await _isar.writeTxn(() async {
       final row = await _isar.mangaChapters.get(chapterId);
       if (row == null) return;
@@ -275,7 +288,9 @@ class MangaRepository {
   }
 
   Future<void> markMangaChapterDownloaded(
-      int chapterId, bool downloaded) async {
+    int chapterId,
+    bool downloaded,
+  ) async {
     await _isar.writeTxn(() async {
       final row = await _isar.mangaChapters.get(chapterId);
       if (row == null) return;
@@ -303,8 +318,10 @@ class MangaRepository {
 
   // ── MangaChapters: Stream API ──────────────────────────────────────
 
-  Stream<List<MangaChapter>> watchMangaChapters(int mangaId,
-      {bool fireImmediately = true}) {
+  Stream<List<MangaChapter>> watchMangaChapters(
+    int mangaId, {
+    bool fireImmediately = true,
+  }) {
     return _isar.mangaChapters
         .where()
         .mangaIdEqualTo(mangaId)
@@ -316,72 +333,72 @@ class MangaRepository {
   // ── Conversions ────────────────────────────────────────────────────
 
   static Manga _toModel(i.Manga m) => Manga(
-        id: m.id ?? 0,
-        name: m.name,
-        url: m.url,
-        imageUrl: m.imageUrl,
-        author: m.author,
-        artist: m.artist,
-        description: m.description,
-        status: m.status,
-        genres: m.genres ?? const [],
-        sourceId: m.sourceId,
-        inLibrary: m.inLibrary,
-        readingStatus: m.readingStatus,
-        createdAt: m.createdAt,
-        updatedAt: m.updatedAt,
-      );
+    id: m.id ?? 0,
+    name: m.name,
+    url: m.url,
+    imageUrl: m.imageUrl,
+    author: m.author,
+    artist: m.artist,
+    description: m.description,
+    status: m.status,
+    genres: m.genres ?? const [],
+    sourceId: m.sourceId,
+    inLibrary: m.inLibrary,
+    readingStatus: m.readingStatus,
+    createdAt: m.createdAt,
+    updatedAt: m.updatedAt,
+  );
 
   static i.Manga _fromModel(Manga m) => i.Manga(
-        id: m.id == 0 ? Isar.autoIncrement : m.id,
-        name: m.name,
-        url: m.url,
-        imageUrl: m.imageUrl,
-        author: m.author,
-        artist: m.artist,
-        description: m.description,
-        status: m.status,
-        genres: m.genres,
-        sourceId: m.sourceId,
-        inLibrary: m.inLibrary,
-        readingStatus: m.readingStatus,
-        createdAt: m.createdAt,
-        updatedAt: m.updatedAt,
-      );
+    id: m.id == 0 ? Isar.autoIncrement : m.id,
+    name: m.name,
+    url: m.url,
+    imageUrl: m.imageUrl,
+    author: m.author,
+    artist: m.artist,
+    description: m.description,
+    status: m.status,
+    genres: m.genres,
+    sourceId: m.sourceId,
+    inLibrary: m.inLibrary,
+    readingStatus: m.readingStatus,
+    createdAt: m.createdAt,
+    updatedAt: m.updatedAt,
+  );
 
   static MangaChapter _chapterToModel(i.MangaChapter c) => MangaChapter(
-        id: c.id ?? 0,
-        mangaId: c.mangaId,
-        name: c.name,
-        url: c.url,
-        scanlator: c.scanlator,
-        dateUpload: c.dateUpload,
-        index: c.index,
-        isRead: c.isRead,
-        lastPageRead: c.lastPageRead,
-        scrollPosition: c.scrollPosition,
-        isDownloaded: c.isDownloaded,
-        isOpened: c.isOpened,
-        readAt: c.readAt,
+    id: c.id ?? 0,
+    mangaId: c.mangaId,
+    name: c.name,
+    url: c.url,
+    scanlator: c.scanlator,
+    dateUpload: c.dateUpload,
+    index: c.index,
+    isRead: c.isRead,
+    lastPageRead: c.lastPageRead,
+    scrollPosition: c.scrollPosition,
+    isDownloaded: c.isDownloaded,
+    isOpened: c.isOpened,
+    readAt: c.readAt,
     memo: c.memo,
-      );
+  );
 
   static i.MangaChapter _chapterFromModel(MangaChapter c) => i.MangaChapter(
-        id: c.id == 0 ? Isar.autoIncrement : c.id,
-        mangaId: c.mangaId,
-        name: c.name,
-        url: c.url,
-        scanlator: c.scanlator,
-        dateUpload: c.dateUpload,
-        index: c.index,
-        isRead: c.isRead,
-        lastPageRead: c.lastPageRead,
-        scrollPosition: c.scrollPosition,
-        isDownloaded: c.isDownloaded,
-        isOpened: c.isOpened,
-        readAt: c.readAt,
+    id: c.id == 0 ? Isar.autoIncrement : c.id,
+    mangaId: c.mangaId,
+    name: c.name,
+    url: c.url,
+    scanlator: c.scanlator,
+    dateUpload: c.dateUpload,
+    index: c.index,
+    isRead: c.isRead,
+    lastPageRead: c.lastPageRead,
+    scrollPosition: c.scrollPosition,
+    isDownloaded: c.isDownloaded,
+    isOpened: c.isOpened,
+    readAt: c.readAt,
     memo: c.memo,
-      );
+  );
 }
 
 /// A manga row + its read progress, for the "Continue Reading" shelf.
@@ -399,6 +416,5 @@ class InProgressManga {
     required this.lastReadAt,
   });
 
-  double get progress =>
-      totalChapters == 0 ? 0.0 : readCount / totalChapters;
+  double get progress => totalChapters == 0 ? 0.0 : readCount / totalChapters;
 }
