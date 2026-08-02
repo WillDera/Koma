@@ -21,15 +21,24 @@ import 'page_curl_mesh.dart';
 /// by the caller and reused across frames.
 class PageCurlRenderer extends CustomPainter {
   PageCurlRenderer({
-    required this.state,
+    required this.stateListenable,
     required this.mesh,
     required this.config,
     required this.currentPage,
     required this.nextPage,
-    required Listenable repaint,
-  }) : super(repaint: repaint);
+  }) : super(repaint: stateListenable);
 
-  final PageCurlState state;
+  /// Live turn state, read fresh on every paint.
+  ///
+  /// This must be the notifier itself rather than a captured [PageCurlState]:
+  /// the painter repaints off the controller without the widget tree
+  /// rebuilding, so a snapshot taken at construction would stay frozen at the
+  /// progress the turn started from — 0 — and every frame would fail the
+  /// progress guard in [paint] and draw nothing.
+  final ValueListenable<PageCurlState> stateListenable;
+
+  PageCurlState get state => stateListenable.value;
+
   final PageCurlMesh mesh;
   final PageCurlConfig config;
 

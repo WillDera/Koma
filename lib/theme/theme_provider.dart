@@ -42,6 +42,7 @@ class ThemeNotifier extends Notifier<ThemeState> {
   static const _keyShowNsfwExtensions = 'show_nsfw_extensions';
   static const _keyShowObsoleteExtensions = 'show_obsolete_extensions';
   static const _keyImmersiveAutoHide = 'immersive_auto_hide';
+  static const _keyPageStyle = 'page_style';
 
   @override
   ThemeState build() {
@@ -76,6 +77,9 @@ class ThemeNotifier extends Notifier<ThemeState> {
       showNsfwExtensions: prefs.getBool(_keyShowNsfwExtensions) ?? false,
       showObsoleteExtensions: prefs.getBool(_keyShowObsoleteExtensions) ?? false,
       immersiveAutoHide: prefs.getBool(_keyImmersiveAutoHide) ?? false,
+      pageStyle: PageStyle.values[
+      (prefs.getInt(_keyPageStyle) ?? 0)
+          .clamp(0, PageStyle.values.length - 1)],
     );
     if (state.useDeviceFont) {
       unawaited(_resolveSystemFont());
@@ -269,6 +273,12 @@ class ThemeNotifier extends Notifier<ThemeState> {
     state = state.copyWith(immersiveAutoHide: value);
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool(_keyImmersiveAutoHide, value);
+  }
+
+  Future<void> setPageStyle(PageStyle value) async {
+    state = state.copyWith(pageStyle: value);
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setInt(_keyPageStyle, value.index);
   }
 
   void toggleTheme() {

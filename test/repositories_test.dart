@@ -52,6 +52,64 @@ void main() {
       expect(fetched.progress, 0.3);
     });
 
+    test('a new chapter has no reading offset recorded', () async {
+      final repo = BookRepository(isar);
+      final bookId = await repo.insertBook(
+          Book(id: 0, title: 'B', source: 'local'));
+      final chId = await repo.insertChapter(
+          Chapter(id: 0,
+              bookId: bookId,
+              title: 'C',
+              content: 'x',
+              index: 0));
+      expect((await repo.getChapter(chId))!.readingCharOffset, isNull);
+    });
+
+    test('updateChapterReadingOffset round-trips through Isar', () async {
+      final repo = BookRepository(isar);
+      final bookId = await repo.insertBook(
+          Book(id: 0, title: 'B', source: 'local'));
+      final chId = await repo.insertChapter(
+          Chapter(id: 0,
+              bookId: bookId,
+              title: 'C',
+              content: 'x',
+              index: 0));
+
+      await repo.updateChapterReadingOffset(chId, 4210);
+      expect((await repo.getChapter(chId))!.readingCharOffset, 4210);
+
+      // Offset 0 is a real position, not "unset".
+      await repo.updateChapterReadingOffset(chId, 0);
+      expect((await repo.getChapter(chId))!.readingCharOffset, 0);
+    });
+
+    test('reading offset and scroll position are stored independently',
+            () async {
+          final repo = BookRepository(isar);
+          final bookId = await repo.insertBook(
+              Book(id: 0, title: 'B', source: 'local'));
+          final chId = await repo.insertChapter(
+              Chapter(id: 0,
+                  bookId: bookId,
+                  title: 'C',
+                  content: 'x',
+                  index: 0));
+
+          await repo.updateChapterScroll(chId, 812.5);
+          await repo.updateChapterReadingOffset(chId, 3300);
+
+          final ch = await repo.getChapter(chId);
+          expect(ch!.scrollPosition, 812.5);
+          expect(ch.readingCharOffset, 3300);
+
+          // Writing one must not clobber the other — the two layout modes coexist.
+          await repo.updateChapterScroll(chId, 900.0);
+          final after = await repo.getChapter(chId);
+          expect(after!.scrollPosition, 900.0);
+          expect(after.readingCharOffset, 3300);
+        });
+
     test('updateProgress mutates only progress fields', () async {
       final repo = BookRepository(isar);
       final id = await repo.insertBook(

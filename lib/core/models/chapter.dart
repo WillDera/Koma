@@ -7,6 +7,12 @@ class Chapter {
   final DateTime? readAt;
   final double scrollPosition;
 
+  /// Reading position as a character offset into the extracted plain text.
+  ///
+  /// Survives font and viewport changes, unlike [scrollPosition]. Null for
+  /// chapters last read before pagination existed.
+  final int? readingCharOffset;
+
   Chapter({
     required this.id,
     required this.bookId,
@@ -15,6 +21,7 @@ class Chapter {
     required this.index,
     this.readAt,
     this.scrollPosition = 0.0,
+    this.readingCharOffset,
   });
 
   Chapter copyWith({
@@ -25,6 +32,7 @@ class Chapter {
     int? index,
     DateTime? readAt,
     double? scrollPosition,
+    int? Function()? readingCharOffset,
   }) {
     return Chapter(
       id: id ?? this.id,
@@ -34,6 +42,9 @@ class Chapter {
       index: index ?? this.index,
       readAt: readAt ?? this.readAt,
       scrollPosition: scrollPosition ?? this.scrollPosition,
+      readingCharOffset: readingCharOffset != null
+          ? readingCharOffset()
+          : this.readingCharOffset,
     );
   }
 
@@ -45,7 +56,8 @@ class Chapter {
         'index': index,
         'read_at': readAt?.toIso8601String(),
         'scroll_position': scrollPosition,
-      };
+    'reading_char_offset': readingCharOffset,
+  };
 
   factory Chapter.fromJson(Map<String, dynamic> json) => Chapter(
         id: json['id'] as int,
@@ -58,5 +70,6 @@ class Chapter {
             : null,
         scrollPosition:
             (json['scroll_position'] as num?)?.toDouble() ?? 0.0,
-      );
+    readingCharOffset: (json['reading_char_offset'] as num?)?.toInt(),
+  );
 }

@@ -217,12 +217,11 @@ class _PageCurlViewState extends State<PageCurlView>
                   child: IgnorePointer(
                     child: CustomPaint(
                       painter: PageCurlRenderer(
-                        state: _controller.value,
+                        stateListenable: _controller,
                         mesh: _mesh,
                         config: widget.config,
                         currentPage: _currentSnapshot,
                         nextPage: _nextSnapshot,
-                        repaint: _controller,
                       ),
                     ),
                   ),

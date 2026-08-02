@@ -47,6 +47,12 @@ class PageCurlConfig {
   /// whether [completionThreshold] was reached.
   final double flingVelocityThreshold;
 
+  /// Positive exit velocity (px/s) that pushes a release over the edge when
+  /// progress is below [completionThreshold]. A real flick rarely exceeds a
+  /// few hundred px/s over a short drag, so this stops near-complete turns
+  /// from snapping back.
+  final double completionBiasVelocity;
+
   /// Duration for programmatic (non-gesture) turns.
   final Duration animationDuration;
 
@@ -86,18 +92,19 @@ class PageCurlConfig {
   const PageCurlConfig({
     this.meshResolutionX = 40,
     this.meshResolutionY = 12,
-    this.curlRadiusFactor = 0.18,
-    this.minCurlRadiusFactor = 0.35,
+    this.curlRadiusFactor = 0.22,
+    this.minCurlRadiusFactor = 0.45,
     this.curlStiffness = 0.55,
     this.springStiffness = 220.0,
     this.springDamping = 0.92,
     this.completionThreshold = 0.32,
     this.flingVelocityThreshold = 700.0,
+    this.completionBiasVelocity = 220.0,
     this.animationDuration = const Duration(milliseconds: 420),
-    this.shadowIntensity = 0.38,
-    this.shadowBlurSigma = 14.0,
-    this.lightingIntensity = 0.55,
-    this.specularIntensity = 0.28,
+    this.shadowIntensity = 0.45,
+    this.shadowBlurSigma = 16.0,
+    this.lightingIntensity = 0.65,
+    this.specularIntensity = 0.34,
     this.lightDirection = const Offset(-0.45, -0.55),
     this.paperThickness = 1.6,
     this.backsideDarkening = 0.16,
@@ -119,6 +126,7 @@ class PageCurlConfig {
     double? springDamping,
     double? completionThreshold,
     double? flingVelocityThreshold,
+    double? completionBiasVelocity,
     Duration? animationDuration,
     double? shadowIntensity,
     double? shadowBlurSigma,
@@ -142,6 +150,8 @@ class PageCurlConfig {
       completionThreshold: completionThreshold ?? this.completionThreshold,
       flingVelocityThreshold:
           flingVelocityThreshold ?? this.flingVelocityThreshold,
+      completionBiasVelocity:
+          completionBiasVelocity ?? this.completionBiasVelocity,
       animationDuration: animationDuration ?? this.animationDuration,
       shadowIntensity: shadowIntensity ?? this.shadowIntensity,
       shadowBlurSigma: shadowBlurSigma ?? this.shadowBlurSigma,

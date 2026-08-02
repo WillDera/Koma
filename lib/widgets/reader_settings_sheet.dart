@@ -243,6 +243,43 @@ class _ReaderSettingsSheetState extends ConsumerState<ReaderSettingsSheet> {
           ),
         ),
         const SizedBox(height: 16),
+        AnimatedPress(
+          onTap: () => _showPageStylePicker(context, p, tn),
+          child: Container(
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+            decoration: BoxDecoration(
+              color: c.surface,
+              borderRadius: AppSpacing.brLg,
+              border: Border.all(color: c.border, width: 0.5),
+            ),
+            child: Row(
+              children: [
+                Icon(Icons.auto_stories, size: 18, color: c.textSecondary),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    'Page style',
+                    style: TextStyle(
+                      color: c.textPrimary,
+                      fontSize: 14,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ),
+                Text(
+                  p.pageStyle.label,
+                  style: TextStyle(
+                    color: c.textTertiary,
+                    fontSize: 13,
+                  ),
+                ),
+                const SizedBox(width: 4),
+                Icon(Icons.chevron_right, size: 16, color: c.textTertiary),
+              ],
+            ),
+          ),
+        ),
+        const SizedBox(height: 16),
         _ToggleRow(
           title: 'Bionic reading',
           subtitle: 'Bold first half of each word',
@@ -333,6 +370,40 @@ class _ReaderSettingsSheetState extends ConsumerState<ReaderSettingsSheet> {
                     Navigator.of(ctx).pop();
                   },
                 ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  void _showPageStylePicker(BuildContext context, ThemeState p,
+      ThemeNotifier tn) {
+    showDialog(
+      context: context,
+      builder: (ctx) {
+        final c = ctx.colors;
+        return AlertDialog(
+          backgroundColor: c.surface,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(18),
+            side: BorderSide(color: c.border, width: 0.5),
+          ),
+          content: SizedBox(
+            width: double.maxFinite,
+            child: ListView(
+              shrinkWrap: true,
+              children: [
+                for (final style in PageStyle.values)
+                  _PickerOption(
+                    label: style.label,
+                    selected: p.pageStyle == style,
+                    onTap: () {
+                      tn.setPageStyle(style);
+                      Navigator.of(ctx).pop();
+                    },
+                  ),
               ],
             ),
           ),
