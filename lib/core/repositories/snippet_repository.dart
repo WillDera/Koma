@@ -124,8 +124,10 @@ class SnippetRepository {
         .map((rows) => rows.map(_toModel).toList());
   }
 
-  Stream<List<Snippet>> watchSnippetsForBook(int bookId,
-      {bool fireImmediately = true}) {
+  Stream<List<Snippet>> watchSnippetsForBook(
+    int bookId, {
+    bool fireImmediately = true,
+  }) {
     return _isar.snippets
         .where()
         .bookIdEqualTo(bookId)
@@ -134,8 +136,10 @@ class SnippetRepository {
         .map((rows) => rows.map(_toModel).toList());
   }
 
-  Stream<List<Snippet>> watchSnippetsForCollection(int collectionId,
-      {bool fireImmediately = true}) {
+  Stream<List<Snippet>> watchSnippetsForCollection(
+    int collectionId, {
+    bool fireImmediately = true,
+  }) {
     return _isar.snippets
         .where()
         .collectionIdEqualTo(collectionId)
@@ -147,27 +151,31 @@ class SnippetRepository {
   // ── Collections ────────────────────────────────────────────────────
 
   Future<List<SnippetCollection>> getCollections() async {
-    final rows =
-        await _isar.snippetCollections.where().sortByCreatedAtDesc().findAll();
+    final rows = await _isar.snippetCollections
+        .where()
+        .sortByCreatedAtDesc()
+        .findAll();
     return rows.map(_collToModel).toList(growable: false);
   }
 
-  Future<int> createCollection(String name,
-      {String color = '#FFD700'}) async {
+  Future<int> createCollection(String name, {String color = '#FFD700'}) async {
     final row = i.SnippetCollection(name: name, color: color);
     return _isar.writeTxn(() => _isar.snippetCollections.put(row));
   }
 
   Future<void> updateCollection(SnippetCollection collection) async {
     await _isar.writeTxn(
-        () => _isar.snippetCollections.put(_collFromModel(collection)));
+      () => _isar.snippetCollections.put(_collFromModel(collection)),
+    );
   }
 
   Future<void> deleteCollection(int id) async {
     await _isar.writeTxn(() async {
       // Mirror Drift's ON DELETE SET NULL on snippets.collection_id.
-      final affected =
-          await _isar.snippets.where().collectionIdEqualTo(id).findAll();
+      final affected = await _isar.snippets
+          .where()
+          .collectionIdEqualTo(id)
+          .findAll();
       for (final s in affected) {
         s.collectionId = null;
       }
@@ -176,8 +184,9 @@ class SnippetRepository {
     });
   }
 
-  Stream<List<SnippetCollection>> watchCollections(
-      {bool fireImmediately = true}) {
+  Stream<List<SnippetCollection>> watchCollections({
+    bool fireImmediately = true,
+  }) {
     return _isar.snippetCollections
         .where()
         .sortByCreatedAtDesc()
@@ -228,40 +237,40 @@ class SnippetRepository {
   // ── Conversions ────────────────────────────────────────────────────
 
   static Snippet _toModel(i.Snippet s) => Snippet(
-        id: s.id ?? 0,
-        text: s.text,
-        note: s.note,
-        sourceTitle: s.sourceTitle,
-        sourceUrl: s.sourceUrl,
-        color: s.color,
-        bookId: s.bookId,
-        chapterId: s.chapterId,
-        collectionId: s.collectionId,
-        startOffset: s.startOffset,
-        endOffset: s.endOffset,
-        scrollPosition: s.scrollPosition,
-        tags: s.tags ?? const [],
-        createdAt: s.createdAt,
-        updatedAt: s.updatedAt,
-      );
+    id: s.id ?? 0,
+    text: s.text,
+    note: s.note,
+    sourceTitle: s.sourceTitle,
+    sourceUrl: s.sourceUrl,
+    color: s.color,
+    bookId: s.bookId,
+    chapterId: s.chapterId,
+    collectionId: s.collectionId,
+    startOffset: s.startOffset,
+    endOffset: s.endOffset,
+    scrollPosition: s.scrollPosition,
+    tags: s.tags ?? const [],
+    createdAt: s.createdAt,
+    updatedAt: s.updatedAt,
+  );
 
   static i.Snippet _fromModel(Snippet s) => i.Snippet(
-        id: s.id == 0 ? Isar.autoIncrement : s.id,
-        text: s.text,
-        note: s.note,
-        sourceTitle: s.sourceTitle,
-        sourceUrl: s.sourceUrl,
-        color: s.color,
-        bookId: s.bookId,
-        chapterId: s.chapterId,
-        collectionId: s.collectionId,
-        startOffset: s.startOffset,
-        endOffset: s.endOffset,
-        scrollPosition: s.scrollPosition,
-        tags: s.tags,
-        createdAt: s.createdAt,
-        updatedAt: s.updatedAt,
-      );
+    id: s.id == 0 ? Isar.autoIncrement : s.id,
+    text: s.text,
+    note: s.note,
+    sourceTitle: s.sourceTitle,
+    sourceUrl: s.sourceUrl,
+    color: s.color,
+    bookId: s.bookId,
+    chapterId: s.chapterId,
+    collectionId: s.collectionId,
+    startOffset: s.startOffset,
+    endOffset: s.endOffset,
+    scrollPosition: s.scrollPosition,
+    tags: s.tags,
+    createdAt: s.createdAt,
+    updatedAt: s.updatedAt,
+  );
 
   static SnippetCollection _collToModel(i.SnippetCollection c) =>
       SnippetCollection(

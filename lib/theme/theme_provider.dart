@@ -75,19 +75,21 @@ class ThemeNotifier extends Notifier<ThemeState> {
       useDeviceFont: prefs.getBool(_keyUseDeviceFont) ?? false,
       amoledMode: prefs.getBool(_keyAmoledMode) ?? false,
       showNsfwExtensions: prefs.getBool(_keyShowNsfwExtensions) ?? false,
-      showObsoleteExtensions: prefs.getBool(_keyShowObsoleteExtensions) ?? false,
+      showObsoleteExtensions:
+          prefs.getBool(_keyShowObsoleteExtensions) ?? false,
       immersiveAutoHide: prefs.getBool(_keyImmersiveAutoHide) ?? false,
-      pageStyle: PageStyle.values[
-      (prefs.getInt(_keyPageStyle) ?? 0)
-          .clamp(0, PageStyle.values.length - 1)],
+      pageStyle:
+          PageStyle.values[(prefs.getInt(_keyPageStyle) ?? 0).clamp(
+            0,
+            PageStyle.values.length - 1,
+          )],
     );
     if (state.useDeviceFont) {
       unawaited(_resolveSystemFont());
     }
   }
 
-  static String? _nonEmpty(String? s) =>
-      s != null && s.isNotEmpty ? s : null;
+  static String? _nonEmpty(String? s) => s != null && s.isNotEmpty ? s : null;
 
   Future<String?> _resolveSystemFont() async {
     if (state.systemFontFamily != null) return state.systemFontFamily;
@@ -290,5 +292,6 @@ class ThemeNotifier extends Notifier<ThemeState> {
 ///
 /// Read state: `ref.watch(themeProvider)` returns [ThemeState].
 /// Mutate: `ref.read(themeProvider.notifier).setFontSize(18)`.
-final themeProvider =
-    NotifierProvider<ThemeNotifier, ThemeState>(ThemeNotifier.new);
+final themeProvider = NotifierProvider<ThemeNotifier, ThemeState>(
+  ThemeNotifier.new,
+);

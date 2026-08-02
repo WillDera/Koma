@@ -50,8 +50,7 @@ class LibraryState {
   /// mangaId → count of unopened (new) chapters. Populated by loadBooks.
   final Map<int, int> newChapters;
 
-  int get totalNewChapters =>
-      newChapters.values.fold(0, (a, b) => a + b);
+  int get totalNewChapters => newChapters.values.fold(0, (a, b) => a + b);
 
   LibraryState copyWith({
     List<Book>? books,
@@ -99,7 +98,8 @@ class LibraryNotifier extends Notifier<LibraryState> {
       isGridView: prefs.getBool(_keyIsGridView) ?? true,
       showSourcePills: prefs.getBool(_keyShowSourcePills) ?? true,
       gridColumns: prefs.getInt(_keyGridColumns) ?? 2,
-      cardVariant: LibraryCardVariant.values[prefs.getInt(_keyCardVariant) ?? 0],
+      cardVariant:
+          LibraryCardVariant.values[prefs.getInt(_keyCardVariant) ?? 0],
     );
   }
 
@@ -183,25 +183,26 @@ class LibraryNotifier extends Notifier<LibraryState> {
             .toString()
             .substring(0, 16);
         final mangaDir = Directory(
-            '${supportDir.path}/manga/${manga.sourceId}/$mangaKey');
+          '${supportDir.path}/manga/${manga.sourceId}/$mangaKey',
+        );
         if (await mangaDir.exists()) {
           await mangaDir.delete(recursive: true);
         }
         final docsDir = await getApplicationDocumentsDirectory();
-        final thumbHash =
-            sha256.convert(utf8.encode(manga.imageUrl ?? '')).toString();
-        final thumbFile =
-            File('${docsDir.path}/thumbnails/$thumbHash.jpg');
+        final thumbHash = sha256
+            .convert(utf8.encode(manga.imageUrl ?? ''))
+            .toString();
+        final thumbFile = File('${docsDir.path}/thumbnails/$thumbHash.jpg');
         if (await thumbFile.exists()) {
           await thumbFile.delete();
         }
       } catch (_) {}
     }
-      await repos.manga.deleteMangaChapters(id);
-      await repos.manga.deleteManga(id);
-      final ids = Set<String>.from(state.selectedIds)..remove('m:$id');
-      state = state.copyWith(selectedIds: ids);
-      await loadBooks();
+    await repos.manga.deleteMangaChapters(id);
+    await repos.manga.deleteManga(id);
+    final ids = Set<String>.from(state.selectedIds)..remove('m:$id');
+    state = state.copyWith(selectedIds: ids);
+    await loadBooks();
   }
 
   void toggleSelection(String key) {
@@ -222,8 +223,7 @@ class LibraryNotifier extends Notifier<LibraryState> {
   }
 
   void selectAll() {
-    if (state.selectedIds.length ==
-            state.books.length + state.mangas.length &&
+    if (state.selectedIds.length == state.books.length + state.mangas.length &&
         state.books.length + state.mangas.length > 0) {
       clearSelection();
       return;
@@ -247,8 +247,7 @@ class LibraryNotifier extends Notifier<LibraryState> {
         await repos.books.deleteBook(id);
       } else if (key.startsWith('m:')) {
         final id = int.parse(key.substring(2));
-        final manga =
-            state.mangas.firstWhereOrNull((m) => m.id == id);
+        final manga = state.mangas.firstWhereOrNull((m) => m.id == id);
         if (manga != null) {
           try {
             final supportDir = await getApplicationSupportDirectory();
@@ -257,7 +256,8 @@ class LibraryNotifier extends Notifier<LibraryState> {
                 .toString()
                 .substring(0, 16);
             final mangaDir = Directory(
-                '${supportDir.path}/manga/${manga.sourceId}/$mangaKey');
+              '${supportDir.path}/manga/${manga.sourceId}/$mangaKey',
+            );
             if (await mangaDir.exists()) {
               await mangaDir.delete(recursive: true);
             }
@@ -265,16 +265,15 @@ class LibraryNotifier extends Notifier<LibraryState> {
             final thumbHash = sha256
                 .convert(utf8.encode(manga.imageUrl ?? ''))
                 .toString();
-            final thumbFile =
-                File('${docsDir.path}/thumbnails/$thumbHash.jpg');
+            final thumbFile = File('${docsDir.path}/thumbnails/$thumbHash.jpg');
             if (await thumbFile.exists()) {
               await thumbFile.delete();
             }
-            } catch (_) {}
-            await repos.manga.deleteMangaChapters(id);
-            await repos.manga.deleteManga(id);
-          }
+          } catch (_) {}
+          await repos.manga.deleteMangaChapters(id);
+          await repos.manga.deleteManga(id);
         }
+      }
     }
     state = state.copyWith(selectedIds: {}, selectionMode: false);
     await loadBooks();
@@ -312,8 +311,9 @@ class LibraryUpdateState {
     return LibraryUpdateState(
       enabled: enabled ?? this.enabled,
       interval: interval ?? this.interval,
-      lastCheckedAt:
-      lastCheckedAt != null ? lastCheckedAt() : this.lastCheckedAt,
+      lastCheckedAt: lastCheckedAt != null
+          ? lastCheckedAt()
+          : this.lastCheckedAt,
       lastNewChapterCount: lastNewChapterCount ?? this.lastNewChapterCount,
       checking: checking ?? this.checking,
       error: error != null ? error() : this.error,

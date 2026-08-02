@@ -138,16 +138,16 @@ class ThemeState {
     String? defaultHighlight,
     HandMode? handMode,
     bool? oneHandMode,
-      bool? bionicReading,
-      bool? useDeviceFont,
-      bool? amoledMode,
-      String? systemFontFamily,
-      bool? showNsfwExtensions,
-      bool? showObsoleteExtensions,
+    bool? bionicReading,
+    bool? useDeviceFont,
+    bool? amoledMode,
+    String? systemFontFamily,
+    bool? showNsfwExtensions,
+    bool? showObsoleteExtensions,
     bool? immersiveAutoHide,
     PageStyle? pageStyle,
   }) {
-      return ThemeState(
+    return ThemeState(
       themeMode: themeMode ?? this.themeMode,
       sepiaMode: sepiaMode ?? this.sepiaMode,
       fontFamily: fontFamily ?? this.fontFamily,
@@ -171,7 +171,8 @@ class ThemeState {
       amoledMode: amoledMode ?? this.amoledMode,
       systemFontFamily: systemFontFamily ?? this.systemFontFamily,
       showNsfwExtensions: showNsfwExtensions ?? this.showNsfwExtensions,
-      showObsoleteExtensions: showObsoleteExtensions ?? this.showObsoleteExtensions,
+      showObsoleteExtensions:
+          showObsoleteExtensions ?? this.showObsoleteExtensions,
       immersiveAutoHide: immersiveAutoHide ?? this.immersiveAutoHide,
       pageStyle: pageStyle ?? this.pageStyle,
     );

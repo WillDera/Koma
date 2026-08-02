@@ -39,7 +39,10 @@ class ReaderGestureRecognizer {
   final ReaderGestureConfig config;
   final TapZoneLayout layout;
 
-  ReaderGestureRecognizer({this.config = const ReaderGestureConfig(), this.layout = TapZoneLayout.leftRight});
+  ReaderGestureRecognizer({
+    this.config = const ReaderGestureConfig(),
+    this.layout = TapZoneLayout.leftRight,
+  });
 
   GestureOutcome resolveTap(Offset local, Size size) {
     final third = size.width / 3;
@@ -54,7 +57,10 @@ class ReaderGestureRecognizer {
     }
     if (layout == TapZoneLayout.leftCenterRight) {
       final centerH = size.height * 0.4;
-      final centerY = local.dy.between(size.height / 2 - centerH, size.height / 2 + centerH);
+      final centerY = local.dy.between(
+        size.height / 2 - centerH,
+        size.height / 2 + centerH,
+      );
       if (!centerY) return GestureOutcome.none;
       if (left) return GestureOutcome.tapLeft;
       if (right) return GestureOutcome.tapRight;

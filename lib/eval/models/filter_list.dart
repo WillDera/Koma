@@ -16,10 +16,7 @@ class Filter {
   });
 
   Map<String, dynamic> toJson() {
-    final json = <String, dynamic>{
-      'name': name,
-      'type': _typeToKotlin(type),
-    };
+    final json = <String, dynamic>{'name': name, 'type': _typeToKotlin(type)};
     if (type == FilterType.sort) {
       final sel = value;
       json['value'] = sel != null
@@ -70,27 +67,27 @@ class Filter {
   }
 
   static String _typeToKotlin(FilterType t) => switch (t) {
-        FilterType.text => 'text',
-        FilterType.check => 'check',
-        FilterType.select => 'select',
-        FilterType.sort => 'sort',
-        FilterType.group => 'group',
-        FilterType.header => 'header',
-        FilterType.separator => 'separator',
-        FilterType.triState => 'triState',
-      };
+    FilterType.text => 'text',
+    FilterType.check => 'check',
+    FilterType.select => 'select',
+    FilterType.sort => 'sort',
+    FilterType.group => 'group',
+    FilterType.header => 'header',
+    FilterType.separator => 'separator',
+    FilterType.triState => 'triState',
+  };
 
   static FilterType _typeFromKotlin(String t) => switch (t) {
-        'text' => FilterType.text,
-        'check' => FilterType.check,
-        'select' => FilterType.select,
-        'sort' => FilterType.sort,
-        'group' => FilterType.group,
-        'header' => FilterType.header,
-        'separator' => FilterType.separator,
-        'triState' => FilterType.triState,
-        _ => FilterType.text,
-      };
+    'text' => FilterType.text,
+    'check' => FilterType.check,
+    'select' => FilterType.select,
+    'sort' => FilterType.sort,
+    'group' => FilterType.group,
+    'header' => FilterType.header,
+    'separator' => FilterType.separator,
+    'triState' => FilterType.triState,
+    _ => FilterType.text,
+  };
 }
 
 class FilterOption {
@@ -102,12 +99,21 @@ class FilterOption {
   Map<String, dynamic> toJson() => {'name': name, 'value': value};
 
   factory FilterOption.fromJson(Map<String, dynamic> json) => FilterOption(
-        name: json['name'] as String? ?? '',
-        value: json['value'] as String? ?? '',
-      );
+    name: json['name'] as String? ?? '',
+    value: json['value'] as String? ?? '',
+  );
 }
 
-enum FilterType { text, check, select, sort, group, header, separator, triState }
+enum FilterType {
+  text,
+  check,
+  select,
+  sort,
+  group,
+  header,
+  separator,
+  triState,
+}
 
 class FilterList {
   final List<Filter> filters;
@@ -115,8 +121,11 @@ class FilterList {
   const FilterList({this.filters = const []});
 
   factory FilterList.fromJson(List<dynamic> json) => FilterList(
-        filters: json.map((e) => Filter.fromJson(Map<String, dynamic>.from(e))).toList(),
-      );
+    filters: json
+        .map((e) => Filter.fromJson(Map<String, dynamic>.from(e)))
+        .toList(),
+  );
 
-  List<Map<String, dynamic>> toJson() => filters.map((f) => f.toJson()).toList();
+  List<Map<String, dynamic>> toJson() =>
+      filters.map((f) => f.toJson()).toList();
 }

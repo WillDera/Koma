@@ -6,7 +6,8 @@ import 'package:flutter/material.dart';
 /// navigation layout, inspired by mangayomi's navigation overlay.
 class NavigationOverlay extends StatelessWidget {
   final VoidCallback onDismiss;
-  final int navigationLayout; // 0=default, 1=L-shaped, 2=kindle, 3=edge, 4=right&left
+  final int
+  navigationLayout; // 0=default, 1=L-shaped, 2=kindle, 3=edge, 4=right&left
 
   const NavigationOverlay({
     super.key,
@@ -47,10 +48,7 @@ class NavigationOverlay extends StatelessWidget {
                   ),
                   child: const Text(
                     'Tap anywhere to dismiss',
-                    style: TextStyle(
-                      color: Colors.white60,
-                      fontSize: 13,
-                    ),
+                    style: TextStyle(color: Colors.white60, fontSize: 13),
                   ),
                 ),
               ),
@@ -65,26 +63,32 @@ class NavigationOverlay extends StatelessWidget {
     return Stack(
       children: [
         // Horizontal zones
-        Row(children: [
-          Expanded(child: _zone(_prevColor, 'PREV')),
-          Expanded(child: _zone(_menuColor, 'MENU')),
-          Expanded(child: _zone(_nextColor, 'NEXT')),
-        ]),
+        Row(
+          children: [
+            Expanded(child: _zone(_prevColor, 'PREV')),
+            Expanded(child: _zone(_menuColor, 'MENU')),
+            Expanded(child: _zone(_nextColor, 'NEXT')),
+          ],
+        ),
         // Vertical zones
-        Column(children: [
-          Expanded(flex: 2, child: _zone(_prevColor, 'PREV')),
-          const Expanded(flex: 5, child: SizedBox.shrink()),
-          Expanded(flex: 2, child: _zone(_nextColor, 'NEXT')),
-        ]),
+        Column(
+          children: [
+            Expanded(flex: 2, child: _zone(_prevColor, 'PREV')),
+            const Expanded(flex: 5, child: SizedBox.shrink()),
+            Expanded(flex: 2, child: _zone(_nextColor, 'NEXT')),
+          ],
+        ),
       ],
     );
   }
 
   Widget _buildRightLeft() {
-    return Row(children: [
-      Expanded(child: _zone(_prevColor, 'PREV')),
-      Expanded(child: _zone(_nextColor, 'NEXT')),
-    ]);
+    return Row(
+      children: [
+        Expanded(child: _zone(_prevColor, 'PREV')),
+        Expanded(child: _zone(_nextColor, 'NEXT')),
+      ],
+    );
   }
 
   Widget _zone(Color color, String label) {

@@ -33,9 +33,7 @@ class ReaderAppBar extends StatelessWidget {
       left: 0,
       right: 0,
       child: Container(
-        padding: EdgeInsets.only(
-          top: MediaQuery.of(context).padding.top + 4,
-        ),
+        padding: EdgeInsets.only(top: MediaQuery.of(context).padding.top + 4),
         decoration: const BoxDecoration(
           gradient: LinearGradient(
             begin: Alignment.topCenter,
@@ -90,9 +88,7 @@ class ReaderAppBar extends StatelessWidget {
                     isBookmarked
                         ? Icons.bookmark
                         : Icons.bookmark_border_outlined,
-                    color: isBookmarked
-                        ? Colors.orangeAccent
-                        : Colors.white70,
+                    color: isBookmarked ? Colors.orangeAccent : Colors.white70,
                   ),
                   onPressed: onBookmarkToggle,
                   tooltip: 'Bookmark',

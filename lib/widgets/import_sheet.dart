@@ -88,19 +88,12 @@ class ImportSheet extends StatelessWidget {
                       const SizedBox(height: 2),
                       Text(
                         o.subtitle,
-                        style: TextStyle(
-                          color: c.textSecondary,
-                          fontSize: 13,
-                        ),
+                        style: TextStyle(color: c.textSecondary, fontSize: 13),
                       ),
                     ],
                   ),
                 ),
-                Icon(
-                  Icons.chevron_right,
-                  color: c.textTertiary,
-                  size: 20,
-                ),
+                Icon(Icons.chevron_right, color: c.textTertiary, size: 20),
               ],
             ),
           ),
@@ -214,17 +207,16 @@ class _UrlImportDialogState extends State<UrlImportDialog> {
                 },
                 child: Container(
                   padding: const EdgeInsets.symmetric(
-                      horizontal: 10, vertical: 6),
+                    horizontal: 10,
+                    vertical: 6,
+                  ),
                   decoration: BoxDecoration(
                     color: c.surfaceMuted,
                     borderRadius: AppSpacing.brPill,
                   ),
                   child: Text(
                     url,
-                    style: TextStyle(
-                      color: c.textSecondary,
-                      fontSize: 12,
-                    ),
+                    style: TextStyle(color: c.textSecondary, fontSize: 12),
                     overflow: TextOverflow.ellipsis,
                   ),
                 ),

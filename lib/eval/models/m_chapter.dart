@@ -14,20 +14,20 @@ class MChapter {
   });
 
   Map<String, dynamic> toJson() => {
-        'url': url,
-        'name': name,
-        'scanlator': scanlator,
-        'date_upload': dateUpload,
-        'chapter_number': chapterNumber,
-      };
+    'url': url,
+    'name': name,
+    'scanlator': scanlator,
+    'date_upload': dateUpload,
+    'chapter_number': chapterNumber,
+  };
 
   factory MChapter.fromJson(Map<String, dynamic> json) => MChapter(
-        url: json['url'] as String? ?? '',
-        name: json['name'] as String? ?? '',
-        scanlator: json['scanlator'] as String?,
-        dateUpload: json['date_upload'] as int? ?? 0,
-        chapterNumber: json['chapter_number'] as int? ?? 0,
-      );
+    url: json['url'] as String? ?? '',
+    name: json['name'] as String? ?? '',
+    scanlator: json['scanlator'] as String?,
+    dateUpload: json['date_upload'] as int? ?? 0,
+    chapterNumber: json['chapter_number'] as int? ?? 0,
+  );
 
   factory MChapter.fromMap(Map<String, dynamic> map) => MChapter.fromJson(map);
 

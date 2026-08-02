@@ -27,8 +27,10 @@ Future<String> _resolveSourceId(Repositories repos, String sourceId) async {
 /// Stream of [Manga?] for a given manga ID. Backed by Isar's watchObject —
 /// re-emits every time the manga row is written via put(). fireImmediately=true
 /// returns the current value on first listen so there is never a loading gap.
-final mangaDetailStreamProvider =
-    StreamProvider.family<Manga?, int>((ref, mangaId) {
+final mangaDetailStreamProvider = StreamProvider.family<Manga?, int>((
+  ref,
+  mangaId,
+) {
   return ref.watch(repositoriesProvider).manga.watchManga(mangaId);
 });
 
@@ -37,8 +39,8 @@ final mangaDetailStreamProvider =
 /// added/updated/deleted. Sorted by index.
 final mangaChaptersStreamProvider =
     StreamProvider.family<List<MangaChapter>, int>((ref, mangaId) {
-  return ref.watch(repositoriesProvider).manga.watchMangaChapters(mangaId);
-});
+      return ref.watch(repositoriesProvider).manga.watchMangaChapters(mangaId);
+    });
 
 /// Fetches fresh manga detail + chapters from the extension source and persists
 /// to Isar. After the write, [mangaDetailStreamProvider] and
@@ -48,95 +50,105 @@ final mangaChaptersStreamProvider =
 /// When [isInit] is true and chapters already exist, the fetch is skipped
 /// (manga was already cached with chapters — no need to re-fetch on first open).
 final updateMangaDetailProvider =
-    FutureProvider.family<void, ({int mangaId, bool isInit})>(
-        (ref, params) async {
-  final repos = ref.watch(repositoriesProvider);
-  final service = ref.watch(extensionServiceProvider);
+    FutureProvider.family<void, ({int mangaId, bool isInit})>((
+      ref,
+      params,
+    ) async {
+      final repos = ref.watch(repositoriesProvider);
+      final service = ref.watch(extensionServiceProvider);
 
-  final manga = await repos.manga.getMangaById(params.mangaId);
-  if (manga == null) return;
+      final manga = await repos.manga.getMangaById(params.mangaId);
+      if (manga == null) return;
 
-  // IsInit + chapters already populated → no network fetch needed
-  final existingChapters = await repos.manga.getMangaChapters(params.mangaId);
-  if (params.isInit && existingChapters.isNotEmpty) return;
+      // IsInit + chapters already populated → no network fetch needed
+      final existingChapters = await repos.manga.getMangaChapters(
+        params.mangaId,
+      );
+      if (params.isInit && existingChapters.isNotEmpty) return;
 
-  // Translate the old Mihon numeric ID to our hex sourceId from the cache
-  final extSourceId = await _resolveSourceId(repos, manga.sourceId);
+      // Translate the old Mihon numeric ID to our hex sourceId from the cache
+      final extSourceId = await _resolveSourceId(repos, manga.sourceId);
 
-  final source = MSource(
-    id: extSourceId,
-    sourceId: extSourceId,
-    name: '',
-    lang: 'en',
-    baseUrl: '',
-    sourceType: SourceType.mihon,
-  );
-  final result = await service.getMangaDetail(source, manga.url);
+      final source = MSource(
+        id: extSourceId,
+        sourceId: extSourceId,
+        name: '',
+        lang: 'en',
+        baseUrl: '',
+        sourceType: SourceType.mihon,
+      );
+      final result = await service.getMangaDetail(source, manga.url);
 
-  final mmanga = result.manga;
-  final chapters = result.chapters;
+      final mmanga = result.manga;
+      final chapters = result.chapters;
 
-  // Update manga metadata from network response. This triggers the
-  // watchObject stream for this manga.
-  if (mmanga != null) {
-    final updatedManga = manga.copyWith(
-      imageUrl: mmanga.thumbnailUrl ?? manga.imageUrl,
-      author: mmanga.author ?? manga.author,
-      artist: mmanga.artist ?? manga.artist,
-      description: mmanga.description ?? manga.description,
-      status: mmanga.status,
-      genres: mmanga.genres.isNotEmpty ? mmanga.genres : manga.genres,
-      updatedAt: DateTime.now(),
-    );
-    await repos.manga.updateManga(updatedManga);
-  }
-
-  // Merge network chapters with existing — preserve read/download progress
-  // for already-known chapters (matched by url), insert new ones only.
-  if (chapters.isNotEmpty) {
-    final existingByUrl = <String, MangaChapter>{
-      for (final c in existingChapters)
-        if (c.url.isNotEmpty) c.url.trim(): c,
-    };
-
-    final merged = <MangaChapter>[];
-    for (var i = 0; i < chapters.length; i++) {
-      final ch = chapters[i];
-      final url = ch.url.trim();
-      if (url.isEmpty) continue;
-
-      final existing = existingByUrl[url];
-      if (existing != null) {
-        // Update metadata on existing row, preserve read/download state
-        merged.add(existing.copyWith(
-          name: ch.name,
-          scanlator: ch.scanlator ?? existing.scanlator,
-          dateUpload: ch.dateUpload,
-          index: i,
-        ));
-      } else {
-        // New chapter — insert fresh (id: 0 = auto-increment)
-        merged.add(MangaChapter(
-          id: 0,
-          mangaId: params.mangaId,
-          name: ch.name,
-          url: url,
-          scanlator: ch.scanlator,
-          dateUpload: ch.dateUpload,
-          index: i,
-        ));
+      // Update manga metadata from network response. This triggers the
+      // watchObject stream for this manga.
+      if (mmanga != null) {
+        final updatedManga = manga.copyWith(
+          imageUrl: mmanga.thumbnailUrl ?? manga.imageUrl,
+          author: mmanga.author ?? manga.author,
+          artist: mmanga.artist ?? manga.artist,
+          description: mmanga.description ?? manga.description,
+          status: mmanga.status,
+          genres: mmanga.genres.isNotEmpty ? mmanga.genres : manga.genres,
+          updatedAt: DateTime.now(),
+        );
+        await repos.manga.updateManga(updatedManga);
       }
-    }
 
-    // Replace all chapters for this manga (the merge above preserved
-    // progress for known ones). This triggers the chapters watch stream.
-    await repos.manga.deleteMangaChapters(params.mangaId);
-    await repos.manga.insertMangaChapters(params.mangaId, merged);
-  }
-});
+      // Merge network chapters with existing — preserve read/download progress
+      // for already-known chapters (matched by url), insert new ones only.
+      if (chapters.isNotEmpty) {
+        final existingByUrl = <String, MangaChapter>{
+          for (final c in existingChapters)
+            if (c.url.isNotEmpty) c.url.trim(): c,
+        };
+
+        final merged = <MangaChapter>[];
+        for (var i = 0; i < chapters.length; i++) {
+          final ch = chapters[i];
+          final url = ch.url.trim();
+          if (url.isEmpty) continue;
+
+          final existing = existingByUrl[url];
+          if (existing != null) {
+            // Update metadata on existing row, preserve read/download state
+            merged.add(
+              existing.copyWith(
+                name: ch.name,
+                scanlator: ch.scanlator ?? existing.scanlator,
+                dateUpload: ch.dateUpload,
+                index: i,
+              ),
+            );
+          } else {
+            // New chapter — insert fresh (id: 0 = auto-increment)
+            merged.add(
+              MangaChapter(
+                id: 0,
+                mangaId: params.mangaId,
+                name: ch.name,
+                url: url,
+                scanlator: ch.scanlator,
+                dateUpload: ch.dateUpload,
+                index: i,
+              ),
+            );
+          }
+        }
+
+        // Replace all chapters for this manga (the merge above preserved
+        // progress for known ones). This triggers the chapters watch stream.
+        await repos.manga.deleteMangaChapters(params.mangaId);
+        await repos.manga.insertMangaChapters(params.mangaId, merged);
+      }
+    });
 
 enum ChapterFilter { downloaded, read, unread }
+
 enum FilterMode { ignore, include, exclude }
+
 enum SortMode { nameAsc, nameDesc, dateAsc, dateDesc, chapterAsc, chapterDesc }
 
 class MangaDetailState {
@@ -231,7 +243,10 @@ class MangaDetailNotifier extends Notifier<MangaDetailState> {
         final json = jsonDecode(filterRaw) as Map<String, dynamic>;
         final modes = <ChapterFilter, FilterMode>{};
         for (final e in json.entries) {
-          final key = ChapterFilter.values.firstWhere((v) => v.name == e.key, orElse: () => ChapterFilter.values.first);
+          final key = ChapterFilter.values.firstWhere(
+            (v) => v.name == e.key,
+            orElse: () => ChapterFilter.values.first,
+          );
           modes[key] = FilterMode.values[e.value as int? ?? 0];
         }
         state = state.copyWith(filterModes: modes);
@@ -241,7 +256,8 @@ class MangaDetailNotifier extends Notifier<MangaDetailState> {
 
   void setLoading(bool v) => state = state.copyWith(loading: v);
   void setError(String? e) => state = state.copyWith(error: e);
-  void setInLibrary(bool v, int? id) => state = state.copyWith(inLibrary: v, mangaId: id);
+  void setInLibrary(bool v, int? id) =>
+      state = state.copyWith(inLibrary: v, mangaId: id);
   void setMangaId(int? id) => state = state.copyWith(mangaId: id);
   void setSourceName(String n) => state = state.copyWith(sourceName: n);
   Future<void> setSortMode(SortMode m) async {
@@ -249,16 +265,24 @@ class MangaDetailNotifier extends Notifier<MangaDetailState> {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setInt(_keySortMode, m.index);
   }
+
   void setFilterMode(ChapterFilter f, FilterMode m) {
-    final modes = Map<ChapterFilter, FilterMode>.from(state.filterModes)..[f] = m;
+    final modes = Map<ChapterFilter, FilterMode>.from(state.filterModes)
+      ..[f] = m;
     state = state.copyWith(filterModes: modes);
   }
-  void setDetails(Map<String, dynamic>? d) => state = state.copyWith(details: d);
-  void setChapters(List<Map<String, dynamic>> c) => state = state.copyWith(chapters: c);
-  void setLocalChapters(Map<String, Map<String, dynamic>> c) => state = state.copyWith(localChapters: c);
+
+  void setDetails(Map<String, dynamic>? d) =>
+      state = state.copyWith(details: d);
+  void setChapters(List<Map<String, dynamic>> c) =>
+      state = state.copyWith(chapters: c);
+  void setLocalChapters(Map<String, Map<String, dynamic>> c) =>
+      state = state.copyWith(localChapters: c);
   void setOfflineMode(bool v) => state = state.copyWith(offlineMode: v);
-  void setLocalThumbnail(String? p) => state = state.copyWith(localThumbnail: p);
-  void setDownloadProgress(Map<String, String> p) => state = state.copyWith(downloadProgress: p);
+  void setLocalThumbnail(String? p) =>
+      state = state.copyWith(localThumbnail: p);
+  void setDownloadProgress(Map<String, String> p) =>
+      state = state.copyWith(downloadProgress: p);
   void setExpanded(bool e) => state = state.copyWith(expanded: e);
 
   void applyChapters(List<Map<String, dynamic>> chapters) {
@@ -279,4 +303,6 @@ class MangaDetailNotifier extends Notifier<MangaDetailState> {
 }
 
 final mangaDetailProvider =
-    NotifierProvider<MangaDetailNotifier, MangaDetailState>(MangaDetailNotifier.new);
+    NotifierProvider<MangaDetailNotifier, MangaDetailState>(
+      MangaDetailNotifier.new,
+    );

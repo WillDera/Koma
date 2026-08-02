@@ -36,7 +36,10 @@ abstract class ExtensionService {
       getDetail(source, url),
       getChapterList(source, url),
     ]);
-    return (manga: results[0] as MManga?, chapters: results[1] as List<MChapter>);
+    return (
+      manga: results[0] as MManga?,
+      chapters: results[1] as List<MChapter>,
+    );
   }
 
   Future<List<MPages>> getPageList(MSource source, MChapter chapter);

@@ -58,10 +58,8 @@ class _ToastWidgetState extends State<_ToastWidget>
   @override
   void initState() {
     super.initState();
-    _ctrl = AnimationController(
-      vsync: this,
-      duration: AppMotion.sheet,
-    )..forward();
+    _ctrl = AnimationController(vsync: this, duration: AppMotion.sheet)
+      ..forward();
     Future.delayed(widget.duration, () {
       if (mounted) _dismiss();
     });
@@ -102,7 +100,8 @@ class _ToastWidgetState extends State<_ToastWidget>
                 color: c.textPrimary,
                 borderRadius: AppSpacing.brLg,
                 boxShadow: AppSpacing.shadow3(
-                    isDark: c.bg.computeLuminance() < 0.5),
+                  isDark: c.bg.computeLuminance() < 0.5,
+                ),
               ),
               child: Row(
                 children: [

@@ -39,11 +39,13 @@ class KeiyoushiService {
 
   Future<dynamic> _post(Map<String, dynamic> body) async {
     if (!_initialized) await init();
-    final res = await http.post(
-      Uri.parse(_baseUrl),
-      headers: {'Content-Type': 'application/json'},
-      body: jsonEncode(body),
-    ).timeout(const Duration(seconds: 60));
+    final res = await http
+        .post(
+          Uri.parse(_baseUrl),
+          headers: {'Content-Type': 'application/json'},
+          body: jsonEncode(body),
+        )
+        .timeout(const Duration(seconds: 60));
     if (res.statusCode != 200) {
       throw Exception('Dalvik server returned ${res.statusCode}');
     }
@@ -78,58 +80,58 @@ class KeiyoushiService {
     final body = <String, dynamic>{
       'method': 'loadExtension',
       'apkPath': apkPath,
-      if (className != null) 'className': className,
+      'className': ?className,
     };
     return _postChecked(body);
   }
 
   Future<void> unloadExtension(String sourceId) async {
-    await _post({
-      'method': 'unloadExtension',
-      'sourceId': sourceId,
-    });
+    await _post({'method': 'unloadExtension', 'sourceId': sourceId});
   }
 
   Future<List<Map<String, dynamic>>> listLoadedExtensions() async {
-    final result = await _postList({
-      'method': 'listLoadedExtensions',
-    });
+    final result = await _postList({'method': 'listLoadedExtensions'});
     return result.cast<Map<String, dynamic>>();
   }
 
   Future<({List<Map<String, dynamic>> mangas, bool hasNextPage})>
-      getPopularManga({required String sourceId, int page = 1}) async {
+  getPopularManga({required String sourceId, int page = 1}) async {
     final res = await _post({
       'method': 'getPopularManga',
       'sourceId': sourceId,
       'page': page,
     });
-    return _parseMangasPage(res is Map ? Map<String, dynamic>.from(res) : <String, dynamic>{});
+    return _parseMangasPage(
+      res is Map ? Map<String, dynamic>.from(res) : <String, dynamic>{},
+    );
   }
 
   Future<({List<Map<String, dynamic>> mangas, bool hasNextPage})>
-      getLatestUpdates({required String sourceId, int page = 1}) async {
+  getLatestUpdates({required String sourceId, int page = 1}) async {
     final res = await _post({
       'method': 'getLatestUpdates',
       'sourceId': sourceId,
       'page': page,
     });
-    return _parseMangasPage(res is Map ? Map<String, dynamic>.from(res) : <String, dynamic>{});
+    return _parseMangasPage(
+      res is Map ? Map<String, dynamic>.from(res) : <String, dynamic>{},
+    );
   }
 
   Future<List<Map<String, dynamic>>> getFilters({
     required String sourceId,
   }) async {
-    final res = await _post({
-      'method': 'filtersManga',
-      'sourceId': sourceId,
-    });
+    final res = await _post({'method': 'filtersManga', 'sourceId': sourceId});
     if (res is! List) return [];
     return res.cast<Map<String, dynamic>>();
   }
 
-  Future<({List<Map<String, dynamic>> mangas, bool hasNextPage})>
-      searchManga({required String sourceId, String query = '', int page = 1, List<Map<String, dynamic>>? filters}) async {
+  Future<({List<Map<String, dynamic>> mangas, bool hasNextPage})> searchManga({
+    required String sourceId,
+    String query = '',
+    int page = 1,
+    List<Map<String, dynamic>>? filters,
+  }) async {
     final body = <String, dynamic>{
       // DalvikServer handler is getSearchManga (alias searchManga also accepted).
       'method': 'getSearchManga',
@@ -139,7 +141,9 @@ class KeiyoushiService {
     };
     if (filters != null) body['filters'] = filters;
     final res = await _post(body);
-    return _parseMangasPage(res is Map ? Map<String, dynamic>.from(res) : <String, dynamic>{});
+    return _parseMangasPage(
+      res is Map ? Map<String, dynamic>.from(res) : <String, dynamic>{},
+    );
   }
 
   Future<({Map<String, dynamic> details, List<Map<String, dynamic>> chapters})>
@@ -152,9 +156,11 @@ class KeiyoushiService {
       'method': 'getMangaUpdate',
       'sourceId': sourceId,
       'url': url,
-      if (memo != null) 'memo': memo,
+      'memo': ?memo,
     });
-    final Map<String, dynamic> raw = res is Map ? Map<String, dynamic>.from(res) : <String, dynamic>{};
+    final Map<String, dynamic> raw = res is Map
+        ? Map<String, dynamic>.from(res)
+        : <String, dynamic>{};
     final details = Map<String, dynamic>.from(raw['manga'] ?? {});
     final chapters = (raw['chapters'] as List? ?? [])
         .cast<Map>()
@@ -172,7 +178,7 @@ class KeiyoushiService {
       'method': 'getMangaDetails',
       'sourceId': sourceId,
       'url': url,
-      if (memo != null) 'memo': memo,
+      'memo': ?memo,
     });
     if (res is! Map) return {};
     if (res.containsKey('error')) return {};
@@ -188,7 +194,7 @@ class KeiyoushiService {
       'method': 'getChapterList',
       'sourceId': sourceId,
       'url': url,
-      if (memo != null) 'memo': memo,
+      'memo': ?memo,
     });
     if (res is! List) return [];
     return res
@@ -219,7 +225,7 @@ class KeiyoushiService {
       'method': 'getPageList',
       'sourceId': sourceId,
       'url': url,
-      if (memo != null) 'memo': memo,
+      'memo': ?memo,
     });
     if (res is! List) return [];
     return res.cast<Map<String, dynamic>>();

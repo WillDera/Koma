@@ -33,7 +33,8 @@ Future<void> injectHttpBridge(QuickJsRuntime2 engine) async {
     final callbackId = args['callbackId'] as int? ?? 0;
     final options = args['options'] as Map? ?? {};
     final headers = Map<String, String>.from(
-        (options['headers'] as Map?)?.cast<String, String>() ?? {});
+      (options['headers'] as Map?)?.cast<String, String>() ?? {},
+    );
     final method = (options['method'] as String? ?? 'GET').toUpperCase();
     final body = options['body'] as String?;
 

@@ -51,10 +51,13 @@ class SourceService {
     final client = _client();
     try {
       return await client
-          .get(Uri.parse(url), headers: {
-            'User-Agent':
-                'Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 Koma/1.0'
-          })
+          .get(
+            Uri.parse(url),
+            headers: {
+              'User-Agent':
+                  'Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 Koma/1.0',
+            },
+          )
           .timeout(const Duration(seconds: 15));
     } catch (_) {
       return http.Response('', 500);
@@ -84,7 +87,9 @@ class SourceService {
   }
 
   Future<List<SourceSearchResult>> _searchSource(
-      Source source, String query) async {
+    Source source,
+    String query,
+  ) async {
     switch (source.tag) {
       case 'libgen':
         return _searchLibGen(source, query);
@@ -94,7 +99,9 @@ class SourceService {
   }
 
   Future<List<SourceSearchResult>> _searchLibGen(
-      Source source, String query) async {
+    Source source,
+    String query,
+  ) async {
     final url =
         '${source.baseUrl}?req=${Uri.encodeQueryComponent(query)}&columns%5B%5D=t&columns%5B%5D=a&topics%5B%5D=l&topics%5B%5D=f&res=100&covers=on';
     final response = await _get(url);
@@ -137,13 +144,17 @@ class SourceService {
         final ext = cols.length > 8 ? cols[8].text.trim() : '';
 
         String? downloadUrl;
-        downloadUrl = row.querySelector('a[title="libgen.is"]')?.attributes['href'];
+        downloadUrl = row
+            .querySelector('a[title="libgen.is"]')
+            ?.attributes['href'];
         if (downloadUrl == null || downloadUrl.isEmpty) {
           final lastCol = cols.last;
           downloadUrl = lastCol.querySelector('a')?.attributes['href'];
         }
         if (downloadUrl == null || downloadUrl.isEmpty) {
-          downloadUrl = row.querySelector('a[href*="libgen"]')?.attributes['href'];
+          downloadUrl = row
+              .querySelector('a[href*="libgen"]')
+              ?.attributes['href'];
         }
         if (downloadUrl == null || downloadUrl.isEmpty) {
           downloadUrl = row.querySelector('a')?.attributes['href'];
@@ -153,25 +164,32 @@ class SourceService {
         }
 
         if (title.isNotEmpty) {
-          results.add(SourceSearchResult(
-            title: title,
-            author: author,
-            year: year,
-            size: size,
-            extension: ext,
-            language: language,
-            poster: imgSrc != null ? '${_base(source.baseUrl)}$imgSrc' : null,
-            downloadUrl: downloadUrl,
-            sourceName: source.name,
-            tag: 'libgen',
-          ));
+          results.add(
+            SourceSearchResult(
+              title: title,
+              author: author,
+              year: year,
+              size: size,
+              extension: ext,
+              language: language,
+              poster: imgSrc != null ? '${_base(source.baseUrl)}$imgSrc' : null,
+              downloadUrl: downloadUrl,
+              sourceName: source.name,
+              tag: 'libgen',
+            ),
+          );
         }
       } catch (_) {}
     }
     if (source.language != null && source.language!.isNotEmpty) {
       results = results
-          .where((r) =>
-              r.language?.toLowerCase().contains(source.language!.toLowerCase()) == true)
+          .where(
+            (r) =>
+                r.language?.toLowerCase().contains(
+                  source.language!.toLowerCase(),
+                ) ==
+                true,
+          )
           .toList();
     }
     return results;
@@ -194,14 +212,18 @@ class SourceService {
   }
 
   Future<Map<String, String>> showDownloadOptions(
-      SourceSearchResult result) async {
+    SourceSearchResult result,
+  ) async {
     if (result.downloadUrl == null || result.downloadUrl!.isEmpty) return {};
     return getDownloadLinks(result.downloadUrl!);
   }
 
   Future<bool> downloadFromLink(
-      String url, String title, String ext,
-      {void Function(double progress)? onProgress}) async {
+    String url,
+    String title,
+    String ext, {
+    void Function(double progress)? onProgress,
+  }) async {
     try {
       final client = http.Client();
       try {
@@ -268,10 +290,10 @@ class SourceService {
   }
 
   static List<Source> defaultSources() => [
-        Source(
-          name: 'Library Genesis',
-          tag: 'libgen',
-          baseUrl: 'https://libgen.gs/index.php',
-        ),
-      ];
+    Source(
+      name: 'Library Genesis',
+      tag: 'libgen',
+      baseUrl: 'https://libgen.gs/index.php',
+    ),
+  ];
 }

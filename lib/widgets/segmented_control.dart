@@ -47,7 +47,7 @@ class SegmentedControl<T extends Object> extends StatelessWidget {
         final hasBoundedWidth = constraints.hasBoundedWidth;
         final perSeg = hasBoundedWidth
             ? ((constraints.maxWidth - padding.horizontal) / entries.length)
-                .clamp(0.0, double.infinity)
+                  .clamp(0.0, double.infinity)
             : (minWidth / entries.length).clamp(40.0, 200.0);
         final totalWidth = hasBoundedWidth
             ? constraints.maxWidth
@@ -74,7 +74,8 @@ class SegmentedControl<T extends Object> extends StatelessWidget {
                         color: c.surface,
                         borderRadius: AppSpacing.brPill,
                         boxShadow: AppSpacing.shadow1(
-                            isDark: c.bg.computeLuminance() < 0.5),
+                          isDark: c.bg.computeLuminance() < 0.5,
+                        ),
                       ),
                     ),
                   ),

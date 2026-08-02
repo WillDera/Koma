@@ -101,8 +101,9 @@ class _StashTextFieldState extends State<StashTextField> {
         color: c.surfaceMuted,
         borderRadius: AppSpacing.brPill,
         border: Border.all(
-          color:
-              _focused ? c.accent.withValues(alpha: 0.5) : Colors.transparent,
+          color: _focused
+              ? c.accent.withValues(alpha: 0.5)
+              : Colors.transparent,
           width: 1,
         ),
       ),
@@ -128,9 +129,9 @@ class _StashTextFieldState extends State<StashTextField> {
               obscureText: widget.obscureText,
               cursorColor: c.accent,
               cursorWidth: 1.5,
-              style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                    color: c.textPrimary,
-                  ),
+              style: Theme.of(
+                context,
+              ).textTheme.bodyLarge?.copyWith(color: c.textPrimary),
               decoration: InputDecoration(
                 hintText: widget.hint,
                 border: InputBorder.none,

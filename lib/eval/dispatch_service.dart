@@ -16,8 +16,8 @@ class ExtensionDispatchService implements ExtensionService {
   ExtensionDispatchService({
     required KeiyoushiService keiyoushiService,
     JsExtensionService? jsExtensionService,
-  })  : _keiyoushi = KeiyoushiExtensionService(keiyoushiService),
-        _js = jsExtensionService ?? JsExtensionService();
+  }) : _keiyoushi = KeiyoushiExtensionService(keiyoushiService),
+       _js = jsExtensionService ?? JsExtensionService();
 
   @override
   String get type => 'dispatch';
@@ -44,8 +44,7 @@ class ExtensionDispatchService implements ExtensionService {
     int page,
     String query, {
     FilterList? filters,
-  }) =>
-      _resolve(source).search(source, page, query, filters: filters);
+  }) => _resolve(source).search(source, page, query, filters: filters);
 
   @override
   Future<MManga?> getDetail(MSource source, String url) =>
@@ -59,8 +58,7 @@ class ExtensionDispatchService implements ExtensionService {
   Future<({MManga? manga, List<MChapter> chapters})> getMangaDetail(
     MSource source,
     String url,
-  ) =>
-      _resolve(source).getMangaDetail(source, url);
+  ) => _resolve(source).getMangaDetail(source, url);
 
   @override
   Future<List<MPages>> getPageList(MSource source, MChapter chapter) =>

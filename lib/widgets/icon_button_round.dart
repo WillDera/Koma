@@ -31,8 +31,10 @@ class IconButtonRound extends StatelessWidget {
     this.tooltip,
     this.iconColor,
     this.backgroundColor,
-  }) : assert(icon != null || iconData != null,
-  'Either icon or iconData must be provided');
+  }) : assert(
+         icon != null || iconData != null,
+         'Either icon or iconData must be provided',
+       );
 
   @override
   Widget build(BuildContext context) {
@@ -40,9 +42,18 @@ class IconButtonRound extends StatelessWidget {
     final disabled = onPressed == null;
 
     final (bg, fg) = switch (variant) {
-      IconButtonVariant.plain => (Colors.transparent, iconColor ?? c.textPrimary),
-      IconButtonVariant.filled => (backgroundColor ?? c.surfaceMuted, iconColor ?? c.textPrimary),
-      IconButtonVariant.tonal => (Colors.transparent, iconColor ?? c.textSecondary),
+      IconButtonVariant.plain => (
+        Colors.transparent,
+        iconColor ?? c.textPrimary,
+      ),
+      IconButtonVariant.filled => (
+        backgroundColor ?? c.surfaceMuted,
+        iconColor ?? c.textPrimary,
+      ),
+      IconButtonVariant.tonal => (
+        Colors.transparent,
+        iconColor ?? c.textSecondary,
+      ),
     };
 
     final iconWidget = iconData != null
@@ -57,17 +68,12 @@ class IconButtonRound extends StatelessWidget {
         width: size,
         height: size,
         alignment: Alignment.center,
-        decoration: BoxDecoration(
-          color: bg,
-          borderRadius: AppSpacing.brPill,
-        ),
+        decoration: BoxDecoration(color: bg, borderRadius: AppSpacing.brPill),
         child: iconWidget,
       ),
     );
 
-    final wrapped = disabled
-        ? Opacity(opacity: 0.4, child: btn)
-        : btn;
+    final wrapped = disabled ? Opacity(opacity: 0.4, child: btn) : btn;
 
     if (tooltip == null) return wrapped;
     return Tooltip(message: tooltip!, child: wrapped);

@@ -44,9 +44,9 @@ class EmptyState extends StatelessWidget {
               title,
               textAlign: TextAlign.center,
               style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                    color: c.textPrimary,
-                    fontWeight: FontWeight.w600,
-                  ),
+                color: c.textPrimary,
+                fontWeight: FontWeight.w600,
+              ),
             ),
             if (subtitle != null) ...[
               const SizedBox(height: 8),
@@ -54,9 +54,9 @@ class EmptyState extends StatelessWidget {
                 subtitle!,
                 textAlign: TextAlign.center,
                 style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                      color: c.textSecondary,
-                      height: 1.5,
-                    ),
+                  color: c.textSecondary,
+                  height: 1.5,
+                ),
               ),
             ],
             if (primaryActionLabel != null && onPrimaryAction != null) ...[
@@ -76,7 +76,9 @@ class EmptyState extends StatelessWidget {
                 onTap: onSecondaryAction,
                 child: Padding(
                   padding: const EdgeInsets.symmetric(
-                      horizontal: 12, vertical: 8),
+                    horizontal: 12,
+                    vertical: 8,
+                  ),
                   child: Text(
                     secondaryActionLabel!,
                     style: TextStyle(

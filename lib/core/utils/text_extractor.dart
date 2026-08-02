@@ -5,8 +5,16 @@ import 'package:html/parser.dart' as html_parser;
 
 class TextExtractor {
   static const _blockTags = {
-    'p', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6',
-    'li', 'blockquote', 'pre',
+    'p',
+    'h1',
+    'h2',
+    'h3',
+    'h4',
+    'h5',
+    'h6',
+    'li',
+    'blockquote',
+    'pre',
   };
 
   /// How many chapters' extracted text to keep. A handful covers the current
@@ -53,7 +61,8 @@ class TextExtractor {
     final doc = html_parser.parse(html);
     final buffer = StringBuffer();
     _collectText(doc.body!, buffer);
-    return buffer.toString()
+    return buffer
+        .toString()
         .replaceAll(RegExp(r'[ \t]+'), ' ')
         .replaceAll(RegExp(r' \n'), '\n')
         .replaceAll(RegExp(r'\n '), '\n')

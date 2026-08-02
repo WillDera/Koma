@@ -59,19 +59,21 @@ class ChapterControllerMixin {
         chapterUrl: chapter.url,
       );
 
-      return pageList.map((p) {
-        final pd = PageData.page(
-          mangaPage: MangaPage(
-            index: p['index'] as int,
-            imageUrl: p['url'] as String,
-            chapterUrl: chapter.url,
-          ),
-          chapter: chapter,
-          pageIndex: 0,
-        );
-        pd.localPath = p['localPath'] as String?;
-        return pd;
-      }).toList(growable: true);
+      return pageList
+          .map((p) {
+            final pd = PageData.page(
+              mangaPage: MangaPage(
+                index: p['index'] as int,
+                imageUrl: p['url'] as String,
+                chapterUrl: chapter.url,
+              ),
+              chapter: chapter,
+              pageIndex: 0,
+            );
+            pd.localPath = p['localPath'] as String?;
+            return pd;
+          })
+          .toList(growable: true);
     } catch (e) {
       if (kDebugMode) {
         debugPrint('[ChapterController] Failed to fetch pages: $e');

@@ -45,8 +45,7 @@ class ChapterTransitionPage extends StatelessWidget {
             child: ConstrainedBox(
               constraints: BoxConstraints(
                 maxWidth: constraints.maxWidth.clamp(100.0, 480.0),
-                maxHeight:
-                    constraints.maxHeight.clamp(100.0, double.infinity),
+                maxHeight: constraints.maxHeight.clamp(100.0, double.infinity),
               ),
               child: Padding(
                 padding: const EdgeInsets.all(24.0),
@@ -88,10 +87,9 @@ class ChapterTransitionPage extends StatelessWidget {
           const SizedBox(height: 20),
           Text(
             'End of Chapter',
-            style:
-                Theme.of(context).textTheme.headlineSmall?.copyWith(
-                      fontWeight: FontWeight.bold,
-                    ),
+            style: Theme.of(
+              context,
+            ).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.bold),
             textAlign: TextAlign.center,
           ),
           const SizedBox(height: 16),
@@ -109,10 +107,7 @@ class ChapterTransitionPage extends StatelessWidget {
             size: 32,
             color: nextChapter != null
                 ? Theme.of(context).colorScheme.primary
-                : Theme.of(context)
-                    .colorScheme
-                    .onSurface
-                    .withAlpha(153),
+                : Theme.of(context).colorScheme.onSurface.withAlpha(153),
           ),
           const SizedBox(height: 16),
           if (nextChapter != null) ...[
@@ -126,11 +121,8 @@ class ChapterTransitionPage extends StatelessWidget {
             Text(
               'Continue to next chapter',
               style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                    color: Theme.of(context)
-                        .colorScheme
-                        .onSurface
-                        .withAlpha(153),
-                  ),
+                color: Theme.of(context).colorScheme.onSurface.withAlpha(153),
+              ),
               textAlign: TextAlign.center,
             ),
           ] else ...[
@@ -139,11 +131,8 @@ class ChapterTransitionPage extends StatelessWidget {
             Text(
               'Return to the list of chapters',
               style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                    color: Theme.of(context)
-                        .colorScheme
-                        .onSurface
-                        .withAlpha(153),
-                  ),
+                color: Theme.of(context).colorScheme.onSurface.withAlpha(153),
+              ),
               textAlign: TextAlign.center,
             ),
           ],
@@ -165,8 +154,8 @@ class ChapterTransitionPage extends StatelessWidget {
     final Widget arrowIcon = Icon(
       nextChapter != null
           ? (readerMode == ReadingMode.rightToLeft
-              ? Icons.keyboard_arrow_left
-              : Icons.keyboard_arrow_right)
+                ? Icons.keyboard_arrow_left
+                : Icons.keyboard_arrow_right)
           : Icons.check_circle_outline,
       size: 36,
       color: nextChapter != null
@@ -255,8 +244,7 @@ class ChapterTransitionPage extends StatelessWidget {
     final labelColor = isPrimary
         ? theme.colorScheme.onPrimaryContainer.withAlpha(204)
         : theme.colorScheme.onSurface.withAlpha(179);
-    final nameColor =
-        isPrimary ? theme.colorScheme.onPrimaryContainer : null;
+    final nameColor = isPrimary ? theme.colorScheme.onPrimaryContainer : null;
 
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
@@ -298,9 +286,7 @@ class ChapterTransitionPage extends StatelessWidget {
       decoration: BoxDecoration(
         color: theme.colorScheme.surfaceContainerHighest,
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(
-          color: theme.colorScheme.outline.withAlpha(77),
-        ),
+        border: Border.all(color: theme.colorScheme.outline.withAlpha(77)),
       ),
       child: Column(
         mainAxisSize: MainAxisSize.min,

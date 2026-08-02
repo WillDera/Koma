@@ -59,7 +59,8 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
   void _onScroll() {
     final p = (_scrollCtrl.offset / 60).clamp(0.0, 1.0);
     final now = DateTime.now();
-    final minTime = _lastScroll == null ||
+    final minTime =
+        _lastScroll == null ||
         now.difference(_lastScroll!) > const Duration(milliseconds: 120);
     final delta = (p - _scrollProgress).abs();
     if (minTime && delta > 0.02) {
@@ -434,12 +435,15 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
                         sourceResults: _mangaResults,
                         onTap: (srcResult, manga) => context.pushNamed(
                           Routes.mangaDetail,
-                          extra: (
-                            sourceId: srcResult['sourceId'] as String? ?? '',
-                            url: manga['url'] as String? ?? '',
-                            title: manga['title'] as String? ?? '',
-                            manga: null,
-                          ) as MangaDetailArgs,
+                          extra:
+                              (
+                                    sourceId:
+                                        srcResult['sourceId'] as String? ?? '',
+                                    url: manga['url'] as String? ?? '',
+                                    title: manga['title'] as String? ?? '',
+                                    manga: null,
+                                  )
+                                  as MangaDetailArgs,
                         ),
                       ),
               ),
@@ -567,10 +571,10 @@ class _DiscoverBookResults extends StatelessWidget {
         ),
       );
     }
-        return ListView.separated(
+    return ListView.separated(
       shrinkWrap: true,
       physics: const NeverScrollableScrollPhysics(),
-          padding: const EdgeInsets.symmetric(horizontal: 12),
+      padding: const EdgeInsets.symmetric(horizontal: 12),
       itemCount: results.length,
       separatorBuilder: (_, _) => const SizedBox(height: 8),
       itemBuilder: (_, i) => StaggeredEntrance(
@@ -616,7 +620,7 @@ class _DiscoverMangaResults extends StatelessWidget {
         ),
       );
     }
-        final sections = sourceResults.where(
+    final sections = sourceResults.where(
       (src) => (src['mangas'] as List?)?.isNotEmpty ?? false,
     );
     return ListView.separated(
@@ -711,7 +715,7 @@ class _ResultCard extends StatelessWidget {
                   children: [
                     ClipRRect(
                       borderRadius: BorderRadius.circular(6),
-                                            child: result.poster != null
+                      child: result.poster != null
                           ? Image(
                               image: cachedCover(result.poster!),
                               width: 48,
@@ -859,7 +863,7 @@ class _GridResultCard extends StatelessWidget {
                 borderRadius: const BorderRadius.vertical(
                   top: Radius.circular(18),
                 ),
-                                child: result.poster != null
+                child: result.poster != null
                     ? Image(
                         image: cachedCover(result.poster!),
                         width: double.infinity,
@@ -966,11 +970,7 @@ class _MangaCard extends ConsumerWidget {
   final VoidCallback onTap;
   final String? sourceId;
 
-  const _MangaCard({
-    required this.manga,
-    required this.onTap,
-    this.sourceId,
-  });
+  const _MangaCard({required this.manga, required this.onTap, this.sourceId});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -978,9 +978,7 @@ class _MangaCard extends ConsumerWidget {
     final title = manga['title'] as String? ?? '';
     final thumb = manga['thumbnail_url'] as String?;
     final headers = sourceId != null
-        ? ref
-        .watch(sourceImageHeadersProvider(sourceId!))
-        .value
+        ? ref.watch(sourceImageHeadersProvider(sourceId!)).value
         : null;
     return AnimatedPress(
       onTap: onTap,
@@ -997,7 +995,7 @@ class _MangaCard extends ConsumerWidget {
             Expanded(
               child: thumb != null && thumb.isNotEmpty
                   ? Image(
-                image: cachedCover(thumb, headers: headers),
+                      image: cachedCover(thumb, headers: headers),
                       width: double.infinity,
                       fit: BoxFit.cover,
                       errorBuilder: (_, _, _) => _placeholder(c),
