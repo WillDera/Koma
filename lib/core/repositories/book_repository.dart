@@ -221,6 +221,21 @@ class BookRepository {
     });
   }
 
+  /// Records the paginated reading position for a chapter.
+  ///
+  /// Kept separate from [updateChapterScroll] so the two layout modes never
+  /// clobber each other's position: scroll mode writes pixels, paginated mode
+  /// writes character offsets, and switching modes reads whichever it needs.
+  Future<void> updateChapterReadingOffset(int chapterId,
+      int charOffset,) async {
+    await _isar.writeTxn(() async {
+      final row = await _isar.chapters.get(chapterId);
+      if (row == null) return;
+      row.readingCharOffset = charOffset;
+      await _isar.chapters.put(row);
+    });
+  }
+
   Future<void> updateChapterReadAt(int chapterId, DateTime readAt) async {
     await _isar.writeTxn(() async {
       final row = await _isar.chapters.get(chapterId);
@@ -307,6 +322,7 @@ class BookRepository {
         index: c.index,
         readAt: c.readAt,
         scrollPosition: c.scrollPosition,
+    readingCharOffset: c.readingCharOffset,
       );
 
   static i.Chapter _chapterFromModel(Chapter c) => i.Chapter(
@@ -317,6 +333,7 @@ class BookRepository {
         index: c.index,
         readAt: c.readAt,
         scrollPosition: c.scrollPosition,
+    readingCharOffset: c.readingCharOffset,
       );
 
   static Highlight _highlightToModel(i.Highlight h) => Highlight(

@@ -55,6 +55,12 @@ class ReaderNotifier extends Notifier<ReaderState> {
   Timer? _scrollPersistTimer;
   double? _pendingScroll;
 
+  /// Reading position per chapter index, as a character offset. Populated from
+  /// storage on load and updated as paginated mode turns pages.
+  final Map<int, int> _chapterReadingOffsets = {};
+  Timer? _offsetPersistTimer;
+  int? _pendingOffset;
+
   @override
   ReaderState build() => const ReaderState();
 
@@ -87,8 +93,11 @@ class ReaderNotifier extends Notifier<ReaderState> {
         }
         final currentChapter = chapters[currentIndex];
         _chapterScrollPositions.clear();
+        _chapterReadingOffsets.clear();
         for (var i = 0; i < chapters.length; i++) {
           _chapterScrollPositions[i] = chapters[i].scrollPosition;
+          final off = chapters[i].readingCharOffset;
+          if (off != null) _chapterReadingOffsets[i] = off;
         }
         final chPos = _chapterScrollPositions[currentIndex] ?? 0.0;
         final scrollPos =
@@ -118,7 +127,10 @@ class ReaderNotifier extends Notifier<ReaderState> {
 
   void navigateToChapter(int index) {
     if (index < 0 || index >= state.chapters.length) return;
+    // Both flushes must happen while currentChapter is still the outgoing one,
+    // otherwise the pending position is written against the wrong chapter.
     _flushPendingScroll();
+    _flushPendingOffset();
     final chapter = state.chapters[index];
     final scrollPos = _chapterScrollPositions[index] ?? 0.0;
     state = state.copyWith(
@@ -164,6 +176,34 @@ class ReaderNotifier extends Notifier<ReaderState> {
     await repos.books.updateChapterScroll(ch.id, pos);
   }
 
+  /// The stored character offset for a chapter, or null if none was recorded.
+  int? readingOffsetFor(int chapterIndex) =>
+      _chapterReadingOffsets[chapterIndex];
+
+  /// Records the paginated reading position, debounced like scroll.
+  ///
+  /// Page turns are far less frequent than scroll ticks, but a fast flick
+  /// through several pages still shouldn't mean a write per page.
+  void updateReadingOffset(int charOffset) {
+    _chapterReadingOffsets[state.currentIndex] = charOffset;
+    _pendingOffset = charOffset;
+    _offsetPersistTimer?.cancel();
+    _offsetPersistTimer = Timer(const Duration(milliseconds: 1500), () {
+      _flushPendingOffset();
+    });
+  }
+
+  Future<void> _flushPendingOffset() async {
+    _offsetPersistTimer?.cancel();
+    _offsetPersistTimer = null;
+    final off = _pendingOffset;
+    final ch = state.currentChapter;
+    if (off == null || ch == null) return;
+    _pendingOffset = null;
+    final repos = ref.watch(repositoriesProvider);
+    await repos.books.updateChapterReadingOffset(ch.id, off);
+  }
+
   Future<void> _updateBookProgress() async {
     final book = state.book;
     if (book == null || state.chapters.isEmpty) return;
@@ -203,6 +243,7 @@ class ReaderNotifier extends Notifier<ReaderState> {
       stats.trackReading(state.book?.id ?? 0, _elapsedSeconds % 30);
     }
     await _flushPendingScroll();
+    await _flushPendingOffset();
     final book = state.book;
     if (book != null &&
         state.currentIndex == state.chapters.length - 1 &&
