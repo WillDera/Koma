@@ -807,7 +807,13 @@ final bookId = await provider.addBook(book);
   void _openReader(BuildContext context, int bookId) {
     context.pushNamed(
       Routes.reader,
-      extra: (bookId: bookId, snippetChapterId: null, snippetScrollOffset: null)
+      extra: (
+      bookId: bookId,
+      snippetChapterId: null,
+      snippetScrollOffset: null,
+      snippetStartOffset: null,
+      snippetEndOffset: null,
+      )
           as ReaderArgs,
     );
   }

@@ -252,7 +252,9 @@ class _SnippetsScreenState extends ConsumerState<SnippetsScreen> {
                           context,
                           entry.$2.bookId!,
                           chapterId: entry.$2.chapterId,
-                          scrollOffset: entry.$2.scrollPosition)
+                      scrollOffset: entry.$2.scrollPosition,
+                      startOffset: entry.$2.startOffset,
+                      endOffset: entry.$2.endOffset)
                       : null,
                 ),
               ),
@@ -363,13 +365,18 @@ class _SnippetsScreenState extends ConsumerState<SnippetsScreen> {
   }
 
   void _openBookReader(BuildContext context, int bookId,
-      {int? chapterId, double? scrollOffset}) {
+      {int? chapterId,
+        double? scrollOffset,
+        int? startOffset,
+        int? endOffset}) {
     context.pushNamed(
       Routes.reader,
       extra: (
         bookId: bookId,
         snippetChapterId: chapterId,
         snippetScrollOffset: scrollOffset,
+      snippetStartOffset: startOffset,
+      snippetEndOffset: endOffset,
       ),
     );
   }

@@ -7,6 +7,7 @@ import 'package:koma/core/isar/isar.dart'
     show openIsarInMemory;
 import 'package:koma/core/models/book.dart';
 import 'package:koma/core/models/chapter.dart';
+import 'package:koma/core/models/highlight.dart';
 import 'package:koma/core/models/manga.dart';
 import 'package:koma/core/models/manga_chapter.dart';
 import 'package:koma/core/repositories/book_repository.dart';
@@ -50,6 +51,68 @@ void main() {
       expect(fetched!.title, 'The Odyssey');
       expect(fetched.author, 'Homer');
       expect(fetched.progress, 0.3);
+    });
+
+    test('insertHighlight returns the stored id', () async {
+      final repo = BookRepository(isar);
+      final bookId = await repo.insertBook(
+          Book(id: 0, title: 'B', source: 'local'));
+      final chId = await repo.insertChapter(
+          Chapter(id: 0,
+              bookId: bookId,
+              title: 'C',
+              content: 'x',
+              index: 0));
+
+      // The reader keeps an in-memory copy of each new mark. It needs the real
+      // id, or its copy can never be matched against the stored row.
+      final id = await repo.insertHighlight(Highlight(
+        id: 0,
+        bookId: bookId,
+        chapterId: chId,
+        startOffset: 10,
+        endOffset: 20,
+        color: 'yellow',
+        text: 'ten chars',
+      ));
+      expect(id, greaterThan(0));
+
+      final stored = await repo.getHighlightsForChapter(chId);
+      expect(stored.single.id, id);
+    });
+
+    test('a caller can append to the highlights it fetched', () async {
+      // Regression: getHighlightsForChapter returns toList(growable: false),
+      // and the reader assigned that list straight to its mutable field, so
+      // marking text threw "cannot add to a fixed-length list". The repository
+      // contract is deliberate — read-only snapshots — so the fix is that
+      // consumers copy. This pins the behaviour the reader depends on.
+      final repo = BookRepository(isar);
+      final bookId = await repo.insertBook(
+          Book(id: 0, title: 'B', source: 'local'));
+      final chId = await repo.insertChapter(
+          Chapter(id: 0,
+              bookId: bookId,
+              title: 'C',
+              content: 'x',
+              index: 0));
+      await repo.insertHighlight(Highlight(
+        id: 0,
+        bookId: bookId,
+        chapterId: chId,
+        startOffset: 0,
+        endOffset: 5,
+        color: 'yellow',
+        text: 'first',
+      ));
+
+      final fetched = await repo.getHighlightsForChapter(chId);
+      // The snapshot itself is fixed-length, by design.
+      expect(() => fetched.add(fetched.first), throwsUnsupportedError);
+      // A copy is what the reader must hold, and it must accept new marks.
+      final working = List<Highlight>.of(fetched);
+      working.add(fetched.first);
+      expect(working, hasLength(2));
     });
 
     test('a new chapter has no reading offset recorded', () async {
