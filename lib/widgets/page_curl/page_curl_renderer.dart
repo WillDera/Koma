@@ -51,10 +51,17 @@ class PageCurlRenderer extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
     final current = currentPage;
-    if (!state.active || current == null || state.progress <= 0.0005) {
+    if (!state.active || current == null) {
       // Idle: the host draws live widgets, not textures. Nothing to composite.
       return;
     }
+
+    // Note there is deliberately no lower bound on progress here. The outgoing
+    // page goes offstage the moment a turn becomes active, which happens on
+    // pointer-down — before any movement. Skipping the paint at progress 0
+    // would leave the page underneath exposed for as long as a finger rested on
+    // an edge. At progress 0 the mesh is flat and the sheet covers the page
+    // exactly, so this draws a pixel-identical stand-in for the live widget.
 
     mesh.config = config;
     final data = mesh.deform(

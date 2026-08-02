@@ -1,3 +1,5 @@
+import 'dart:ui' as ui;
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:koma/widgets/page_curl/page_curl.dart';
@@ -189,4 +191,85 @@ void main() {
     await gesture.up();
     await tester.pumpAndSettle();
   });
+
+  testWidgets('holding an edge without moving never reveals the neighbour',
+          (tester) async {
+        // Regression: a turn becomes active on pointer-down, at progress 0. The
+        // painter used to skip progress <= 0.0005, so while the finger rested on an
+        // edge the outgoing page was offstage and *nothing* painted over it — the
+        // incoming page underneath showed through as a text glitch before the swipe
+        // even started.
+        final changes = <int>[];
+        var index = 0;
+        await tester.pumpWidget(
+          MaterialApp(
+            home: Scaffold(
+              body: StatefulBuilder(
+                builder: (context, setState) =>
+                    PageCurlView(
+                      pageIndex: index,
+                      onPageChanged: (i) {
+                        changes.add(i);
+                        setState(() => index = i);
+                      },
+                      pageBuilder: (context, i) =>
+                      (i < 0 || i > 9) ? null : plainPage(i),
+                    ),
+              ),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+        final rect = tester.getRect(find.byType(PageCurlView));
+
+        // Press and hold on the right edge strip. No movement at all.
+        final gesture = await tester.startGesture(
+          Offset(rect.right - 20, rect.center.dy),
+        );
+        await tester.pump();
+
+        // The renderer is installed and active even at progress 0.
+        final painter = tester
+            .widget<CustomPaint>(
+          find.descendant(
+            of: find.byType(PageCurlView),
+            matching: find.byType(CustomPaint),
+          ),
+        )
+            .painter;
+        expect(painter, isA<PageCurlRenderer>(),
+            reason: 'a press must engage the turn immediately');
+        final renderer = painter! as PageCurlRenderer;
+        expect(renderer.state.active, isTrue);
+        expect(renderer.state.progress, 0.0,
+            reason: 'the hold is at the very start of the turn');
+
+        // The point of the fix: at progress 0 the painter must still cover the
+        // page. An empty picture still reports nonzero bytes, so assert on actual
+        // pixels instead — the page is white, so the centre must be opaque white,
+        // not the transparency an early return would leave.
+        final recorder = ui.PictureRecorder();
+        renderer.paint(ui.Canvas(recorder), rect.size);
+        final picture = recorder.endRecording();
+        addTearDown(picture.dispose);
+        final w = rect.width.round();
+        final h = rect.height.round();
+        final data = await tester.runAsync(() async {
+          final img = picture.toImageSync(w, h);
+          final d = await img.toByteData(format: ui.ImageByteFormat.rawRgba);
+          img.dispose();
+          return d;
+        });
+        expect(data, isNotNull, reason: 'the painted picture should rasterize');
+        final bytes = data!.buffer.asUint8List();
+        final centreAlpha = bytes[(h ~/ 2) * w * 4 + (w ~/ 2) * 4 + 3];
+        expect(
+          centreAlpha,
+          255,
+          reason: 'a held edge must paint the outgoing page, not nothing',
+        );
+
+        await gesture.up();
+        await tester.pumpAndSettle();
+      });
 }
