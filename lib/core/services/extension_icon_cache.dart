@@ -103,7 +103,6 @@ class ExtensionIconCache {
         '/src/$lang/$name/res/mipmap-xhdpi/ic_launcher.png';
   }
 
-
   /// Fetch the full Keiyoushi `index.json` (~1.3 MB) once, extract every
   /// `packageName → resources.iconUrl` pair, and persist them. Parsing runs
   /// in a background isolate so the UI isolate never blocks on the large
@@ -133,9 +132,7 @@ class ExtensionIconCache {
         return;
       }
       // Decode off the UI isolate — the full index is ~1.3 MB.
-      final pairs = await Isolate.run(
-        () => _parseFullIndexIconUrls(res.body),
-      );
+      final pairs = await Isolate.run(() => _parseFullIndexIconUrls(res.body));
       final prefs = await _sp;
       await prefs.setBool(_populatedKey, true);
       // SharedPreferences has no batch set, so write each pair. There are
@@ -172,4 +169,3 @@ class ExtensionIconCache {
     return out;
   }
 }
-

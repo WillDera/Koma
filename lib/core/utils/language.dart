@@ -16,8 +16,9 @@ String completeLanguageName(String lang) {
 int compareVersions(String v1, String v2) {
   final v1Parts = v1.split('.');
   final v2Parts = v2.split('.');
-  final minLength =
-      v1Parts.length < v2Parts.length ? v1Parts.length : v2Parts.length;
+  final minLength = v1Parts.length < v2Parts.length
+      ? v1Parts.length
+      : v2Parts.length;
 
   for (var i = 0; i < minLength; i++) {
     final v1Value = int.parse(v1Parts[i].padRight(2, '0'));

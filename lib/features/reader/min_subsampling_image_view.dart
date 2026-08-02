@@ -28,17 +28,17 @@ class MinSubsamplingImageImageView extends StatefulWidget {
   });
 
   @override
-  State<MinSubsamplingImageImageView> createState() => _MinSubsamplingImageImageViewState();
+  State<MinSubsamplingImageImageView> createState() =>
+      _MinSubsamplingImageImageViewState();
 }
 
-class _MinSubsamplingImageImageViewState extends State<MinSubsamplingImageImageView> {
-
+class _MinSubsamplingImageImageViewState
+    extends State<MinSubsamplingImageImageView> {
   @override
   void didUpdateWidget(covariant MinSubsamplingImageImageView oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.imageUrl != widget.imageUrl ||
-        oldWidget.localPath != widget.localPath) {
-    }
+        oldWidget.localPath != widget.localPath) {}
   }
 
   @override
@@ -50,8 +50,8 @@ class _MinSubsamplingImageImageViewState extends State<MinSubsamplingImageImageV
       source = NetworkImage(widget.imageUrl ?? '');
     }
 
-    final effectiveMinScale = widget.minScale ??
-        (widget.cropBorders ? 1.0 : 0.8);
+    final effectiveMinScale =
+        widget.minScale ?? (widget.cropBorders ? 1.0 : 0.8);
 
     return SubsamplingScaleImageView(
       image: source,

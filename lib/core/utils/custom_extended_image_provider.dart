@@ -488,12 +488,12 @@ class CustomExtendedNetworkImageProvider
     };
     request.headers.addAll(optimizedHeaders);
 
-    // Some sources serve images from their own site / a subdomain of it
-    // (e.g. readcomicsonline.ru serving from cdn.readcomicsonline.ru) and their
-    // Cloudflare config challenges ANY request that carries a Referer — even
-    // the source's own — so strip the Referer when the image host is the
-    // source host or one of its subdomains. Cross-site CDNs (fmcdn.mfcdn.net
-    // for mangafox) instead REQUIRE the Referer, which is kept here.
+    // Same-site *CDN subdomains* (e.g. cdn.readcomicsonline.ru) challenge any
+    // Referer — strip only for those. Apex-host covers
+    // (readcomicsonline.ru/uploads/...) need the source Referer; stripping it
+    // yields Cloudflare 403s on search/discover results even with a valid
+    // cf_clearance. Cross-site CDNs (fmcdn.mfcdn.net) also keep Referer.
+    // mangayomi never strips Referer; this is the narrow exception for CDN hosts.
     String? refererKey;
     String? referer;
     request.headers.forEach((key, value) {
@@ -508,7 +508,8 @@ class CustomExtendedNetworkImageProvider
       if (sourceHost != null &&
           sourceHost.isNotEmpty &&
           imageHost.isNotEmpty &&
-          (imageHost == sourceHost || imageHost.endsWith('.$sourceHost'))) {
+          imageHost != sourceHost &&
+          imageHost.endsWith('.$sourceHost')) {
         request.headers.remove(refererKey);
       }
     }

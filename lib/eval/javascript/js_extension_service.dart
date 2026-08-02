@@ -31,48 +31,54 @@ class JsExtensionService implements ExtensionService {
       'source.getPopular($page)',
     );
     return results
-        .map((r) => MManga(
-              url: r['url'] as String? ?? '',
-              title: r['title'] as String? ?? '',
-              thumbnailUrl: r['thumbnail_url'] as String?,
-              author: r['author'] as String?,
-              artist: r['artist'] as String?,
-              description: r['description'] as String?,
-              status: r['status'] as int? ?? 0,
-              genres: r['genre'] != null
-                  ? (r['genre'] as String)
+        .map(
+          (r) => MManga(
+            url: r['url'] as String? ?? '',
+            title: r['title'] as String? ?? '',
+            thumbnailUrl: r['thumbnail_url'] as String?,
+            author: r['author'] as String?,
+            artist: r['artist'] as String?,
+            description: r['description'] as String?,
+            status: r['status'] as int? ?? 0,
+            genres: r['genre'] != null
+                ? (r['genre'] as String)
                       .split(',')
                       .map((g) => g.trim())
                       .toList()
-                  : null,
-            ))
+                : null,
+          ),
+        )
         .toList();
   }
 
   @override
-  Future<List<MManga>> getLatestUpdates(int page,
-      {required MSource source}) async {
+  Future<List<MManga>> getLatestUpdates(
+    int page, {
+    required MSource source,
+  }) async {
     final rt = _ensureRuntime();
     final results = rt.evaluateMangaList(
       source.sourceCode ?? '',
       'source.getLatestUpdates($page)',
     );
     return results
-        .map((r) => MManga(
-              url: r['url'] as String? ?? '',
-              title: r['title'] as String? ?? '',
-              thumbnailUrl: r['thumbnail_url'] as String?,
-              author: r['author'] as String?,
-              artist: r['artist'] as String?,
-              description: r['description'] as String?,
-              status: r['status'] as int? ?? 0,
-              genres: r['genre'] != null
-                  ? (r['genre'] as String)
+        .map(
+          (r) => MManga(
+            url: r['url'] as String? ?? '',
+            title: r['title'] as String? ?? '',
+            thumbnailUrl: r['thumbnail_url'] as String?,
+            author: r['author'] as String?,
+            artist: r['artist'] as String?,
+            description: r['description'] as String?,
+            status: r['status'] as int? ?? 0,
+            genres: r['genre'] != null
+                ? (r['genre'] as String)
                       .split(',')
                       .map((g) => g.trim())
                       .toList()
-                  : null,
-            ))
+                : null,
+          ),
+        )
         .toList();
   }
 
@@ -92,21 +98,23 @@ class JsExtensionService implements ExtensionService {
       'source.search("$query", $page, $filtersJson)',
     );
     return results
-        .map((r) => MManga(
-              url: r['url'] as String? ?? '',
-              title: r['title'] as String? ?? '',
-              thumbnailUrl: r['thumbnail_url'] as String?,
-              author: r['author'] as String?,
-              artist: r['artist'] as String?,
-              description: r['description'] as String?,
-              status: r['status'] as int? ?? 0,
-              genres: r['genre'] != null
-                  ? (r['genre'] as String)
+        .map(
+          (r) => MManga(
+            url: r['url'] as String? ?? '',
+            title: r['title'] as String? ?? '',
+            thumbnailUrl: r['thumbnail_url'] as String?,
+            author: r['author'] as String?,
+            artist: r['artist'] as String?,
+            description: r['description'] as String?,
+            status: r['status'] as int? ?? 0,
+            genres: r['genre'] != null
+                ? (r['genre'] as String)
                       .split(',')
                       .map((g) => g.trim())
                       .toList()
-                  : null,
-            ))
+                : null,
+          ),
+        )
         .toList();
   }
 
@@ -128,9 +136,7 @@ class JsExtensionService implements ExtensionService {
       source.sourceCode ?? '',
       'source.getChapterList("$url")',
     );
-    return results
-        .map((e) => MChapter.fromDynamic(e))
-        .toList();
+    return results.map((e) => MChapter.fromDynamic(e)).toList();
   }
 
   @override
@@ -164,7 +170,10 @@ class JsExtensionService implements ExtensionService {
   }
 
   @override
-  Future<void> saveSourcePreference(MSource source, SourcePreference pref) async {
+  Future<void> saveSourcePreference(
+    MSource source,
+    SourcePreference pref,
+  ) async {
     final rt = _ensureRuntime();
     rt.evaluate(
       'source.saveSourcePreference("${pref.key}", ${_jsStringify(pref.defaultValue)})',

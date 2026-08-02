@@ -1,13 +1,15 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-import '../../core/providers.dart';
-import '../../router/router.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+
 import '../../core/models/book.dart';
 import '../../core/models/chapter.dart' as ch_model;
 import '../../core/models/snippet.dart';
+import '../../core/providers.dart';
 import '../../core/services/search_service.dart';
+import '../../router/router.dart';
+import '../../theme/app_icons.dart';
 import '../../theme/app_theme.dart';
 import '../../theme/theme_provider.dart';
 import '../../theme/tokens/app_spacing.dart';
@@ -96,7 +98,9 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
     }
     setState(() => _searching = true);
     try {
-      final results = await ref.read(searchServiceProvider).searchAll(query.trim());
+      final results = await ref
+          .read(searchServiceProvider)
+          .searchAll(query.trim());
       if (!mounted) return;
       setState(() => _results = results);
       _saveSearch(query.trim());
@@ -169,7 +173,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
     if (_query.isEmpty) return _buildIdle(context);
     if (_results.isEmpty) {
       return EmptyState(
-        icon: Icons.search_off,
+        icon: AppIcons.search,
         title: 'No results',
         subtitle: 'Nothing matched "$_query". Try a different keyword.',
       );
@@ -181,7 +185,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
     final c = context.colors;
     if (_recentSearches.isEmpty) {
       return EmptyState(
-        icon: Icons.search,
+        icon: AppIcons.search,
         title: 'Search your library',
         subtitle:
             'Type a title, author, phrase, or tag. Results stream as you type.',
@@ -225,8 +229,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
             },
             child: Container(
               margin: const EdgeInsets.only(bottom: 6),
-              padding: const EdgeInsets.symmetric(
-                  horizontal: 16, vertical: 14),
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
               decoration: BoxDecoration(
                 color: c.surface,
                 borderRadius: AppSpacing.brLg,
@@ -246,11 +249,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
                       ),
                     ),
                   ),
-                  Icon(
-                    Icons.north_west,
-                    size: 16,
-                    color: c.textTertiary,
-                  ),
+                  Icon(Icons.north_west, size: 16, color: c.textTertiary),
                 ],
               ),
             ),
@@ -272,28 +271,34 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
         if (books.isNotEmpty) ...[
           _sectionHeader('Books', books.length),
           const SizedBox(height: 8),
-          ...books.map((r) => Padding(
-                padding: const EdgeInsets.only(bottom: 8),
-                child: _bookResult(r),
-              )),
+          ...books.map(
+            (r) => Padding(
+              padding: const EdgeInsets.only(bottom: 8),
+              child: _bookResult(r),
+            ),
+          ),
         ],
         if (chapters.isNotEmpty) ...[
           const SizedBox(height: 16),
           _sectionHeader('Chapters', chapters.length),
           const SizedBox(height: 8),
-          ...chapters.map((r) => Padding(
-                padding: const EdgeInsets.only(bottom: 8),
-                child: _chapterResult(r),
-              )),
+          ...chapters.map(
+            (r) => Padding(
+              padding: const EdgeInsets.only(bottom: 8),
+              child: _chapterResult(r),
+            ),
+          ),
         ],
         if (snippets.isNotEmpty) ...[
           const SizedBox(height: 16),
           _sectionHeader('Snippets', snippets.length),
           const SizedBox(height: 8),
-          ...snippets.map((r) => Padding(
-                padding: const EdgeInsets.only(bottom: 8),
-                child: _snippetResult(r),
-              )),
+          ...snippets.map(
+            (r) => Padding(
+              padding: const EdgeInsets.only(bottom: 8),
+              child: _snippetResult(r),
+            ),
+          ),
         ],
       ],
     );
@@ -369,8 +374,15 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
     if (bookId == 0) return;
     context.pushNamed(
       Routes.reader,
-      extra: (bookId: bookId, snippetChapterId: null, snippetScrollOffset: null)
-          as ReaderArgs,
+      extra:
+          (
+                bookId: bookId,
+                snippetChapterId: null,
+                snippetScrollOffset: null,
+                snippetStartOffset: null,
+                snippetEndOffset: null,
+              )
+              as ReaderArgs,
     );
   }
 }

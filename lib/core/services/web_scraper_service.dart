@@ -21,10 +21,9 @@ class WebScraperService {
   Future<WebScrapeResult> fetchContent(String url) async {
     try {
       final uri = Uri.parse(url);
-      final response = await http.get(
-        uri,
-        headers: {'User-Agent': _userAgent},
-      ).timeout(const Duration(seconds: 15));
+      final response = await http
+          .get(uri, headers: {'User-Agent': _userAgent})
+          .timeout(const Duration(seconds: 15));
 
       if (response.statusCode != 200) {
         throw Exception('HTTP ${response.statusCode}: Failed to fetch $url');
@@ -143,10 +142,31 @@ class WebScraperService {
     if (body == null) return html;
 
     final allowedTags = <String>{
-      'p', 'br', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6',
-      'ul', 'ol', 'li', 'a', 'strong', 'em', 'b', 'i',
-      'blockquote', 'pre', 'code', 'hr', 'div', 'span',
-      'img', 'figure', 'figcaption',
+      'p',
+      'br',
+      'h1',
+      'h2',
+      'h3',
+      'h4',
+      'h5',
+      'h6',
+      'ul',
+      'ol',
+      'li',
+      'a',
+      'strong',
+      'em',
+      'b',
+      'i',
+      'blockquote',
+      'pre',
+      'code',
+      'hr',
+      'div',
+      'span',
+      'img',
+      'figure',
+      'figcaption',
     };
 
     final buffer = StringBuffer();
@@ -154,7 +174,11 @@ class WebScraperService {
     return buffer.toString();
   }
 
-  void _extractAllowedContent(dom.Node node, Set<String> allowedTags, StringBuffer buffer) {
+  void _extractAllowedContent(
+    dom.Node node,
+    Set<String> allowedTags,
+    StringBuffer buffer,
+  ) {
     if (node is dom.Element) {
       if (allowedTags.contains(node.localName)) {
         buffer.write('<${node.localName}');

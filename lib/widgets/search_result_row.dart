@@ -96,11 +96,7 @@ class SearchResultRow extends StatelessWidget {
             ],
             if (progress != null) ...[
               const SizedBox(width: 8),
-              ProgressRing(
-                progress: progress!,
-                size: 32,
-                strokeWidth: 2.5,
-              ),
+              ProgressRing(progress: progress!, size: 32, strokeWidth: 2.5),
             ],
           ],
         ),

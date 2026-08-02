@@ -25,7 +25,10 @@ class KeiyoushiExtensionService implements ExtensionService {
   }
 
   @override
-  Future<List<MManga>> getLatestUpdates(int page, {required MSource source}) async {
+  Future<List<MManga>> getLatestUpdates(
+    int page, {
+    required MSource source,
+  }) async {
     final result = await _keiyoushi.getLatestUpdates(
       sourceId: source.sourceId,
       page: page,
@@ -104,6 +107,8 @@ class KeiyoushiExtensionService implements ExtensionService {
   }
 
   @override
-  Future<void> saveSourcePreference(MSource source, SourcePreference pref) async {
-  }
+  Future<void> saveSourcePreference(
+    MSource source,
+    SourcePreference pref,
+  ) async {}
 }

@@ -30,40 +30,40 @@ class MSource {
   bool get isNative => sourceType == SourceType.mihon;
 
   Map<String, dynamic> toJson() => {
-        'id': id,
-        'sourceId': sourceId,
-        'name': name,
-        'lang': lang,
-        'baseUrl': baseUrl,
-        'version': version,
-        if (sourceCode != null) 'sourceCode': sourceCode,
-        if (apkPath != null) 'apkPath': apkPath,
-        if (className != null) 'className': className,
-        'sourceType': sourceType.name,
-      };
+    'id': id,
+    'sourceId': sourceId,
+    'name': name,
+    'lang': lang,
+    'baseUrl': baseUrl,
+    'version': version,
+    if (sourceCode != null) 'sourceCode': sourceCode,
+    if (apkPath != null) 'apkPath': apkPath,
+    if (className != null) 'className': className,
+    'sourceType': sourceType.name,
+  };
 
   factory MSource.fromJson(Map<String, dynamic> json) => MSource(
-        id: json['id'] as String? ?? '',
-        sourceId: json['sourceId'] as String? ?? json['id'] as String? ?? '',
-        name: json['name'] as String? ?? '',
-        lang: json['lang'] as String? ?? 'en',
-        baseUrl: json['baseUrl'] as String? ?? '',
-        version: json['version'] as String? ?? '1.0',
-        sourceCode: json['sourceCode'] as String?,
-        apkPath: json['apkPath'] as String?,
-        className: json['className'] as String?,
-        sourceType: json['sourceType'] == 'js' ? SourceType.js : SourceType.mihon,
-      );
+    id: json['id'] as String? ?? '',
+    sourceId: json['sourceId'] as String? ?? json['id'] as String? ?? '',
+    name: json['name'] as String? ?? '',
+    lang: json['lang'] as String? ?? 'en',
+    baseUrl: json['baseUrl'] as String? ?? '',
+    version: json['version'] as String? ?? '1.0',
+    sourceCode: json['sourceCode'] as String?,
+    apkPath: json['apkPath'] as String?,
+    className: json['className'] as String?,
+    sourceType: json['sourceType'] == 'js' ? SourceType.js : SourceType.mihon,
+  );
 
   factory MSource.fromExtensionSource(dynamic ext) => MSource(
-        id: ext.id as String,
-        sourceId: (ext.sourceId as String?) ?? ext.id as String,
-        name: ext.name as String,
-        lang: (ext.lang as String?) ?? 'en',
-        baseUrl: (ext.baseUrl as String?) ?? '',
-        version: (ext.version as String?) ?? '1.0',
-        apkPath: ext.apkPath as String?,
-        className: ext.className as String?,
-        sourceType: SourceType.mihon,
-      );
+    id: ext.id as String,
+    sourceId: (ext.sourceId as String?) ?? ext.id as String,
+    name: ext.name as String,
+    lang: (ext.lang as String?) ?? 'en',
+    baseUrl: (ext.baseUrl as String?) ?? '',
+    version: (ext.version as String?) ?? '1.0',
+    apkPath: ext.apkPath as String?,
+    className: ext.className as String?,
+    sourceType: SourceType.mihon,
+  );
 }

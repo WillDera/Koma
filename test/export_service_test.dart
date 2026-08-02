@@ -67,10 +67,7 @@ void main() {
     });
 
     test('Snippet with null optional fields round-trips', () {
-      final snippet = Snippet(
-        id: 2,
-        text: 'Minimal snippet',
-      );
+      final snippet = Snippet(id: 2, text: 'Minimal snippet');
 
       final json = snippet.toJson();
       final restored = Snippet.fromJson(json);
@@ -99,32 +96,41 @@ void main() {
     });
 
     test('export then import restores books, chapters, snippets', () async {
-      final bookId = await repos.books.insertBook(Book(
-        id: 0,
-        title: 'Lord of Mysteries',
-        author: 'Cuttlefish',
-        source: 'local',
-        progress: 0,
-        totalChapters: 5,
-      ));
+      final bookId = await repos.books.insertBook(
+        Book(
+          id: 0,
+          title: 'Lord of Mysteries',
+          author: 'Cuttlefish',
+          source: 'local',
+          progress: 0,
+          totalChapters: 5,
+        ),
+      );
       await repos.books.insertChapters([
         Chapter(
-            id: 0,
-            bookId: bookId,
-            title: 'Chapter 1',
-            content: 'Clown content',
-            index: 0,
-            scrollPosition: 12.5),
+          id: 0,
+          bookId: bookId,
+          title: 'Chapter 1',
+          content: 'Clown content',
+          index: 0,
+          scrollPosition: 12.5,
+        ),
         Chapter(
-            id: 0,
-            bookId: bookId,
-            title: 'Chapter 2',
-            content: 'More content',
-            index: 1,
-            scrollPosition: 200,
-            readAt: DateTime(2026, 1, 1)),
+          id: 0,
+          bookId: bookId,
+          title: 'Chapter 2',
+          content: 'More content',
+          index: 1,
+          scrollPosition: 200,
+          readAt: DateTime(2026, 1, 1),
+        ),
         Chapter(
-            id: 0, bookId: bookId, title: 'Chapter 3', content: '...', index: 2),
+          id: 0,
+          bookId: bookId,
+          title: 'Chapter 3',
+          content: '...',
+          index: 2,
+        ),
       ]);
       final saved = await repos.books.getChapters(bookId);
       await repos.snippets.createSnippet(
@@ -171,14 +177,19 @@ void main() {
     });
 
     test('import skips duplicate books by title+author', () async {
-      await repos.books.insertBook(Book(
-        id: 0, title: 'Existing', author: 'Author', source: 'local',
-      ));
+      await repos.books.insertBook(
+        Book(id: 0, title: 'Existing', author: 'Author', source: 'local'),
+      );
       final json = jsonEncode({
         'version': 2,
         'exported_at': DateTime.now().toIso8601String(),
         'books': [
-          Book(id: 99, title: 'Existing', author: 'Author', source: 'local').toJson(),
+          Book(
+            id: 99,
+            title: 'Existing',
+            author: 'Author',
+            source: 'local',
+          ).toJson(),
         ],
         'chapters': <Map<String, dynamic>>[],
         'snippets': <Map<String, dynamic>>[],

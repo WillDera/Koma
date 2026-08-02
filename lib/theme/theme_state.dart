@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+
 import 'tokens/app_colors.dart';
 import 'tokens/app_type.dart';
 
@@ -30,6 +31,8 @@ class ThemeState {
     this.systemFontFamily,
     this.showNsfwExtensions = false,
     this.showObsoleteExtensions = false,
+    this.immersiveAutoHide = false,
+    this.pageStyle = PageStyle.scroll,
   });
 
   final ThemeMode themeMode;
@@ -54,6 +57,11 @@ class ThemeState {
   final String? systemFontFamily;
   final bool showNsfwExtensions;
   final bool showObsoleteExtensions;
+  final bool immersiveAutoHide;
+
+  /// How the ebook reader lays out chapter text. Defaults to [PageStyle.scroll]
+  /// so existing readers are unaffected until they opt in.
+  final PageStyle pageStyle;
 
   // ── Derived getters ────────────────────────────────────────────────
 
@@ -74,6 +82,10 @@ class ThemeState {
         return dark ? AppColors.accentAmberDark : AppColors.accentAmber;
       case AccentPreset.forest:
         return dark ? AppColors.accentForestDark : AppColors.accentForest;
+      case AccentPreset.aethelgard:
+        return dark
+            ? AppColors.aethelgardPrimaryDark
+            : AppColors.aethelgardPrimary;
     }
   }
 
@@ -126,14 +138,16 @@ class ThemeState {
     String? defaultHighlight,
     HandMode? handMode,
     bool? oneHandMode,
-      bool? bionicReading,
-      bool? useDeviceFont,
-      bool? amoledMode,
-      String? systemFontFamily,
-      bool? showNsfwExtensions,
-      bool? showObsoleteExtensions,
-    }) {
-      return ThemeState(
+    bool? bionicReading,
+    bool? useDeviceFont,
+    bool? amoledMode,
+    String? systemFontFamily,
+    bool? showNsfwExtensions,
+    bool? showObsoleteExtensions,
+    bool? immersiveAutoHide,
+    PageStyle? pageStyle,
+  }) {
+    return ThemeState(
       themeMode: themeMode ?? this.themeMode,
       sepiaMode: sepiaMode ?? this.sepiaMode,
       fontFamily: fontFamily ?? this.fontFamily,
@@ -157,14 +171,30 @@ class ThemeState {
       amoledMode: amoledMode ?? this.amoledMode,
       systemFontFamily: systemFontFamily ?? this.systemFontFamily,
       showNsfwExtensions: showNsfwExtensions ?? this.showNsfwExtensions,
-      showObsoleteExtensions: showObsoleteExtensions ?? this.showObsoleteExtensions,
+      showObsoleteExtensions:
+          showObsoleteExtensions ?? this.showObsoleteExtensions,
+      immersiveAutoHide: immersiveAutoHide ?? this.immersiveAutoHide,
+      pageStyle: pageStyle ?? this.pageStyle,
     );
   }
 }
 
 enum HandMode { left, right }
 
-enum AccentPreset { indigo, amber, forest }
+/// How the ebook reader presents a chapter.
+///
+/// [scroll] is the long-standing continuous scroll view. [curl] paginates the
+/// chapter and turns pages with an interactive curl.
+enum PageStyle {
+  scroll(label: 'Scroll'),
+  curl(label: 'Curl');
+
+  const PageStyle({required this.label});
+
+  final String label;
+}
+
+enum AccentPreset { indigo, amber, forest, aethelgard }
 
 /// Reading fonts the user can choose from.
 enum ReadingFont {

@@ -34,16 +34,22 @@ class CacheService {
     );
   }
 
-  Future<void> cacheContent(String url, String title, String htmlContent) async {
+  Future<void> cacheContent(
+    String url,
+    String title,
+    String htmlContent,
+  ) async {
     final hash = _urlHash(url);
     await _repos.isar.writeTxn(() async {
-      await _repos.isar.webCaches.put(WebCache(
-        urlHash: hash,
-        url: url,
-        title: title,
-        content: htmlContent,
-        cachedAt: DateTime.now(),
-      ));
+      await _repos.isar.webCaches.put(
+        WebCache(
+          urlHash: hash,
+          url: url,
+          title: title,
+          content: htmlContent,
+          cachedAt: DateTime.now(),
+        ),
+      );
     });
   }
 

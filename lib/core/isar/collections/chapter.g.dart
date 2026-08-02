@@ -21,12 +21,17 @@ const ChapterSchema = CollectionSchema(
     r'content': PropertySchema(id: 1, name: r'content', type: IsarType.string),
     r'index': PropertySchema(id: 2, name: r'index', type: IsarType.long),
     r'readAt': PropertySchema(id: 3, name: r'readAt', type: IsarType.dateTime),
-    r'scrollPosition': PropertySchema(
+    r'readingCharOffset': PropertySchema(
       id: 4,
+      name: r'readingCharOffset',
+      type: IsarType.long,
+    ),
+    r'scrollPosition': PropertySchema(
+      id: 5,
       name: r'scrollPosition',
       type: IsarType.double,
     ),
-    r'title': PropertySchema(id: 5, name: r'title', type: IsarType.string),
+    r'title': PropertySchema(id: 6, name: r'title', type: IsarType.string),
   },
 
   estimateSize: _chapterEstimateSize,
@@ -79,8 +84,9 @@ void _chapterSerialize(
   writer.writeString(offsets[1], object.content);
   writer.writeLong(offsets[2], object.index);
   writer.writeDateTime(offsets[3], object.readAt);
-  writer.writeDouble(offsets[4], object.scrollPosition);
-  writer.writeString(offsets[5], object.title);
+  writer.writeLong(offsets[4], object.readingCharOffset);
+  writer.writeDouble(offsets[5], object.scrollPosition);
+  writer.writeString(offsets[6], object.title);
 }
 
 Chapter _chapterDeserialize(
@@ -95,8 +101,9 @@ Chapter _chapterDeserialize(
     id: id,
     index: reader.readLong(offsets[2]),
     readAt: reader.readDateTimeOrNull(offsets[3]),
-    scrollPosition: reader.readDoubleOrNull(offsets[4]) ?? 0.0,
-    title: reader.readString(offsets[5]),
+    readingCharOffset: reader.readLongOrNull(offsets[4]),
+    scrollPosition: reader.readDoubleOrNull(offsets[5]) ?? 0.0,
+    title: reader.readString(offsets[6]),
   );
   return object;
 }
@@ -117,8 +124,10 @@ P _chapterDeserializeProp<P>(
     case 3:
       return (reader.readDateTimeOrNull(offset)) as P;
     case 4:
-      return (reader.readDoubleOrNull(offset) ?? 0.0) as P;
+      return (reader.readLongOrNull(offset)) as P;
     case 5:
+      return (reader.readDoubleOrNull(offset) ?? 0.0) as P;
+    case 6:
       return (reader.readString(offset)) as P;
     default:
       throw IsarError('Unknown property with id $propertyId');
@@ -740,6 +749,79 @@ extension ChapterQueryFilter
     });
   }
 
+  QueryBuilder<Chapter, Chapter, QAfterFilterCondition>
+  readingCharOffsetIsNull() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        const FilterCondition.isNull(property: r'readingCharOffset'),
+      );
+    });
+  }
+
+  QueryBuilder<Chapter, Chapter, QAfterFilterCondition>
+  readingCharOffsetIsNotNull() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        const FilterCondition.isNotNull(property: r'readingCharOffset'),
+      );
+    });
+  }
+
+  QueryBuilder<Chapter, Chapter, QAfterFilterCondition>
+  readingCharOffsetEqualTo(int? value) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.equalTo(property: r'readingCharOffset', value: value),
+      );
+    });
+  }
+
+  QueryBuilder<Chapter, Chapter, QAfterFilterCondition>
+  readingCharOffsetGreaterThan(int? value, {bool include = false}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.greaterThan(
+          include: include,
+          property: r'readingCharOffset',
+          value: value,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<Chapter, Chapter, QAfterFilterCondition>
+  readingCharOffsetLessThan(int? value, {bool include = false}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.lessThan(
+          include: include,
+          property: r'readingCharOffset',
+          value: value,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<Chapter, Chapter, QAfterFilterCondition>
+  readingCharOffsetBetween(
+    int? lower,
+    int? upper, {
+    bool includeLower = true,
+    bool includeUpper = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.between(
+          property: r'readingCharOffset',
+          lower: lower,
+          includeLower: includeLower,
+          upper: upper,
+          includeUpper: includeUpper,
+        ),
+      );
+    });
+  }
+
   QueryBuilder<Chapter, Chapter, QAfterFilterCondition> scrollPositionEqualTo(
     double value, {
     double epsilon = Query.epsilon,
@@ -1017,6 +1099,18 @@ extension ChapterQuerySortBy on QueryBuilder<Chapter, Chapter, QSortBy> {
     });
   }
 
+  QueryBuilder<Chapter, Chapter, QAfterSortBy> sortByReadingCharOffset() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'readingCharOffset', Sort.asc);
+    });
+  }
+
+  QueryBuilder<Chapter, Chapter, QAfterSortBy> sortByReadingCharOffsetDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'readingCharOffset', Sort.desc);
+    });
+  }
+
   QueryBuilder<Chapter, Chapter, QAfterSortBy> sortByScrollPosition() {
     return QueryBuilder.apply(this, (query) {
       return query.addSortBy(r'scrollPosition', Sort.asc);
@@ -1104,6 +1198,18 @@ extension ChapterQuerySortThenBy
     });
   }
 
+  QueryBuilder<Chapter, Chapter, QAfterSortBy> thenByReadingCharOffset() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'readingCharOffset', Sort.asc);
+    });
+  }
+
+  QueryBuilder<Chapter, Chapter, QAfterSortBy> thenByReadingCharOffsetDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'readingCharOffset', Sort.desc);
+    });
+  }
+
   QueryBuilder<Chapter, Chapter, QAfterSortBy> thenByScrollPosition() {
     return QueryBuilder.apply(this, (query) {
       return query.addSortBy(r'scrollPosition', Sort.asc);
@@ -1157,6 +1263,12 @@ extension ChapterQueryWhereDistinct
     });
   }
 
+  QueryBuilder<Chapter, Chapter, QDistinct> distinctByReadingCharOffset() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addDistinctBy(r'readingCharOffset');
+    });
+  }
+
   QueryBuilder<Chapter, Chapter, QDistinct> distinctByScrollPosition() {
     return QueryBuilder.apply(this, (query) {
       return query.addDistinctBy(r'scrollPosition');
@@ -1201,6 +1313,12 @@ extension ChapterQueryProperty
   QueryBuilder<Chapter, DateTime?, QQueryOperations> readAtProperty() {
     return QueryBuilder.apply(this, (query) {
       return query.addPropertyName(r'readAt');
+    });
+  }
+
+  QueryBuilder<Chapter, int?, QQueryOperations> readingCharOffsetProperty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addPropertyName(r'readingCharOffset');
     });
   }
 

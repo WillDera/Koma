@@ -11,12 +11,12 @@ import '../services/http/m_client.dart';
 /// User-Agent is returned.
 ///
 /// The `Referer` always ends with `/` to match the extensions' own
-/// `headersBuilder()` (e.g. mmrcms adds `"$baseUrl/"`). Note that
-/// `custom_extended_image_provider.dart` strips the Referer at request time
-/// when the image host is the source's own site or a subdomain of it —
-/// same-site CDNs like readcomicsonline's `cdn.readcomicsonline.ru` challenge
-/// ANY Referer, while cross-site CDNs like mangafox's `fmcdn.mfcdn.net`
-/// require one.
+/// `headersBuilder()` (e.g. mmrcms adds `"$baseUrl/"`). At request time,
+/// `custom_extended_image_provider.dart` strips Referer only for same-site
+/// *CDN subdomains* (e.g. `cdn.readcomicsonline.ru`) that challenge any
+/// Referer. Apex-host covers (`readcomicsonline.ru/uploads/...`) keep the
+/// Referer — without it Cloudflare returns 403 even with `cf_clearance`.
+/// Cross-site CDNs (mangafox `fmcdn.mfcdn.net`) also keep Referer.
 ///
 /// Cookies are NOT injected here: [MCookieManager] (via `MClient.init`) adds
 /// the stored `Cookie` header at request time, so a freshly-solved

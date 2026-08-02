@@ -36,8 +36,7 @@ class SnippetsState {
     } else if (filterCollectionId == -1) {
       // -1 means show all
     } else {
-      items =
-          items.where((s) => s.collectionId == filterCollectionId).toList();
+      items = items.where((s) => s.collectionId == filterCollectionId).toList();
     }
     if (filterTag == null) return items;
     final tag = filterTag;
@@ -148,7 +147,8 @@ class SnippetsNotifier extends Notifier<SnippetsState> {
   Future<int> createCollection(String name, {String color = '#FFD700'}) async {
     final id = await ref
         .read(repositoriesProvider)
-        .snippets.createCollection(name, color: color);
+        .snippets
+        .createCollection(name, color: color);
     await loadSnippets();
     return id;
   }
@@ -167,14 +167,16 @@ class SnippetsNotifier extends Notifier<SnippetsState> {
   }
 
   Future<void> moveSnippetsToCollection(
-      List<int> snippetIds, int? collectionId) async {
-      final repos = ref.read(repositoriesProvider);
-      for (final id in snippetIds) {
-        final snippet =
-            state.allSnippets.firstWhereOrNull((s) => s.id == id);
-        if (snippet != null) {
-          await repos.snippets.updateSnippet(
-            snippet.copyWith(collectionId: collectionId));
+    List<int> snippetIds,
+    int? collectionId,
+  ) async {
+    final repos = ref.read(repositoriesProvider);
+    for (final id in snippetIds) {
+      final snippet = state.allSnippets.firstWhereOrNull((s) => s.id == id);
+      if (snippet != null) {
+        await repos.snippets.updateSnippet(
+          snippet.copyWith(collectionId: collectionId),
+        );
       }
     }
     await loadSnippets();
@@ -229,7 +231,8 @@ class SnippetsNotifier extends Notifier<SnippetsState> {
     if (state.selectedIds.isEmpty) return;
     await ref
         .read(repositoriesProvider)
-        .snippets.deleteSelectedSnippets(state.selectedIds.toList());
+        .snippets
+        .deleteSelectedSnippets(state.selectedIds.toList());
     state = state.copyWith(selectedIds: {}, selectionMode: false);
     await loadSnippets();
   }

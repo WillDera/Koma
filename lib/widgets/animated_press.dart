@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+
 import '../theme/tokens/app_motion.dart';
 
 /// A tappable wrapper that applies a subtle scale-down on press and
@@ -17,7 +18,7 @@ class AnimatedPress extends StatefulWidget {
     required this.child,
     this.onTap,
     this.onLongPress,
-    this.scaleDown = 0.97,
+    this.scaleDown = 0.96,
     this.duration = AppMotion.fast,
     this.behavior = HitTestBehavior.opaque,
   });

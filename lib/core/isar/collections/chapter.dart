@@ -21,6 +21,15 @@ class Chapter {
   /// Per-chapter scroll restoration (parallel to book.scrollPosition).
   double scrollPosition;
 
+  /// Reading position as a character offset into the chapter's extracted plain
+  /// text. Unlike [scrollPosition] this survives a font-size or viewport
+  /// change, so it is what paginated mode restores from.
+  ///
+  /// Null means "never recorded" — a book last read before pagination existed.
+  /// Those fall back to approximating from [scrollPosition] once, after which
+  /// this field takes over.
+  int? readingCharOffset;
+
   Chapter({
     this.id = Isar.autoIncrement,
     required this.bookId,
@@ -29,28 +38,30 @@ class Chapter {
     required this.index,
     this.readAt,
     this.scrollPosition = 0.0,
+    this.readingCharOffset,
   });
 
   Map<String, dynamic> toJson() => {
-        'id': id,
-        'book_id': bookId,
-        'title': title,
-        'content': content,
-        'index': index,
-        'read_at': readAt?.toIso8601String(),
-        'scroll_position': scrollPosition,
-      };
+    'id': id,
+    'book_id': bookId,
+    'title': title,
+    'content': content,
+    'index': index,
+    'read_at': readAt?.toIso8601String(),
+    'scroll_position': scrollPosition,
+    'reading_char_offset': readingCharOffset,
+  };
 
   factory Chapter.fromJson(Map<String, dynamic> json) => Chapter(
-        id: json['id'] as int?,
-        bookId: json['book_id'] as int,
-        title: json['title'] as String,
-        content: json['content'] as String? ?? '',
-        index: json['index'] as int,
-        readAt: json['read_at'] != null
-            ? DateTime.parse(json['read_at'] as String)
-            : null,
-        scrollPosition:
-            (json['scroll_position'] as num?)?.toDouble() ?? 0.0,
-      );
+    id: json['id'] as int?,
+    bookId: json['book_id'] as int,
+    title: json['title'] as String,
+    content: json['content'] as String? ?? '',
+    index: json['index'] as int,
+    readAt: json['read_at'] != null
+        ? DateTime.parse(json['read_at'] as String)
+        : null,
+    scrollPosition: (json['scroll_position'] as num?)?.toDouble() ?? 0.0,
+    readingCharOffset: (json['reading_char_offset'] as num?)?.toInt(),
+  );
 }

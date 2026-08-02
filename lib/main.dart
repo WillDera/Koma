@@ -19,6 +19,7 @@ import 'core/services/http/m_client.dart';
 import 'core/services/keiyoushi_service.dart';
 import 'core/services/notification_service.dart';
 import 'core/services/stats_service.dart';
+import 'src/rust/frb_generated.dart';
 import 'theme/theme_provider.dart';
 
 void main() {
@@ -32,6 +33,9 @@ void main() {
   runZonedGuarded(() async {
     final widgetsBinding = WidgetsFlutterBinding.ensureInitialized();
     FlutterNativeSplash.preserve(widgetsBinding: widgetsBinding);
+
+    // Rust metadata engine (Open Library / Google Books) via flutter_rust_bridge.
+    await RustLib.init();
 
     // WorkManager periodic polling (library updates). Initialized once so the
     // native side can wake the Dart callback in a background isolate.

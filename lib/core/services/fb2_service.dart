@@ -22,7 +22,8 @@ class Fb2Service {
       String? coverPath;
       final coverImg = doc.querySelector('coverpage image');
       if (coverImg != null) {
-        final href = coverImg.attributes['l:href'] ??
+        final href =
+            coverImg.attributes['l:href'] ??
             coverImg.attributes['xlink:href'] ??
             '';
         final binId = href.replaceFirst('#', '');
@@ -32,7 +33,8 @@ class Fb2Service {
       // Metadata
       final titleInfo = doc.querySelector('title-info');
       final bookTitle =
-          titleInfo?.querySelector('book-title')?.text.trim() ?? 'Unknown Title';
+          titleInfo?.querySelector('book-title')?.text.trim() ??
+          'Unknown Title';
       final authorEl = titleInfo?.querySelector('author');
       final author = authorEl != null ? _parseAuthor(authorEl) : null;
 
@@ -58,13 +60,15 @@ class Fb2Service {
 
       if (chapters.isEmpty) {
         final html = _serializeChildren(fb2Body);
-        chapters.add(Chapter(
-          id: 0,
-          bookId: bookIdFinal,
-          title: 'Text',
-          content: '<div>$html</div>',
-          index: 0,
-        ));
+        chapters.add(
+          Chapter(
+            id: 0,
+            bookId: bookIdFinal,
+            title: 'Text',
+            content: '<div>$html</div>',
+            index: 0,
+          ),
+        );
       }
 
       final book = Book(
@@ -84,7 +88,11 @@ class Fb2Service {
   }
 
   Chapter _sectionToChapter(
-      Element section, int bookId, int index, String rawFile) {
+    Element section,
+    int bookId,
+    int index,
+    String rawFile,
+  ) {
     final titleEl = section.querySelector('title');
     final title = titleEl?.text.trim() ?? 'Chapter ${index + 1}';
     final html = _serializeChildren(section);
@@ -160,16 +168,18 @@ class Fb2Service {
 
   Future<String?> _extractBinary(String rawXml, String id) async {
     final match = RegExp(
-        '<binary\\s+id=["\']$id["\'][^>]*>([\\s\\S]*?)</binary>',
-        caseSensitive: false).firstMatch(rawXml);
+      '<binary\\s+id=["\']$id["\'][^>]*>([\\s\\S]*?)</binary>',
+      caseSensitive: false,
+    ).firstMatch(rawXml);
     if (match == null) return null;
     try {
       final bytes = base64Decode(match.group(1)!.trim());
       final appDir = await getApplicationDocumentsDirectory();
       final coverDir = Directory('${appDir.path}/covers');
       if (!await coverDir.exists()) await coverDir.create(recursive: true);
-      final outFile =
-          File('${coverDir.path}/${DateTime.now().millisecondsSinceEpoch}.png');
+      final outFile = File(
+        '${coverDir.path}/${DateTime.now().millisecondsSinceEpoch}.png',
+      );
       await outFile.writeAsBytes(bytes);
       return outFile.path;
     } catch (_) {
