@@ -47,6 +47,13 @@ class _PageCurlGestureHandlerState extends State<PageCurlGestureHandler> {
   Offset _dragStart = Offset.zero;
   CurlEdge? _activeEdge;
 
+  /// Pointer being tracked for a possible edge tap, and where it went down.
+  int? _tapPointer;
+  Offset _tapDown = Offset.zero;
+
+  /// Whether the active drag ever moved, distinguishing a drag from a tap.
+  bool _dragMoved = false;
+
   /// Resolves which edge a pointer-down at [local] belongs to, or null if the
   /// touch landed outside both strips or that direction is unavailable.
   CurlEdge? _edgeFor(Offset local, Size size) {
@@ -72,24 +79,58 @@ class _PageCurlGestureHandlerState extends State<PageCurlGestureHandler> {
 
   void _onDragUpdate(DragUpdateDetails details) {
     if (_activeEdge == null) return;
+    _dragMoved = true;
     widget.controller.updateDrag(details.localPosition - _dragStart);
   }
 
   void _onDragEnd(DragEndDetails details) {
+    final wasDrag = _dragMoved;
+    _dragMoved = false;
     if (_activeEdge == null) return;
-    widget.controller.endDrag(velocity: details.velocity.pixelsPerSecond.dx);
     _activeEdge = null;
+    // A press inside an edge strip that never moved is a tap, and the drag
+    // recognizer is the only arena member so it wins by default. Settling it
+    // here would spring the curl straight back to flat and undo the turn the
+    // tap handler just started, so the tap is left to own the gesture.
+    if (!wasDrag) return;
+    widget.controller.endDrag(velocity: details.velocity.pixelsPerSecond.dx);
   }
 
   void _onDragCancel() {
+    final wasDrag = _dragMoved;
+    _dragMoved = false;
     if (_activeEdge == null) return;
-    widget.controller.endDrag(velocity: 0);
     _activeEdge = null;
+    // Rejection without movement means another recognizer claimed the tap —
+    // selectable page text does exactly this. As in [_onDragEnd], settling here
+    // would undo the tap's turn, so the gesture is left alone.
+    if (!wasDrag) return;
+    widget.controller.endDrag(velocity: 0);
   }
 
-  void _onTapUp(TapUpDetails details, Size size) {
-    if (!widget.tapToTurn) return;
-    final edge = _edgeFor(details.localPosition, size);
+  void _onPointerDown(PointerDownEvent event) {
+    _tapPointer = event.pointer;
+    _tapDown = event.localPosition;
+  }
+
+  /// Turns the page when a pointer is released where it went down, inside an
+  /// edge strip, having travelled less than the touch slop — i.e. a tap.
+  ///
+  /// Deliberately driven from raw pointer events rather than a
+  /// [TapGestureRecognizer]: page content is usually selectable text, whose own
+  /// tap recognizer sits deeper in the tree and so joins the gesture arena
+  /// first. It therefore wins the sweep on pointer-up and a recognizer here
+  /// would never fire. A [Listener] sees the events regardless of who wins the
+  /// arena, which keeps edge taps working over selectable text while leaving
+  /// selection itself untouched.
+  void _onPointerUp(PointerUpEvent event, Size size) {
+    final pointer = _tapPointer;
+    _tapPointer = null;
+    if (!widget.tapToTurn || pointer != event.pointer) return;
+    // Anything that travelled further was a drag, which the recognizer above
+    // has already handled.
+    if ((event.localPosition - _tapDown).distance > kTouchSlop) return;
+    final edge = _edgeFor(_tapDown, size);
     if (edge == null) return;
     widget.controller.turn(edge);
   }
@@ -101,33 +142,32 @@ class _PageCurlGestureHandlerState extends State<PageCurlGestureHandler> {
     return LayoutBuilder(
       builder: (context, constraints) {
         final size = constraints.biggest;
-        return RawGestureDetector(
+        return Listener(
           behavior: HitTestBehavior.translucent,
-          gestures: <Type, GestureRecognizerFactory>{
-            _EdgeHorizontalDragRecognizer:
-                GestureRecognizerFactoryWithHandlers<
-                  _EdgeHorizontalDragRecognizer
-                >(
-                  () => _EdgeHorizontalDragRecognizer(
-                    isEdgeTouch: (position) => _edgeFor(position, size) != null,
+          onPointerDown: _onPointerDown,
+          onPointerUp: (e) => _onPointerUp(e, size),
+          onPointerCancel: (_) => _tapPointer = null,
+          child: RawGestureDetector(
+            behavior: HitTestBehavior.translucent,
+            gestures: <Type, GestureRecognizerFactory>{
+              _EdgeHorizontalDragRecognizer:
+                  GestureRecognizerFactoryWithHandlers<
+                    _EdgeHorizontalDragRecognizer
+                  >(
+                    () => _EdgeHorizontalDragRecognizer(
+                      isEdgeTouch: (p) => _edgeFor(p, size) != null,
+                    ),
+                    (recognizer) {
+                      recognizer.onDown = (d) => _onDragDown(d, size);
+                      recognizer.onStart = _onDragStart;
+                      recognizer.onUpdate = _onDragUpdate;
+                      recognizer.onEnd = _onDragEnd;
+                      recognizer.onCancel = _onDragCancel;
+                    },
                   ),
-                  (recognizer) {
-                    recognizer.onDown = (d) => _onDragDown(d, size);
-                    recognizer.onStart = _onDragStart;
-                    recognizer.onUpdate = _onDragUpdate;
-                    recognizer.onEnd = _onDragEnd;
-                    recognizer.onCancel = _onDragCancel;
-                  },
-                ),
-            TapGestureRecognizer:
-                GestureRecognizerFactoryWithHandlers<TapGestureRecognizer>(
-                  () => TapGestureRecognizer(),
-                  (recognizer) {
-                    recognizer.onTapUp = (d) => _onTapUp(d, size);
-                  },
-                ),
-          },
-          child: widget.child,
+            },
+            child: widget.child,
+          ),
         );
       },
     );
@@ -150,5 +190,11 @@ class _EdgeHorizontalDragRecognizer extends HorizontalDragGestureRecognizer {
       return;
     }
     super.addAllowedPointer(event);
+    // SelectableText installs a horizontal-drag recognizer deeper in the tree,
+    // which joins the arena first and would win on pointer-up. Claiming
+    // immediately reserves edge-strip touches for the curl — text selection
+    // there is unwanted by design, and a vertical drag will self-reject anyway
+    // once the recognizer sees the direction.
+    resolve(GestureDisposition.accepted);
   }
 }

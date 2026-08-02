@@ -32,6 +32,7 @@ class ThemeState {
     this.showNsfwExtensions = false,
     this.showObsoleteExtensions = false,
     this.immersiveAutoHide = false,
+    this.pageStyle = PageStyle.scroll,
   });
 
   final ThemeMode themeMode;
@@ -57,6 +58,10 @@ class ThemeState {
   final bool showNsfwExtensions;
   final bool showObsoleteExtensions;
   final bool immersiveAutoHide;
+
+  /// How the ebook reader lays out chapter text. Defaults to [PageStyle.scroll]
+  /// so existing readers are unaffected until they opt in.
+  final PageStyle pageStyle;
 
   // ── Derived getters ────────────────────────────────────────────────
 
@@ -140,6 +145,7 @@ class ThemeState {
       bool? showNsfwExtensions,
       bool? showObsoleteExtensions,
     bool? immersiveAutoHide,
+    PageStyle? pageStyle,
   }) {
       return ThemeState(
       themeMode: themeMode ?? this.themeMode,
@@ -167,11 +173,25 @@ class ThemeState {
       showNsfwExtensions: showNsfwExtensions ?? this.showNsfwExtensions,
       showObsoleteExtensions: showObsoleteExtensions ?? this.showObsoleteExtensions,
       immersiveAutoHide: immersiveAutoHide ?? this.immersiveAutoHide,
+      pageStyle: pageStyle ?? this.pageStyle,
     );
   }
 }
 
 enum HandMode { left, right }
+
+/// How the ebook reader presents a chapter.
+///
+/// [scroll] is the long-standing continuous scroll view. [curl] paginates the
+/// chapter and turns pages with an interactive curl.
+enum PageStyle {
+  scroll(label: 'Scroll'),
+  curl(label: 'Curl');
+
+  const PageStyle({required this.label});
+
+  final String label;
+}
 
 enum AccentPreset { indigo, amber, forest, aethelgard }
 

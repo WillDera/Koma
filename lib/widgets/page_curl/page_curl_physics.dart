@@ -25,7 +25,10 @@ class PageCurlPhysics {
   CurlRelease resolve({required double progress, required double velocity}) {
     if (velocity > config.flingVelocityThreshold) return CurlRelease.complete;
     if (velocity < -config.flingVelocityThreshold) return CurlRelease.cancel;
-    return progress >= config.completionThreshold
+    // A drag already most of the way over should finish without demanding a
+    // big exit velocity — real flicks rarely exceed a few hundred px/s.
+    if (progress >= config.completionThreshold) return CurlRelease.complete;
+    return velocity > config.completionBiasVelocity
         ? CurlRelease.complete
         : CurlRelease.cancel;
   }

@@ -21,6 +21,15 @@ class Chapter {
   /// Per-chapter scroll restoration (parallel to book.scrollPosition).
   double scrollPosition;
 
+  /// Reading position as a character offset into the chapter's extracted plain
+  /// text. Unlike [scrollPosition] this survives a font-size or viewport
+  /// change, so it is what paginated mode restores from.
+  ///
+  /// Null means "never recorded" — a book last read before pagination existed.
+  /// Those fall back to approximating from [scrollPosition] once, after which
+  /// this field takes over.
+  int? readingCharOffset;
+
   Chapter({
     this.id = Isar.autoIncrement,
     required this.bookId,
@@ -29,6 +38,7 @@ class Chapter {
     required this.index,
     this.readAt,
     this.scrollPosition = 0.0,
+    this.readingCharOffset,
   });
 
   Map<String, dynamic> toJson() => {
@@ -39,7 +49,8 @@ class Chapter {
         'index': index,
         'read_at': readAt?.toIso8601String(),
         'scroll_position': scrollPosition,
-      };
+    'reading_char_offset': readingCharOffset,
+  };
 
   factory Chapter.fromJson(Map<String, dynamic> json) => Chapter(
         id: json['id'] as int?,
@@ -52,5 +63,6 @@ class Chapter {
             : null,
         scrollPosition:
             (json['scroll_position'] as num?)?.toDouble() ?? 0.0,
-      );
+    readingCharOffset: (json['reading_char_offset'] as num?)?.toInt(),
+  );
 }

@@ -1,10 +1,10 @@
 import 'dart:async';
-import 'dart:math';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../core/models/chapter.dart';
 import '../../core/models/highlight.dart';
 import '../../core/providers.dart';
 import '../../core/utils/text_extractor.dart';
@@ -15,7 +15,6 @@ import '../../theme/tokens/app_colors.dart';
 import '../../theme/tokens/app_motion.dart';
 import '../../theme/tokens/app_spacing.dart';
 import '../../theme/tokens/app_type.dart';
-import '../../widgets/bionic_text.dart';
 import '../../widgets/chapter_nav_overlay.dart';
 import '../../widgets/empty_state.dart';
 import '../../widgets/highlight_color_picker.dart';
@@ -25,6 +24,8 @@ import '../../widgets/reader_top_bar.dart';
 import '../../widgets/text_selection_toolbar.dart';
 import '../../widgets/toast.dart';
 import '../../widgets/tts_controls.dart';
+import 'pagination/paginated_reader_body.dart';
+import 'pagination/reading_spans.dart';
 import 'reader_provider.dart';
 import 'tts_provider.dart';
 
@@ -60,6 +61,13 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
   List<Highlight> _highlights = [];
 
   String? _selectedText;
+
+  /// Chapter-relative start offset of the current selection, when the layout
+  /// can report it. Paginated mode always can; scroll mode leaves this null and
+  /// the save paths fall back to searching from the start of the chapter. The
+  /// end is derived from the selected text, so only the start is tracked.
+  int? _selStart;
+
   bool _showUI = true;
   bool _toolbarVisible = false;
   bool _colorPickerVisible = false;
@@ -193,7 +201,9 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
     if (_ttsProvider != null && _ttsListening && ch != null) {
       final tts = _ttsProvider!;
       tts.stop();
-      tts.init(TextExtractor.extractFromHtml(ch[newIndex].content));
+      tts.init(
+        TextExtractor.extractCached(ch[newIndex].id, ch[newIndex].content),
+      );
       tts.play();
     }
     // Jump to the saved scroll position for this chapter.  The
@@ -263,7 +273,7 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
 
   String get _currentText {
     final ch = _provider?.currentChapter;
-    return ch != null ? TextExtractor.extractFromHtml(ch.content) : '';
+    return ch != null ? TextExtractor.extractCached(ch.id, ch.content) : '';
   }
 
   String get _nextHighlightColor {
@@ -413,6 +423,85 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
     _resetUiHideTimer();
   }
 
+  /// The paginated + page-curl reading surface.
+  ///
+  /// Deliberately does not wire the horizontal-drag chapter jump used by scroll
+  /// mode: the curl owns horizontal drags, and both competing in the gesture
+  /// arena would make page turns unreliable.
+  Widget _buildCurlBody(ThemeState themeProv,
+      ReaderState provider,
+      Chapter chapter,) {
+    final pad = _horizontalPadding(themeProv.pageWidth);
+    return Padding(
+      padding: EdgeInsets.fromLTRB(
+        pad,
+        MediaQuery
+            .of(context)
+            .padding
+            .top + (_showUI ? 88 : 32),
+        pad,
+        MediaQuery
+            .of(context)
+            .padding
+            .bottom + 16,
+      ),
+      child: Center(
+        child: ConstrainedBox(
+          constraints: BoxConstraints(maxWidth: themeProv.pageWidth),
+          child: PaginatedReaderBody(
+            chapters: provider.chapters,
+            chapterIndex: provider.currentIndex,
+            themeProv: themeProv,
+            highlights: _highlights,
+            highlightVersion: _highlightVersion,
+            ttsActive: _ttsProvider?.isActive ?? false,
+            ttsStart: _ttsProvider?.currentSentenceOffset ?? 0,
+            ttsEnd: _ttsProvider?.currentSentenceEnd ?? 0,
+            charOffsetFor: (i) => _provider?.readingOffsetFor(i),
+            pixelOffsetFor: (i) =>
+            i < provider.chapters.length
+                ? provider.chapters[i].scrollPosition
+                : 0,
+            // Edge taps belong to the curl (it turns pages with them), so a tap
+            // reaching us is a middle tap: manage the UI only, never jump
+            // chapters the way scroll mode's edge taps do.
+            onTap: () {
+              if (_toolbarVisible) {
+                _hideToolbar();
+              }
+              _resetUiHideTimer();
+            },
+            onSelected: (start, end) {
+              final text =
+              TextExtractor.extractCached(chapter.id, chapter.content);
+              if (end <= text.length) {
+                _selStart = start;
+                _selectedText = text.substring(start, end);
+                _showToolbar(Offset.zero);
+              }
+            },
+            onSelectionCleared: () {
+              if (!_toolbarVisible) return;
+              Future.delayed(const Duration(milliseconds: 200), () {
+                if (!mounted) return;
+                if (_toolbarVisible) _hideToolbar();
+              });
+            },
+            onSelectionCollapsed: _resetUiHideTimer,
+            onChapterChanged: (index) {
+              if (index != provider.currentIndex) {
+                _provider?.navigateToChapter(index);
+              }
+            },
+            onPositionChanged: (pos, charOffset, {required exact}) {
+              _provider?.updateReadingOffset(charOffset);
+            },
+          ),
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final themeProv = ref.watch(themeProvider);
@@ -467,7 +556,9 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
             body: Stack(
               children: [
                 Positioned.fill(
-                  child: GestureDetector(
+                  child: themeProv.pageStyle == PageStyle.curl
+                      ? _buildCurlBody(themeProv, provider, chapter)
+                      : GestureDetector(
                     onTapUp: _handleTapUp,
                     onHorizontalDragStart: _onHorizontalDragStart,
                     onHorizontalDragEnd: _onHorizontalDragEnd,
@@ -545,7 +636,8 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
                                   style: _readingStyle(themeProv),
                                   children: _buildReadingSpans(
                                     themeProv,
-                                    TextExtractor.extractFromHtml(chapter.content),
+                                    TextExtractor.extractCached(
+                                        chapter.id, chapter.content),
                                     ttsActive: _ttsProvider?.isActive ?? false,
                                     ttsStart: _ttsProvider?.currentSentenceOffset ?? 0,
                                     ttsEnd: _ttsProvider?.currentSentenceEnd ?? 0,
@@ -556,8 +648,13 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
                                   if (selection.isValid &&
                                       !selection.isCollapsed) {
                                     final content =
-                                        TextExtractor.extractFromHtml(chapter.content);
+                                    TextExtractor.extractCached(
+                                        chapter.id, chapter.content);
                                     if (selection.end <= content.length) {
+                                      // Scroll mode renders the whole chapter,
+                                      // so these offsets are already chapter-
+                                      // relative.
+                                      _selStart = selection.start;
                                       _selectedText = content.substring(
                                           selection.start, selection.end);
                                       _showToolbar(Offset.zero);
@@ -727,13 +824,7 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
   }
 
   TextStyle _readingStyle(ThemeState themeProv) {
-    final c = context.colors;
-    return AppType.fontStyle(
-      fontFamily: themeProv.useDeviceFont ? null : themeProv.readingFontFamily,
-      fontSize: themeProv.fontSize,
-      lineHeight: themeProv.lineHeight,
-      color: c.textPrimary,
-    );
+    return ReadingSpans.style(themeProv, context.colors.textPrimary);
   }
 
   List<TextSpan> _buildReadingSpans(
@@ -743,117 +834,17 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
     int ttsStart = 0,
     int ttsEnd = 0,
   }) {
-    final style = _readingStyle(themeProv);
-    final brightness = Theme.of(context).brightness;
-
-    if (_highlights.isEmpty && !themeProv.bionicReading && !ttsActive) {
-      return [TextSpan(text: text, style: style)];
-    }
-
-    // Assemble segments from highlights + TTS sentence.
-    // Walk the text and produce spans for each boundary.
-    final sorted = List<Highlight>.from(_highlights)
-      ..sort((a, b) => a.startOffset.compareTo(b.startOffset));
-
-    // Build boundary list: (offset, isHighlightStart, isHighlightEnd, color)
-    final boundaries = <_TextBoundary>[];
-    for (final hl in sorted) {
-      final end = min(hl.endOffset, text.length);
-      if (end > hl.startOffset) {
-        boundaries.add(_TextBoundary(hl.startOffset, true, hl.color));
-        boundaries.add(_TextBoundary(end, false, hl.color));
-      }
-    }
-    if (ttsActive && ttsStart < ttsEnd && ttsEnd > 0) {
-      boundaries.add(_TextBoundary(ttsStart, true, '_tts'));
-      boundaries.add(_TextBoundary(ttsEnd, false, '_tts'));
-    }
-    boundaries.sort((a, b) => a.offset.compareTo(b.offset));
-
-    // ponytail: O(n log n) boundary merge, fine for typical book chapters
-    final spans = <TextSpan>[];
-    int cursor = 0;
-    final activeHighlights = <String>{};
-    final activeTts = <bool>[false];
-
-    for (final b in boundaries) {
-      if (b.offset <= cursor) {
-        if (b.isStart) {
-          if (b.color == '_tts') activeTts[0] = true;
-          else activeHighlights.add(b.color);
-        } else {
-          if (b.color == '_tts') activeTts[0] = false;
-          else activeHighlights.remove(b.color);
-        }
-        continue;
-      }
-      if (b.offset > cursor) {
-        final chunk = text.substring(cursor, min(b.offset, text.length));
-        var segStyle = style;
-        if (activeHighlights.isNotEmpty) {
-          final hlColor = activeHighlights.first;
-          segStyle = segStyle.copyWith(
-            backgroundColor: AppColors.highlight(hlColor, brightness, isSepia: false).withValues(alpha: 0.35),
-          );
-        }
-        if (activeTts[0]) {
-          final bg = segStyle.backgroundColor ?? Colors.transparent;
-          segStyle = segStyle.copyWith(
-            backgroundColor: Color.lerp(
-              bg,
-              themeProv.accentColor.withValues(alpha: 0.15),
-              1.0,
-            ),
-          );
-        }
-        spans.addAll(_segments(themeProv, chunk, segStyle, null));
-        cursor = b.offset;
-      }
-      if (b.isStart) {
-        if (b.color == '_tts') activeTts[0] = true;
-        else activeHighlights.add(b.color);
-      } else {
-        if (b.color == '_tts') activeTts[0] = false;
-        else activeHighlights.remove(b.color);
-      }
-    }
-    if (cursor < text.length) {
-      var segStyle = style;
-      if (activeHighlights.isNotEmpty) {
-        final hlColor = activeHighlights.first;
-        segStyle = segStyle.copyWith(
-          backgroundColor: AppColors.highlight(hlColor, brightness, isSepia: false).withValues(alpha: 0.35),
-        );
-      }
-      if (activeTts[0]) {
-        final bg = segStyle.backgroundColor ?? Colors.transparent;
-        segStyle = segStyle.copyWith(
-          backgroundColor: Color.lerp(
-            bg,
-            themeProv.accentColor.withValues(alpha: 0.15),
-            1.0,
-          ),
-        );
-      }
-      spans.addAll(_segments(themeProv, text.substring(cursor), segStyle, null));
-    }
-    return spans;
-  }
-
-  /// Split [text] into bionic segments if bionic mode is on, otherwise
-  /// a single TokenSpan. When [hlAltStyle] is provided it replaces the
-  /// bold segment's style for highlighted bionic text (both arms use
-  /// the highlight background).
-  List<TextSpan> _segments(ThemeState prov, String text, TextStyle base,
-      TextStyle? hlAltStyle) {
-    if (!prov.bionicReading) {
-      return [TextSpan(text: text, style: hlAltStyle ?? base)];
-    }
-    return BionicText.spans(
-      text,
-      baseStyle: hlAltStyle ?? base,
-      bionicWeight: hlAltStyle?.fontWeight ?? prov.bionicBoldWeight,
-      bionicFraction: prov.bionicBoldFraction,
+    return ReadingSpans.build(
+      text: text,
+      prov: themeProv,
+      baseStyle: _readingStyle(themeProv),
+      brightness: Theme
+          .of(context)
+          .brightness,
+      highlights: _highlights,
+      ttsActive: ttsActive,
+      ttsStart: ttsStart,
+      ttsEnd: ttsEnd,
     );
   }
 
@@ -877,11 +868,20 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
       final repos = ref.watch(repositoriesProvider);
       final ch = p.currentChapter;
       final contentStr =
-          ch != null ? TextExtractor.extractFromHtml(ch.content) : '';
+      ch != null ? TextExtractor.extractCached(ch.id, ch.content) : '';
       final selected = _selectedText!.trim();
       int? startOff;
       if (ch != null && selected.isNotEmpty) {
-        startOff = contentStr.indexOf(selected);
+        // Prefer the offsets the layout reported: a bare indexOf finds the
+        // *first* occurrence, which is the wrong one whenever the selected
+        // phrase repeats in the chapter. Searching forward from the reported
+        // start also absorbs the leading whitespace that trim() removed.
+        final exact = _selStart;
+        final from = (exact != null && exact >= 0 && exact < contentStr.length)
+            ? exact
+            : 0;
+        startOff = contentStr.indexOf(selected, from);
+        if (startOff < 0) startOff = contentStr.indexOf(selected);
       }
       // Bug 1 fix: save ONLY to the highlights table, NOT to snippets.
       // Only "Note" (renamed to "Snippet") creates a snippet row.
@@ -936,6 +936,7 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
       // new handles.
       _hideToolbar();
       _selectedText = null;
+      _selStart = null;
       setState(() => _highlightVersion++);
       // Dismiss keyboard/selection focus so the next long-press
       // creates a fresh set of selection handles.
@@ -1013,11 +1014,19 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
       final snippetsProv = ref.read(snippetsProvider.notifier);
       final ch = p.currentChapter;
       final contentStr =
-          ch != null ? TextExtractor.extractFromHtml(ch.content) : '';
+      ch != null ? TextExtractor.extractCached(ch.id, ch.content) : '';
       final selected = _selectedText?.trim() ?? '';
       int? startOff;
       if (ch != null && selected.isNotEmpty) {
-        startOff = contentStr.indexOf(selected);
+        // Same reasoning as _saveHighlight: search forward from the offset the
+        // layout reported so a repeated phrase resolves to the copy the reader
+        // actually selected.
+        final exact = _selStart;
+        final from = (exact != null && exact >= 0 && exact < contentStr.length)
+            ? exact
+            : 0;
+        startOff = contentStr.indexOf(selected, from);
+        if (startOff < 0) startOff = contentStr.indexOf(selected);
       }
       final currPos = _scrollController.hasClients ? _scrollController.offset : null;
       await snippetsProv.createSnippet(
@@ -1049,6 +1058,7 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
       }
     } finally {
       _selectedText = null;
+      _selStart = null;
     }
   }
 
@@ -1069,12 +1079,4 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
       onNext: () => provider.goToNextChapter(),
     );
   }
-}
-
-// ponytail: simple boundary record for merging highlight + TTS ranges
-class _TextBoundary {
-  final int offset;
-  final bool isStart;
-  final String color;
-  const _TextBoundary(this.offset, this.isStart, this.color);
 }
