@@ -489,6 +489,7 @@ class DalvikServer(
                             buildJsonObject {
                                 put("sourceId", ext.sourceId)
                                 put("sourceName", ext.source.name)
+                                put("baseUrl", ext.source.baseUrl)
                                 put("mangas", JsonArray(mp.mangas.map { it.toMap().toJsonObject() }))
                                 put("hasNextPage", mp.hasNextPage)
                             }
