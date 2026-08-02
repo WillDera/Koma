@@ -11,9 +11,9 @@ import 'reader_view_props.dart';
 /// Paged reader (default L2R, right-to-left, and landscape book/spread mode).
 ///
 /// Mirrors mangayomi's `image_view_paged.dart`: a [PageView.builder] where
-/// each page is a pinch-zoomable [InteractiveViewer] wrapping
-/// [ReaderPageImage], with chapter separators rendered as
-/// [TransitionViewPaged]. Book mode packs two pages per spread.
+/// each page is a pinch-zoomable [SubsamplingScaleImageView], with chapter
+/// separators rendered as [TransitionViewPaged]. Book mode packs two pages
+/// per spread.
 class MangaImageViewPaged extends StatelessWidget {
   final ReaderViewProps props;
   final PageController pageController;
@@ -38,25 +38,28 @@ class MangaImageViewPaged extends StatelessWidget {
         controller: pageController,
         scrollDirection: axis,
         reverse: reverse,
+        allowImplicitScrolling: true,
         itemCount: (pages.length / 2).ceil(),
         onPageChanged: (i) => props.onPageChanged(i * 2),
         itemBuilder: (_, spreadIndex) {
           final leftIdx = spreadIndex * 2;
           final rightIdx = leftIdx + 1;
-          return Row(
-            children: [
-              Expanded(
-                child: leftIdx < pages.length
-                    ? _buildPage(context, leftIdx)
-                    : const SizedBox(),
-              ),
-              Container(width: 1, color: Colors.white12),
-              Expanded(
-                child: rightIdx < pages.length
-                    ? _buildPage(context, rightIdx)
-                    : const SizedBox(),
-              ),
-            ],
+          return _KeepAlivePage(
+            child: Row(
+              children: [
+                Expanded(
+                  child: leftIdx < pages.length
+                      ? _buildPage(context, leftIdx)
+                      : const SizedBox(),
+                ),
+                Container(width: 1, color: Colors.white12),
+                Expanded(
+                  child: rightIdx < pages.length
+                      ? _buildPage(context, rightIdx)
+                      : const SizedBox(),
+                ),
+              ],
+            ),
           );
         },
       );
@@ -66,9 +69,10 @@ class MangaImageViewPaged extends StatelessWidget {
       controller: pageController,
       scrollDirection: axis,
       reverse: reverse,
+      allowImplicitScrolling: true,
       itemCount: pages.length,
       onPageChanged: props.onPageChanged,
-      itemBuilder: (_, i) => _buildPage(context, i),
+      itemBuilder: (_, i) => _KeepAlivePage(child: _buildPage(context, i)),
     );
   }
 
@@ -82,19 +86,17 @@ class MangaImageViewPaged extends StatelessWidget {
       return TransitionViewPaged(data: page, readerMode: settings.readingMode);
     }
 
-    // ── Build the image provider / path for the subsampling viewer ──────
-    // If the page is a downloaded local file, pass the path directly to
-    // bypass the ImageProvider resolution pipeline. Otherwise pass the
-    // CustomExtendedNetworkImageProvider — the viewer's internal
-    // _loadFromProvider() will find the MD5-keyed cached file in the
-    // cacheimagemanga/ folder (Phase 6 disk cache) and feed it to the FFI
-    // decoder for region-decoded tiling. This is the exact flow mangayomi
-    // uses in its image_view_paged.dart.
+    // Prefer a previously resolved on-disk cache path so revisiting a page
+    // skips the network/provider pipeline (mangayomi UChapDataPreload seam).
     final ImageProvider imageProvider;
     final String? resolvedFilePath;
     if (page.localPath != null) {
       imageProvider = FileImage(File(page.localPath!));
       resolvedFilePath = page.localPath;
+    } else if (page.resolvedFilePath != null &&
+        File(page.resolvedFilePath!).existsSync()) {
+      imageProvider = FileImage(File(page.resolvedFilePath!));
+      resolvedFilePath = page.resolvedFilePath;
     } else if (page.imageUrl.isNotEmpty) {
       imageProvider = CustomExtendedNetworkImageProvider(
         page.imageUrl,
@@ -103,9 +105,8 @@ class MangaImageViewPaged extends StatelessWidget {
         imageCacheFolderName: 'cacheimagemanga',
         showCloudFlareError: true,
       );
-      resolvedFilePath = null;
+      resolvedFilePath = page.resolvedFilePath;
     } else {
-      // No image URL and no local path — broken page
       return _BrokenPage(onRetry: () => props.onRetryPage(index));
     }
 
@@ -126,7 +127,6 @@ class MangaImageViewPaged extends StatelessWidget {
         doubleTapZoomScale: settings.disableDoubleTap ? 1.0 : null,
         pageController: pageController,
         onError: (msg) {
-          // Surface the error so the parent can offer retry
           if (settings.disableDoubleTap) props.onRetryPage(index);
         },
       ),
@@ -134,10 +134,34 @@ class MangaImageViewPaged extends StatelessWidget {
   }
 }
 
-/// The tap-zone overlay for paged mode: divides the viewport into
-/// previous-page / toggle-toolbar / next-page regions per the user's
-/// [TapZoneMode] preference. Rendered as a [Positioned.fill] overlay by
-/// the parent state above the [MangaImageViewPaged].
+/// Keeps visited pages alive in the [PageView] so flipping back does not
+/// dispose/rebuild the subsampling viewer (visible reload flash).
+class _KeepAlivePage extends StatefulWidget {
+  final Widget child;
+  const _KeepAlivePage({required this.child});
+
+  @override
+  State<_KeepAlivePage> createState() => _KeepAlivePageState();
+}
+
+class _KeepAlivePageState extends State<_KeepAlivePage>
+    with AutomaticKeepAliveClientMixin {
+  @override
+  bool get wantKeepAlive => true;
+
+  @override
+  Widget build(BuildContext context) {
+    super.build(context);
+    return widget.child;
+  }
+}
+
+/// Tap-zone overlay for paged mode.
+///
+/// - L/R: three full-height columns — L/R navigate (top+mid+bottom of each
+///   side), M toggles the toolbar only.
+/// - L/M/R: mangayomi default — same L|M|R columns plus full-width top
+///   (prev) / bottom (next) strips so middle-top and middle-bottom navigate.
 class ReaderTapZones extends StatelessWidget {
   final ReaderViewProps props;
   const ReaderTapZones({super.key, required this.props});
@@ -146,141 +170,61 @@ class ReaderTapZones extends StatelessWidget {
   Widget build(BuildContext context) {
     final settings = props.settings;
     final current = props.currentPage;
-    void prev() => props.onGoToPage(current.value - 1);
-    void next() => props.onGoToPage(current.value + 1);
+    final isRtl = settings.readingMode == ReadingMode.rightToLeft;
 
-    switch (settings.tapZones) {
-      case TapZoneMode.leftTopRightBottom:
-        return LayoutBuilder(
-          builder: (_, constraints) => Stack(
-            children: [
-              Positioned.fill(
-                child: ClipPath(
-                  clipper: const _TopLeftClipper(),
-                  child: GestureDetector(
-                    onTap: prev,
-                    onLongPress: props.onLongPress,
-                    behavior: HitTestBehavior.translucent,
-                  ),
-                ),
-              ),
-              Positioned.fill(
-                child: ClipPath(
-                  clipper: const _BottomRightClipper(),
-                  child: GestureDetector(
-                    onTap: next,
-                    onLongPress: props.onLongPress,
-                    behavior: HitTestBehavior.translucent,
-                  ),
-                ),
-              ),
-              // Center tap region to toggle the toolbar/overview so the
-              // L/T/R/B layout never fully locks the user out of settings.
-              Center(
-                child: GestureDetector(
-                  onTap: props.onToggleToolbar,
-                  onLongPress: props.onLongPress,
-                  behavior: HitTestBehavior.translucent,
-                  child: SizedBox(
-                    width: constraints.maxWidth * 0.34,
-                    height: constraints.maxHeight * 0.34,
-                  ),
-                ),
-              ),
-            ],
-          ),
-        );
+    void goPrev() => props.onGoToPage(current.value - 1);
+    void goNext() => props.onGoToPage(current.value + 1);
+    // In RTL the visual left edge advances reading direction (= next page).
+    final leftAction = isRtl ? goNext : goPrev;
+    final rightAction = isRtl ? goPrev : goNext;
+
+    Widget zone(VoidCallback onTap) => GestureDetector(
+      onTap: onTap,
+      onLongPress: props.onLongPress,
+      behavior: HitTestBehavior.translucent,
+      child: const SizedBox.expand(),
+    );
+
+    Widget threeColumn() => Row(
+      children: [
+        Expanded(child: zone(leftAction)),
+        Expanded(child: zone(props.onToggleToolbar)),
+        Expanded(child: zone(rightAction)),
+      ],
+    );
+
+    final mode = settings.tapZones == TapZoneMode.leftTopRightBottom
+        ? TapZoneMode.leftRight
+        : settings.tapZones;
+
+    switch (mode) {
       case TapZoneMode.leftRight:
-        return Row(
+        // L | M | R — M is toolbar-only so the center remains tappable.
+        return threeColumn();
+
+      case TapZoneMode.leftMiddleRight:
+        // Mangayomi default: L|M|R under full-width top/bottom strips.
+        return Stack(
           children: [
-            Expanded(
-              child: GestureDetector(
-                onTap: prev,
-                onLongPress: props.onLongPress,
-                behavior: HitTestBehavior.translucent,
-                child: const SizedBox.expand(),
-              ),
-            ),
-            Expanded(
-              child: GestureDetector(
-                onTap: props.onToggleToolbar,
-                onLongPress: props.onLongPress,
-                behavior: HitTestBehavior.translucent,
-                child: const SizedBox.expand(),
-              ),
-            ),
-            Expanded(
-              child: GestureDetector(
-                onTap: next,
-                onLongPress: props.onLongPress,
-                behavior: HitTestBehavior.translucent,
-                child: const SizedBox.expand(),
-              ),
+            threeColumn(),
+            Column(
+              children: [
+                Expanded(flex: 2, child: zone(goPrev)),
+                const Expanded(flex: 5, child: SizedBox.shrink()),
+                Expanded(flex: 2, child: zone(goNext)),
+              ],
             ),
           ],
         );
-      case TapZoneMode.leftCenterRight:
-        return Row(
-          children: [
-            Expanded(
-              flex: 2,
-              child: GestureDetector(
-                onTap: prev,
-                onLongPress: props.onLongPress,
-                behavior: HitTestBehavior.translucent,
-                child: const SizedBox.expand(),
-              ),
-            ),
-            Expanded(
-              flex: 6,
-              child: GestureDetector(
-                onTap: props.onToggleToolbar,
-                onLongPress: props.onLongPress,
-                behavior: HitTestBehavior.translucent,
-                child: const SizedBox.expand(),
-              ),
-            ),
-            Expanded(
-              flex: 2,
-              child: GestureDetector(
-                onTap: next,
-                onLongPress: props.onLongPress,
-                behavior: HitTestBehavior.translucent,
-                child: const SizedBox.expand(),
-              ),
-            ),
-          ],
-        );
+
+      case TapZoneMode.leftTopRightBottom:
+        // Unreachable after the remapping above; keep for exhaustiveness.
+        return threeColumn();
     }
   }
 }
 
-class _TopLeftClipper extends CustomClipper<Path> {
-  const _TopLeftClipper();
-  @override
-  Path getClip(Size size) => Path()
-    ..moveTo(0, 0)
-    ..lineTo(size.width, 0)
-    ..lineTo(0, size.height)
-    ..close();
-  @override
-  bool shouldReclip(_) => false;
-}
-
-class _BottomRightClipper extends CustomClipper<Path> {
-  const _BottomRightClipper();
-  @override
-  Path getClip(Size size) => Path()
-    ..moveTo(size.width, 0)
-    ..lineTo(size.width, size.height)
-    ..lineTo(0, size.height)
-    ..close();
-  @override
-  bool shouldReclip(_) => false;
-}
-
 /// Fallback shown when a page has no image (no URL and no local file).
-/// Mirrors the broken-image placeholder used by [ReaderPageImage].
 class _BrokenPage extends StatelessWidget {
   final VoidCallback onRetry;
   const _BrokenPage({required this.onRetry});

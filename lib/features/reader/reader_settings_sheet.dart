@@ -12,7 +12,16 @@ enum ReadingMode {
 
 enum RotationMode { portrait, free, landscape }
 
-enum TapZoneMode { leftRight, leftTopRightBottom, leftCenterRight }
+/// Tap-zone layouts for paged manga reading.
+///
+/// - [leftRight]: three full-height columns L | M | R — sides navigate,
+///   middle toggles the toolbar.
+/// - [leftMiddleRight]: mangayomi default — same columns plus top/bottom
+///   strips so middle-top = prev and middle-bottom = next.
+///
+/// Legacy [leftTopRightBottom] is kept only for deserialization; it is
+/// migrated to [leftRight] on load and is no longer offered in the UI.
+enum TapZoneMode { leftRight, leftTopRightBottom, leftMiddleRight }
 
 enum ProgressBarPlacement {
   horizontalTop,
@@ -116,7 +125,12 @@ class ReaderSettings {
   Map<String, dynamic> toJson() => {
     'readingMode': readingMode.index,
     'rotationMode': rotationMode.index,
-    'tapZones': tapZones.index,
+    // Persist the effective layout; legacy leftTopRightBottom → leftRight.
+    'tapZones': (tapZones == TapZoneMode.leftTopRightBottom
+            ? TapZoneMode.leftRight
+            : tapZones)
+        .index,
+    'tapZonesV2': 1,
     'sidePadding': sidePadding,
     'cropBorders': cropBorders ? 1 : 0,
     'bookMode': bookMode ? 1 : 0,
@@ -136,31 +150,49 @@ class ReaderSettings {
     'tintOpacity': tintOpacity,
   };
 
-  factory ReaderSettings.fromJson(Map<String, dynamic> json) => ReaderSettings(
-    readingMode: ReadingMode.values[json['readingMode'] as int? ?? 0],
-    rotationMode: RotationMode.values[json['rotationMode'] as int? ?? 1],
-    tapZones: TapZoneMode.values[json['tapZones'] as int? ?? 1],
-    sidePadding: (json['sidePadding'] as num?)?.toDouble() ?? 0.0,
-    cropBorders: (json['cropBorders'] as int? ?? 0) == 1,
-    bookMode: (json['bookMode'] as int? ?? 0) == 1,
-    disableDoubleTap: (json['disableDoubleTap'] as int? ?? 0) == 1,
-    disableZoomOut: (json['disableZoomOut'] as int? ?? 0) == 1,
-    showPageNumber: (json['showPageNumber'] as int? ?? 1) == 1,
-    showPageNavigator: (json['showPageNavigator'] as int? ?? 1) == 1,
-    fullscreen: (json['fullscreen'] as int? ?? 0) == 1,
-    keepScreenOn: (json['keepScreenOn'] as int? ?? 1) == 1,
-    showActionsOnLongTap: (json['showActionsOnLongTap'] as int? ?? 1) == 1,
-    animatePageTransition: (json['animatePageTransition'] as int? ?? 1) == 1,
-    progressBarPlacement:
-        ProgressBarPlacement.values[json['progressBarPlacement'] as int? ?? 1],
-    brightness: (json['brightness'] as num?)?.toDouble() ?? 1.0,
-    contrast: (json['contrast'] as num?)?.toDouble() ?? 1.0,
-    saturation: (json['saturation'] as num?)?.toDouble() ?? 1.0,
-    tintColor: json['tintColor'] != null
-        ? Color(json['tintColor'] as int)
-        : null,
-    tintOpacity: (json['tintOpacity'] as num?)?.toDouble() ?? 0.0,
-  );
+  factory ReaderSettings.fromJson(Map<String, dynamic> json) {
+    final rawZones = json['tapZones'] as int?;
+    final isV2 = (json['tapZonesV2'] as int? ?? 0) == 1;
+    final TapZoneMode tapZones;
+    if (isV2) {
+      tapZones = switch (rawZones) {
+        2 => TapZoneMode.leftMiddleRight,
+        1 => TapZoneMode.leftRight, // legacy value still in some saves
+        _ => TapZoneMode.leftRight,
+      };
+    } else {
+      // Pre-v2: 0 = old 3-col "L/M/R", 1 = "L/T R/B", 2 = leftCenterRight.
+      tapZones = switch (rawZones) {
+        1 => TapZoneMode.leftRight,
+        _ => TapZoneMode.leftMiddleRight,
+      };
+    }
+    return ReaderSettings(
+      readingMode: ReadingMode.values[json['readingMode'] as int? ?? 0],
+      rotationMode: RotationMode.values[json['rotationMode'] as int? ?? 1],
+      tapZones: tapZones,
+      sidePadding: (json['sidePadding'] as num?)?.toDouble() ?? 0.0,
+      cropBorders: (json['cropBorders'] as int? ?? 0) == 1,
+      bookMode: (json['bookMode'] as int? ?? 0) == 1,
+      disableDoubleTap: (json['disableDoubleTap'] as int? ?? 0) == 1,
+      disableZoomOut: (json['disableZoomOut'] as int? ?? 0) == 1,
+      showPageNumber: (json['showPageNumber'] as int? ?? 1) == 1,
+      showPageNavigator: (json['showPageNavigator'] as int? ?? 1) == 1,
+      fullscreen: (json['fullscreen'] as int? ?? 0) == 1,
+      keepScreenOn: (json['keepScreenOn'] as int? ?? 1) == 1,
+      showActionsOnLongTap: (json['showActionsOnLongTap'] as int? ?? 1) == 1,
+      animatePageTransition: (json['animatePageTransition'] as int? ?? 1) == 1,
+      progressBarPlacement: ProgressBarPlacement
+          .values[json['progressBarPlacement'] as int? ?? 1],
+      brightness: (json['brightness'] as num?)?.toDouble() ?? 1.0,
+      contrast: (json['contrast'] as num?)?.toDouble() ?? 1.0,
+      saturation: (json['saturation'] as num?)?.toDouble() ?? 1.0,
+      tintColor: json['tintColor'] != null
+          ? Color(json['tintColor'] as int)
+          : null,
+      tintOpacity: (json['tintOpacity'] as num?)?.toDouble() ?? 0.0,
+    );
+  }
 }
 
 class ReaderSettingsSheet extends StatefulWidget {
@@ -309,14 +341,18 @@ class _ReadingTab extends StatelessWidget {
               segments: const [
                 ButtonSegment(
                   value: TapZoneMode.leftRight,
-                  label: Text('L/M/R'),
+                  label: Text('L/R'),
                 ),
                 ButtonSegment(
-                  value: TapZoneMode.leftTopRightBottom,
-                  label: Text('L/T R/B'),
+                  value: TapZoneMode.leftMiddleRight,
+                  label: Text('L/M/R'),
                 ),
               ],
-              selected: {settings.tapZones},
+              selected: {
+                settings.tapZones == TapZoneMode.leftTopRightBottom
+                    ? TapZoneMode.leftRight
+                    : settings.tapZones,
+              },
               onSelectionChanged: (v) {
                 final mode = v.firstOrNull ?? TapZoneMode.leftRight;
                 onChanged(
@@ -350,7 +386,7 @@ class _ReadingTab extends StatelessWidget {
           _section(context, 'Options', [
             SwitchListTile(
               title: const Text('Book Mode'),
-              subtitle: const Text('Two pages per spread'),
+              subtitle: const Text('Two pages per spread (locks landscape)'),
               value: settings.bookMode,
               onChanged: (v) => onChanged(
                 ReaderSettings(
