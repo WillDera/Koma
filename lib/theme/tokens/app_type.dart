@@ -169,6 +169,20 @@ class AppType {
     );
   }
 
+  /// Small-caps label — Aethelgard "label-caps" style. Used for metadata,
+  /// navigation labels, and section headers that need a distinct texture
+  /// from body text. 12px / 700 / 0.05em letter-spacing.
+  static TextStyle labelCaps({double fontSize = 12, Color? color}) {
+    return TextStyle(
+      fontFamily: _ui,
+      fontSize: fontSize,
+      height: 16 / 12,
+      fontWeight: FontWeight.w700,
+      letterSpacing: 0.05 * fontSize,
+      color: color,
+    );
+  }
+
   /// Italic reading style (for chapter titles, quotes, snippet text).
   static TextStyle readingItalic({
     double fontSize = 17,

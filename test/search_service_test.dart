@@ -4,7 +4,6 @@ import 'package:koma/core/models/chapter.dart';
 import 'package:koma/core/models/snippet.dart';
 import 'package:koma/core/repositories/repositories.dart';
 import 'package:koma/core/services/search_service.dart';
-import 'package:koma/core/services/search_service.dart';
 
 import 'helpers/test_database.dart';
 
@@ -18,7 +17,12 @@ void main() {
 
     // Seed test data
     final book1Id = await repos.books.insertBook(
-      Book(id: 0, title: 'The Great Gatsby', author: 'F. Scott Fitzgerald', source: 'local'),
+      Book(
+        id: 0,
+        title: 'The Great Gatsby',
+        author: 'F. Scott Fitzgerald',
+        source: 'local',
+      ),
     );
     await repos.books.insertBook(
       Book(id: 0, title: 'Dart in Action', author: 'John Doe', source: 'local'),
@@ -29,7 +33,8 @@ void main() {
         id: 0,
         bookId: book1Id,
         title: 'Chapter 1',
-        content: 'In my younger and more vulnerable years my father gave me some advice.',
+        content:
+            'In my younger and more vulnerable years my father gave me some advice.',
         index: 0,
       ),
     );
@@ -116,7 +121,10 @@ void main() {
     test('finds snippet by content', () async {
       final snippets = await service.searchSnippets('beat on');
       expect(snippets.length, 1);
-      expect((snippets.first.item as Snippet).text, contains('boats against the current'));
+      expect(
+        (snippets.first.item as Snippet).text,
+        contains('boats against the current'),
+      );
     });
 
     test('finds snippet by source_title', () async {

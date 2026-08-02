@@ -119,27 +119,27 @@ class ExtensionSource {
   });
 
   Map<String, dynamic> toJson() => {
-        'id': id,
-        'source_id': sourceId,
-        'name': name,
-        'version': version,
-        'version_last': versionLast,
-        'lang': lang,
-        'apk_path': apkPath,
-        'class_name': className,
-        'icon_url': iconUrl,
-        'base_url': baseUrl,
-        'source_code_url': sourceCodeUrl,
-        'repo_url': repoUrl,
-        'is_installed': isInstalled ? 1 : 0,
-        'is_active': isActive ? 1 : 0,
-        'is_nsfw': isNsfw ? 1 : 0,
-        'is_pinned': isPinned ? 1 : 0,
-        'is_obsolete': isObsolete ? 1 : 0,
-        'source_code_language': sourceCodeLanguage,
-        'created_at': createdAt?.toIso8601String(),
-        'updated_at': updatedAt?.toIso8601String(),
-      };
+    'id': id,
+    'source_id': sourceId,
+    'name': name,
+    'version': version,
+    'version_last': versionLast,
+    'lang': lang,
+    'apk_path': apkPath,
+    'class_name': className,
+    'icon_url': iconUrl,
+    'base_url': baseUrl,
+    'source_code_url': sourceCodeUrl,
+    'repo_url': repoUrl,
+    'is_installed': isInstalled ? 1 : 0,
+    'is_active': isActive ? 1 : 0,
+    'is_nsfw': isNsfw ? 1 : 0,
+    'is_pinned': isPinned ? 1 : 0,
+    'is_obsolete': isObsolete ? 1 : 0,
+    'source_code_language': sourceCodeLanguage,
+    'created_at': createdAt?.toIso8601String(),
+    'updated_at': updatedAt?.toIso8601String(),
+  };
 
   factory ExtensionSource.fromJson(Map<String, dynamic> json) =>
       ExtensionSource(
@@ -160,8 +160,7 @@ class ExtensionSource {
         isNsfw: (json['is_nsfw'] as int? ?? 0) == 1,
         isPinned: (json['is_pinned'] as int? ?? 0) == 1,
         isObsolete: (json['is_obsolete'] as int? ?? 0) == 1,
-        sourceCodeLanguage:
-            json['source_code_language'] as String? ?? 'mihon',
+        sourceCodeLanguage: json['source_code_language'] as String? ?? 'mihon',
         createdAt: json['created_at'] != null
             ? DateTime.parse(json['created_at'] as String)
             : null,

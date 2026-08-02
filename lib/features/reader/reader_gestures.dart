@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-enum TapZoneLayout { leftRight, leftTopRightBottom, leftCenterRight }
+enum TapZoneLayout { leftRight, leftMiddleRight }
 
 enum GestureOutcome {
   none,
@@ -39,30 +39,26 @@ class ReaderGestureRecognizer {
   final ReaderGestureConfig config;
   final TapZoneLayout layout;
 
-  ReaderGestureRecognizer({this.config = const ReaderGestureConfig(), this.layout = TapZoneLayout.leftRight});
+  ReaderGestureRecognizer({
+    this.config = const ReaderGestureConfig(),
+    this.layout = TapZoneLayout.leftRight,
+  });
 
   GestureOutcome resolveTap(Offset local, Size size) {
     final third = size.width / 3;
-    final left = local.dx < third;
-    final right = local.dx > size.width - third;
 
-    if (layout == TapZoneLayout.leftTopRightBottom) {
-      final top = local.dy < size.height / 2;
-      if (left && top) return GestureOutcome.tapLeft;
-      if (right && !top) return GestureOutcome.tapRight;
-      return GestureOutcome.tapCenter;
-    }
-    if (layout == TapZoneLayout.leftCenterRight) {
-      final centerH = size.height * 0.4;
-      final centerY = local.dy.between(size.height / 2 - centerH, size.height / 2 + centerH);
-      if (!centerY) return GestureOutcome.none;
-      if (left) return GestureOutcome.tapLeft;
-      if (right) return GestureOutcome.tapRight;
-      return GestureOutcome.tapCenter;
+    // L/M/R (mangayomi default): top strip = prev, bottom = next,
+    // middle row = L | UI | R.
+    if (layout == TapZoneLayout.leftMiddleRight) {
+      final topBand = size.height * 2 / 9;
+      final bottomBand = size.height * 7 / 9;
+      if (local.dy < topBand) return GestureOutcome.tapLeft;
+      if (local.dy > bottomBand) return GestureOutcome.tapRight;
     }
 
-    if (left) return GestureOutcome.tapLeft;
-    if (right) return GestureOutcome.tapRight;
+    // Shared L | M | R columns (also the entire L/R layout).
+    if (local.dx < third) return GestureOutcome.tapLeft;
+    if (local.dx > size.width - third) return GestureOutcome.tapRight;
     return GestureOutcome.tapCenter;
   }
 
@@ -102,8 +98,4 @@ class ReaderGestureRecognizer {
     if (details.delta.dy > 0) return GestureOutcome.swipeDown;
     return GestureOutcome.swipeUp;
   }
-}
-
-extension DoubleExtension on double {
-  bool between(double min, double max) => this >= min && this <= max;
 }

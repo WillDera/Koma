@@ -3,21 +3,23 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:isar_community/isar.dart';
-import 'package:koma/core/isar/isar.dart'
-    show openIsarInMemory;
+import 'package:koma/core/isar/isar.dart' show openIsarInMemory;
+import 'package:koma/core/models/book.dart';
+import 'package:koma/core/models/chapter.dart';
+import 'package:koma/core/models/highlight.dart';
+import 'package:koma/core/models/manga.dart';
+import 'package:koma/core/models/manga_chapter.dart';
 import 'package:koma/core/repositories/book_repository.dart';
 import 'package:koma/core/repositories/manga_repository.dart';
 import 'package:koma/core/repositories/snippet_repository.dart';
-import 'package:koma/core/models/book.dart';
-import 'package:koma/core/models/chapter.dart';
-import 'package:koma/core/models/manga.dart';
-import 'package:koma/core/models/manga_chapter.dart';
 
 /// Point Isar at the macOS dylib shipped in isar_community_flutter_libs.
 Future<void> _initIsarCore() async {
   final home = Platform.environment['HOME']!;
-  final dylib = File('$home/.pub-cache/hosted/pub.dev/'
-      'isar_community_flutter_libs-3.3.2/macos/libisar.dylib');
+  final dylib = File(
+    '$home/.pub-cache/hosted/pub.dev/'
+    'isar_community_flutter_libs-3.3.2/macos/libisar.dylib',
+  );
   await Isar.initializeIsarCore(libraries: {Abi.current(): dylib.path});
 }
 
@@ -38,13 +40,15 @@ void main() {
   group('BookRepository', () {
     test('insert + get round-trip preserves fields', () async {
       final repo = BookRepository(isar);
-      final id = await repo.insertBook(Book(
-        id: 0,
-        title: 'The Odyssey',
-        author: 'Homer',
-        source: 'local',
-        progress: 0.3,
-      ));
+      final id = await repo.insertBook(
+        Book(
+          id: 0,
+          title: 'The Odyssey',
+          author: 'Homer',
+          source: 'local',
+          progress: 0.3,
+        ),
+      );
       final fetched = await repo.getBook(id);
       expect(fetched, isNotNull);
       expect(fetched!.title, 'The Odyssey');
@@ -52,10 +56,199 @@ void main() {
       expect(fetched.progress, 0.3);
     });
 
+    test('insertHighlight returns the stored id', () async {
+      final repo = BookRepository(isar);
+      final bookId = await repo.insertBook(
+        Book(id: 0, title: 'B', source: 'local'),
+      );
+      final chId = await repo.insertChapter(
+        Chapter(id: 0, bookId: bookId, title: 'C', content: 'x', index: 0),
+      );
+
+      // The reader keeps an in-memory copy of each new mark. It needs the real
+      // id, or its copy can never be matched against the stored row.
+      final id = await repo.insertHighlight(
+        Highlight(
+          id: 0,
+          bookId: bookId,
+          chapterId: chId,
+          startOffset: 10,
+          endOffset: 20,
+          color: 'yellow',
+          text: 'ten chars',
+        ),
+      );
+      expect(id, greaterThan(0));
+
+      final stored = await repo.getHighlightsForChapter(chId);
+      expect(stored.single.id, id);
+    });
+
+    test('a caller can append to the highlights it fetched', () async {
+      // Regression: getHighlightsForChapter returns toList(growable: false),
+      // and the reader assigned that list straight to its mutable field, so
+      // marking text threw "cannot add to a fixed-length list". The repository
+      // contract is deliberate — read-only snapshots — so the fix is that
+      // consumers copy. This pins the behaviour the reader depends on.
+      final repo = BookRepository(isar);
+      final bookId = await repo.insertBook(
+        Book(id: 0, title: 'B', source: 'local'),
+      );
+      final chId = await repo.insertChapter(
+        Chapter(id: 0, bookId: bookId, title: 'C', content: 'x', index: 0),
+      );
+      await repo.insertHighlight(
+        Highlight(
+          id: 0,
+          bookId: bookId,
+          chapterId: chId,
+          startOffset: 0,
+          endOffset: 5,
+          color: 'yellow',
+          text: 'first',
+        ),
+      );
+
+      final fetched = await repo.getHighlightsForChapter(chId);
+      // The snapshot itself is fixed-length, by design.
+      expect(() => fetched.add(fetched.first), throwsUnsupportedError);
+      // A copy is what the reader must hold, and it must accept new marks.
+      final working = List<Highlight>.of(fetched);
+      working.add(fetched.first);
+      expect(working, hasLength(2));
+    });
+
+    test('a new chapter has no reading offset recorded', () async {
+      final repo = BookRepository(isar);
+      final bookId = await repo.insertBook(
+        Book(id: 0, title: 'B', source: 'local'),
+      );
+      final chId = await repo.insertChapter(
+        Chapter(id: 0, bookId: bookId, title: 'C', content: 'x', index: 0),
+      );
+      expect((await repo.getChapter(chId))!.readingCharOffset, isNull);
+    });
+
+    test('updateChapterReadingOffset round-trips through Isar', () async {
+      final repo = BookRepository(isar);
+      final bookId = await repo.insertBook(
+        Book(id: 0, title: 'B', source: 'local'),
+      );
+      final chId = await repo.insertChapter(
+        Chapter(id: 0, bookId: bookId, title: 'C', content: 'x', index: 0),
+      );
+
+      await repo.updateChapterReadingOffset(chId, 4210);
+      expect((await repo.getChapter(chId))!.readingCharOffset, 4210);
+
+      // Offset 0 is a real position, not "unset".
+      await repo.updateChapterReadingOffset(chId, 0);
+      expect((await repo.getChapter(chId))!.readingCharOffset, 0);
+    });
+
+    test(
+      'reading offset and scroll position are stored independently',
+      () async {
+        final repo = BookRepository(isar);
+        final bookId = await repo.insertBook(
+          Book(id: 0, title: 'B', source: 'local'),
+        );
+        final chId = await repo.insertChapter(
+          Chapter(id: 0, bookId: bookId, title: 'C', content: 'x', index: 0),
+        );
+
+        await repo.updateChapterScroll(chId, 812.5);
+        await repo.updateChapterReadingOffset(chId, 3300);
+
+        final ch = await repo.getChapter(chId);
+        expect(ch!.scrollPosition, 812.5);
+        expect(ch.readingCharOffset, 3300);
+
+        // Writing one must not clobber the other — the two layout modes coexist.
+        await repo.updateChapterScroll(chId, 900.0);
+        final after = await repo.getChapter(chId);
+        expect(after!.scrollPosition, 900.0);
+        expect(after.readingCharOffset, 3300);
+      },
+    );
+
+    test('applyEnrichment updates Book and upserts BookMetadata', () async {
+      final repo = BookRepository(isar);
+      final id = await repo.insertBook(
+        Book(id: 0, title: 'The Hobbit', author: 'Unknown', source: 'local'),
+      );
+
+      final released = DateTime(1937, 9, 21);
+      await repo.applyEnrichment(
+        bookId: id,
+        author: 'J. R. R. Tolkien',
+        localCoverPath: '/tmp/hobbit.jpg',
+        genres: const ['Fantasy', 'Adventure'],
+        releaseDate: released,
+        source: 'open_library',
+        remoteId: '/works/OL27448W',
+        coverUrl: 'https://covers.openlibrary.org/b/id/1-L.jpg',
+        rawTitle: 'The Hobbit',
+      );
+
+      final book = await repo.getBook(id);
+      expect(book!.author, 'J. R. R. Tolkien');
+      expect(book.coverPath, '/tmp/hobbit.jpg');
+      expect(book.genre, 'Fantasy, Adventure');
+      expect(book.releaseDate!.year, 1937);
+      expect(book.releaseDate!.month, 9);
+      expect(book.releaseDate!.day, 21);
+
+      final meta = await repo.getMetadataForBook(id);
+      expect(meta, isNotNull);
+      expect(meta!.source, 'open_library');
+      expect(meta.remoteId, '/works/OL27448W');
+      expect(meta.genres, ['Fantasy', 'Adventure']);
+      expect(meta.rawTitle, 'The Hobbit');
+      expect(meta.fetchedAt, isNotNull);
+
+      // Second enrich upserts the same provenance row.
+      await repo.applyEnrichment(
+        bookId: id,
+        author: 'J.R.R. Tolkien',
+        localCoverPath: '/tmp/hobbit2.jpg',
+        genres: const ['Fantasy'],
+        releaseDate: DateTime(1937, 1, 1),
+        source: 'google_books',
+        remoteId: 'abc123',
+        coverUrl: 'https://example.com/c.jpg',
+        rawTitle: 'The Hobbit',
+      );
+      final meta2 = await repo.getMetadataForBook(id);
+      expect(meta2!.id, meta.id);
+      expect(meta2.source, 'google_books');
+    });
+
+    test('deleteBook cascades BookMetadata', () async {
+      final repo = BookRepository(isar);
+      final id = await repo.insertBook(
+        Book(id: 0, title: 'X', source: 'local'),
+      );
+      await repo.applyEnrichment(
+        bookId: id,
+        author: 'A',
+        localCoverPath: null,
+        genres: const ['G'],
+        releaseDate: null,
+        source: 'open_library',
+        remoteId: 'r1',
+        coverUrl: null,
+        rawTitle: 'X',
+      );
+      await repo.deleteBook(id);
+      expect(await repo.getMetadataForBook(id), isNull);
+    });
+
     test('updateProgress mutates only progress fields', () async {
       final repo = BookRepository(isar);
       final id = await repo.insertBook(
-          Book(id: 0, title: 'B', source: 'local'));
+        Book(id: 0, title: 'B', source: 'local'),
+      );
       await repo.updateProgress(id, 0.75, currentChapterIndex: 4);
       final b = await repo.getBook(id);
       expect(b!.progress, 0.75);
@@ -65,7 +258,8 @@ void main() {
     test('deleteBook cascades chapters', () async {
       final repo = BookRepository(isar);
       final bookId = await repo.insertBook(
-          Book(id: 0, title: 'B', source: 'local'));
+        Book(id: 0, title: 'B', source: 'local'),
+      );
       await repo.insertChapters([
         Chapter(id: 0, bookId: bookId, title: 'C1', content: 'x', index: 0),
         Chapter(id: 0, bookId: bookId, title: 'C2', content: 'y', index: 1),
@@ -97,7 +291,8 @@ void main() {
     test('watchBook emits null after delete', () async {
       final repo = BookRepository(isar);
       final id = await repo.insertBook(
-          Book(id: 0, title: 'B', source: 'local'));
+        Book(id: 0, title: 'B', source: 'local'),
+      );
       final emissions = <Book?>[];
       final sub = repo.watchBook(id).listen(emissions.add);
       await Future<void>.delayed(const Duration(milliseconds: 50));
@@ -149,15 +344,19 @@ void main() {
   group('MangaRepository', () {
     test('getInProgressManga computes read counts', () async {
       final repo = MangaRepository(isar);
-      final mid = await repo.insertManga(Manga(
-        id: 0,
-        name: 'M',
-        url: '/m',
-        sourceId: 'src1',
-      ));
+      final mid = await repo.insertManga(
+        Manga(id: 0, name: 'M', url: '/m', sourceId: 'src1'),
+      );
       await repo.insertMangaChapters(mid, [
-        MangaChapter(id: 0, mangaId: mid, name: 'c1', url: '/c1', index: 0,
-            isRead: true, readAt: DateTime.now()),
+        MangaChapter(
+          id: 0,
+          mangaId: mid,
+          name: 'c1',
+          url: '/c1',
+          index: 0,
+          isRead: true,
+          readAt: DateTime.now(),
+        ),
         MangaChapter(id: 0, mangaId: mid, name: 'c2', url: '/c2', index: 1),
       ]);
       final inProgress = await repo.getInProgressManga();
@@ -167,10 +366,120 @@ void main() {
       expect(inProgress.first.progress, 0.5);
     });
 
+    test('getInProgressManga excludes manga with no read chapters', () async {
+      final repo = MangaRepository(isar);
+      final mid = await repo.insertManga(
+        Manga(id: 0, name: 'Untouched', url: '/u', sourceId: 's'),
+      );
+      await repo.insertMangaChapters(mid, [
+        MangaChapter(id: 0, mangaId: mid, name: 'c1', url: '/c1', index: 0),
+        MangaChapter(id: 0, mangaId: mid, name: 'c2', url: '/c2', index: 1),
+      ]);
+      expect(await repo.getInProgressManga(), isEmpty);
+    });
+
+    test(
+      'getInProgressManga counts isRead even without a readAt stamp',
+      () async {
+        final repo = MangaRepository(isar);
+        final mid = await repo.insertManga(
+          Manga(id: 0, name: 'M', url: '/m', sourceId: 's'),
+        );
+        await repo.insertMangaChapters(mid, [
+          MangaChapter(
+            id: 0,
+            mangaId: mid,
+            name: 'c1',
+            url: '/c1',
+            index: 0,
+            isRead: true,
+          ),
+          MangaChapter(id: 0, mangaId: mid, name: 'c2', url: '/c2', index: 1),
+        ]);
+        final inProgress = await repo.getInProgressManga();
+        expect(inProgress.length, 1);
+        expect(inProgress.first.readCount, 1);
+        expect(inProgress.first.totalChapters, 2);
+        expect(inProgress.first.lastReadAt, isNull);
+      },
+    );
+
+    test(
+      'getInProgressManga groups per manga and orders by lastReadAt desc',
+      () async {
+        final repo = MangaRepository(isar);
+        final older = DateTime(2026, 1, 1);
+        final newer = DateTime(2026, 6, 1);
+
+        final aId = await repo.insertManga(
+          Manga(id: 0, name: 'A-older', url: '/a', sourceId: 's'),
+        );
+        final bId = await repo.insertManga(
+          Manga(id: 0, name: 'B-newer', url: '/b', sourceId: 's'),
+        );
+        // Has chapters but none read — must not appear at all.
+        final cId = await repo.insertManga(
+          Manga(id: 0, name: 'C-unread', url: '/c', sourceId: 's'),
+        );
+
+        await repo.insertMangaChapters(aId, [
+          MangaChapter(
+            id: 0,
+            mangaId: aId,
+            name: 'a1',
+            url: '/a1',
+            index: 0,
+            isRead: true,
+            readAt: older,
+          ),
+          MangaChapter(id: 0, mangaId: aId, name: 'a2', url: '/a2', index: 1),
+          MangaChapter(id: 0, mangaId: aId, name: 'a3', url: '/a3', index: 2),
+        ]);
+        await repo.insertMangaChapters(bId, [
+          MangaChapter(
+            id: 0,
+            mangaId: bId,
+            name: 'b1',
+            url: '/b1',
+            index: 0,
+            isRead: true,
+            readAt: older,
+          ),
+          // Latest stamp for B — drives ordering ahead of A.
+          MangaChapter(
+            id: 0,
+            mangaId: bId,
+            name: 'b2',
+            url: '/b2',
+            index: 1,
+            isRead: true,
+            readAt: newer,
+          ),
+        ]);
+        await repo.insertMangaChapters(cId, [
+          MangaChapter(id: 0, mangaId: cId, name: 'c1', url: '/c1', index: 0),
+        ]);
+
+        final inProgress = await repo.getInProgressManga();
+        expect(inProgress.map((e) => e.manga.name), ['B-newer', 'A-older']);
+
+        final b = inProgress[0];
+        expect(b.readCount, 2);
+        expect(b.totalChapters, 2);
+        expect(b.lastReadAt, newer);
+
+        final a = inProgress[1];
+        expect(a.readCount, 1);
+        expect(a.totalChapters, 3);
+        expect(a.lastReadAt, older);
+      },
+    );
+
     test('setMangaInLibrary toggles library membership', () async {
       final repo = MangaRepository(isar);
       final mid = await repo.insertManga(
-          Manga(id: 0, name: 'M', url: '/m', sourceId: 's'));
+        Manga(id: 0, name: 'M', url: '/m', sourceId: 's'),
+      );
       expect((await repo.getMangasInLibrary()).length, 0);
       await repo.setMangaInLibrary(mid, true);
       expect((await repo.getMangasInLibrary()).length, 1);
@@ -179,7 +488,8 @@ void main() {
     test('getMangaByKey finds by sourceId + url', () async {
       final repo = MangaRepository(isar);
       await repo.insertManga(
-          Manga(id: 0, name: 'M', url: '/unique', sourceId: 'srcX'));
+        Manga(id: 0, name: 'M', url: '/unique', sourceId: 'srcX'),
+      );
       final found = await repo.getMangaByKey('srcX', '/unique');
       expect(found, isNotNull);
       expect(found!.name, 'M');

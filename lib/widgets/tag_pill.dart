@@ -33,7 +33,9 @@ class TagPill extends StatelessWidget {
     final accent = color ?? c.accent;
     final bg = selected ? accent.withValues(alpha: 0.14) : c.surfaceMuted;
     final fg = selected ? accent : c.textSecondary;
-    final borderColor = selected ? accent.withValues(alpha: 0.35) : Colors.transparent;
+    final borderColor = selected
+        ? accent.withValues(alpha: 0.35)
+        : Colors.transparent;
 
     final child = AnimatedContainer(
       duration: AppMotion.base,

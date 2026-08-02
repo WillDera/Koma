@@ -22,13 +22,18 @@ class BionicText {
       } else {
         // Skip bionic for single-character tokens (punctuation glued
         // to a word is bolded as part of the word).
-        final splitAt = (token.length * bionicFraction).round().clamp(1, token.length);
+        final splitAt = (token.length * bionicFraction).round().clamp(
+          1,
+          token.length,
+        );
         final head = token.substring(0, splitAt);
         final tail = token.substring(splitAt);
-        out.add(TextSpan(
-          text: head,
-          style: baseStyle.copyWith(fontWeight: bionicWeight),
-        ));
+        out.add(
+          TextSpan(
+            text: head,
+            style: baseStyle.copyWith(fontWeight: bionicWeight),
+          ),
+        );
         if (tail.isNotEmpty) {
           out.add(TextSpan(text: tail, style: baseStyle));
         }

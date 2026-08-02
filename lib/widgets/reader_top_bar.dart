@@ -96,9 +96,12 @@ class ReaderTopBar extends StatelessWidget {
                             variant: isTtsActive
                                 ? IconButtonVariant.filled
                                 : IconButtonVariant.tonal,
-                            iconColor: isTtsActive ? context.colors.onAccent : null,
-                            backgroundColor:
-                                isTtsActive ? context.colors.accent : null,
+                            iconColor: isTtsActive
+                                ? context.colors.onAccent
+                                : null,
+                            backgroundColor: isTtsActive
+                                ? context.colors.accent
+                                : null,
                             onPressed: onTtsToggle,
                           ),
                         ],

@@ -3,6 +3,7 @@ import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 
 import 'collections/book.dart';
+import 'collections/book_metadata.dart';
 import 'collections/bookmark.dart';
 import 'collections/chapter.dart';
 import 'collections/extension_repo.dart';
@@ -19,6 +20,7 @@ import 'collections/tag.dart';
 import 'collections/web_cache.dart';
 
 export 'collections/book.dart';
+export 'collections/book_metadata.dart';
 export 'collections/bookmark.dart';
 export 'collections/chapter.dart';
 export 'collections/extension_repo.dart';
@@ -37,6 +39,7 @@ export 'collections/web_cache.dart';
 /// Schema list passed to [Isar.open]. Order is significant for Isar's
 /// internal layout — don't reorder without a migration. Mirrors
 /// mangayomi's [StorageProvider.initDB] schema list.
+/// New collections are appended only.
 const List<CollectionSchema<dynamic>> komaIsarSchemas = [
   BookSchema,
   BookmarkSchema,
@@ -53,6 +56,7 @@ const List<CollectionSchema<dynamic>> komaIsarSchemas = [
   ReadingStatSchema,
   WebCacheSchema,
   SourceSchema,
+  BookMetadataSchema,
 ];
 
 /// Open (or create) the Koma Isar instance in the app documents dir.

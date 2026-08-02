@@ -19,6 +19,11 @@ class ExtensionSource {
   final DateTime createdAt;
   final DateTime updatedAt;
 
+  /// True when a newer version is available in the repo index. `versionLast`
+  /// is written by [checkForUpdates] on app start / index fetch.
+  bool get isUpdateAvailable =>
+      versionLast != null && versionLast!.isNotEmpty && versionLast != version;
+
   ExtensionSource({
     required this.id,
     required this.sourceId,
@@ -39,8 +44,8 @@ class ExtensionSource {
     this.isObsolete = false,
     DateTime? createdAt,
     DateTime? updatedAt,
-  })  : createdAt = createdAt ?? DateTime.now(),
-        updatedAt = updatedAt ?? DateTime.now();
+  }) : createdAt = createdAt ?? DateTime.now(),
+       updatedAt = updatedAt ?? DateTime.now();
 
   ExtensionSource copyWith({
     String? id,
@@ -87,26 +92,26 @@ class ExtensionSource {
   }
 
   Map<String, dynamic> toJson() => {
-        'id': id,
-        'sourceId': sourceId,
-        'name': name,
-        'version': version,
-        'version_last': versionLast,
-        'lang': lang,
-        'apk_path': apkPath,
-        'class_name': className,
-        'icon_url': iconUrl,
-        'base_url': baseUrl,
-        'source_code_url': sourceCodeUrl,
-        'repo_url': repoUrl,
-        'is_installed': isInstalled ? 1 : 0,
-        'is_active': isActive ? 1 : 0,
-        'is_nsfw': isNsfw ? 1 : 0,
-        'is_pinned': isPinned ? 1 : 0,
-        'is_obsolete': isObsolete ? 1 : 0,
-        'created_at': createdAt.toIso8601String(),
-        'updated_at': updatedAt.toIso8601String(),
-      };
+    'id': id,
+    'sourceId': sourceId,
+    'name': name,
+    'version': version,
+    'version_last': versionLast,
+    'lang': lang,
+    'apk_path': apkPath,
+    'class_name': className,
+    'icon_url': iconUrl,
+    'base_url': baseUrl,
+    'source_code_url': sourceCodeUrl,
+    'repo_url': repoUrl,
+    'is_installed': isInstalled ? 1 : 0,
+    'is_active': isActive ? 1 : 0,
+    'is_nsfw': isNsfw ? 1 : 0,
+    'is_pinned': isPinned ? 1 : 0,
+    'is_obsolete': isObsolete ? 1 : 0,
+    'created_at': createdAt.toIso8601String(),
+    'updated_at': updatedAt.toIso8601String(),
+  };
 
   factory ExtensionSource.fromJson(Map<String, dynamic> json) =>
       ExtensionSource(

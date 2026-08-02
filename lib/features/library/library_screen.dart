@@ -16,11 +16,13 @@ import '../../core/models/manga.dart';
 import '../../core/providers.dart';
 import '../../core/services/cache_service.dart';
 import '../../core/services/ebook_service.dart';
+import '../../core/services/metadata_enrichment_service.dart';
 import '../../core/services/web_scraper_service.dart';
 import '../../core/utils/benchmark_logger.dart';
 import '../../core/utils/image_cache.dart';
 import '../../core/utils/image_headers.dart';
 import '../../router/router.dart';
+import '../../theme/app_icons.dart';
 import '../../theme/app_theme.dart';
 import '../../theme/theme_provider.dart';
 import '../../theme/tokens/app_spacing.dart';
@@ -64,6 +66,22 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> with RouteAware {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       ref.read(libraryProvider.notifier).loadBooks();
       _loadThumbnails();
+    });
+    // In-app notification when an auto poll discovers new chapters. Cleared
+    // by checkForNewChapters' loadBooks rebuild; a system notification is
+    // deferred to the infra task (workmanager + flutter_local_notifications).
+    ref.listenManual(libraryUpdateResultProvider, (prev, next) {
+      if (next == null || next.totalNew == 0) return;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        StashToast.show(
+          context,
+          message:
+              '${next.totalNew} new chapter${next.totalNew == 1 ? '' : 's'} in ${next.updatedNames.length} manga',
+          icon: Icons.auto_awesome,
+          duration: const Duration(seconds: 3),
+        );
+      });
     });
   }
 
@@ -133,9 +151,9 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> with RouteAware {
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   IconButtonRound(
-                    icon: provider.isGridView
-                        ? Icons.list
-                        : Icons.grid_view_rounded,
+                    iconData: provider.isGridView
+                        ? AppIcons.list
+                        : AppIcons.grid,
                     size: 44,
                     variant: IconButtonVariant.filled,
                     backgroundColor: context.colors.surfaceMuted,
@@ -143,12 +161,8 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> with RouteAware {
                     onPressed: ln.toggleLayout,
                   ),
                   const SizedBox(height: 10),
-                  IconButtonRound(
-                    icon: Icons.add,
-                    size: 52,
-                    variant: IconButtonVariant.filled,
-                    backgroundColor: context.colors.accent,
-                    iconColor: context.colors.onAccent,
+                  _AethelgardFab(
+                    iconData: AppIcons.add,
                     onPressed: () => _showImportOptions(context),
                   ),
                 ],
@@ -199,11 +213,13 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> with RouteAware {
   // ── Body dispatcher ─────────────────────────────────────────────────
 
   Widget _body(BuildContext context, LibraryState provider) {
-    if (provider.loading && provider.books.isEmpty && provider.mangas.isEmpty)
+    if (provider.loading && provider.books.isEmpty && provider.mangas.isEmpty) {
       return _loading(context, provider.gridColumns);
+    }
     if (provider.error != null) return _error(context, provider);
-    if (provider.books.isEmpty && provider.mangas.isEmpty)
+    if (provider.books.isEmpty && provider.mangas.isEmpty) {
       return _empty(context);
+    }
     return _combined(context, provider);
   }
 
@@ -226,7 +242,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> with RouteAware {
             childAspectRatio: 0.62,
           ),
           itemCount: 6,
-          itemBuilder: (_, __) => Column(
+          itemBuilder: (_, _) => Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: const [
               Skeleton(
@@ -248,12 +264,13 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> with RouteAware {
         _header(context, provider),
         Expanded(
           child: EmptyState(
-            icon: Icons.error_outline,
+            icon: AppIcons.alert,
             title: 'Something went wrong',
             subtitle: provider.error!,
             primaryActionLabel: 'Try again',
-            primaryActionIcon: Icons.refresh,
-            onPrimaryAction: () => ref.read(libraryProvider.notifier).loadBooks(),
+            primaryActionIcon: AppIcons.refresh,
+            onPrimaryAction: () =>
+                ref.read(libraryProvider.notifier).loadBooks(),
           ),
         ),
       ],
@@ -266,12 +283,12 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> with RouteAware {
         _header(context, ref.read(libraryProvider)),
         Expanded(
           child: EmptyState(
-            icon: Icons.auto_stories_outlined,
+            icon: AppIcons.bookOpen,
             title: 'Your library is empty',
             subtitle:
                 'Import an EPUB, paste a URL, or write a note to begin your reading collection.',
             primaryActionLabel: 'Add to library',
-            primaryActionIcon: Icons.add,
+            primaryActionIcon: AppIcons.add,
             onPrimaryAction: () => _showImportOptions(context),
           ),
         ),
@@ -299,13 +316,14 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> with RouteAware {
             selectedCount: provider.selectedIds.length,
             onSelectAll: () => ref.read(libraryProvider.notifier).selectAll(),
             onDeleteSelected: () => _confirmDelete(context, provider),
-            onClearSelection: () => ref.read(libraryProvider.notifier).clearSelection(),
+            onClearSelection: () =>
+                ref.read(libraryProvider.notifier).clearSelection(),
           ),
           if (!provider.selectionMode)
             StaggeredEntrance(
               index: 0,
               child: FeaturePanel(
-                icon: Icons.auto_stories_outlined,
+                icon: AppIcons.books,
                 title: 'Your reading stack',
                 subtitle:
                     'Books, manga, web saves, and notes arranged for fast return.',
@@ -352,6 +370,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> with RouteAware {
                     notifier: ref.read(libraryProvider.notifier),
                     showSourcePills: provider.showSourcePills,
                     onOpen: (id) => _openReader(context, id),
+                    onBookLongPress: _showBookActions,
                   )
                 : _MangaShelf(
                     key: const ValueKey('manga-shelf'),
@@ -403,10 +422,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> with RouteAware {
         ],
       );
     }
-    return LibraryHeader(
-      title: 'Library',
-      titleSize: _oneHand ? 64 : 32,
-    );
+    return LibraryHeader(title: 'Library', titleSize: _oneHand ? 64 : 32);
   }
 
   List<Book> _visibleBooks(List<Book> books) {
@@ -526,7 +542,8 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> with RouteAware {
         ),
       ],
     );
-    if (confirmed == true) await ref.read(libraryProvider.notifier).deleteSelected();
+    if (confirmed == true)
+      await ref.read(libraryProvider.notifier).deleteSelected();
   }
 
   void _showImportOptions(BuildContext context) {
@@ -688,10 +705,10 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> with RouteAware {
         sourceUrl: url,
         totalChapters: 1,
       );
-final bookId = await provider.addBook(book);
-       await repos.books.insertChapter(
-         Chapter(
-           id: 0,
+      final bookId = await provider.addBook(book);
+      await repos.books.insertChapter(
+        Chapter(
+          id: 0,
           bookId: bookId,
           title: result.title,
           content: result.contentHtml,
@@ -715,6 +732,74 @@ final bookId = await provider.addBook(book);
         );
       }
     }
+  }
+
+  Future<void> _fetchMetadata(Book book) async {
+    final enrichment = ref.read(metadataEnrichmentProvider.notifier);
+    await enrichment.enrichOne(book);
+    if (!mounted) return;
+    await ref.read(libraryProvider.notifier).loadBooks();
+    if (!mounted) return;
+    final progress = ref.read(metadataEnrichmentProvider);
+    StashToast.show(
+      context,
+      message: progress.lastMessage ?? 'Done',
+      icon: progress.errors.isEmpty ? Icons.auto_awesome : Icons.error_outline,
+    );
+  }
+
+  void _showBookActions(Book book) {
+    final notifier = ref.read(libraryProvider.notifier);
+    showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) {
+        final c = ctx.colors;
+        return Container(
+          decoration: BoxDecoration(
+            color: c.surface,
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+          ),
+          child: SafeArea(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const SizedBox(height: 8),
+                Container(
+                  width: 36,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: c.border,
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+                ListTile(
+                  leading: Icon(Icons.auto_awesome, color: c.accent),
+                  title: const Text('Fetch metadata'),
+                  subtitle: Text(
+                    'Author, cover, genres, release date',
+                    style: TextStyle(color: c.textSecondary, fontSize: 13),
+                  ),
+                  onTap: () {
+                    Navigator.pop(ctx);
+                    _fetchMetadata(book);
+                  },
+                ),
+                ListTile(
+                  leading: Icon(Icons.check_circle_outline, color: c.textPrimary),
+                  title: const Text('Select'),
+                  onTap: () {
+                    Navigator.pop(ctx);
+                    notifier.toggleSelection('b:${book.id}');
+                  },
+                ),
+                const SizedBox(height: 8),
+              ],
+            ),
+          ),
+        );
+      },
+    );
   }
 
   void _showAddNoteDialog(BuildContext context) {
@@ -770,11 +855,9 @@ final bookId = await provider.addBook(book);
     if (title.isEmpty || content.isEmpty) return;
     if (!context.mounted) return;
     try {
-      await ref.read(snippetsProvider.notifier).createSnippet(
-        text: content,
-        sourceTitle: title,
-        tags: ['note'],
-      );
+      await ref
+          .read(snippetsProvider.notifier)
+          .createSnippet(text: content, sourceTitle: title, tags: ['note']);
       if (context.mounted) {
         StashToast.show(context, message: 'Note created', icon: Icons.check);
       }
@@ -792,20 +875,29 @@ final bookId = await provider.addBook(book);
   void _openReader(BuildContext context, int bookId) {
     context.pushNamed(
       Routes.reader,
-      extra: (bookId: bookId, snippetChapterId: null, snippetScrollOffset: null)
-          as ReaderArgs,
+      extra:
+          (
+                bookId: bookId,
+                snippetChapterId: null,
+                snippetScrollOffset: null,
+                snippetStartOffset: null,
+                snippetEndOffset: null,
+              )
+              as ReaderArgs,
     );
   }
 
   void _openManga(BuildContext context, Manga manga) {
     context.pushNamed(
       Routes.mangaDetail,
-      extra: (
-        sourceId: manga.sourceId,
-        url: manga.url,
-        title: manga.name,
-        manga: manga, // Pass full Manga object for instant first frame
-      ) as MangaDetailArgs,
+      extra:
+          (
+                sourceId: manga.sourceId,
+                url: manga.url,
+                title: manga.name,
+                manga: manga, // Pass full Manga object for instant first frame
+              )
+              as MangaDetailArgs,
     );
   }
 }
@@ -846,8 +938,10 @@ class _LibraryHeaderControllerState extends State<_LibraryHeaderController> {
     widget.scrollController.addListener(_onScroll);
     _bmTimer = Timer.periodic(const Duration(seconds: 2), (_) {
       if (_bmCalls > 0 && mounted) {
-        BenchmarkLogger.log('lib_scroll_setstate',
-            'calls=$_bmCalls elapsed=2s');
+        BenchmarkLogger.log(
+          'lib_scroll_setstate',
+          'calls=$_bmCalls elapsed=2s',
+        );
         _bmCalls = 0;
       }
     });
@@ -865,10 +959,12 @@ class _LibraryHeaderControllerState extends State<_LibraryHeaderController> {
   void _onScroll() {
     _bmCalls++;
     final max = widget.scrollController.position.maxScrollExtent;
-    final p =
-        max <= 0 ? 0.0 : (widget.scrollController.offset / max).clamp(0.0, 1.0);
+    final p = max <= 0
+        ? 0.0
+        : (widget.scrollController.offset / max).clamp(0.0, 1.0);
     final now = DateTime.now();
-    final minTime = _lastSetState == null ||
+    final minTime =
+        _lastSetState == null ||
         now.difference(_lastSetState!) > const Duration(milliseconds: 100);
     if (minTime && (p - _scrollProgress).abs() > 0.02) {
       _lastSetState = now;
@@ -1382,6 +1478,7 @@ class _BookShelf extends StatelessWidget {
   final LibraryState provider;
   final LibraryNotifier notifier;
   final ValueChanged<int> onOpen;
+  final ValueChanged<Book> onBookLongPress;
   final bool showSourcePills;
 
   const _BookShelf({
@@ -1390,6 +1487,7 @@ class _BookShelf extends StatelessWidget {
     required this.provider,
     required this.notifier,
     required this.onOpen,
+    required this.onBookLongPress,
     this.showSourcePills = true,
   });
 
@@ -1399,7 +1497,7 @@ class _BookShelf extends StatelessWidget {
       return const SizedBox(
         height: 260,
         child: EmptyState(
-          icon: Icons.search_off,
+          icon: AppIcons.search,
           title: 'No books found',
           subtitle: 'Try another title, author, genre, or format.',
         ),
@@ -1430,16 +1528,20 @@ class _BookShelf extends StatelessWidget {
               onTap: () => provider.selectionMode
                   ? notifier.toggleSelection('b:${books[i].id}')
                   : onOpen(books[i].id),
-              onLongPress: () => notifier.toggleSelection('b:${books[i].id}'),
+              onLongPress: () => provider.selectionMode
+                  ? notifier.toggleSelection('b:${books[i].id}')
+                  : onBookLongPress(books[i]),
             ),
           ),
         ),
       );
-      BenchmarkLogger.log('book_shelf_build',
-          'variant=grid count=${books.length} elapsed=${sw.elapsedMicroseconds}us');
+      BenchmarkLogger.log(
+        'book_shelf_build',
+        'variant=grid count=${books.length} elapsed=${sw.elapsedMicroseconds}us',
+      );
       return result;
     }
-        final result = ListView.separated(
+    final result = ListView.separated(
       shrinkWrap: true,
       physics: const NeverScrollableScrollPhysics(),
       padding: const EdgeInsets.symmetric(horizontal: 20),
@@ -1456,12 +1558,16 @@ class _BookShelf extends StatelessWidget {
           onTap: () => provider.selectionMode
               ? notifier.toggleSelection('b:${books[i].id}')
               : onOpen(books[i].id),
-          onLongPress: () => notifier.toggleSelection('b:${books[i].id}'),
+          onLongPress: () => provider.selectionMode
+              ? notifier.toggleSelection('b:${books[i].id}')
+              : onBookLongPress(books[i]),
         ),
       ),
     );
-    BenchmarkLogger.log('book_shelf_build',
-        'variant=list count=${books.length} elapsed=${sw.elapsedMicroseconds}us');
+    BenchmarkLogger.log(
+      'book_shelf_build',
+      'variant=list count=${books.length} elapsed=${sw.elapsedMicroseconds}us',
+    );
     return result;
   }
 }
@@ -1494,7 +1600,7 @@ class _MangaShelf extends StatelessWidget {
       return const SizedBox(
         height: 260,
         child: EmptyState(
-          icon: Icons.search_off,
+          icon: AppIcons.search,
           title: 'No manga found',
           subtitle: 'Try another title, author, source, or genre.',
         ),
@@ -1520,6 +1626,7 @@ class _MangaShelf extends StatelessWidget {
               index: i + 1,
               child: _MangaLibraryCard(
                 manga: manga,
+                newChapterCount: provider.newChapters[manga.id] ?? 0,
                 localImagePath: mangaThumbnails[manga.id],
                 selected: provider.selectedIds.contains('m:${manga.id}'),
                 selectionMode: provider.selectionMode,
@@ -1535,11 +1642,13 @@ class _MangaShelf extends StatelessWidget {
           },
         ),
       );
-      BenchmarkLogger.log('manga_shelf_build',
-          'variant=grid count=${mangas.length} elapsed=${sw.elapsedMicroseconds}us');
+      BenchmarkLogger.log(
+        'manga_shelf_build',
+        'variant=grid count=${mangas.length} elapsed=${sw.elapsedMicroseconds}us',
+      );
       return result;
     }
-        Widget result = ListView.separated(
+    Widget result = ListView.separated(
       shrinkWrap: true,
       physics: const NeverScrollableScrollPhysics(),
       padding: const EdgeInsets.symmetric(horizontal: 20),
@@ -1551,6 +1660,7 @@ class _MangaShelf extends StatelessWidget {
           index: i + 1,
           child: _MangaLibraryRow(
             manga: manga,
+            newChapterCount: provider.newChapters[manga.id] ?? 0,
             localImagePath: mangaThumbnails[manga.id],
             selected: provider.selectedIds.contains('m:${manga.id}'),
             selectionMode: provider.selectionMode,
@@ -1564,8 +1674,10 @@ class _MangaShelf extends StatelessWidget {
         );
       },
     );
-    BenchmarkLogger.log('manga_shelf_build',
-        'variant=list count=${mangas.length} elapsed=${sw.elapsedMicroseconds}us');
+    BenchmarkLogger.log(
+      'manga_shelf_build',
+      'variant=list count=${mangas.length} elapsed=${sw.elapsedMicroseconds}us',
+    );
     return result;
   }
 }
@@ -1582,6 +1694,7 @@ class _MangaLibraryCard extends ConsumerWidget {
   final String? extensionName;
   final bool showSourcePills;
   final LibraryCardVariant variant;
+  final int newChapterCount;
 
   const _MangaLibraryCard({
     required this.manga,
@@ -1593,14 +1706,13 @@ class _MangaLibraryCard extends ConsumerWidget {
     this.extensionName,
     this.showSourcePills = true,
     this.variant = LibraryCardVariant.grid,
+    this.newChapterCount = 0,
   });
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final c = context.colors;
-    final headers = ref
-        .watch(sourceImageHeadersProvider(manga.sourceId))
-        .value;
+    final headers = ref.watch(sourceImageHeadersProvider(manga.sourceId)).value;
     if (variant == LibraryCardVariant.overlay) {
       return AnimatedPress(
         onTap: onTap,
@@ -1616,16 +1728,16 @@ class _MangaLibraryCard extends ConsumerWidget {
                         File(localImagePath!),
                         width: double.infinity,
                         fit: BoxFit.cover,
-                        errorBuilder: (_, __, ___) => _placeholder(c),
+                        errorBuilder: (_, _, _) => _placeholder(c),
                       )
                     : manga.imageUrl != null && manga.imageUrl!.isNotEmpty
-                        ? Image(
-                  image: cachedCover(manga.imageUrl!, headers: headers),
-                            width: double.infinity,
-                            fit: BoxFit.cover,
-                            errorBuilder: (_, __, ___) => _placeholder(c),
-                          )
-                        : _placeholder(c),
+                    ? Image(
+                        image: cachedCover(manga.imageUrl!, headers: headers),
+                        width: double.infinity,
+                        fit: BoxFit.cover,
+                        errorBuilder: (_, _, _) => _placeholder(c),
+                      )
+                    : _placeholder(c),
               ),
               Positioned.fill(
                 child: DecoratedBox(
@@ -1648,7 +1760,10 @@ class _MangaLibraryCard extends ConsumerWidget {
                   top: 6,
                   left: 6,
                   child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 6,
+                      vertical: 2,
+                    ),
                     decoration: BoxDecoration(
                       color: Colors.black.withValues(alpha: 0.7),
                       borderRadius: AppSpacing.brPill,
@@ -1663,6 +1778,12 @@ class _MangaLibraryCard extends ConsumerWidget {
                     ),
                   ),
                 ),
+              if (newChapterCount > 0)
+                Positioned(
+                  top: 6,
+                  right: 6,
+                  child: _NewChapterBadge(count: newChapterCount),
+                ),
               if (selectionMode)
                 Positioned(
                   top: 8,
@@ -1672,7 +1793,9 @@ class _MangaLibraryCard extends ConsumerWidget {
                     width: 24,
                     height: 24,
                     decoration: BoxDecoration(
-                      color: selected ? c.accent : Colors.black.withValues(alpha: 0.4),
+                      color: selected
+                          ? c.accent
+                          : Colors.black.withValues(alpha: 0.4),
                       shape: BoxShape.circle,
                       border: Border.all(color: Colors.white, width: 1.5),
                     ),
@@ -1732,55 +1855,69 @@ class _MangaLibraryCard extends ConsumerWidget {
                             File(localImagePath!),
                             width: double.infinity,
                             fit: BoxFit.cover,
-                            errorBuilder: (_, __, ___) => _placeholder(c),
+                            errorBuilder: (_, _, _) => _placeholder(c),
                           )
                         : manga.imageUrl != null && manga.imageUrl!.isNotEmpty
-                            ? Image(
-                      image: cachedCover(manga.imageUrl!, headers: headers),
-                                width: double.infinity,
-                                fit: BoxFit.cover,
-                                errorBuilder: (_, __, ___) => _placeholder(c),
-                              )
-                            : _placeholder(c),
-                   ),
-                   if (showSourcePills)
-                     Positioned(
-                       top: 6,
-                       left: 6,
-                       child: Container(
-                         padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                         decoration: BoxDecoration(
-                           color: Colors.black.withValues(alpha: 0.7),
-                           borderRadius: AppSpacing.brPill,
-                         ),
-                         child: Text(
-                           extensionName ?? manga.sourceId,
-                           style: const TextStyle(
-                             color: Colors.white,
-                             fontSize: 10,
-                             fontWeight: FontWeight.w600,
-                           ),
-                         ),
-                       ),
-                     ),
-                   if (selectionMode)
-                     Positioned(
-                       top: 8,
-                       right: 8,
-                       child: AnimatedContainer(
-                         duration: const Duration(milliseconds: 180),
-                         width: 24,
-                         height: 24,
-                         decoration: BoxDecoration(
-                           color: selected ? c.accent : Colors.black.withValues(alpha: 0.4),
-                           shape: BoxShape.circle,
-                           border: Border.all(color: Colors.white, width: 1.5),
-                         ),
-                         child: selected
-                             ? Icon(Icons.check, size: 14, color: c.onAccent)
-                             : null,
-                       ),
-                     ),
+                        ? Image(
+                            image: cachedCover(
+                              manga.imageUrl!,
+                              headers: headers,
+                            ),
+                            width: double.infinity,
+                            fit: BoxFit.cover,
+                            errorBuilder: (_, _, _) => _placeholder(c),
+                          )
+                        : _placeholder(c),
+                  ),
+                  if (showSourcePills)
+                    Positioned(
+                      top: 6,
+                      left: 6,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 6,
+                          vertical: 2,
+                        ),
+                        decoration: BoxDecoration(
+                          color: Colors.black.withValues(alpha: 0.7),
+                          borderRadius: AppSpacing.brPill,
+                        ),
+                        child: Text(
+                          extensionName ?? manga.sourceId,
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 10,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                    ),
+                  if (newChapterCount > 0)
+                    Positioned(
+                      top: 6,
+                      right: 6,
+                      child: _NewChapterBadge(count: newChapterCount),
+                    ),
+                  if (selectionMode)
+                    Positioned(
+                      top: 8,
+                      right: 8,
+                      child: AnimatedContainer(
+                        duration: const Duration(milliseconds: 180),
+                        width: 24,
+                        height: 24,
+                        decoration: BoxDecoration(
+                          color: selected
+                              ? c.accent
+                              : Colors.black.withValues(alpha: 0.4),
+                          shape: BoxShape.circle,
+                          border: Border.all(color: Colors.white, width: 1.5),
+                        ),
+                        child: selected
+                            ? Icon(Icons.check, size: 14, color: c.onAccent)
+                            : null,
+                      ),
+                    ),
                 ],
               ),
             ),
@@ -1820,6 +1957,7 @@ class _MangaLibraryRow extends ConsumerWidget {
   final VoidCallback? onLongPress;
   final String? extensionName;
   final bool showSourcePills;
+  final int newChapterCount;
 
   const _MangaLibraryRow({
     required this.manga,
@@ -1830,14 +1968,13 @@ class _MangaLibraryRow extends ConsumerWidget {
     this.onLongPress,
     this.extensionName,
     this.showSourcePills = true,
+    this.newChapterCount = 0,
   });
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final c = context.colors;
-    final headers = ref
-        .watch(sourceImageHeadersProvider(manga.sourceId))
-        .value;
+    final headers = ref.watch(sourceImageHeadersProvider(manga.sourceId)).value;
     return Padding(
       padding: const EdgeInsets.only(bottom: 4),
       child: AnimatedPress(
@@ -1871,26 +2008,32 @@ class _MangaLibraryRow extends ConsumerWidget {
                             width: 48,
                             height: 64,
                             fit: BoxFit.cover,
-                            errorBuilder: (_, __, ___) => _placeholder(c, 48, 64),
+                            errorBuilder: (_, _, _) => _placeholder(c, 48, 64),
                           )
                         : manga.imageUrl != null && manga.imageUrl!.isNotEmpty
-                            ? Image(
-                      image: cachedCover(manga.imageUrl!, headers: headers,
-                          width: 48,
-                          height: 64),
-                                width: 48,
-                                height: 64,
-                                fit: BoxFit.cover,
-                                errorBuilder: (_, __, ___) => _placeholder(c, 48, 64),
-                              )
-                            : _placeholder(c, 48, 64),
+                        ? Image(
+                            image: cachedCover(
+                              manga.imageUrl!,
+                              headers: headers,
+                              width: 48,
+                              height: 64,
+                            ),
+                            width: 48,
+                            height: 64,
+                            fit: BoxFit.cover,
+                            errorBuilder: (_, _, _) => _placeholder(c, 48, 64),
+                          )
+                        : _placeholder(c, 48, 64),
                   ),
                   if (showSourcePills)
                     Positioned(
                       top: 2,
                       left: 2,
                       child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 4,
+                          vertical: 1,
+                        ),
                         decoration: BoxDecoration(
                           color: Colors.black.withValues(alpha: 0.7),
                           borderRadius: AppSpacing.brPill,
@@ -1903,6 +2046,15 @@ class _MangaLibraryRow extends ConsumerWidget {
                             fontWeight: FontWeight.w600,
                           ),
                         ),
+                      ),
+                    ),
+                  if (newChapterCount > 0)
+                    Positioned(
+                      bottom: 2,
+                      right: 2,
+                      child: _NewChapterBadge(
+                        count: newChapterCount,
+                        small: true,
                       ),
                     ),
                 ],
@@ -1950,4 +2102,73 @@ class _MangaLibraryRow extends ConsumerWidget {
       child: Icon(Icons.image_outlined, size: 24, color: c.textTertiary),
     ),
   );
+}
+
+/// Accent "N" pill shown on library manga cards when a poll has discovered
+/// chapters that haven't been opened yet.
+class _NewChapterBadge extends StatelessWidget {
+  final int count;
+  final bool small;
+
+  const _NewChapterBadge({required this.count, this.small = false});
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.colors;
+    return Container(
+      padding: EdgeInsets.symmetric(
+        horizontal: small ? 5 : 7,
+        vertical: small ? 1 : 2,
+      ),
+      decoration: BoxDecoration(
+        color: c.accent,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(
+          color: Colors.white.withValues(alpha: 0.6),
+          width: 0.8,
+        ),
+        boxShadow: const [
+          BoxShadow(color: Colors.black45, blurRadius: 4, offset: Offset(0, 1)),
+        ],
+      ),
+      child: Text(
+        '$count',
+        style: TextStyle(
+          color: c.onAccent,
+          fontSize: small ? 9 : 11,
+          fontWeight: FontWeight.bold,
+        ),
+      ),
+    );
+  }
+}
+
+/// Aethelgard-style FAB — circular, primary-colored, with the signature
+/// soft outer glow (`0 0 20px rgba(accent, 0.3)`). Uses Hugeicons.
+class _AethelgardFab extends StatelessWidget {
+  final AppIconData iconData;
+  final VoidCallback? onPressed;
+
+  const _AethelgardFab({required this.iconData, this.onPressed});
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.colors;
+    return AnimatedPress(
+      onTap: onPressed,
+      scaleDown: 0.90,
+      child: Container(
+        width: 56,
+        height: 56,
+        decoration: BoxDecoration(
+          color: c.accent,
+          shape: BoxShape.circle,
+          boxShadow: AppSpacing.fabGlow(accent: c.accent),
+        ),
+        child: Center(
+          child: AppIcon(data: iconData, size: 26, color: c.onAccent),
+        ),
+      ),
+    );
+  }
 }

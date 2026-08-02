@@ -1,14 +1,21 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
 import 'package:collection/collection.dart';
 import 'package:crypto/crypto.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:workmanager/workmanager.dart';
+
 import '../../core/models/book.dart';
 import '../../core/models/manga.dart';
 import '../../core/providers.dart';
+import '../../core/services/background_task.dart';
+import '../../core/services/library_update_service.dart';
+import '../../core/services/notification_service.dart';
 import '../../widgets/library_book_card.dart';
 
 /// Immutable state for the library screen.
@@ -25,6 +32,7 @@ class LibraryState {
     this.cardVariant = LibraryCardVariant.grid,
     this.showSourcePills = true,
     this.extensionNames = const {},
+    this.newChapters = const {},
   });
 
   final List<Book> books;
@@ -39,6 +47,11 @@ class LibraryState {
   final bool showSourcePills;
   final Map<String, String> extensionNames;
 
+  /// mangaId → count of unopened (new) chapters. Populated by loadBooks.
+  final Map<int, int> newChapters;
+
+  int get totalNewChapters => newChapters.values.fold(0, (a, b) => a + b);
+
   LibraryState copyWith({
     List<Book>? books,
     List<Manga>? mangas,
@@ -51,6 +64,7 @@ class LibraryState {
     LibraryCardVariant? cardVariant,
     bool? showSourcePills,
     Map<String, String>? extensionNames,
+    Map<int, int>? newChapters,
   }) {
     return LibraryState(
       books: books ?? this.books,
@@ -64,6 +78,7 @@ class LibraryState {
       cardVariant: cardVariant ?? this.cardVariant,
       showSourcePills: showSourcePills ?? this.showSourcePills,
       extensionNames: extensionNames ?? this.extensionNames,
+      newChapters: newChapters ?? this.newChapters,
     );
   }
 }
@@ -83,7 +98,8 @@ class LibraryNotifier extends Notifier<LibraryState> {
       isGridView: prefs.getBool(_keyIsGridView) ?? true,
       showSourcePills: prefs.getBool(_keyShowSourcePills) ?? true,
       gridColumns: prefs.getInt(_keyGridColumns) ?? 2,
-      cardVariant: LibraryCardVariant.values[prefs.getInt(_keyCardVariant) ?? 0],
+      cardVariant:
+          LibraryCardVariant.values[prefs.getInt(_keyCardVariant) ?? 0],
     );
   }
 
@@ -123,6 +139,7 @@ class LibraryNotifier extends Notifier<LibraryState> {
     try {
       final books = await repos.books.getBooks();
       final mangas = await repos.manga.getMangasInLibrary();
+      final newChapters = await repos.manga.countNewChaptersByManga();
       final extNames = <String, String>{};
       final extensions = await repos.extensions.getInstalledExtensions();
       for (final ext in extensions) {
@@ -132,6 +149,7 @@ class LibraryNotifier extends Notifier<LibraryState> {
         books: books,
         mangas: mangas,
         extensionNames: extNames,
+        newChapters: newChapters,
         loading: false,
       );
     } catch (e) {
@@ -165,25 +183,26 @@ class LibraryNotifier extends Notifier<LibraryState> {
             .toString()
             .substring(0, 16);
         final mangaDir = Directory(
-            '${supportDir.path}/manga/${manga.sourceId}/$mangaKey');
+          '${supportDir.path}/manga/${manga.sourceId}/$mangaKey',
+        );
         if (await mangaDir.exists()) {
           await mangaDir.delete(recursive: true);
         }
         final docsDir = await getApplicationDocumentsDirectory();
-        final thumbHash =
-            sha256.convert(utf8.encode(manga.imageUrl ?? '')).toString();
-        final thumbFile =
-            File('${docsDir.path}/thumbnails/$thumbHash.jpg');
+        final thumbHash = sha256
+            .convert(utf8.encode(manga.imageUrl ?? ''))
+            .toString();
+        final thumbFile = File('${docsDir.path}/thumbnails/$thumbHash.jpg');
         if (await thumbFile.exists()) {
           await thumbFile.delete();
         }
       } catch (_) {}
     }
-      await repos.manga.deleteMangaChapters(id);
-      await repos.manga.deleteManga(id);
-      final ids = Set<String>.from(state.selectedIds)..remove('m:$id');
-      state = state.copyWith(selectedIds: ids);
-      await loadBooks();
+    await repos.manga.deleteMangaChapters(id);
+    await repos.manga.deleteManga(id);
+    final ids = Set<String>.from(state.selectedIds)..remove('m:$id');
+    state = state.copyWith(selectedIds: ids);
+    await loadBooks();
   }
 
   void toggleSelection(String key) {
@@ -204,8 +223,7 @@ class LibraryNotifier extends Notifier<LibraryState> {
   }
 
   void selectAll() {
-    if (state.selectedIds.length ==
-            state.books.length + state.mangas.length &&
+    if (state.selectedIds.length == state.books.length + state.mangas.length &&
         state.books.length + state.mangas.length > 0) {
       clearSelection();
       return;
@@ -229,8 +247,7 @@ class LibraryNotifier extends Notifier<LibraryState> {
         await repos.books.deleteBook(id);
       } else if (key.startsWith('m:')) {
         final id = int.parse(key.substring(2));
-        final manga =
-            state.mangas.firstWhereOrNull((m) => m.id == id);
+        final manga = state.mangas.firstWhereOrNull((m) => m.id == id);
         if (manga != null) {
           try {
             final supportDir = await getApplicationSupportDirectory();
@@ -239,7 +256,8 @@ class LibraryNotifier extends Notifier<LibraryState> {
                 .toString()
                 .substring(0, 16);
             final mangaDir = Directory(
-                '${supportDir.path}/manga/${manga.sourceId}/$mangaKey');
+              '${supportDir.path}/manga/${manga.sourceId}/$mangaKey',
+            );
             if (await mangaDir.exists()) {
               await mangaDir.delete(recursive: true);
             }
@@ -247,18 +265,173 @@ class LibraryNotifier extends Notifier<LibraryState> {
             final thumbHash = sha256
                 .convert(utf8.encode(manga.imageUrl ?? ''))
                 .toString();
-            final thumbFile =
-                File('${docsDir.path}/thumbnails/$thumbHash.jpg');
+            final thumbFile = File('${docsDir.path}/thumbnails/$thumbHash.jpg');
             if (await thumbFile.exists()) {
               await thumbFile.delete();
             }
-            } catch (_) {}
-            await repos.manga.deleteMangaChapters(id);
-            await repos.manga.deleteManga(id);
-          }
+          } catch (_) {}
+          await repos.manga.deleteMangaChapters(id);
+          await repos.manga.deleteManga(id);
         }
+      }
     }
     state = state.copyWith(selectedIds: {}, selectionMode: false);
     await loadBooks();
   }
+}
+
+/// Auto-update state + poller for library manga (mangayomi's LibUpdatesAlarm
+/// parity). Watched by the library screen for the "new chapters" badge and
+/// by settings for the interval toggle.
+class LibraryUpdateState {
+  final bool enabled;
+  final Duration interval;
+  final DateTime? lastCheckedAt;
+  final int lastNewChapterCount;
+  final bool checking;
+  final String? error;
+
+  const LibraryUpdateState({
+    this.enabled = false,
+    this.interval = const Duration(hours: 6),
+    this.lastCheckedAt,
+    this.lastNewChapterCount = 0,
+    this.checking = false,
+    this.error,
+  });
+
+  LibraryUpdateState copyWith({
+    bool? enabled,
+    Duration? interval,
+    DateTime? Function()? lastCheckedAt,
+    int? lastNewChapterCount,
+    bool? checking,
+    String? Function()? error,
+  }) {
+    return LibraryUpdateState(
+      enabled: enabled ?? this.enabled,
+      interval: interval ?? this.interval,
+      lastCheckedAt: lastCheckedAt != null
+          ? lastCheckedAt()
+          : this.lastCheckedAt,
+      lastNewChapterCount: lastNewChapterCount ?? this.lastNewChapterCount,
+      checking: checking ?? this.checking,
+      error: error != null ? error() : this.error,
+    );
+  }
+}
+
+class LibraryUpdateNotifier extends Notifier<LibraryUpdateState> {
+  static const _keyEnabled = 'library_auto_update_enabled';
+  static const _keyIntervalHours = 'library_auto_update_interval_hours';
+
+  Timer? _timer;
+
+  @override
+  LibraryUpdateState build() {
+    ref.onDispose(() {
+      _timer?.cancel();
+    });
+    return const LibraryUpdateState();
+  }
+
+  Future<void> init() async {
+    final prefs = await SharedPreferences.getInstance();
+    final enabled = prefs.getBool(_keyEnabled) ?? false;
+    final intervalHours =
+        prefs.getInt(_keyIntervalHours) ?? state.interval.inHours;
+    state = state.copyWith(
+      enabled: enabled,
+      interval: Duration(hours: intervalHours),
+    );
+    _reschedule();
+    await _syncBackgroundTask();
+  }
+
+  Future<void> setEnabled(bool value) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_keyEnabled, value);
+    state = state.copyWith(enabled: value);
+    _reschedule();
+    await _syncBackgroundTask();
+  }
+
+  Future<void> setInterval(Duration value) async {
+    final prefs = await SharedPreferences.getInstance();
+    final hours = value.inHours < 1 ? 1 : value.inHours;
+    await prefs.setInt(_keyIntervalHours, hours);
+    state = state.copyWith(interval: Duration(hours: hours));
+    _reschedule();
+    await _syncBackgroundTask();
+  }
+
+  void _reschedule() {
+    _timer?.cancel();
+    _timer = null;
+    if (!state.enabled) return;
+    _timer = Timer.periodic(state.interval, (_) => checkForNewChapters());
+  }
+
+  /// Mirror the in-app timer into a WorkManager periodic task so polling keeps
+  /// happening while the app is backgrounded (or killed). Android's minimum
+  /// period is 15 minutes; our smallest interval is 1h so the value passes
+  /// through unchanged.
+  Future<void> _syncBackgroundTask() async {
+    if (kIsWeb || defaultTargetPlatform != TargetPlatform.android) {
+      return;
+    }
+    try {
+      if (state.enabled) {
+        await Workmanager().registerPeriodicTask(
+          kLibraryPollTaskName,
+          kLibraryPollTaskName,
+          frequency: state.interval,
+          existingWorkPolicy: ExistingPeriodicWorkPolicy.update,
+        );
+      } else {
+        await Workmanager().cancelByUniqueName(kLibraryPollTaskName);
+      }
+    } catch (_) {
+      // Background scheduling is best-effort (e.g. unavailable in tests or
+      // on some emulators); the in-app timer still covers the foreground.
+    }
+  }
+
+  /// Poll every library manga for new chapters. Safe to call manually (the
+  /// library screen's refresh) or from the periodic timer.
+  Future<void> checkForNewChapters() async {
+    if (state.checking) return;
+    state = state.copyWith(checking: true, error: () => null);
+    try {
+      final service = LibraryUpdateService(
+        ref.read(repositoriesProvider),
+        ref.read(keiyoushiServiceProvider),
+      );
+      final report = await service.checkForNewChapters();
+      // Reload library so the new-chapter badges + card state refresh.
+      await ref.read(libraryProvider.notifier).loadBooks();
+      if (report.totalNew > 0) {
+        ref.read(libraryUpdateResultProvider.notifier).setReport(report);
+        // Foreground path: also surface a system notification. The background
+        // isolate posts its own (NotificationService is self-contained).
+        unawaited(NotificationService.instance.notifyNewChapters(report));
+      }
+      state = state.copyWith(
+        checking: false,
+        lastCheckedAt: () => DateTime.now(),
+        lastNewChapterCount: report.totalNew,
+      );
+    } catch (e) {
+      state = state.copyWith(checking: false, error: () => '$e');
+    }
+  }
+}
+
+/// Holds the most recent update report so the library screen can surface an
+/// in-app "N new chapters" toast when a poll discovers something new.
+class LibraryUpdateResultNotifier extends Notifier<LibraryUpdateReport?> {
+  @override
+  LibraryUpdateReport? build() => null;
+
+  void setReport(LibraryUpdateReport report) => state = report;
 }
