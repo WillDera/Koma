@@ -32,17 +32,25 @@ import 'tts_provider.dart';
 class ReaderScreen extends ConsumerStatefulWidget {
   final int bookId;
 
-  /// Optional target chapter id and scroll offset for jump-to-snippet
-  /// navigation.  When chapterId is set the reader opens at that chapter
-  /// at the given scroll offset.
+  /// Optional target chapter and position for jump-to-snippet navigation.
+  ///
+  /// [snippetStartOffset]/[snippetEndOffset] are character offsets into the
+  /// chapter's extracted text and are the authoritative target: they survive
+  /// font, width and reading-mode changes, and are the only form paginated mode
+  /// can resolve. [snippetScrollOffset] is a pixel position kept as a fallback
+  /// for snippets saved before offsets were recorded.
   final int? snippetChapterId;
   final double? snippetScrollOffset;
+  final int? snippetStartOffset;
+  final int? snippetEndOffset;
 
   const ReaderScreen({
     super.key,
     required this.bookId,
     this.snippetChapterId,
     this.snippetScrollOffset,
+    this.snippetStartOffset,
+    this.snippetEndOffset,
   });
 
   @override
@@ -70,6 +78,10 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
 
   bool _showUI = true;
   bool _toolbarVisible = false;
+
+  /// Pending dismissal of the quick toolbar after its selection went away.
+  /// Held so a new selection can cancel it — see [_showToolbar].
+  Timer? _selectionLostTimer;
   bool _colorPickerVisible = false;
   int _highlightVersion = 0;
   double _lastScrollOffset = 0;
@@ -192,7 +204,10 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
     if (ch != null && newIndex >= 0 && newIndex < ch.length) {
       final repos = ref.watch(repositoriesProvider);
       repos.books.getHighlightsForChapter(ch[newIndex].id).then((hl) {
-        if (mounted) setState(() => _highlights = hl);
+        // The repository returns a fixed-length list (growable: false), and
+        // _saveHighlight appends to it. Rebuild into a growable copy so a new
+        // mark can't hit "cannot add to a fixed-length list".
+        if (mounted) setState(() => _highlights = List<Highlight>.of(hl));
       });
     } else {
       _highlights = [];
@@ -291,6 +306,7 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
   @override
   void dispose() {
     _cancelUiHideTimer();
+    _selectionLostTimer?.cancel();
     if (!_didHandleBack) _provider?.stopReadingTimer();
     _ttsProvider?.removeListener(_onTtsChanged);
     _ttsProvider?.dispose();
@@ -404,6 +420,11 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
   }
 
   void _showToolbar(Offset origin) {
+    // A new selection supersedes any pending dismissal — otherwise the timer
+    // armed by the tap that *started* this selection fires a moment later and
+    // hides a toolbar the user just summoned.
+    _selectionLostTimer?.cancel();
+    _selectionLostTimer = null;
     _cancelUiHideTimer();
     setState(() {
       _toolbarVisible = true;
@@ -413,12 +434,31 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
     _toolbarCtrl.forward(from: 0);
   }
 
+  /// Dismisses the toolbar once the selection backing it is gone.
+  ///
+  /// Briefly deferred: dragging a handle or re-selecting emits a transient
+  /// cleared/collapsed event immediately before the new selection, and hiding
+  /// synchronously would make the toolbar flicker on every adjustment.
+  void _hideToolbarOnSelectionLost() {
+    if (!_toolbarVisible) return;
+    _selectionLostTimer?.cancel();
+    _selectionLostTimer = Timer(const Duration(milliseconds: 200), () {
+      if (!mounted) return;
+      _selectionLostTimer = null;
+      if (_toolbarVisible) _hideToolbar();
+    });
+  }
+
   void _hideToolbar() {
+    _selectionLostTimer?.cancel();
+    _selectionLostTimer = null;
     _toolbarCtrl.reverse();
     setState(() {
       _toolbarVisible = false;
       _colorPickerVisible = false;
     });
+    // _selectedText/_selStart are deliberately left alone: the save paths call
+    // this before reading them, and they clear their own state when done.
     _applySystemUiMode();
     _resetUiHideTimer();
   }
@@ -480,14 +520,12 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
                 _showToolbar(Offset.zero);
               }
             },
-            onSelectionCleared: () {
-              if (!_toolbarVisible) return;
-              Future.delayed(const Duration(milliseconds: 200), () {
-                if (!mounted) return;
-                if (_toolbarVisible) _hideToolbar();
-              });
-            },
-            onSelectionCollapsed: _resetUiHideTimer,
+            onSelectionCleared: _hideToolbarOnSelectionLost,
+            // A collapsed selection means the handles are gone: the toolbar
+            // acts on a selection that no longer exists, so it must go too.
+            // Previously this only reset the hide timer, stranding the toolbar
+            // until the user tapped it or guessed at empty space.
+            onSelectionCollapsed: _hideToolbarOnSelectionLost,
             onChapterChanged: (index) {
               if (index != provider.currentIndex) {
                 _provider?.navigateToChapter(index);
@@ -659,17 +697,10 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
                                           selection.start, selection.end);
                                       _showToolbar(Offset.zero);
                                     }
-                                  } else if (_toolbarVisible) {
-                                    Future.delayed(
-                                      const Duration(milliseconds: 200),
-                                      () {
-                                        if (!mounted) return;
-                                        if (_toolbarVisible) _hideToolbar();
-                                      },
-                                    );
-                                  } else if (selection.isValid &&
-                                      selection.isCollapsed) {
-                                    _resetUiHideTimer();
+                                  } else {
+                                    // Cleared or collapsed: either way the
+                                    // selection the toolbar acts on is gone.
+                                    _hideToolbarOnSelectionLost();
                                   }
                                 },
                               ),
@@ -886,30 +917,40 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
       // Bug 1 fix: save ONLY to the highlights table, NOT to snippets.
       // Only "Note" (renamed to "Snippet") creates a snippet row.
       if (p.book != null && ch != null && startOff != null && startOff >= 0) {
-        await repos.books.insertHighlight(Highlight(
+        // Bound to non-nullable locals: the promotion of startOff/ch does not
+        // survive the await below.
+        final start = startOff;
+        final bookId = p.book!.id;
+        final chapterId = ch.id;
+        final end = start + selected.length;
+        final storedId = await repos.books.insertHighlight(Highlight(
           id: 0,
           // No snippetId — marks are separate from snippets
-          bookId: p.book!.id,
-          chapterId: ch.id,
-          startOffset: startOff,
-          endOffset: startOff + selected.length,
+          bookId: bookId,
+          chapterId: chapterId,
+          startOffset: start,
+          endOffset: end,
           color: color,
           text: selected,
         ));
+        // Bug 1 fix: immediately insert into the local list so the reader
+        // re-renders with the highlight visible. Use the id the store
+        // assigned so this copy matches the persisted row (and survives a
+        // later delete-by-id instead of being a permanent orphan).
+        if (mounted) {
+          setState(() {
+            _highlights.add(Highlight(
+              id: storedId,
+              bookId: bookId,
+              chapterId: chapterId,
+              startOffset: start,
+              endOffset: end,
+              color: color,
+              text: selected,
+            ));
+          });
+        }
       }
-      // Bug 1 fix: immediately insert into the local list so the reader
-      // re-renders with the highlight visible.
-      setState(() {
-        _highlights.add(Highlight(
-          id: 0,
-          bookId: p.book?.id ?? 0,
-          chapterId: ch?.id ?? 0,
-          startOffset: startOff ?? 0,
-          endOffset: (startOff ?? 0) + selected.length,
-          color: color,
-          text: selected,
-        ));
-      });
       if (mounted) {
         StashToast.show(
           context,

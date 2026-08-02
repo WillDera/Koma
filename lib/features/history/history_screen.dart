@@ -282,6 +282,8 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> with RouteAware {
               bookId: book.id,
               snippetChapterId: null,
               snippetScrollOffset: null,
+            snippetStartOffset: null,
+            snippetEndOffset: null,
             ) as ReaderArgs,
           ),
           child: Container(

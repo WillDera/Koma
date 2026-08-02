@@ -371,7 +371,13 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
     if (bookId == 0) return;
     context.pushNamed(
       Routes.reader,
-      extra: (bookId: bookId, snippetChapterId: null, snippetScrollOffset: null)
+      extra: (
+      bookId: bookId,
+      snippetChapterId: null,
+      snippetScrollOffset: null,
+      snippetStartOffset: null,
+      snippetEndOffset: null,
+      )
           as ReaderArgs,
     );
   }
