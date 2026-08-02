@@ -45,7 +45,18 @@ abstract final class Routes {
 // (already above the shell). Only tab-reachable / root-level destinations
 // need go_router entries.
 
-typedef ReaderArgs = ({int bookId, int? snippetChapterId, double? snippetScrollOffset});
+// Snippet jumps carry the stored character offsets, not a pixel scroll
+// position: pixels are invalid the moment font size, width or reading mode
+// changes, and mean nothing at all in paginated mode. snippetScrollOffset is
+// kept as a last-resort fallback for older snippets saved before offsets were
+// recorded.
+typedef ReaderArgs = ({
+int bookId,
+int? snippetChapterId,
+double? snippetScrollOffset,
+int? snippetStartOffset,
+int? snippetEndOffset,
+});
 
 typedef MangaReaderArgs = ({
   int? mangaId,
@@ -137,6 +148,8 @@ final GoRouter appRouter = GoRouter(
           bookId: a.bookId,
           snippetChapterId: a.snippetChapterId,
           snippetScrollOffset: a.snippetScrollOffset,
+          snippetStartOffset: a.snippetStartOffset,
+          snippetEndOffset: a.snippetEndOffset,
         );
       },
     ),

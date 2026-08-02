@@ -267,8 +267,11 @@ class BookRepository {
     return rows.map(_highlightToModel).toList(growable: false);
   }
 
-  Future<void> insertHighlight(Highlight hl) async {
-    await _isar.writeTxn(
+  /// Persists [hl] and returns the assigned row id, so callers holding an
+  /// in-memory copy can keep it in step with the stored row rather than
+  /// carrying a placeholder id.
+  Future<int> insertHighlight(Highlight hl) async {
+    return _isar.writeTxn(
         () => _isar.highlights.put(_highlightFromModel(hl)));
   }
 
