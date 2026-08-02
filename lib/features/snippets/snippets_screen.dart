@@ -78,10 +78,7 @@ class _SnippetsScreenState extends ConsumerState<SnippetsScreen> {
     return ScreenBackdrop(
       child: Stack(
         children: [
-          SafeArea(
-            bottom: false,
-            child: _body(context, p, bp),
-          ),
+          SafeArea(bottom: false, child: _body(context, p, bp)),
           if (!p.selectionMode && _tab == 0)
             Positioned(
               left: leftHanded ? 20 : null,
@@ -121,7 +118,8 @@ class _SnippetsScreenState extends ConsumerState<SnippetsScreen> {
             title: 'Could not load snippets',
             subtitle: p.error!,
             primaryActionLabel: 'Try again',
-            onPrimaryAction: () => ref.read(snippetsProvider.notifier).loadSnippets(),
+            onPrimaryAction: () =>
+                ref.read(snippetsProvider.notifier).loadSnippets(),
           ),
         ],
       );
@@ -148,7 +146,8 @@ class _SnippetsScreenState extends ConsumerState<SnippetsScreen> {
 
   Widget _buildSnippetsTab(BuildContext context, SnippetsState p) {
     final items = p.snippets;
-    final hasFilter = p.filterTag != null ||
+    final hasFilter =
+        p.filterTag != null ||
         p.filterCollectionId != null ||
         p.filterCollectionId == -1;
 
@@ -195,7 +194,10 @@ class _SnippetsScreenState extends ConsumerState<SnippetsScreen> {
               stats: [
                 PanelStat(value: '${p.snippets.length}', label: 'Saved'),
                 PanelStat(value: '${p.allTags.length}', label: 'Tags'),
-                PanelStat(value: hasFilter ? 'Filtered' : 'Uncollected', label: 'View'),
+                PanelStat(
+                  value: hasFilter ? 'Filtered' : 'Uncollected',
+                  label: 'View',
+                ),
               ],
             ),
           ),
@@ -222,10 +224,7 @@ class _SnippetsScreenState extends ConsumerState<SnippetsScreen> {
             ),
           )
         else ...[
-          SectionLabel(
-            title: _sectionTitle(p),
-            meta: '${items.length}',
-          ),
+          SectionLabel(title: _sectionTitle(p), meta: '${items.length}'),
           ...items.indexed.map(
             (entry) => Padding(
               padding: const EdgeInsets.fromLTRB(20, 0, 20, 12),
@@ -233,18 +232,23 @@ class _SnippetsScreenState extends ConsumerState<SnippetsScreen> {
                 index: entry.$1 + 1,
                 child: SnippetCard(
                   snippet: entry.$2,
-                  selected: p.selectionMode && p.selectedIds.contains(entry.$2.id),
+                  selected:
+                      p.selectionMode && p.selectedIds.contains(entry.$2.id),
                   selectionMode: p.selectionMode,
                   onTap: () {
                     if (p.selectionMode) {
-                      ref.read(snippetsProvider.notifier).toggleSelection(entry.$2.id);
+                      ref
+                          .read(snippetsProvider.notifier)
+                          .toggleSelection(entry.$2.id);
                     } else {
                       _editSnippet(context, entry.$2, p);
                     }
                   },
                   onLongPress: () {
                     if (!p.selectionMode) {
-                      ref.read(snippetsProvider.notifier).toggleSelection(entry.$2.id);
+                      ref
+                          .read(snippetsProvider.notifier)
+                          .toggleSelection(entry.$2.id);
                     }
                   },
                   onOpenSource: entry.$2.bookId != null
@@ -252,9 +256,10 @@ class _SnippetsScreenState extends ConsumerState<SnippetsScreen> {
                           context,
                           entry.$2.bookId!,
                           chapterId: entry.$2.chapterId,
-                      scrollOffset: entry.$2.scrollPosition,
-                      startOffset: entry.$2.startOffset,
-                      endOffset: entry.$2.endOffset)
+                          scrollOffset: entry.$2.scrollPosition,
+                          startOffset: entry.$2.startOffset,
+                          endOffset: entry.$2.endOffset,
+                        )
                       : null,
                 ),
               ),
@@ -287,7 +292,9 @@ class _SnippetsScreenState extends ConsumerState<SnippetsScreen> {
             variant: IconButtonVariant.tonal,
             iconColor: context.colors.textSecondary,
             tooltip: 'Select All',
-            onPressed: p.selectedIds.length == p.snippets.length && p.snippets.isNotEmpty
+            onPressed:
+                p.selectedIds.length == p.snippets.length &&
+                    p.snippets.isNotEmpty
                 ? sn.clearSelection
                 : sn.selectAll,
           ),
@@ -364,19 +371,22 @@ class _SnippetsScreenState extends ConsumerState<SnippetsScreen> {
     );
   }
 
-  void _openBookReader(BuildContext context, int bookId,
-      {int? chapterId,
-        double? scrollOffset,
-        int? startOffset,
-        int? endOffset}) {
+  void _openBookReader(
+    BuildContext context,
+    int bookId, {
+    int? chapterId,
+    double? scrollOffset,
+    int? startOffset,
+    int? endOffset,
+  }) {
     context.pushNamed(
       Routes.reader,
       extra: (
         bookId: bookId,
         snippetChapterId: chapterId,
         snippetScrollOffset: scrollOffset,
-      snippetStartOffset: startOffset,
-      snippetEndOffset: endOffset,
+        snippetStartOffset: startOffset,
+        snippetEndOffset: endOffset,
       ),
     );
   }
@@ -387,13 +397,15 @@ class _SnippetsScreenState extends ConsumerState<SnippetsScreen> {
       creating: true,
       onSave: (s) async {
         try {
-          await ref.read(snippetsProvider.notifier).createSnippet(
-            text: s.text,
-            note: s.note,
-            sourceTitle: s.sourceTitle,
-            color: s.color,
-            tags: s.tags,
-          );
+          await ref
+              .read(snippetsProvider.notifier)
+              .createSnippet(
+                text: s.text,
+                note: s.note,
+                sourceTitle: s.sourceTitle,
+                color: s.color,
+                tags: s.tags,
+              );
           if (context.mounted) {
             StashToast.show(
               context,
@@ -470,11 +482,7 @@ class _SnippetsScreenState extends ConsumerState<SnippetsScreen> {
     if (confirmed == true) {
       await sn.deleteSelected();
       if (ctx.mounted) {
-        StashToast.show(
-          ctx,
-          message: 'Snippets deleted',
-          icon: Icons.check,
-        );
+        StashToast.show(ctx, message: 'Snippets deleted', icon: Icons.check);
       }
     }
   }
@@ -515,7 +523,10 @@ class _SnippetsScreenState extends ConsumerState<SnippetsScreen> {
               const Divider(height: 1),
               ListTile(
                 leading: Icon(Icons.add_circle_outline, color: c.primary),
-                title: Text('New collection', style: TextStyle(color: c.primary)),
+                title: Text(
+                  'New collection',
+                  style: TextStyle(color: c.primary),
+                ),
                 trailing: Icon(Icons.chevron_right, color: c.primary),
                 onTap: () async {
                   final nameController = TextEditingController();
@@ -539,8 +550,13 @@ class _SnippetsScreenState extends ConsumerState<SnippetsScreen> {
                                 autofocus: true,
                               ),
                               const SizedBox(height: 16),
-                              Text('Accent colour',
-                                  style: TextStyle(color: dc.secondary, fontSize: 13)),
+                              Text(
+                                'Accent colour',
+                                style: TextStyle(
+                                  color: dc.secondary,
+                                  fontSize: 13,
+                                ),
+                              ),
                               const SizedBox(height: 8),
                               HighlightColorPicker(
                                 colors: HighlightColorPicker.palette,
@@ -554,7 +570,10 @@ class _SnippetsScreenState extends ConsumerState<SnippetsScreen> {
                           actions: [
                             TextButton(
                               onPressed: () => Navigator.pop(dialogCtx, false),
-                              child: Text('Cancel', style: TextStyle(color: dc.secondary)),
+                              child: Text(
+                                'Cancel',
+                                style: TextStyle(color: dc.secondary),
+                              ),
                             ),
                             TextButton(
                               onPressed: () => Navigator.pop(dialogCtx, true),
@@ -571,9 +590,13 @@ class _SnippetsScreenState extends ConsumerState<SnippetsScreen> {
                     'pink': '#FFD4DC',
                     'green': '#C8E6C9',
                   };
-                  if (confirmed == true && nameController.text.trim().isNotEmpty) {
+                  if (confirmed == true &&
+                      nameController.text.trim().isNotEmpty) {
                     final hex = keyToHex[selectedColor] ?? '#FFE8A8';
-                    final id = await sn.createCollection(nameController.text.trim(), color: hex);
+                    final id = await sn.createCollection(
+                      nameController.text.trim(),
+                      color: hex,
+                    );
                     if (ctx.mounted) {
                       Navigator.pop(ctx, id);
                     }
@@ -622,26 +645,26 @@ class _SnippetsScreenState extends ConsumerState<SnippetsScreen> {
             padding: EdgeInsets.all(40),
             child: Center(child: CircularProgressIndicator()),
           )
+        else if (bookmarks.isEmpty)
+          Padding(
+            padding: const EdgeInsets.all(40),
+            child: EmptyState(
+              icon: AppIcons.bookmark,
+              title: 'No bookmarks yet',
+              subtitle: 'Tap the bookmark icon while reading to save a page.',
+            ),
+          )
         else
-          if (bookmarks.isEmpty)
-            Padding(
-              padding: const EdgeInsets.all(40),
-              child: EmptyState(
-                icon: AppIcons.bookmark,
-                title: 'No bookmarks yet',
-                subtitle: 'Tap the bookmark icon while reading to save a page.',
+          ...bookmarks.map(
+            (b) => Padding(
+              padding: const EdgeInsets.fromLTRB(20, 12, 20, 12),
+              child: BookmarkCard(
+                bookmark: b,
+                onTap: () => _openBookmark(context, b),
+                onDelete: () => _confirmDeleteBookmark(context, b.id),
               ),
-            )
-          else
-            ...bookmarks.map((b) =>
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(20, 12, 20, 12),
-                  child: BookmarkCard(
-                    bookmark: b,
-                    onTap: () => _openBookmark(context, b),
-                    onDelete: () => _confirmDeleteBookmark(context, b.id),
-                  ),
-                )),
+            ),
+          ),
         const SizedBox(height: 100),
       ],
     );
@@ -656,14 +679,16 @@ class _SnippetsScreenState extends ConsumerState<SnippetsScreen> {
     if (book == null || !context.mounted) return;
     context.pushNamed(
       Routes.mangaReader,
-      extra: (
-      mangaId: bookmark.bookId,
-      sourceId: book.source,
-      mangaUrl: book.sourceUrl ?? '',
-      chapterUrl: chapter.url,
-      chapterName: chapter.name,
-      pageNumber: bookmark.pageNumber,
-      ) as MangaReaderArgs,
+      extra:
+          (
+                mangaId: bookmark.bookId,
+                sourceId: book.source,
+                mangaUrl: book.sourceUrl ?? '',
+                chapterUrl: chapter.url,
+                chapterName: chapter.name,
+                pageNumber: bookmark.pageNumber,
+              )
+              as MangaReaderArgs,
     );
   }
 
@@ -676,12 +701,16 @@ class _SnippetsScreenState extends ConsumerState<SnippetsScreen> {
         TextButton(
           onPressed: () => Navigator.pop(context, false),
           child: Text(
-              'Cancel', style: TextStyle(color: context.colors.textSecondary)),
+            'Cancel',
+            style: TextStyle(color: context.colors.textSecondary),
+          ),
         ),
         TextButton(
           onPressed: () => Navigator.pop(context, true),
           child: const Text(
-              'Remove', style: TextStyle(color: Color(0xFFC44C4C))),
+            'Remove',
+            style: TextStyle(color: Color(0xFFC44C4C)),
+          ),
         ),
       ],
     );
@@ -689,7 +718,10 @@ class _SnippetsScreenState extends ConsumerState<SnippetsScreen> {
       await ref.read(bookmarksProvider.notifier).deleteBookmark(id);
       if (context.mounted) {
         StashToast.show(
-            context, message: 'Bookmark removed', icon: Icons.check);
+          context,
+          message: 'Bookmark removed',
+          icon: Icons.check,
+        );
       }
     }
   }
@@ -777,7 +809,9 @@ class _Chip extends StatelessWidget {
     final c = context.colors;
     final bg = selected ? color.withValues(alpha: 0.18) : c.surfaceMuted;
     final fg = selected ? color : c.textSecondary;
-    final border = selected ? Border.all(color: color.withValues(alpha: 0.6)) : null;
+    final border = selected
+        ? Border.all(color: color.withValues(alpha: 0.6))
+        : null;
     return GestureDetector(
       onTap: onSelected,
       child: AnimatedContainer(

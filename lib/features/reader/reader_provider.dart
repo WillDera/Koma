@@ -38,8 +38,9 @@ class ReaderState {
     return ReaderState(
       book: book != null ? book() : this.book,
       chapters: chapters ?? this.chapters,
-      currentChapter:
-          currentChapter != null ? currentChapter() : this.currentChapter,
+      currentChapter: currentChapter != null
+          ? currentChapter()
+          : this.currentChapter,
       currentIndex: currentIndex ?? this.currentIndex,
       scrollPosition: scrollPosition ?? this.scrollPosition,
       loading: loading ?? this.loading,
@@ -74,8 +75,11 @@ class ReaderNotifier extends Notifier<ReaderState> {
   bool get loading => state.loading;
   String? get error => state.error;
 
-  Future<void> loadBook(int bookId,
-      {int? targetChapterId, double? targetScrollOffset}) async {
+  Future<void> loadBook(
+    int bookId, {
+    int? targetChapterId,
+    double? targetScrollOffset,
+  }) async {
     _elapsedSeconds = 0;
     state = state.copyWith(loading: true, error: () => null);
     final repos = ref.watch(repositoriesProvider);
@@ -85,8 +89,10 @@ class ReaderNotifier extends Notifier<ReaderState> {
       final chapters = await repos.books.getChapters(bookId);
 
       if (book != null && chapters.isNotEmpty) {
-        var currentIndex =
-            book.currentChapterIndex.clamp(0, chapters.length - 1);
+        var currentIndex = book.currentChapterIndex.clamp(
+          0,
+          chapters.length - 1,
+        );
         if (targetChapterId != null) {
           final idx = chapters.indexWhere((ch) => ch.id == targetChapterId);
           if (idx >= 0) currentIndex = idx;
@@ -229,9 +235,7 @@ class ReaderNotifier extends Notifier<ReaderState> {
     _readingTimer?.cancel();
     _readingTimer = Timer.periodic(const Duration(seconds: 30), (_) {
       _elapsedSeconds += 30;
-      ref
-          .read(statsServiceProvider)
-          .trackReading(state.book?.id ?? 0, 30);
+      ref.read(statsServiceProvider).trackReading(state.book?.id ?? 0, 30);
     });
   }
 
@@ -248,12 +252,17 @@ class ReaderNotifier extends Notifier<ReaderState> {
     if (book != null &&
         state.currentIndex == state.chapters.length - 1 &&
         book.progress < 1.0) {
-      final updated =
-          book.copyWith(progress: 1.0, scrollPosition: state.scrollPosition);
+      final updated = book.copyWith(
+        progress: 1.0,
+        scrollPosition: state.scrollPosition,
+      );
       state = state.copyWith(book: () => updated);
       final repos = ref.watch(repositoriesProvider);
-      await repos.books.updateProgress(book.id, 1.0,
-          scrollPosition: state.scrollPosition);
+      await repos.books.updateProgress(
+        book.id,
+        1.0,
+        scrollPosition: state.scrollPosition,
+      );
       stats.trackCompletion(book.id);
     }
     await _updateBookProgress();

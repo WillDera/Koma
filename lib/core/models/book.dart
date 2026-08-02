@@ -14,6 +14,7 @@ class Book {
   final DateTime updatedAt;
   final String genre;
   final String fileExtension;
+  final DateTime? releaseDate;
 
   Book({
     required this.id,
@@ -31,6 +32,7 @@ class Book {
     DateTime? updatedAt,
     this.genre = '',
     this.fileExtension = '',
+    this.releaseDate,
   })  : createdAt = createdAt ?? DateTime.now(),
         updatedAt = updatedAt ?? DateTime.now();
 
@@ -50,6 +52,8 @@ class Book {
     DateTime? updatedAt,
     String? genre,
     String? fileExtension,
+    DateTime? releaseDate,
+    bool clearReleaseDate = false,
   }) {
     return Book(
       id: id ?? this.id,
@@ -67,6 +71,8 @@ class Book {
       updatedAt: updatedAt ?? this.updatedAt,
       genre: genre ?? this.genre,
       fileExtension: fileExtension ?? this.fileExtension,
+      releaseDate:
+          clearReleaseDate ? null : (releaseDate ?? this.releaseDate),
     );
   }
 
@@ -86,6 +92,7 @@ class Book {
         'updated_at': updatedAt.toIso8601String(),
         'genre': genre,
         'file_extension': fileExtension,
+        'release_date': releaseDate?.toIso8601String(),
       };
 
   factory Book.fromJson(Map<String, dynamic> json) => Book(
@@ -108,5 +115,8 @@ class Book {
             : DateTime.now(),
         genre: json['genre'] as String? ?? '',
         fileExtension: json['file_extension'] as String? ?? '',
+        releaseDate: json['release_date'] != null
+            ? DateTime.tryParse(json['release_date'] as String)
+            : null,
       );
 }

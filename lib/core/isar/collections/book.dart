@@ -26,6 +26,9 @@ class Book {
   String genre;
   String fileExtension;
 
+  /// Publication / first-release date from metadata enrichment (nullable).
+  DateTime? releaseDate;
+
   DateTime? createdAt;
   DateTime? updatedAt;
 
@@ -43,6 +46,7 @@ class Book {
     this.scrollPosition = 0.0,
     this.genre = '',
     this.fileExtension = '',
+    this.releaseDate,
     this.createdAt,
     this.updatedAt,
   });
@@ -63,6 +67,7 @@ class Book {
         'updated_at': updatedAt?.toIso8601String(),
         'genre': genre,
         'file_extension': fileExtension,
+        'release_date': releaseDate?.toIso8601String(),
       };
 
   factory Book.fromJson(Map<String, dynamic> json) => Book(
@@ -85,5 +90,8 @@ class Book {
             : null,
         genre: json['genre'] as String? ?? '',
         fileExtension: json['file_extension'] as String? ?? '',
+        releaseDate: json['release_date'] != null
+            ? DateTime.tryParse(json['release_date'] as String)
+            : null,
       );
 }

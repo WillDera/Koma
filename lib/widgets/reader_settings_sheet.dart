@@ -24,7 +24,8 @@ class ReaderSettingsSheet extends ConsumerStatefulWidget {
   }
 
   @override
-  ConsumerState<ReaderSettingsSheet> createState() => _ReaderSettingsSheetState();
+  ConsumerState<ReaderSettingsSheet> createState() =>
+      _ReaderSettingsSheetState();
 }
 
 class _ReaderSettingsSheetState extends ConsumerState<ReaderSettingsSheet> {
@@ -58,15 +59,16 @@ class _ReaderSettingsSheetState extends ConsumerState<ReaderSettingsSheet> {
               const SizedBox(height: 6),
               Text(
                 'Preview',
-                style: AppType.reading(
-                  fontSize: p.fontSize,
-                  lineHeight: p.lineHeight,
-                  color: c.textPrimary,
-                ).copyWith(
-                  fontWeight: FontWeight.w600,
-                  height: p.lineHeight,
-                  fontSize: p.fontSize * 1.1,
-                ),
+                style:
+                    AppType.reading(
+                      fontSize: p.fontSize,
+                      lineHeight: p.lineHeight,
+                      color: c.textPrimary,
+                    ).copyWith(
+                      fontWeight: FontWeight.w600,
+                      height: p.lineHeight,
+                      fontSize: p.fontSize * 1.1,
+                    ),
               ),
               const SizedBox(height: 8),
               Text(
@@ -125,10 +127,7 @@ class _ReaderSettingsSheetState extends ConsumerState<ReaderSettingsSheet> {
                 ),
                 Text(
                   p.sepiaMode ? 'On' : 'Off',
-                  style: TextStyle(
-                    color: c.textTertiary,
-                    fontSize: 12,
-                  ),
+                  style: TextStyle(color: c.textTertiary, fontSize: 12),
                 ),
               ],
             ),
@@ -162,10 +161,7 @@ class _ReaderSettingsSheetState extends ConsumerState<ReaderSettingsSheet> {
                 ),
                 Text(
                   p.readingFont.label,
-                  style: TextStyle(
-                    color: c.textTertiary,
-                    fontSize: 13,
-                  ),
+                  style: TextStyle(color: c.textTertiary, fontSize: 13),
                 ),
                 const SizedBox(width: 4),
                 Icon(Icons.chevron_right, size: 16, color: c.textTertiary),
@@ -229,12 +225,9 @@ class _ReaderSettingsSheetState extends ConsumerState<ReaderSettingsSheet> {
                   p.textAlign == TextAlign.left
                       ? 'Left'
                       : p.textAlign == TextAlign.justify
-                          ? 'Justify'
-                          : 'Center',
-                  style: TextStyle(
-                    color: c.textTertiary,
-                    fontSize: 13,
-                  ),
+                      ? 'Justify'
+                      : 'Center',
+                  style: TextStyle(color: c.textTertiary, fontSize: 13),
                 ),
                 const SizedBox(width: 4),
                 Icon(Icons.chevron_right, size: 16, color: c.textTertiary),
@@ -268,10 +261,7 @@ class _ReaderSettingsSheetState extends ConsumerState<ReaderSettingsSheet> {
                 ),
                 Text(
                   p.pageStyle.label,
-                  style: TextStyle(
-                    color: c.textTertiary,
-                    fontSize: 13,
-                  ),
+                  style: TextStyle(color: c.textTertiary, fontSize: 13),
                 ),
                 const SizedBox(width: 4),
                 Icon(Icons.chevron_right, size: 16, color: c.textTertiary),
@@ -378,8 +368,11 @@ class _ReaderSettingsSheetState extends ConsumerState<ReaderSettingsSheet> {
     );
   }
 
-  void _showPageStylePicker(BuildContext context, ThemeState p,
-      ThemeNotifier tn) {
+  void _showPageStylePicker(
+    BuildContext context,
+    ThemeState p,
+    ThemeNotifier tn,
+  ) {
     showDialog(
       context: context,
       builder: (ctx) {
@@ -444,8 +437,7 @@ class _PickerOption extends StatelessWidget {
                   ),
                 ),
               ),
-              if (selected)
-                Icon(Icons.check, size: 20, color: c.accent),
+              if (selected) Icon(Icons.check, size: 20, color: c.accent),
             ],
           ),
         ),
@@ -537,18 +529,12 @@ class _ToggleRow extends StatelessWidget {
               if (subtitle != null)
                 Text(
                   subtitle!,
-                  style: TextStyle(
-                    color: c.textSecondary,
-                    fontSize: 12,
-                  ),
+                  style: TextStyle(color: c.textSecondary, fontSize: 12),
                 ),
             ],
           ),
         ),
-        Switch(
-          value: value,
-          onChanged: onChanged,
-        ),
+        Switch(value: value, onChanged: onChanged),
       ],
     );
   }

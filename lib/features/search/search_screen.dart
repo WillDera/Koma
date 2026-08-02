@@ -98,7 +98,9 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
     }
     setState(() => _searching = true);
     try {
-      final results = await ref.read(searchServiceProvider).searchAll(query.trim());
+      final results = await ref
+          .read(searchServiceProvider)
+          .searchAll(query.trim());
       if (!mounted) return;
       setState(() => _results = results);
       _saveSearch(query.trim());
@@ -227,8 +229,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
             },
             child: Container(
               margin: const EdgeInsets.only(bottom: 6),
-              padding: const EdgeInsets.symmetric(
-                  horizontal: 16, vertical: 14),
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
               decoration: BoxDecoration(
                 color: c.surface,
                 borderRadius: AppSpacing.brLg,
@@ -248,11 +249,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
                       ),
                     ),
                   ),
-                  Icon(
-                    Icons.north_west,
-                    size: 16,
-                    color: c.textTertiary,
-                  ),
+                  Icon(Icons.north_west, size: 16, color: c.textTertiary),
                 ],
               ),
             ),
@@ -274,28 +271,34 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
         if (books.isNotEmpty) ...[
           _sectionHeader('Books', books.length),
           const SizedBox(height: 8),
-          ...books.map((r) => Padding(
-                padding: const EdgeInsets.only(bottom: 8),
-                child: _bookResult(r),
-              )),
+          ...books.map(
+            (r) => Padding(
+              padding: const EdgeInsets.only(bottom: 8),
+              child: _bookResult(r),
+            ),
+          ),
         ],
         if (chapters.isNotEmpty) ...[
           const SizedBox(height: 16),
           _sectionHeader('Chapters', chapters.length),
           const SizedBox(height: 8),
-          ...chapters.map((r) => Padding(
-                padding: const EdgeInsets.only(bottom: 8),
-                child: _chapterResult(r),
-              )),
+          ...chapters.map(
+            (r) => Padding(
+              padding: const EdgeInsets.only(bottom: 8),
+              child: _chapterResult(r),
+            ),
+          ),
         ],
         if (snippets.isNotEmpty) ...[
           const SizedBox(height: 16),
           _sectionHeader('Snippets', snippets.length),
           const SizedBox(height: 8),
-          ...snippets.map((r) => Padding(
-                padding: const EdgeInsets.only(bottom: 8),
-                child: _snippetResult(r),
-              )),
+          ...snippets.map(
+            (r) => Padding(
+              padding: const EdgeInsets.only(bottom: 8),
+              child: _snippetResult(r),
+            ),
+          ),
         ],
       ],
     );
@@ -371,14 +374,15 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
     if (bookId == 0) return;
     context.pushNamed(
       Routes.reader,
-      extra: (
-      bookId: bookId,
-      snippetChapterId: null,
-      snippetScrollOffset: null,
-      snippetStartOffset: null,
-      snippetEndOffset: null,
-      )
-          as ReaderArgs,
+      extra:
+          (
+                bookId: bookId,
+                snippetChapterId: null,
+                snippetScrollOffset: null,
+                snippetStartOffset: null,
+                snippetEndOffset: null,
+              )
+              as ReaderArgs,
     );
   }
 }

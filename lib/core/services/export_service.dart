@@ -1,6 +1,4 @@
 import 'dart:convert';
-import 'dart:io';
-import 'package:file_picker/file_picker.dart';
 
 import '../models/book.dart';
 import '../models/chapter.dart';
@@ -69,7 +67,8 @@ class ExportService {
         final book = Book.fromJson(b as Map<String, dynamic>);
         Book? existing;
         for (final x in await _repos.books.getBooks()) {
-          if (x.title == book.title && (x.author ?? '') == (book.author ?? '')) {
+          if (x.title == book.title &&
+              (x.author ?? '') == (book.author ?? '')) {
             existing = x;
             break;
           }
@@ -90,7 +89,9 @@ class ExportService {
         for (final c in chaptersJson) {
           final map = c as Map<String, dynamic>;
           final oldBookId = map['book_id'] as int?;
-          final newBookId = oldBookId == null ? null : oldToNewBookId[oldBookId];
+          final newBookId = oldBookId == null
+              ? null
+              : oldToNewBookId[oldBookId];
           if (newBookId == null) {
             chaptersSkipped++;
             continue;
@@ -99,8 +100,7 @@ class ExportService {
           final local = await _repos.books.findChapterByIndex(newBookId, index);
 
           if (local != null) {
-            final scroll =
-                (map['scroll_position'] as num?)?.toDouble() ?? 0.0;
+            final scroll = (map['scroll_position'] as num?)?.toDouble() ?? 0.0;
             if (scroll > 0) {
               await _repos.books.updateChapterScroll(local.id, scroll);
             }
@@ -114,8 +114,9 @@ class ExportService {
             oldToNewChapterId[map['id'] as int] = local.id;
             chaptersImported++;
           } else if (newlyImportedOldBookIds.contains(oldBookId)) {
-            final chapter = Chapter.fromJson(map)
-                .copyWith(bookId: newBookId, id: 0);
+            final chapter = Chapter.fromJson(
+              map,
+            ).copyWith(bookId: newBookId, id: 0);
             final newChapterId = await _repos.books.insertChapter(chapter);
             oldToNewChapterId[map['id'] as int] = newChapterId;
             chaptersImported++;
@@ -210,22 +211,25 @@ class ImportResult {
     final parts = <String>[];
     final totalBooks = booksImported + booksSkipped;
     if (totalBooks > 0) {
-      final newCount =
-          booksSkipped > 0 ? '$booksImported new' : '$booksImported';
+      final newCount = booksSkipped > 0
+          ? '$booksImported new'
+          : '$booksImported';
       parts.add(
-          '$newCount book${booksImported == 1 ? '' : 's'}'
-          '${booksSkipped > 0 ? ' ($booksSkipped duplicate${booksSkipped == 1 ? '' : 's'} skipped)' : ''}');
+        '$newCount book${booksImported == 1 ? '' : 's'}'
+        '${booksSkipped > 0 ? ' ($booksSkipped duplicate${booksSkipped == 1 ? '' : 's'} skipped)' : ''}',
+      );
     }
     if (chaptersImported > 0) {
       parts.add(
-          '$chaptersImported chapter${chaptersImported == 1 ? '' : 's'} restored');
+        '$chaptersImported chapter${chaptersImported == 1 ? '' : 's'} restored',
+      );
     }
     if (chaptersSkipped > 0) {
       parts.add(
-          '$chaptersSkipped chapter${chaptersSkipped == 1 ? '' : 's'} skipped');
+        '$chaptersSkipped chapter${chaptersSkipped == 1 ? '' : 's'} skipped',
+      );
     }
-    parts.add(
-        '$snippetsImported snippet${snippetsImported == 1 ? '' : 's'}');
+    parts.add('$snippetsImported snippet${snippetsImported == 1 ? '' : 's'}');
     if (snippetsSkipped > 0) {
       parts.add('$snippetsSkipped skipped');
     }

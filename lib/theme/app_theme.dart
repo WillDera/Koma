@@ -59,7 +59,11 @@ class AppTheme {
     );
   }
 
-  static ThemeData darkTheme({Color? accent, bool amoled = false, String? fontFamily}) {
+  static ThemeData darkTheme({
+    Color? accent,
+    bool amoled = false,
+    String? fontFamily,
+  }) {
     final a = accent ?? AppColors.darkAccent;
     // null = let the platform default font apply (Use device font).
     final ff = fontFamily;
@@ -151,10 +155,9 @@ class AppTheme {
     required Color onAccent,
     required String? fontFamily,
   }) {
-    final textTheme = AppType.ui(fontFamily: fontFamily).apply(
-      bodyColor: textPrimary,
-      displayColor: textPrimary,
-    );
+    final textTheme = AppType.ui(
+      fontFamily: fontFamily,
+    ).apply(bodyColor: textPrimary, displayColor: textPrimary);
 
     final colorScheme = ColorScheme(
       brightness: brightness,
@@ -249,11 +252,7 @@ class AppTheme {
         shape: const CircleBorder(),
         extendedTextStyle: textTheme.labelLarge?.copyWith(color: onAccent),
       ),
-      dividerTheme: DividerThemeData(
-        color: border,
-        thickness: 0.5,
-        space: 0.5,
-      ),
+      dividerTheme: DividerThemeData(color: border, thickness: 0.5, space: 0.5),
       chipTheme: ChipThemeData(
         backgroundColor: surfaceMuted,
         selectedColor: accentMuted,
@@ -269,7 +268,10 @@ class AppTheme {
         filled: true,
         fillColor: surfaceMuted,
         hoverColor: surfaceMuted,
-        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        contentPadding: const EdgeInsets.symmetric(
+          horizontal: 16,
+          vertical: 14,
+        ),
         hintStyle: textTheme.bodyLarge?.copyWith(color: textTertiary),
         labelStyle: textTheme.bodyMedium?.copyWith(color: textSecondary),
         floatingLabelStyle: textTheme.labelMedium?.copyWith(color: accent),
@@ -305,9 +307,7 @@ class AppTheme {
         disabledActionTextColor: textTertiary,
         behavior: SnackBarBehavior.floating,
         elevation: 0,
-        shape: RoundedRectangleBorder(
-          borderRadius: AppSpacing.brMd,
-        ),
+        shape: RoundedRectangleBorder(borderRadius: AppSpacing.brMd),
         insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
       ),
       dialogTheme: DialogThemeData(
@@ -340,11 +340,10 @@ class AppTheme {
         textColor: textPrimary,
         titleTextStyle: textTheme.bodyLarge?.copyWith(color: textPrimary),
         subtitleTextStyle: textTheme.bodySmall?.copyWith(color: textSecondary),
-        leadingAndTrailingTextStyle:
-            textTheme.labelMedium?.copyWith(color: textSecondary),
-        shape: RoundedRectangleBorder(
-          borderRadius: AppSpacing.brMd,
+        leadingAndTrailingTextStyle: textTheme.labelMedium?.copyWith(
+          color: textSecondary,
         ),
+        shape: RoundedRectangleBorder(borderRadius: AppSpacing.brMd),
       ),
       sliderTheme: SliderThemeData(
         activeTrackColor: accent,
@@ -352,8 +351,7 @@ class AppTheme {
         thumbColor: accent,
         overlayColor: accent.withValues(alpha: 0.12),
         valueIndicatorColor: textPrimary,
-        valueIndicatorTextStyle:
-            textTheme.labelSmall?.copyWith(color: bg),
+        valueIndicatorTextStyle: textTheme.labelSmall?.copyWith(color: bg),
         trackHeight: 3,
       ),
       switchTheme: SwitchThemeData(
@@ -376,9 +374,7 @@ class AppTheme {
         }),
         checkColor: WidgetStateProperty.all(onAccent),
         side: BorderSide(color: borderStrong, width: 1.5),
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(6),
-        ),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
       ),
       radioTheme: RadioThemeData(
         fillColor: WidgetStateProperty.resolveWith((states) {

@@ -139,16 +139,20 @@ class _MangaReaderScreenState extends ConsumerState<MangaReaderScreen>
   void _applySystemUI() {
     if (_settings.fullscreen) {
       SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
-      SystemChrome.setSystemUIOverlayStyle(const SystemUiOverlayStyle(
-        statusBarColor: Colors.transparent,
-        systemNavigationBarColor: Colors.black,
-      ));
+      SystemChrome.setSystemUIOverlayStyle(
+        const SystemUiOverlayStyle(
+          statusBarColor: Colors.transparent,
+          systemNavigationBarColor: Colors.black,
+        ),
+      );
     } else {
       SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
-      SystemChrome.setSystemUIOverlayStyle(const SystemUiOverlayStyle(
-        statusBarColor: Colors.transparent,
-        systemNavigationBarColor: Colors.black,
-      ));
+      SystemChrome.setSystemUIOverlayStyle(
+        const SystemUiOverlayStyle(
+          statusBarColor: Colors.transparent,
+          systemNavigationBarColor: Colors.black,
+        ),
+      );
     }
   }
 
@@ -193,8 +197,9 @@ class _MangaReaderScreenState extends ConsumerState<MangaReaderScreen>
       final pageDataList = raw.asMap().entries.map((e) {
         final imgUrl = e.value['imageUrl'] as String?;
         final rawHeaders = e.value['headers'] as Map?;
-        final headers =
-            rawHeaders?.map((k, v) => MapEntry(k.toString(), v.toString()));
+        final headers = rawHeaders?.map(
+          (k, v) => MapEntry(k.toString(), v.toString()),
+        );
         return PageData.page(
           mangaPage: MangaPage(
             index: e.key,
@@ -207,16 +212,16 @@ class _MangaReaderScreenState extends ConsumerState<MangaReaderScreen>
       }).toList();
 
       // Initialize the preload manager with the current chapter's pages
-      initializePreloadManager(pageDataList, onPagesUpdated: () {
-        if (mounted) setState(() {});
-      });
+      initializePreloadManager(
+        pageDataList,
+        onPagesUpdated: () {
+          if (mounted) setState(() {});
+        },
+      );
 
       setState(() {
         _zoomCtrls.addAll(
-          List.generate(
-            pageDataList.length,
-            (_) => TransformationController(),
-          ),
+          List.generate(pageDataList.length, (_) => TransformationController()),
         );
         _loading = false;
       });
@@ -296,8 +301,9 @@ class _MangaReaderScreenState extends ConsumerState<MangaReaderScreen>
     final raw = prefs.getString('reader_${widget.mangaId}');
     if (raw != null && mounted) {
       try {
-        _settings =
-            ReaderSettings.fromJson(json.decode(raw) as Map<String, dynamic>);
+        _settings = ReaderSettings.fromJson(
+          json.decode(raw) as Map<String, dynamic>,
+        );
       } catch (_) {}
     }
     if (mounted) _applySystemUI();
@@ -442,16 +448,18 @@ class _MangaReaderScreenState extends ConsumerState<MangaReaderScreen>
         _settings.readingMode == ReadingMode.longStripWithGaps) {
       _itemScrollCtrl.scrollTo(
         index: clamped,
-        duration:
-            Duration(milliseconds: _settings.animatePageTransition ? 250 : 0),
+        duration: Duration(
+          milliseconds: _settings.animatePageTransition ? 250 : 0,
+        ),
         curve: Curves.easeOut,
       );
     } else {
       if (_pageCtrl.hasClients) {
         _pageCtrl.animateToPage(
           clamped,
-          duration:
-              Duration(milliseconds: _settings.animatePageTransition ? 250 : 0),
+          duration: Duration(
+            milliseconds: _settings.animatePageTransition ? 250 : 0,
+          ),
           curve: Curves.easeOut,
         );
       }
@@ -479,14 +487,17 @@ class _MangaReaderScreenState extends ConsumerState<MangaReaderScreen>
     if (flatIdx >= _pages.length) return;
     final page = _pages[flatIdx];
     final chapterRelativeIndex = page.index;
-    final chapterId =
-        (page.chapter ?? _currentChapter)!.id;
-    await _repos!.manga.updateMangaChapterProgress(chapterId, chapterRelativeIndex);
+    final chapterId = (page.chapter ?? _currentChapter)!.id;
+    await _repos!.manga.updateMangaChapterProgress(
+      chapterId,
+      chapterRelativeIndex,
+    );
 
     final ch = page.chapter;
     if (ch != null) {
-      final chPages = _pages.where((p) =>
-          p.chapter?.id == ch.id && !p.isTransitionPage).length;
+      final chPages = _pages
+          .where((p) => p.chapter?.id == ch.id && !p.isTransitionPage)
+          .length;
       if (chPages > 0 && chapterRelativeIndex >= chPages - 1) {
         await _repos!.manga.markMangaChapterRead(chapterId);
       }
@@ -541,8 +552,9 @@ class _MangaReaderScreenState extends ConsumerState<MangaReaderScreen>
       final nextPages = raw.asMap().entries.map((e) {
         final imgUrl = e.value['imageUrl'] as String?;
         final rawHeaders = e.value['headers'] as Map?;
-        final headers =
-            rawHeaders?.map((k, v) => MapEntry(k.toString(), v.toString()));
+        final headers = rawHeaders?.map(
+          (k, v) => MapEntry(k.toString(), v.toString()),
+        );
         return PageData.page(
           mangaPage: MangaPage(
             index: e.key,
@@ -635,7 +647,7 @@ class _MangaReaderScreenState extends ConsumerState<MangaReaderScreen>
           mangaUrl: widget.mangaUrl,
           chapterUrl: chapter.url,
           chapterName: chapter.name,
-        pageNumber: widget.pageNumber,
+          pageNumber: widget.pageNumber,
         ),
       );
     });
@@ -651,11 +663,9 @@ class _MangaReaderScreenState extends ConsumerState<MangaReaderScreen>
     if (chapter == null) return;
 
     final pageNumber = page.mangaPage?.index ?? 0;
-    final bookmarked = await ref.read(bookmarksProvider.notifier).isBookmarked(
-      widget.mangaId!,
-      chapter.id,
-      pageNumber,
-    );
+    final bookmarked = await ref
+        .read(bookmarksProvider.notifier)
+        .isBookmarked(widget.mangaId!, chapter.id, pageNumber);
 
     if (mounted) {
       setState(() => _isBookmarked = bookmarked);
@@ -672,11 +682,13 @@ class _MangaReaderScreenState extends ConsumerState<MangaReaderScreen>
     if (chapter == null) return;
 
     final pageNumber = page.mangaPage?.index ?? 0;
-    await ref.read(bookmarksProvider.notifier).toggleBookmark(
-      bookId: widget.mangaId!,
-      chapterId: chapter.id,
-      pageNumber: pageNumber,
-    );
+    await ref
+        .read(bookmarksProvider.notifier)
+        .toggleBookmark(
+          bookId: widget.mangaId!,
+          chapterId: chapter.id,
+          pageNumber: pageNumber,
+        );
 
     await _updateBookmarkState();
   }
@@ -751,20 +763,18 @@ class _MangaReaderScreenState extends ConsumerState<MangaReaderScreen>
       final streamed = await req.send();
       final bytes = await streamed.stream.toBytes();
       if (!mounted) return;
-      final file = File(
-        '${Directory.systemTemp.path}/page_${current + 1}.jpg',
-      );
+      final file = File('${Directory.systemTemp.path}/page_${current + 1}.jpg');
       await file.writeAsBytes(bytes);
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Saved to ${file.path}')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Saved to ${file.path}')));
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Save failed: $e')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Save failed: $e')));
       }
     }
   }
@@ -780,8 +790,9 @@ class _MangaReaderScreenState extends ConsumerState<MangaReaderScreen>
   void _copyCurrentPage() {
     final current = _currentPageNotifier.value;
     Clipboard.setData(ClipboardData(text: _pages[current].imageUrl));
-    ScaffoldMessenger.of(context)
-        .showSnackBar(const SnackBar(content: Text('Image URL copied')));
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(const SnackBar(content: Text('Image URL copied')));
   }
 
   void _showLongPressMenu() {
@@ -802,16 +813,16 @@ class _MangaReaderScreenState extends ConsumerState<MangaReaderScreen>
   // ── Build ──
 
   ReaderViewProps _viewProps() => ReaderViewProps(
-        pages: _pages,
-        settings: _settings,
-        currentPage: _currentPageNotifier,
-        zoomControllers: _zoomCtrls,
-        onPageChanged: _onPageChanged,
-        onGoToPage: _goToPage,
-        onToggleToolbar: _toggleToolbar,
-        onLongPress: _showLongPressMenu,
-        onRetryPage: _retryPage,
-      );
+    pages: _pages,
+    settings: _settings,
+    currentPage: _currentPageNotifier,
+    zoomControllers: _zoomCtrls,
+    onPageChanged: _onPageChanged,
+    onGoToPage: _goToPage,
+    onToggleToolbar: _toggleToolbar,
+    onLongPress: _showLongPressMenu,
+    onRetryPage: _retryPage,
+  );
 
   @override
   Widget build(BuildContext context) {
@@ -859,7 +870,8 @@ class _MangaReaderScreenState extends ConsumerState<MangaReaderScreen>
 
     final isRtl = _settings.readingMode == ReadingMode.rightToLeft;
     final isWebtoon = _settings.readingMode == ReadingMode.webtoon;
-    final isContinuous = isWebtoon ||
+    final isContinuous =
+        isWebtoon ||
         _settings.readingMode == ReadingMode.longStrip ||
         _settings.readingMode == ReadingMode.longStripWithGaps;
     final axis = isContinuous ? Axis.vertical : Axis.horizontal;

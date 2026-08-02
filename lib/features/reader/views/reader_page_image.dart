@@ -40,7 +40,7 @@ class ReaderPageImage extends StatelessWidget {
                 headers: page.headers,
                 cacheMaxAge: const Duration(days: 7),
                 imageCacheFolderName: 'cacheimagemanga',
-          showCloudFlareError: true,
+                showCloudFlareError: true,
               ),
         key: ValueKey('p${page.chapter?.id ?? 0}-${page.index}'),
         fit: BoxFit.contain,
@@ -80,32 +80,33 @@ class ReaderPageImage extends StatelessWidget {
       width: double.infinity,
       height: double.infinity,
       loadingBuilder: (_, child, progress) => progress != null
-          ? const Center(child: CircularProgressIndicator(color: Colors.white54))
+          ? const Center(
+              child: CircularProgressIndicator(color: Colors.white54),
+            )
           : child,
       errorBuilder: (_, _, _) => _retryColumn(),
     );
   }
 
   Widget _brokenBox() => const AspectRatio(
-        aspectRatio: 16 / 9,
-        child: Center(
-          child: Icon(Icons.broken_image, color: Colors.white38, size: 48),
-        ),
-      );
+    aspectRatio: 16 / 9,
+    child: Center(
+      child: Icon(Icons.broken_image, color: Colors.white38, size: 48),
+    ),
+  );
 
   Widget _retryColumn() => Center(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Icon(Icons.broken_image, color: Colors.white38, size: 48),
-            const SizedBox(height: 8),
-            TextButton.icon(
-              onPressed: onRetry,
-              icon: const Icon(Icons.refresh, color: Colors.white54),
-              label: const Text('Retry',
-                  style: TextStyle(color: Colors.white54)),
-            ),
-          ],
+    child: Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        const Icon(Icons.broken_image, color: Colors.white38, size: 48),
+        const SizedBox(height: 8),
+        TextButton.icon(
+          onPressed: onRetry,
+          icon: const Icon(Icons.refresh, color: Colors.white54),
+          label: const Text('Retry', style: TextStyle(color: Colors.white54)),
         ),
-      );
+      ],
+    ),
+  );
 }

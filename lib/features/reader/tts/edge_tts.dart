@@ -34,9 +34,9 @@ class EdgeTtsEngine implements TtsEngine {
 
   @override
   TtsVoice? get selectedVoice => _curatedVoices.cast<TtsVoice?>().firstWhere(
-        (v) => v!.id == _voiceName,
-        orElse: () => _curatedVoices.first,
-      );
+    (v) => v!.id == _voiceName,
+    orElse: () => _curatedVoices.first,
+  );
 
   @override
   bool get isPlaying => _isPlaying;
@@ -89,7 +89,9 @@ class EdgeTtsEngine implements TtsEngine {
         return;
       }
 
-      final audioList = await _synthesizeAll(chunks.map((c) => c.text).toList());
+      final audioList = await _synthesizeAll(
+        chunks.map((c) => c.text).toList(),
+      );
       final sources = audioList
           .where((a) => a.isNotEmpty)
           .map((a) => _BytesAudioSource(a))
@@ -229,7 +231,8 @@ class EdgeTtsEngine implements TtsEngine {
       },
       onError: (e) {
         debugPrint('edge-tts stream error: $e');
-        if (!completer.isCompleted) completer.complete(Uint8List.fromList(allAudio));
+        if (!completer.isCompleted)
+          completer.complete(Uint8List.fromList(allAudio));
       },
       onDone: () {
         if (!completer.isCompleted) {
@@ -289,11 +292,13 @@ class EdgeTtsEngine implements TtsEngine {
           final word = textObj['Text'] as String? ?? '';
           final offset = (mData['Offset'] as num?)?.toInt() ?? 0;
           if (word.isNotEmpty) {
-            _allTimestamps.add(WordTimestamp(
-              word,
-              Duration(microseconds: (offset / 10).round()),
-              0,
-            ));
+            _allTimestamps.add(
+              WordTimestamp(
+                word,
+                Duration(microseconds: (offset / 10).round()),
+                0,
+              ),
+            );
           }
         }
       } catch (_) {}
@@ -307,7 +312,18 @@ class EdgeTtsEngine implements TtsEngine {
   }
 
   static const _pathAudioNeedle = <int>[
-    80, 97, 116, 104, 58, 97, 117, 100, 105, 111, 13, 10,
+    80,
+    97,
+    116,
+    104,
+    58,
+    97,
+    117,
+    100,
+    105,
+    111,
+    13,
+    10,
   ]; // "Path:audio\r\n"
 
   static int _indexOf(List<int> haystack, List<int> needle) {
@@ -437,15 +453,17 @@ class EdgeTtsEngine implements TtsEngine {
         for (final s in sentences) {
           if (s.isEmpty) continue;
           if (buf.length + s.length > 1500 && buf.isNotEmpty) {
-            chunks.add(_Chunk(
-                buf.toString(), baseOffset + totalChars - buf.length));
+            chunks.add(
+              _Chunk(buf.toString(), baseOffset + totalChars - buf.length),
+            );
             buf.clear();
           }
           buf.write(s);
         }
         if (buf.isNotEmpty) {
-          chunks.add(_Chunk(
-              buf.toString(), baseOffset + totalChars - buf.length));
+          chunks.add(
+            _Chunk(buf.toString(), baseOffset + totalChars - buf.length),
+          );
         }
         totalChars += p.length;
       }
@@ -455,7 +473,8 @@ class EdgeTtsEngine implements TtsEngine {
 
   static String _generateSecMsGec() {
     // Match TypeScript msedge-tts: integer arithmetic, no floats.
-    final ticks = (DateTime.now().toUtc().millisecondsSinceEpoch ~/ 1000) + 11644473600;
+    final ticks =
+        (DateTime.now().toUtc().millisecondsSinceEpoch ~/ 1000) + 11644473600;
     final rounded = ticks - (ticks % 300);
     final windowsTicks = rounded * 10000000;
     final toHash = '$windowsTicks$_trustedClientToken';
@@ -479,8 +498,18 @@ class EdgeTtsEngine implements TtsEngine {
     final now = DateTime.now().toUtc();
     const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
     const months = [
-      'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
-      'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
+      'Jan',
+      'Feb',
+      'Mar',
+      'Apr',
+      'May',
+      'Jun',
+      'Jul',
+      'Aug',
+      'Sep',
+      'Oct',
+      'Nov',
+      'Dec',
     ];
     return '${days[now.weekday % 7]} ${months[now.month - 1]} '
         '${now.day.toString().padLeft(2, '0')} ${now.year} '
@@ -498,15 +527,78 @@ class EdgeTtsEngine implements TtsEngine {
   }
 
   static final List<TtsVoice> _curatedVoices = [
-    const TtsVoice(id: 'en-US-AndrewMultilingualNeural', name: 'Andrew', gender: 'Male', isNeural: true, locale: 'en-US', engineType: TtsEngineType.edge),
-    const TtsVoice(id: 'en-US-BrianMultilingualNeural', name: 'Brian', gender: 'Male', isNeural: true, locale: 'en-US', engineType: TtsEngineType.edge),
-    const TtsVoice(id: 'en-US-ChristopherNeural', name: 'Christopher', gender: 'Male', isNeural: true, locale: 'en-US', engineType: TtsEngineType.edge),
-    const TtsVoice(id: 'en-GB-RyanNeural', name: 'Ryan', gender: 'Male', isNeural: true, locale: 'en-GB', engineType: TtsEngineType.edge),
-    const TtsVoice(id: 'en-US-GuyNeural', name: 'Guy', gender: 'Male', isNeural: true, locale: 'en-US', engineType: TtsEngineType.edge),
-    const TtsVoice(id: 'en-US-JennyNeural', name: 'Jenny', gender: 'Female', isNeural: true, locale: 'en-US', engineType: TtsEngineType.edge),
-    const TtsVoice(id: 'en-US-AriaNeural', name: 'Aria', gender: 'Female', isNeural: true, locale: 'en-US', engineType: TtsEngineType.edge),
-    const TtsVoice(id: 'en-GB-SoniaNeural', name: 'Sonia', gender: 'Female', isNeural: true, locale: 'en-GB', engineType: TtsEngineType.edge),
-    const TtsVoice(id: 'en-GB-AdrianMultilingualNeural', name: 'Adrian', gender: 'Male', isNeural: true, locale: 'en-GB', engineType: TtsEngineType.edge),
+    const TtsVoice(
+      id: 'en-US-AndrewMultilingualNeural',
+      name: 'Andrew',
+      gender: 'Male',
+      isNeural: true,
+      locale: 'en-US',
+      engineType: TtsEngineType.edge,
+    ),
+    const TtsVoice(
+      id: 'en-US-BrianMultilingualNeural',
+      name: 'Brian',
+      gender: 'Male',
+      isNeural: true,
+      locale: 'en-US',
+      engineType: TtsEngineType.edge,
+    ),
+    const TtsVoice(
+      id: 'en-US-ChristopherNeural',
+      name: 'Christopher',
+      gender: 'Male',
+      isNeural: true,
+      locale: 'en-US',
+      engineType: TtsEngineType.edge,
+    ),
+    const TtsVoice(
+      id: 'en-GB-RyanNeural',
+      name: 'Ryan',
+      gender: 'Male',
+      isNeural: true,
+      locale: 'en-GB',
+      engineType: TtsEngineType.edge,
+    ),
+    const TtsVoice(
+      id: 'en-US-GuyNeural',
+      name: 'Guy',
+      gender: 'Male',
+      isNeural: true,
+      locale: 'en-US',
+      engineType: TtsEngineType.edge,
+    ),
+    const TtsVoice(
+      id: 'en-US-JennyNeural',
+      name: 'Jenny',
+      gender: 'Female',
+      isNeural: true,
+      locale: 'en-US',
+      engineType: TtsEngineType.edge,
+    ),
+    const TtsVoice(
+      id: 'en-US-AriaNeural',
+      name: 'Aria',
+      gender: 'Female',
+      isNeural: true,
+      locale: 'en-US',
+      engineType: TtsEngineType.edge,
+    ),
+    const TtsVoice(
+      id: 'en-GB-SoniaNeural',
+      name: 'Sonia',
+      gender: 'Female',
+      isNeural: true,
+      locale: 'en-GB',
+      engineType: TtsEngineType.edge,
+    ),
+    const TtsVoice(
+      id: 'en-GB-AdrianMultilingualNeural',
+      name: 'Adrian',
+      gender: 'Male',
+      isNeural: true,
+      locale: 'en-GB',
+      engineType: TtsEngineType.edge,
+    ),
   ];
 }
 

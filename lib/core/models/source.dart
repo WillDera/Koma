@@ -16,22 +16,22 @@ class Source {
   });
 
   Map<String, dynamic> toJson() => {
-        'id': id,
-        'name': name,
-        'tag': tag,
-        'base_url': baseUrl,
-        'enabled': enabled ? 1 : 0,
-        if (language != null) 'language': language,
-      };
+    'id': id,
+    'name': name,
+    'tag': tag,
+    'base_url': baseUrl,
+    'enabled': enabled ? 1 : 0,
+    if (language != null) 'language': language,
+  };
 
   factory Source.fromJson(Map<String, dynamic> json) => Source(
-        id: json['id'] as int? ?? 0,
-        name: json['name'] as String,
-        tag: json['tag'] as String? ?? '',
-        baseUrl: json['base_url'] as String? ?? json['search_url'] as String? ?? '',
-        enabled: (json['enabled'] as int? ?? 1) == 1,
-        language: json['language'] as String?,
-      );
+    id: json['id'] as int? ?? 0,
+    name: json['name'] as String,
+    tag: json['tag'] as String? ?? '',
+    baseUrl: json['base_url'] as String? ?? json['search_url'] as String? ?? '',
+    enabled: (json['enabled'] as int? ?? 1) == 1,
+    language: json['language'] as String?,
+  );
 
   Source copyWith({
     int? id,
@@ -40,16 +40,14 @@ class Source {
     String? baseUrl,
     bool? enabled,
     String? language,
-  }) =>
-      Source(
-        id: id ?? this.id,
-        name: name ?? this.name,
-        tag: tag ?? this.tag,
-        baseUrl: baseUrl ?? this.baseUrl,
-        enabled: enabled ?? this.enabled,
-        language: language ?? this.language,
-      );
+  }) => Source(
+    id: id ?? this.id,
+    name: name ?? this.name,
+    tag: tag ?? this.tag,
+    baseUrl: baseUrl ?? this.baseUrl,
+    enabled: enabled ?? this.enabled,
+    language: language ?? this.language,
+  );
 
   String get label => '$name ($tag)';
 }
-

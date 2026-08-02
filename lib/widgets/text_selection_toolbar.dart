@@ -74,11 +74,7 @@ class ReaderSelectionToolbar extends StatelessWidget {
                     onTap: onNote,
                   ),
                   _Divider(),
-                  _ToolAction(
-                    icon: Icons.copy,
-                    label: 'Copy',
-                    onTap: onCopy,
-                  ),
+                  _ToolAction(icon: Icons.copy, label: 'Copy', onTap: onCopy),
                   _Divider(),
                   _ToolAction(
                     icon: Icons.ios_share,

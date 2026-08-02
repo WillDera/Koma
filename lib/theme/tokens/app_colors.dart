@@ -120,7 +120,11 @@ class AppColors {
 
   /// Returns the appropriate highlight color for the given triple key
   /// (one of 'yellow' | 'blue' | 'pink' | 'green') for the given brightness.
-  static Color highlight(String key, Brightness brightness, {bool isSepia = false}) {
+  static Color highlight(
+    String key,
+    Brightness brightness, {
+    bool isSepia = false,
+  }) {
     if (isSepia) {
       switch (key) {
         case 'blue':

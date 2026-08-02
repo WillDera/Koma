@@ -26,30 +26,30 @@ class MManga {
   }) : genres = genres ?? const [];
 
   Map<String, dynamic> toJson() => {
-        'url': url,
-        'title': title,
-        'thumbnail_url': thumbnailUrl,
-        'author': author,
-        'artist': artist,
-        'description': description,
-        'status': status,
-        'genre': genres.join(', '),
+    'url': url,
+    'title': title,
+    'thumbnail_url': thumbnailUrl,
+    'author': author,
+    'artist': artist,
+    'description': description,
+    'status': status,
+    'genre': genres.join(', '),
     'memo': memo,
   };
 
   factory MManga.fromJson(Map<String, dynamic> json) => MManga(
-        url: json['url'] as String? ?? '',
-        title: json['title'] as String? ?? '',
-        thumbnailUrl: json['thumbnail_url'] as String?,
-        author: json['author'] as String?,
-        artist: json['artist'] as String?,
-        description: json['description'] as String?,
-        status: json['status'] as int? ?? 0,
+    url: json['url'] as String? ?? '',
+    title: json['title'] as String? ?? '',
+    thumbnailUrl: json['thumbnail_url'] as String?,
+    author: json['author'] as String?,
+    artist: json['artist'] as String?,
+    description: json['description'] as String?,
+    status: json['status'] as int? ?? 0,
     memo: json['memo'] as String?,
     genres: json['genre'] != null
-            ? (json['genre'] as String).split(',').map((g) => g.trim()).toList()
-            : null,
-      );
+        ? (json['genre'] as String).split(',').map((g) => g.trim()).toList()
+        : null,
+  );
 
   factory MManga.fromMap(Map<String, dynamic> map) => MManga.fromJson(map);
 

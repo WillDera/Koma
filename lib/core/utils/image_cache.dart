@@ -25,8 +25,11 @@ ImageProvider cachedCover(
 }) {
   if (width != null || height != null) {
     return ResizeImage(
-      CustomExtendedNetworkImageProvider(url,
-          headers: headers, showCloudFlareError: true),
+      CustomExtendedNetworkImageProvider(
+        url,
+        headers: headers,
+        showCloudFlareError: true,
+      ),
       width: width,
       height: height,
     );

@@ -18,7 +18,9 @@ class AppSpacing {
 
   /// Convenience EdgeInsets for common padding presets.
   static const EdgeInsets pageHorizontal = EdgeInsets.symmetric(horizontal: lg);
-  static const EdgeInsets pageHorizontalLg = EdgeInsets.symmetric(horizontal: xl);
+  static const EdgeInsets pageHorizontalLg = EdgeInsets.symmetric(
+    horizontal: xl,
+  );
   static const EdgeInsets cardMd = EdgeInsets.all(lg);
   static const EdgeInsets cardLg = EdgeInsets.all(xl);
   static const EdgeInsets sheetLg = EdgeInsets.fromLTRB(xl, lg, xl, xxl);
@@ -44,15 +46,15 @@ class AppSpacing {
   static BorderRadius brLg = BorderRadius.circular(radiusLg);
   static BorderRadius brXl = BorderRadius.circular(radiusXl);
   static BorderRadius brXxl = BorderRadius.circular(radiusXxl);
-  static const BorderRadius brPill = BorderRadius.all(Radius.circular(radiusPill));
+  static const BorderRadius brPill = BorderRadius.all(
+    Radius.circular(radiusPill),
+  );
 
   // ─── Elevation / shadows ───────────────────────────────────────────────
   static List<BoxShadow> shadow1({required bool isDark}) {
     return [
       BoxShadow(
-        color: isDark
-            ? const Color(0x33000000)
-            : const Color(0x0A000000),
+        color: isDark ? const Color(0x33000000) : const Color(0x0A000000),
         blurRadius: 2,
         offset: const Offset(0, 1),
       ),
@@ -62,16 +64,12 @@ class AppSpacing {
   static List<BoxShadow> shadow2({required bool isDark}) {
     return [
       BoxShadow(
-        color: isDark
-            ? const Color(0x40000000)
-            : const Color(0x0F000000),
+        color: isDark ? const Color(0x40000000) : const Color(0x0F000000),
         blurRadius: 12,
         offset: const Offset(0, 4),
       ),
       BoxShadow(
-        color: isDark
-            ? const Color(0x1A000000)
-            : const Color(0x08000000),
+        color: isDark ? const Color(0x1A000000) : const Color(0x08000000),
         blurRadius: 2,
         offset: const Offset(0, 1),
       ),
@@ -81,16 +79,12 @@ class AppSpacing {
   static List<BoxShadow> shadow3({required bool isDark}) {
     return [
       BoxShadow(
-        color: isDark
-            ? const Color(0x55000000)
-            : const Color(0x14000000),
+        color: isDark ? const Color(0x55000000) : const Color(0x14000000),
         blurRadius: 32,
         offset: const Offset(0, 12),
       ),
       BoxShadow(
-        color: isDark
-            ? const Color(0x28000000)
-            : const Color(0x0A000000),
+        color: isDark ? const Color(0x28000000) : const Color(0x0A000000),
         blurRadius: 4,
         offset: const Offset(0, 1),
       ),
@@ -100,16 +94,12 @@ class AppSpacing {
   static List<BoxShadow> shadow4({required bool isDark}) {
     return [
       BoxShadow(
-        color: isDark
-            ? const Color(0x66000000)
-            : const Color(0x1F000000),
+        color: isDark ? const Color(0x66000000) : const Color(0x1F000000),
         blurRadius: 60,
         offset: const Offset(0, 24),
       ),
       BoxShadow(
-        color: isDark
-            ? const Color(0x33000000)
-            : const Color(0x0A000000),
+        color: isDark ? const Color(0x33000000) : const Color(0x0A000000),
         blurRadius: 8,
         offset: const Offset(0, 2),
       ),
@@ -118,9 +108,7 @@ class AppSpacing {
 
   /// Subtle inset highlight at the top of light cards (paper feel).
   static Border? topHairline({required Color color}) {
-    return Border(
-      top: BorderSide(color: color, width: 0.5),
-    );
+    return Border(top: BorderSide(color: color, width: 0.5));
   }
 
   // ─── Aethelgard-specific tokens ────────────────────────────────────────
