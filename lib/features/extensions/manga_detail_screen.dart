@@ -57,7 +57,9 @@ class MangaDetailScreen extends ConsumerStatefulWidget {
 }
 
 class _MangaDetailScreenState extends ConsumerState<MangaDetailScreen> {
-  final _service = KeiyoushiService();
+  /// Shared process-scoped service — never construct a fresh [KeiyoushiService]
+  /// here (its init path hits getDalvikPort / a TCP probe).
+  KeiyoushiService get _service => ref.read(keiyoushiServiceProvider);
   int? _mangaId;
   String? _localThumbnail;
   bool _inLibrary = false;
