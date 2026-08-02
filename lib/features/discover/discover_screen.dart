@@ -40,7 +40,6 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
   DateTime? _lastScroll;
   final Map<String, double> _downloading = {};
   bool get _oneHand => ref.watch(themeProvider).oneHandMode;
-  final _mangaService = KeiyoushiService();
 
   @override
   void initState() {
@@ -70,6 +69,7 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
   }
 
   SourceService _svc() => ref.read(sourceServiceProvider);
+  KeiyoushiService _mangaSvc() => ref.read(keiyoushiServiceProvider);
 
   Future<void> _search() async {
     final q = _ctrl.text.trim();
@@ -78,24 +78,30 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
       _searching = true;
       _loaded = true;
     });
-    try {
-      final results = await Future.wait([
-        _svc().search(q),
-        _mangaService.searchAllInstalled(query: q),
-      ]);
-      if (!mounted) return;
-      setState(() {
-        _results = results[0] as List<SourceSearchResult>;
-        _mangaResults = results[1] as List<Map<String, dynamic>>;
-        if (_results.isEmpty && _mangaItemCount > 0) {
-          _section = _DiscoverSection.manga;
-        }
-        _searching = false;
-      });
-    } catch (_) {
-      if (!mounted) return;
-      setState(() => _searching = false);
-    }
+    // Run book + manga search independently so a failure on one side
+    // (Dalvik down, LibGen timeout, cast error) never discards the other.
+    final bookFuture = _svc().search(q).then<List<SourceSearchResult>>(
+      (v) => v,
+      onError: (_) => <SourceSearchResult>[],
+    );
+    final mangaFuture = _mangaSvc().searchAllInstalled(query: q).then<List<Map<String, dynamic>>>(
+      (v) => v,
+      onError: (_) => <Map<String, dynamic>>[],
+    );
+    final results = await Future.wait([bookFuture, mangaFuture]);
+    if (!mounted) return;
+    final books = results[0] as List<SourceSearchResult>;
+    final mangas = results[1] as List<Map<String, dynamic>>;
+    setState(() {
+      _results = books;
+      _mangaResults = mangas;
+      if (_results.isEmpty && _mangaItemCount > 0) {
+        _section = _DiscoverSection.manga;
+      } else if (_results.isNotEmpty) {
+        _section = _DiscoverSection.books;
+      }
+      _searching = false;
+    });
   }
 
   Future<void> _showResultOptions(
@@ -326,7 +332,7 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
                     'Pull from book sources and installed manga extensions without leaving your desk.',
                 stats: [
                   PanelStat(value: '${_results.length}', label: 'Books'),
-                  PanelStat(value: '${_mangaResults.length}', label: 'Sources'),
+                  PanelStat(value: '$_mangaItemCount', label: 'Manga'),
                   PanelStat(value: _gridView ? 'Grid' : 'List', label: 'View'),
                 ],
               ),
