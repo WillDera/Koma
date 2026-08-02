@@ -4,7 +4,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 enum ChapterFilter { downloaded, read, unread }
+
 enum FilterMode { ignore, include, exclude }
+
 enum SortMode { nameAsc, nameDesc, dateAsc, dateDesc, chapterAsc, chapterDesc }
 
 class MangaDetailState {
@@ -91,7 +93,9 @@ class MangaDetailNotifier extends Notifier<MangaDetailState> {
         final json = jsonDecode(filterRaw) as Map<String, dynamic>;
         final modes = <ChapterFilter, FilterMode>{};
         for (final e in json.entries) {
-          final key = ChapterFilter.values.firstWhereOrNull((v) => v.name == e.key);
+          final key = ChapterFilter.values.firstWhereOrNull(
+            (v) => v.name == e.key,
+          );
           if (key != null) {
             modes[key] = FilterMode.values[e.value as int? ?? 0];
           }
@@ -103,22 +107,30 @@ class MangaDetailNotifier extends Notifier<MangaDetailState> {
 
   void setLoading(bool v) => state = state.copyWith(loading: v);
   void setError(String? e) => state = state.copyWith(error: e);
-  void setInLibrary(bool v, int? id) => state = state.copyWith(inLibrary: v, mangaId: id);
+  void setInLibrary(bool v, int? id) =>
+      state = state.copyWith(inLibrary: v, mangaId: id);
   void setSourceName(String n) => state = state.copyWith(sourceName: n);
   void setSortMode(SortMode m) async {
     state = state.copyWith(sortMode: m);
     final prefs = await SharedPreferences.getInstance();
     await prefs.setInt(_keySortMode, m.index);
   }
+
   void setFilterMode(ChapterFilter f, FilterMode m) {
-    final modes = Map<ChapterFilter, FilterMode>.from(state.filterModes)..[f] = m;
+    final modes = Map<ChapterFilter, FilterMode>.from(state.filterModes)
+      ..[f] = m;
     state = state.copyWith(filterModes: modes);
   }
-  void setDetails(Map<String, dynamic>? d) => state = state.copyWith(details: d);
-  void setChapters(List<Map<String, dynamic>> c) => state = state.copyWith(chapters: c);
-  void setLocalChapters(Map<String, Map<String, dynamic>> c) => state = state.copyWith(localChapters: c);
+
+  void setDetails(Map<String, dynamic>? d) =>
+      state = state.copyWith(details: d);
+  void setChapters(List<Map<String, dynamic>> c) =>
+      state = state.copyWith(chapters: c);
+  void setLocalChapters(Map<String, Map<String, dynamic>> c) =>
+      state = state.copyWith(localChapters: c);
   void setOfflineMode(bool v) => state = state.copyWith(offlineMode: v);
-  void setLocalThumbnail(String? p) => state = state.copyWith(localThumbnail: p);
+  void setLocalThumbnail(String? p) =>
+      state = state.copyWith(localThumbnail: p);
 
   void applyChapters(List<Map<String, dynamic>> chapters) {
     final merged = chapters.map((ch) {
@@ -138,4 +150,6 @@ class MangaDetailNotifier extends Notifier<MangaDetailState> {
 }
 
 final mangaDetailProvider =
-    NotifierProvider<MangaDetailNotifier, MangaDetailState>(MangaDetailNotifier.new);
+    NotifierProvider<MangaDetailNotifier, MangaDetailState>(
+      MangaDetailNotifier.new,
+    );

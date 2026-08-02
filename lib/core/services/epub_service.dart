@@ -35,7 +35,9 @@ class EpubService {
           if (!await coverDir.exists()) {
             await coverDir.create(recursive: true);
           }
-          final coverFile = File('${coverDir.path}/${DateTime.now().millisecondsSinceEpoch}.png');
+          final coverFile = File(
+            '${coverDir.path}/${DateTime.now().millisecondsSinceEpoch}.png',
+          );
           final pngBytes = img.encodePng(coverImage);
           await coverFile.writeAsBytes(pngBytes);
           coverPath = coverFile.path;
@@ -71,22 +73,34 @@ class EpubService {
   }
 
   int _extractChapters(
-      List<EpubChapter> epubChapters, int bookId, List<Chapter> output, int startIndex) {
+    List<EpubChapter> epubChapters,
+    int bookId,
+    List<Chapter> output,
+    int startIndex,
+  ) {
     int idx = startIndex;
     for (final ec in epubChapters) {
       final chTitle = ec.Title ?? 'Chapter ${idx + 1}';
       String content = ec.HtmlContent ?? '';
       // Strip CSS/style blocks that leak from EPUB stylesheets
-      content = content.replaceAll(RegExp(r'<style[^>]*>.*?</style>', dotAll: true, caseSensitive: false), '');
+      content = content.replaceAll(
+        RegExp(r'<style[^>]*>.*?</style>', dotAll: true, caseSensitive: false),
+        '',
+      );
       // Strip @page rules and other CSS that appears as text
-      content = content.replaceAll(RegExp(r'@[a-z]+\s*\{[^}]*\}', dotAll: true, caseSensitive: false), '');
-      output.add(Chapter(
-        id: 0,
-        bookId: bookId,
-        title: chTitle,
-        content: content,
-        index: idx++,
-      ));
+      content = content.replaceAll(
+        RegExp(r'@[a-z]+\s*\{[^}]*\}', dotAll: true, caseSensitive: false),
+        '',
+      );
+      output.add(
+        Chapter(
+          id: 0,
+          bookId: bookId,
+          title: chTitle,
+          content: content,
+          index: idx++,
+        ),
+      );
       // Process subchapters
       if (ec.SubChapters != null && ec.SubChapters!.isNotEmpty) {
         idx = _extractChapters(ec.SubChapters!, bookId, output, idx);

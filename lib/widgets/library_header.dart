@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
+
 import '../theme/app_theme.dart';
 import 'icon_button_round.dart';
-import '../../core/utils/benchmark_logger.dart';
 
 /// A page header used by Library, Snippets, Search, Settings.
 /// Title (displayMedium), optional subtitle (small, secondary), optional
@@ -40,8 +40,7 @@ class LibraryHeader extends StatelessWidget {
     final p = shrinkProgress.clamp(0.0, 1.0);
     final fontSize = titleSize * (1.0 - 0.5 * p);
     final subtitleOpacity = (1.0 - p).clamp(0.0, 1.0);
-    final sw = Stopwatch()..start();
-    Widget result = Padding(
+    return Padding(
       padding: padding,
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.center,
@@ -93,11 +92,5 @@ class LibraryHeader extends StatelessWidget {
         ],
       ),
     );
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (BenchmarkLogger.enabled) {
-        BenchmarkLogger.log('header_build', 'elapsed=${sw.elapsedMicroseconds}us');
-      }
-    });
-    return result;
   }
 }

@@ -5,9 +5,11 @@ import 'package:go_router/go_router.dart';
 import '../../core/providers.dart';
 import '../../core/services/keiyoushi_service.dart';
 import '../../core/services/source_service.dart';
+import '../../core/utils/custom_extended_image_provider.dart';
 import '../../core/utils/image_cache.dart';
 import '../../core/utils/image_headers.dart';
 import '../../router/router.dart';
+import '../../theme/app_icons.dart';
 import '../../theme/app_theme.dart';
 import '../../theme/theme_provider.dart';
 import '../../theme/tokens/app_spacing.dart';
@@ -39,7 +41,6 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
   DateTime? _lastScroll;
   final Map<String, double> _downloading = {};
   bool get _oneHand => ref.watch(themeProvider).oneHandMode;
-  final _mangaService = KeiyoushiService();
 
   @override
   void initState() {
@@ -58,7 +59,8 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
   void _onScroll() {
     final p = (_scrollCtrl.offset / 60).clamp(0.0, 1.0);
     final now = DateTime.now();
-    final minTime = _lastScroll == null ||
+    final minTime =
+        _lastScroll == null ||
         now.difference(_lastScroll!) > const Duration(milliseconds: 120);
     final delta = (p - _scrollProgress).abs();
     if (minTime && delta > 0.02) {
@@ -68,6 +70,7 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
   }
 
   SourceService _svc() => ref.read(sourceServiceProvider);
+  KeiyoushiService _mangaSvc() => ref.read(keiyoushiServiceProvider);
 
   Future<void> _search() async {
     final q = _ctrl.text.trim();
@@ -76,24 +79,30 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
       _searching = true;
       _loaded = true;
     });
-    try {
-      final results = await Future.wait([
-        _svc().search(q),
-        _mangaService.searchAllInstalled(query: q),
-      ]);
-      if (!mounted) return;
-      setState(() {
-        _results = results[0] as List<SourceSearchResult>;
-        _mangaResults = results[1] as List<Map<String, dynamic>>;
-        if (_results.isEmpty && _mangaItemCount > 0) {
-          _section = _DiscoverSection.manga;
-        }
-        _searching = false;
-      });
-    } catch (_) {
-      if (!mounted) return;
-      setState(() => _searching = false);
-    }
+    // Run book + manga search independently so a failure on one side
+    // (Dalvik down, LibGen timeout, cast error) never discards the other.
+    final bookFuture = _svc().search(q).then<List<SourceSearchResult>>(
+      (v) => v,
+      onError: (_) => <SourceSearchResult>[],
+    );
+    final mangaFuture = _mangaSvc().searchAllInstalled(query: q).then<List<Map<String, dynamic>>>(
+      (v) => v,
+      onError: (_) => <Map<String, dynamic>>[],
+    );
+    final results = await Future.wait([bookFuture, mangaFuture]);
+    if (!mounted) return;
+    final books = results[0] as List<SourceSearchResult>;
+    final mangas = results[1] as List<Map<String, dynamic>>;
+    setState(() {
+      _results = books;
+      _mangaResults = mangas;
+      if (_results.isEmpty && _mangaItemCount > 0) {
+        _section = _DiscoverSection.manga;
+      } else if (_results.isNotEmpty) {
+        _section = _DiscoverSection.books;
+      }
+      _searching = false;
+    });
   }
 
   Future<void> _showResultOptions(
@@ -318,13 +327,13 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
             ),
             StaggeredEntrance(
               child: FeaturePanel(
-                icon: Icons.travel_explore_rounded,
+                icon: AppIcons.compass,
                 title: 'Search across every shelf',
                 subtitle:
                     'Pull from book sources and installed manga extensions without leaving your desk.',
                 stats: [
                   PanelStat(value: '${_results.length}', label: 'Books'),
-                  PanelStat(value: '${_mangaResults.length}', label: 'Sources'),
+                  PanelStat(value: '$_mangaItemCount', label: 'Manga'),
                   PanelStat(value: _gridView ? 'Grid' : 'List', label: 'View'),
                 ],
               ),
@@ -433,12 +442,15 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
                         sourceResults: _mangaResults,
                         onTap: (srcResult, manga) => context.pushNamed(
                           Routes.mangaDetail,
-                          extra: (
-                            sourceId: srcResult['sourceId'] as String? ?? '',
-                            url: manga['url'] as String? ?? '',
-                            title: manga['title'] as String? ?? '',
-                            manga: null,
-                          ) as MangaDetailArgs,
+                          extra:
+                              (
+                                    sourceId:
+                                        srcResult['sourceId'] as String? ?? '',
+                                    url: manga['url'] as String? ?? '',
+                                    title: manga['title'] as String? ?? '',
+                                    manga: null,
+                                  )
+                                  as MangaDetailArgs,
                         ),
                       ),
               ),
@@ -536,7 +548,7 @@ class _DiscoverBookResults extends StatelessWidget {
       return const SizedBox(
         height: 240,
         child: EmptyState(
-          icon: Icons.search_off,
+          icon: AppIcons.search,
           title: 'No book results',
           subtitle: 'Try another title or switch to manga.',
         ),
@@ -566,10 +578,10 @@ class _DiscoverBookResults extends StatelessWidget {
         ),
       );
     }
-        return ListView.separated(
+    return ListView.separated(
       shrinkWrap: true,
       physics: const NeverScrollableScrollPhysics(),
-          padding: const EdgeInsets.symmetric(horizontal: 12),
+      padding: const EdgeInsets.symmetric(horizontal: 12),
       itemCount: results.length,
       separatorBuilder: (_, _) => const SizedBox(height: 8),
       itemBuilder: (_, i) => StaggeredEntrance(
@@ -584,7 +596,7 @@ class _DiscoverBookResults extends StatelessWidget {
   }
 }
 
-class _DiscoverMangaResults extends StatelessWidget {
+class _DiscoverMangaResults extends ConsumerWidget {
   final List<Map<String, dynamic>> sourceResults;
   final void Function(
     Map<String, dynamic> sourceResult,
@@ -599,7 +611,7 @@ class _DiscoverMangaResults extends StatelessWidget {
   });
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final c = context.colors;
     final mangaCount = sourceResults.fold<int>(
       0,
@@ -609,13 +621,13 @@ class _DiscoverMangaResults extends StatelessWidget {
       return const SizedBox(
         height: 240,
         child: EmptyState(
-          icon: Icons.search_off,
+          icon: AppIcons.search,
           title: 'No manga results',
           subtitle: 'Try another title or switch to books.',
         ),
       );
     }
-        final sections = sourceResults.where(
+    final sections = sourceResults.where(
       (src) => (src['mangas'] as List?)?.isNotEmpty ?? false,
     );
     return ListView.separated(
@@ -626,6 +638,14 @@ class _DiscoverMangaResults extends StatelessWidget {
       separatorBuilder: (_, _) => const SizedBox(height: 16),
       itemBuilder: (_, si) {
         final srcResult = sections.elementAt(si);
+        // Same header path as source browse: sync Referer from baseUrl so
+        // the first Image frame never races without CDN-required headers.
+        final baseUrl = (srcResult['baseUrl'] as String?)?.trim();
+        final headers = ref.watch(
+          imageHeadersProvider(
+            (baseUrl != null && baseUrl.isNotEmpty) ? baseUrl : null,
+          ),
+        );
         return Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -662,7 +682,8 @@ class _DiscoverMangaResults extends StatelessWidget {
                       width: 132,
                       child: _MangaCard(
                         manga: manga,
-                        sourceId: srcResult['sourceId'] as String?,
+                        baseUrl: baseUrl,
+                        headers: headers,
                         onTap: () => onTap(srcResult, manga),
                       ),
                     ),
@@ -710,7 +731,7 @@ class _ResultCard extends StatelessWidget {
                   children: [
                     ClipRRect(
                       borderRadius: BorderRadius.circular(6),
-                                            child: result.poster != null
+                      child: result.poster != null
                           ? Image(
                               image: cachedCover(result.poster!),
                               width: 48,
@@ -858,7 +879,7 @@ class _GridResultCard extends StatelessWidget {
                 borderRadius: const BorderRadius.vertical(
                   top: Radius.circular(18),
                 ),
-                                child: result.poster != null
+                child: result.poster != null
                     ? Image(
                         image: cachedCover(result.poster!),
                         width: double.infinity,
@@ -960,27 +981,33 @@ class _GridResultCard extends StatelessWidget {
   }
 }
 
-class _MangaCard extends ConsumerWidget {
+class _MangaCard extends StatelessWidget {
   final Map<String, dynamic> manga;
   final VoidCallback onTap;
-  final String? sourceId;
+  final String? baseUrl;
+  final Map<String, String> headers;
 
   const _MangaCard({
     required this.manga,
     required this.onTap,
-    this.sourceId,
+    required this.headers,
+    this.baseUrl,
   });
 
+  String? get _thumb {
+    final raw = manga['thumbnail_url'] as String?;
+    if (raw == null || raw.isEmpty) return null;
+    if (raw.startsWith('http://') || raw.startsWith('https://')) return raw;
+    final base = baseUrl;
+    if (base == null || base.isEmpty) return raw;
+    return Uri.parse(base).resolve(raw).toString();
+  }
+
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  Widget build(BuildContext context) {
     final c = context.colors;
     final title = manga['title'] as String? ?? '';
-    final thumb = manga['thumbnail_url'] as String?;
-    final headers = sourceId != null
-        ? ref
-        .watch(sourceImageHeadersProvider(sourceId!))
-        .value
-        : null;
+    final thumb = _thumb;
     return AnimatedPress(
       onTap: onTap,
       child: Container(
@@ -996,7 +1023,13 @@ class _MangaCard extends ConsumerWidget {
             Expanded(
               child: thumb != null && thumb.isNotEmpty
                   ? Image(
-                image: cachedCover(thumb, headers: headers),
+                      // Match source browse: custom provider + headers from
+                      // the first frame (Referer required by most CDNs).
+                      image: CustomExtendedNetworkImageProvider(
+                        thumb,
+                        headers: headers,
+                        showCloudFlareError: true,
+                      ),
                       width: double.infinity,
                       fit: BoxFit.cover,
                       errorBuilder: (_, _, _) => _placeholder(c),

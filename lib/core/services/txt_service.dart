@@ -23,23 +23,27 @@ class TxtService {
           chTitle = 'Part ${i + 1}';
           content = lines.first.trim();
         }
-        chapters.add(Chapter(
-          id: 0,
-          bookId: bookIdFinal,
-          title: chTitle.isEmpty ? 'Chapter ${i + 1}' : chTitle,
-          content: '<p>${_escapeHtml(content)}</p>',
-          index: i,
-        ));
+        chapters.add(
+          Chapter(
+            id: 0,
+            bookId: bookIdFinal,
+            title: chTitle.isEmpty ? 'Chapter ${i + 1}' : chTitle,
+            content: '<p>${_escapeHtml(content)}</p>',
+            index: i,
+          ),
+        );
       }
 
       if (chapters.isEmpty) {
-        chapters.add(Chapter(
-          id: 0,
-          bookId: bookIdFinal,
-          title: title,
-          content: '<p>${_escapeHtml(text)}</p>',
-          index: 0,
-        ));
+        chapters.add(
+          Chapter(
+            id: 0,
+            bookId: bookIdFinal,
+            title: title,
+            content: '<p>${_escapeHtml(text)}</p>',
+            index: 0,
+          ),
+        );
       }
 
       final book = Book(

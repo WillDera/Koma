@@ -77,7 +77,10 @@ Future<void> _prefsGetInstance(QuickJsRuntime2 engine, int callbackId) async {
 }
 
 Future<void> _prefsGetString(
-    QuickJsRuntime2 engine, String key, int callbackId) async {
+  QuickJsRuntime2 engine,
+  String key,
+  int callbackId,
+) async {
   final prefs = await SharedPreferences.getInstance();
   final value = prefs.getString(key);
   final result = jsonEncode(value);
@@ -85,14 +88,21 @@ Future<void> _prefsGetString(
 }
 
 Future<void> _prefsPutString(
-    QuickJsRuntime2 engine, String key, String value, int callbackId) async {
+  QuickJsRuntime2 engine,
+  String key,
+  String value,
+  int callbackId,
+) async {
   final prefs = await SharedPreferences.getInstance();
   await prefs.setString(key, value);
   engine.evaluate('__prefsCallbacks[$callbackId].resolve(null)');
 }
 
 Future<void> _prefsRemove(
-    QuickJsRuntime2 engine, String key, int callbackId) async {
+  QuickJsRuntime2 engine,
+  String key,
+  int callbackId,
+) async {
   final prefs = await SharedPreferences.getInstance();
   await prefs.remove(key);
   engine.evaluate('__prefsCallbacks[$callbackId].resolve(null)');

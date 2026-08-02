@@ -49,25 +49,30 @@ const BookSchema = CollectionSchema(
       name: r'progress',
       type: IsarType.double,
     ),
-    r'scrollPosition': PropertySchema(
+    r'releaseDate': PropertySchema(
       id: 8,
+      name: r'releaseDate',
+      type: IsarType.dateTime,
+    ),
+    r'scrollPosition': PropertySchema(
+      id: 9,
       name: r'scrollPosition',
       type: IsarType.double,
     ),
-    r'source': PropertySchema(id: 9, name: r'source', type: IsarType.string),
+    r'source': PropertySchema(id: 10, name: r'source', type: IsarType.string),
     r'sourceUrl': PropertySchema(
-      id: 10,
+      id: 11,
       name: r'sourceUrl',
       type: IsarType.string,
     ),
-    r'title': PropertySchema(id: 11, name: r'title', type: IsarType.string),
+    r'title': PropertySchema(id: 12, name: r'title', type: IsarType.string),
     r'totalChapters': PropertySchema(
-      id: 12,
+      id: 13,
       name: r'totalChapters',
       type: IsarType.long,
     ),
     r'updatedAt': PropertySchema(
-      id: 13,
+      id: 14,
       name: r'updatedAt',
       type: IsarType.dateTime,
     ),
@@ -139,12 +144,13 @@ void _bookSerialize(
   writer.writeString(offsets[5], object.filePath);
   writer.writeString(offsets[6], object.genre);
   writer.writeDouble(offsets[7], object.progress);
-  writer.writeDouble(offsets[8], object.scrollPosition);
-  writer.writeString(offsets[9], object.source);
-  writer.writeString(offsets[10], object.sourceUrl);
-  writer.writeString(offsets[11], object.title);
-  writer.writeLong(offsets[12], object.totalChapters);
-  writer.writeDateTime(offsets[13], object.updatedAt);
+  writer.writeDateTime(offsets[8], object.releaseDate);
+  writer.writeDouble(offsets[9], object.scrollPosition);
+  writer.writeString(offsets[10], object.source);
+  writer.writeString(offsets[11], object.sourceUrl);
+  writer.writeString(offsets[12], object.title);
+  writer.writeLong(offsets[13], object.totalChapters);
+  writer.writeDateTime(offsets[14], object.updatedAt);
 }
 
 Book _bookDeserialize(
@@ -163,12 +169,13 @@ Book _bookDeserialize(
     genre: reader.readStringOrNull(offsets[6]) ?? '',
     id: id,
     progress: reader.readDoubleOrNull(offsets[7]) ?? 0.0,
-    scrollPosition: reader.readDoubleOrNull(offsets[8]) ?? 0.0,
-    source: reader.readStringOrNull(offsets[9]) ?? 'local',
-    sourceUrl: reader.readStringOrNull(offsets[10]),
-    title: reader.readString(offsets[11]),
-    totalChapters: reader.readLongOrNull(offsets[12]) ?? 0,
-    updatedAt: reader.readDateTimeOrNull(offsets[13]),
+    releaseDate: reader.readDateTimeOrNull(offsets[8]),
+    scrollPosition: reader.readDoubleOrNull(offsets[9]) ?? 0.0,
+    source: reader.readStringOrNull(offsets[10]) ?? 'local',
+    sourceUrl: reader.readStringOrNull(offsets[11]),
+    title: reader.readString(offsets[12]),
+    totalChapters: reader.readLongOrNull(offsets[13]) ?? 0,
+    updatedAt: reader.readDateTimeOrNull(offsets[14]),
   );
   return object;
 }
@@ -197,16 +204,18 @@ P _bookDeserializeProp<P>(
     case 7:
       return (reader.readDoubleOrNull(offset) ?? 0.0) as P;
     case 8:
-      return (reader.readDoubleOrNull(offset) ?? 0.0) as P;
+      return (reader.readDateTimeOrNull(offset)) as P;
     case 9:
-      return (reader.readStringOrNull(offset) ?? 'local') as P;
+      return (reader.readDoubleOrNull(offset) ?? 0.0) as P;
     case 10:
-      return (reader.readStringOrNull(offset)) as P;
+      return (reader.readStringOrNull(offset) ?? 'local') as P;
     case 11:
-      return (reader.readString(offset)) as P;
+      return (reader.readStringOrNull(offset)) as P;
     case 12:
-      return (reader.readLongOrNull(offset) ?? 0) as P;
+      return (reader.readString(offset)) as P;
     case 13:
+      return (reader.readLongOrNull(offset) ?? 0) as P;
+    case 14:
       return (reader.readDateTimeOrNull(offset)) as P;
     default:
       throw IsarError('Unknown property with id $propertyId');
@@ -1361,6 +1370,81 @@ extension BookQueryFilter on QueryBuilder<Book, Book, QFilterCondition> {
     });
   }
 
+  QueryBuilder<Book, Book, QAfterFilterCondition> releaseDateIsNull() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        const FilterCondition.isNull(property: r'releaseDate'),
+      );
+    });
+  }
+
+  QueryBuilder<Book, Book, QAfterFilterCondition> releaseDateIsNotNull() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        const FilterCondition.isNotNull(property: r'releaseDate'),
+      );
+    });
+  }
+
+  QueryBuilder<Book, Book, QAfterFilterCondition> releaseDateEqualTo(
+    DateTime? value,
+  ) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.equalTo(property: r'releaseDate', value: value),
+      );
+    });
+  }
+
+  QueryBuilder<Book, Book, QAfterFilterCondition> releaseDateGreaterThan(
+    DateTime? value, {
+    bool include = false,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.greaterThan(
+          include: include,
+          property: r'releaseDate',
+          value: value,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<Book, Book, QAfterFilterCondition> releaseDateLessThan(
+    DateTime? value, {
+    bool include = false,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.lessThan(
+          include: include,
+          property: r'releaseDate',
+          value: value,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<Book, Book, QAfterFilterCondition> releaseDateBetween(
+    DateTime? lower,
+    DateTime? upper, {
+    bool includeLower = true,
+    bool includeUpper = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.between(
+          property: r'releaseDate',
+          lower: lower,
+          includeLower: includeLower,
+          upper: upper,
+          includeUpper: includeUpper,
+        ),
+      );
+    });
+  }
+
   QueryBuilder<Book, Book, QAfterFilterCondition> scrollPositionEqualTo(
     double value, {
     double epsilon = Query.epsilon,
@@ -2125,6 +2209,18 @@ extension BookQuerySortBy on QueryBuilder<Book, Book, QSortBy> {
     });
   }
 
+  QueryBuilder<Book, Book, QAfterSortBy> sortByReleaseDate() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'releaseDate', Sort.asc);
+    });
+  }
+
+  QueryBuilder<Book, Book, QAfterSortBy> sortByReleaseDateDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'releaseDate', Sort.desc);
+    });
+  }
+
   QueryBuilder<Book, Book, QAfterSortBy> sortByScrollPosition() {
     return QueryBuilder.apply(this, (query) {
       return query.addSortBy(r'scrollPosition', Sort.asc);
@@ -2307,6 +2403,18 @@ extension BookQuerySortThenBy on QueryBuilder<Book, Book, QSortThenBy> {
     });
   }
 
+  QueryBuilder<Book, Book, QAfterSortBy> thenByReleaseDate() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'releaseDate', Sort.asc);
+    });
+  }
+
+  QueryBuilder<Book, Book, QAfterSortBy> thenByReleaseDateDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'releaseDate', Sort.desc);
+    });
+  }
+
   QueryBuilder<Book, Book, QAfterSortBy> thenByScrollPosition() {
     return QueryBuilder.apply(this, (query) {
       return query.addSortBy(r'scrollPosition', Sort.asc);
@@ -2442,6 +2550,12 @@ extension BookQueryWhereDistinct on QueryBuilder<Book, Book, QDistinct> {
     });
   }
 
+  QueryBuilder<Book, Book, QDistinct> distinctByReleaseDate() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addDistinctBy(r'releaseDate');
+    });
+  }
+
   QueryBuilder<Book, Book, QDistinct> distinctByScrollPosition() {
     return QueryBuilder.apply(this, (query) {
       return query.addDistinctBy(r'scrollPosition');
@@ -2537,6 +2651,12 @@ extension BookQueryProperty on QueryBuilder<Book, Book, QQueryProperty> {
   QueryBuilder<Book, double, QQueryOperations> progressProperty() {
     return QueryBuilder.apply(this, (query) {
       return query.addPropertyName(r'progress');
+    });
+  }
+
+  QueryBuilder<Book, DateTime?, QQueryOperations> releaseDateProperty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addPropertyName(r'releaseDate');
     });
   }
 

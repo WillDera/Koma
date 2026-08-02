@@ -9,6 +9,7 @@ import '../../core/repositories/manga_repository.dart';
 import '../../core/utils/image_cache.dart';
 import '../../core/utils/image_headers.dart';
 import '../../router/router.dart';
+import '../../theme/app_icons.dart';
 import '../../theme/app_theme.dart';
 import '../../theme/theme_provider.dart';
 import '../../theme/tokens/app_spacing.dart';
@@ -30,11 +31,20 @@ class HistoryScreen extends ConsumerStatefulWidget {
 
 class _HistoryScreenState extends ConsumerState<HistoryScreen> with RouteAware {
   final ScrollController _scrollCtrl = ScrollController();
-  double _scrollProgress = 0;
+
+  /// Scroll progress drives only the header's title shrink. Held in a
+  /// notifier so scrolling rebuilds the header alone instead of the whole
+  /// list (a setState here rebuilt every visible tile many times per second).
+  final ValueNotifier<double> _scrollProgress = ValueNotifier<double>(0);
+
   List<Book> _books = [];
   List<InProgressManga> _mangaRows = [];
   bool _loading = true;
   int _lastSeenRevision = 0;
+
+  /// Cover providers cached per manga id so tile rebuilds reuse the same
+  /// [ImageProvider] instance instead of constructing a new one each build.
+  final Map<int, ImageProvider> _coverCache = {};
 
   @override
   void initState() {
@@ -48,8 +58,8 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> with RouteAware {
     if (!_scrollCtrl.hasClients) return;
     final max = _scrollCtrl.position.maxScrollExtent;
     final p = max <= 0 ? 0.0 : (_scrollCtrl.offset / max).clamp(0.0, 1.0);
-    if ((p - _scrollProgress).abs() > 0.01) {
-      setState(() => _scrollProgress = p);
+    if ((p - _scrollProgress.value).abs() > 0.01) {
+      _scrollProgress.value = p;
     }
   }
 
@@ -57,6 +67,7 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> with RouteAware {
   void dispose() {
     _scrollCtrl.removeListener(_onScroll);
     _scrollCtrl.dispose();
+    _scrollProgress.dispose();
     routeObserver.unsubscribe(this);
     super.dispose();
   }
@@ -91,6 +102,8 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> with RouteAware {
     ]);
     _books = results[0] as List<Book>;
     _mangaRows = results[1] as List<InProgressManga>;
+    // Cover URLs may have changed with the reloaded rows.
+    _coverCache.clear();
     if (mounted) setState(() => _loading = false);
   }
 
@@ -132,7 +145,7 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> with RouteAware {
       return const Center(child: CircularProgressIndicator());
     }
     final ts = _oneHand ? 64.0 : 32.0;
-    final sp = _oneHand ? _scrollProgress : 0.0;
+    final oneHand = _oneHand;
     final total = _books.length + _mangaRows.length;
     if (total == 0) {
       return ScreenBackdrop(
@@ -144,14 +157,14 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> with RouteAware {
             padding: EdgeInsets.zero,
             children: [
               const OneHandSpacer(),
-              LibraryHeader(
+              _shrinkingHeader(
                 title: 'History',
                 titleSize: ts,
-                shrinkProgress: sp,
+                oneHand: oneHand,
               ),
               const SizedBox(height: 80),
               const EmptyState(
-                icon: Icons.history,
+                icon: AppIcons.history,
                 title: 'No reading history',
                 subtitle: 'Books and manga you\'re reading will appear here',
               ),
@@ -176,15 +189,15 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> with RouteAware {
               return Column(
                 children: [
                   const OneHandSpacer(),
-                  LibraryHeader(
+                  _shrinkingHeader(
                     title: 'History',
                     subtitle: '$count in progress',
                     titleSize: ts,
-                    shrinkProgress: sp,
+                    oneHand: oneHand,
                   ),
                   StaggeredEntrance(
                     child: FeaturePanel(
-                      icon: Icons.local_library_outlined,
+                      icon: AppIcons.bookshelf,
                       title: 'Pick up where you left off',
                       subtitle:
                           'Your active books and manga are ordered for quick returns and clean resets.',
@@ -214,21 +227,65 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> with RouteAware {
     );
   }
 
+  /// Header that rebuilds on scroll without dragging the list with it.
+  ///
+  /// Only the title shrink depends on scroll position, so the notifier is
+  /// listened to here rather than driving a screen-level setState. Outside
+  /// one-hand mode the shrink is disabled, so the listener is skipped
+  /// entirely and the header rebuilds only when its data changes.
+  Widget _shrinkingHeader({
+    required String title,
+    required double titleSize,
+    required bool oneHand,
+    String? subtitle,
+  }) {
+    if (!oneHand) {
+      return LibraryHeader(
+        title: title,
+        subtitle: subtitle,
+        titleSize: titleSize,
+      );
+    }
+    return ValueListenableBuilder<double>(
+      valueListenable: _scrollProgress,
+      builder: (_, progress, _) => LibraryHeader(
+        title: title,
+        subtitle: subtitle,
+        titleSize: titleSize,
+        shrinkProgress: progress,
+      ),
+    );
+  }
+
+  /// Caps the entrance-animation stagger.
+  ///
+  /// [StaggeredEntrance] delays its controller by `35ms * index`, so an
+  /// uncapped list index schedules timers seconds into the future — item 100
+  /// would start animating 3.5s after build. Tiles are built lazily during
+  /// scroll, which turned that into a rolling wave of animating widgets.
+  static int _staggerIndex(int i) => i < _kMaxStagger ? i : _kMaxStagger;
+
+  static const int _kMaxStagger = 8;
+
   Widget _bookTile(KomaColors c, int i) {
     final book = _books[i];
     final pct = (book.progress * 100).toInt();
     return StaggeredEntrance(
-      index: i + 1,
+      index: _staggerIndex(i + 1),
       child: Padding(
         padding: const EdgeInsets.fromLTRB(20, 0, 20, 0),
         child: AnimatedPress(
           onTap: () => context.pushNamed(
             Routes.reader,
-            extra: (
-              bookId: book.id,
-              snippetChapterId: null,
-              snippetScrollOffset: null,
-            ) as ReaderArgs,
+            extra:
+                (
+                      bookId: book.id,
+                      snippetChapterId: null,
+                      snippetScrollOffset: null,
+                      snippetStartOffset: null,
+                      snippetEndOffset: null,
+                    )
+                    as ReaderArgs,
           ),
           child: Container(
             padding: const EdgeInsets.all(12),
@@ -331,9 +388,7 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> with RouteAware {
     final name = manga.name;
     final author = manga.author;
     final imageUrl = manga.imageUrl;
-    final headers = ref
-        .watch(sourceImageHeadersProvider(manga.sourceId))
-        .value;
+    final headers = ref.watch(sourceImageHeadersProvider(manga.sourceId)).value;
     final id = manga.id;
     final sourceId = manga.sourceId;
     final url = manga.url;
@@ -342,19 +397,38 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> with RouteAware {
     final progress = totalChapters > 0 ? readCount / totalChapters : 0.0;
     final pct = (progress * 100).toInt();
 
+    // Reuse one provider instance per manga. cachedCover() builds a fresh
+    // ResizeImage/CustomExtendedNetworkImageProvider on every call, which
+    // forces a resolve + cache lookup on each rebuild; caching by id keeps
+    // the identity stable across scroll-driven rebuilds. Only cached once
+    // headers have resolved, so the entry isn't pinned to a null-header
+    // provider that would then never refresh.
+    ImageProvider? coverProvider;
+    if (imageUrl != null && imageUrl.isNotEmpty) {
+      final cached = _coverCache[id];
+      if (cached != null) {
+        coverProvider = cached;
+      } else {
+        coverProvider = cachedCover(
+          imageUrl,
+          headers: headers,
+          width: 48,
+          height: 64,
+        );
+        if (headers != null) _coverCache[id] = coverProvider;
+      }
+    }
+
     return StaggeredEntrance(
-      index: i + _books.length + 1,
+      index: _staggerIndex(i + _books.length + 1),
       child: Padding(
         padding: const EdgeInsets.fromLTRB(20, 0, 20, 0),
         child: AnimatedPress(
           onTap: () => context.pushNamed(
             Routes.mangaDetail,
-            extra: (
-              sourceId: sourceId,
-              url: url,
-              title: name,
-              manga: null,
-            ) as MangaDetailArgs,
+            extra:
+                (sourceId: sourceId, url: url, title: name, manga: null)
+                    as MangaDetailArgs,
           ),
           child: Container(
             padding: const EdgeInsets.all(12),
@@ -373,19 +447,29 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> with RouteAware {
                   child: SizedBox(
                     width: 48,
                     height: 64,
-                    child: imageUrl != null && imageUrl.isNotEmpty
+                    child: coverProvider != null
                         ? Image(
-                      image: cachedCover(
-                          imageUrl, headers: headers, width: 48, height: 64),
-                      width: 48,
-                      height: 64,
-                      fit: BoxFit.cover,
-                      errorBuilder: (_, _, _) =>
-                          Container(color: c.surfaceMuted, child: Icon(
-                              Icons.broken_image, size: 24,
-                              color: c.textTertiary)),
-                    )
-                        : Container(color: c.surfaceMuted, child: Icon(Icons.auto_stories, size: 24, color: c.textTertiary)),
+                            image: coverProvider,
+                            width: 48,
+                            height: 64,
+                            fit: BoxFit.cover,
+                            errorBuilder: (_, _, _) => Container(
+                              color: c.surfaceMuted,
+                              child: Icon(
+                                Icons.broken_image,
+                                size: 24,
+                                color: c.textTertiary,
+                              ),
+                            ),
+                          )
+                        : Container(
+                            color: c.surfaceMuted,
+                            child: Icon(
+                              Icons.auto_stories,
+                              size: 24,
+                              color: c.textTertiary,
+                            ),
+                          ),
                   ),
                 ),
                 const SizedBox(width: 14),

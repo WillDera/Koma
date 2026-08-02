@@ -13,15 +13,10 @@ class Tag {
   @Index(unique: true, replace: true)
   String name;
 
-  Tag({
-    this.id = Isar.autoIncrement,
-    required this.name,
-  });
+  Tag({this.id = Isar.autoIncrement, required this.name});
 
   Map<String, dynamic> toJson() => {'id': id, 'name': name};
 
-  factory Tag.fromJson(Map<String, dynamic> json) => Tag(
-        id: json['id'] as int?,
-        name: json['name'] as String,
-      );
+  factory Tag.fromJson(Map<String, dynamic> json) =>
+      Tag(id: json['id'] as int?, name: json['name'] as String);
 }

@@ -36,10 +36,7 @@ final searchServiceProvider = Provider<SearchService>(
 );
 
 final sourceServiceProvider = Provider<SourceService>(
-  (ref) => SourceService(
-    ref.watch(repositoriesProvider),
-    EbookService(),
-  ),
+  (ref) => SourceService(ref.watch(repositoriesProvider), EbookService()),
 );
 
 final keiyoushiServiceProvider = Provider<KeiyoushiService>(
@@ -69,37 +66,38 @@ class ExtensionUpdateCountNotifier extends Notifier<int> {
   Future<void> refresh() async {
     final mgr = ref.read(extensionManagerProvider);
     final installed = await mgr.listInstalled();
-    state = installed
-        .where((s) => s.isUpdateAvailable)
-        .length;
+    state = installed.where((s) => s.isUpdateAvailable).length;
   }
 }
 
 final extensionUpdateCountProvider =
-NotifierProvider<ExtensionUpdateCountNotifier, int>(
-  ExtensionUpdateCountNotifier.new,
-);
+    NotifierProvider<ExtensionUpdateCountNotifier, int>(
+      ExtensionUpdateCountNotifier.new,
+    );
 
 // ── Notifier providers ──────────────────────────────────────────────
 
-final libraryProvider =
-    NotifierProvider<LibraryNotifier, LibraryState>(LibraryNotifier.new);
+final libraryProvider = NotifierProvider<LibraryNotifier, LibraryState>(
+  LibraryNotifier.new,
+);
 
 final libraryUpdateProvider =
-NotifierProvider<LibraryUpdateNotifier, LibraryUpdateState>(
-  LibraryUpdateNotifier.new,
-);
+    NotifierProvider<LibraryUpdateNotifier, LibraryUpdateState>(
+      LibraryUpdateNotifier.new,
+    );
 
 final libraryUpdateResultProvider =
-NotifierProvider<LibraryUpdateResultNotifier, LibraryUpdateReport?>(
-  LibraryUpdateResultNotifier.new,
+    NotifierProvider<LibraryUpdateResultNotifier, LibraryUpdateReport?>(
+      LibraryUpdateResultNotifier.new,
+    );
+
+final readerProvider = NotifierProvider<ReaderNotifier, ReaderState>(
+  ReaderNotifier.new,
 );
 
-final readerProvider =
-    NotifierProvider<ReaderNotifier, ReaderState>(ReaderNotifier.new);
-
-final snippetsProvider =
-    NotifierProvider<SnippetsNotifier, SnippetsState>(SnippetsNotifier.new);
+final snippetsProvider = NotifierProvider<SnippetsNotifier, SnippetsState>(
+  SnippetsNotifier.new,
+);
 
 /// A monotonically increasing counter bumped whenever reading progress is
 /// written (manga reader save, chapter mark-read, etc.). Screens that show
@@ -114,5 +112,6 @@ class HistoryRevisionNotifier extends Notifier<int> {
   void bump() => state++;
 }
 
-final historyRevisionProvider =
-NotifierProvider<HistoryRevisionNotifier, int>(HistoryRevisionNotifier.new);
+final historyRevisionProvider = NotifierProvider<HistoryRevisionNotifier, int>(
+  HistoryRevisionNotifier.new,
+);
