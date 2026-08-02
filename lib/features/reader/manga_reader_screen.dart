@@ -9,6 +9,7 @@ import 'package:go_router/go_router.dart';
 import 'package:http/http.dart' as http;
 import 'package:scrollable_positioned_list/scrollable_positioned_list.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:wakelock_plus/wakelock_plus.dart';
 
 import '../../core/models/manga_chapter.dart';
 import '../../core/models/manga_page.dart';
@@ -104,6 +105,8 @@ class _MangaReaderScreenState extends ConsumerState<MangaReaderScreen>
 
   Future<void> _initAsync() async {
     await _loadSettings();
+    _applyOrientation();
+    _applyWakelock();
     if (widget.mangaId != null && _repos != null) {
       final ch = await _repos!.manga.getMangaChapterByUrl(
         widget.mangaId!,
@@ -124,6 +127,8 @@ class _MangaReaderScreenState extends ConsumerState<MangaReaderScreen>
   void dispose() {
     _flushPageProgress();
     _restoreSystemUI();
+    WakelockPlus.disable();
+    SystemChrome.setPreferredOrientations(DeviceOrientation.values);
     _itemPositionsListener.itemPositions.removeListener(_onWebtoonScroll);
     WidgetsBinding.instance.removeObserver(this);
     _pageCtrl.dispose();
@@ -160,12 +165,59 @@ class _MangaReaderScreenState extends ConsumerState<MangaReaderScreen>
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
   }
 
+  /// Applies [ReaderSettings.rotationMode], forcing landscape when book mode
+  /// is on so double-page spreads are usable.
+  void _applyOrientation() {
+    if (_settings.bookMode) {
+      SystemChrome.setPreferredOrientations(const [
+        DeviceOrientation.landscapeLeft,
+        DeviceOrientation.landscapeRight,
+      ]);
+      return;
+    }
+    switch (_settings.rotationMode) {
+      case RotationMode.portrait:
+        SystemChrome.setPreferredOrientations(const [
+          DeviceOrientation.portraitUp,
+          DeviceOrientation.portraitDown,
+        ]);
+      case RotationMode.landscape:
+        SystemChrome.setPreferredOrientations(const [
+          DeviceOrientation.landscapeLeft,
+          DeviceOrientation.landscapeRight,
+        ]);
+      case RotationMode.free:
+        SystemChrome.setPreferredOrientations(DeviceOrientation.values);
+    }
+  }
+
+  Future<void> _applyWakelock() async {
+    try {
+      if (_settings.keepScreenOn) {
+        await WakelockPlus.enable();
+      } else {
+        await WakelockPlus.disable();
+      }
+    } catch (_) {
+      // Platform may not support wakelock (e.g. some desktop targets).
+    }
+  }
+
+  bool get _isContinuousMode =>
+      _settings.readingMode == ReadingMode.webtoon ||
+      _settings.readingMode == ReadingMode.longStrip ||
+      _settings.readingMode == ReadingMode.longStripWithGaps;
+
+  /// True when book/spread mode should drive the [PageView] item count.
+  bool get _isBookModeActive => _settings.bookMode && !_isContinuousMode;
+
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.paused) {
       _flushPageProgress();
-    } else if (state == AppLifecycleState.resumed && _settings.keepScreenOn) {
-      WidgetsBinding.instance.scheduleFrame();
+      WakelockPlus.disable();
+    } else if (state == AppLifecycleState.resumed) {
+      _applyWakelock();
     }
   }
 
@@ -321,32 +373,58 @@ class _MangaReaderScreenState extends ConsumerState<MangaReaderScreen>
   Future<void> _initProgress() async {
     if (_currentChapter == null || _pages.isEmpty) return;
     _showNavigationOverlay = true;
-    if (_settings.readingMode == ReadingMode.webtoon ||
-        _settings.readingMode == ReadingMode.longStrip ||
-        _settings.readingMode == ReadingMode.longStripWithGaps) {
-      final ch = _currentChapter;
-      if (ch == null) return;
-      if (ch.lastPageRead > 0) {
-        // Find the flat index from the per-chapter page index
-        int targetIdx = ch.lastPageRead.clamp(0, _pages.length - 1);
-        // If there are multiple chapters loaded, find the right page by
-        // matching chapter id + page index
-        for (int i = 0; i < _pages.length; i++) {
-          if (_pages[i].chapter?.id == ch.id &&
-              _pages[i].index == ch.lastPageRead) {
-            targetIdx = i;
-            break;
-          }
-        }
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          if (mounted) {
-            _itemScrollCtrl.jumpTo(
-              index: targetIdx.clamp(0, _pages.length - 1),
-            );
-          }
-        });
+    final ch = _currentChapter;
+    if (ch == null || ch.lastPageRead <= 0) return;
+
+    int targetIdx = ch.lastPageRead.clamp(0, _pages.length - 1);
+    for (int i = 0; i < _pages.length; i++) {
+      if (_pages[i].chapter?.id == ch.id &&
+          _pages[i].index == ch.lastPageRead) {
+        targetIdx = i;
+        break;
       }
     }
+    _jumpToFlatIndex(targetIdx, animate: false);
+  }
+
+  /// Jumps the active reader (paged or continuous) to [flatIndex].
+  ///
+  /// Book mode maps the flat page index onto a spread index for the
+  /// [PageController]. Used for initial progress restore and for keeping
+  /// position when the user switches reading mode.
+  void _jumpToFlatIndex(int flatIndex, {bool animate = false}) {
+    if (_pages.isEmpty) return;
+    final clamped = flatIndex.clamp(0, _pages.length - 1);
+    _currentPageNotifier.value = clamped;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      if (_isContinuousMode) {
+        if (_itemScrollCtrl.isAttached) {
+          if (animate) {
+            _itemScrollCtrl.scrollTo(
+              index: clamped,
+              duration: Duration(
+                milliseconds: _settings.animatePageTransition ? 250 : 0,
+              ),
+              curve: Curves.easeOut,
+            );
+          } else {
+            _itemScrollCtrl.jumpTo(index: clamped);
+          }
+        }
+      } else if (_pageCtrl.hasClients) {
+        final pageIndex = _isBookModeActive ? clamped ~/ 2 : clamped;
+        if (animate && _settings.animatePageTransition) {
+          _pageCtrl.animateToPage(
+            pageIndex,
+            duration: const Duration(milliseconds: 250),
+            curve: Curves.easeOut,
+          );
+        } else {
+          _pageCtrl.jumpToPage(pageIndex);
+        }
+      }
+    });
   }
 
   void _schedulePageSave(int flatIndex) {
@@ -443,26 +521,25 @@ class _MangaReaderScreenState extends ConsumerState<MangaReaderScreen>
     if (_pages.isEmpty) return;
     HapticFeedback.lightImpact();
     final clamped = flatIndex.clamp(0, _pages.length - 1);
-    if (_settings.readingMode == ReadingMode.webtoon ||
-        _settings.readingMode == ReadingMode.longStrip ||
-        _settings.readingMode == ReadingMode.longStripWithGaps) {
-      _itemScrollCtrl.scrollTo(
-        index: clamped,
-        duration: Duration(
-          milliseconds: _settings.animatePageTransition ? 250 : 0,
-        ),
-        curve: Curves.easeOut,
-      );
-    } else {
-      if (_pageCtrl.hasClients) {
-        _pageCtrl.animateToPage(
-          clamped,
+    if (_isContinuousMode) {
+      if (_itemScrollCtrl.isAttached) {
+        _itemScrollCtrl.scrollTo(
+          index: clamped,
           duration: Duration(
             milliseconds: _settings.animatePageTransition ? 250 : 0,
           ),
           curve: Curves.easeOut,
         );
       }
+    } else if (_pageCtrl.hasClients) {
+      final pageIndex = _isBookModeActive ? clamped ~/ 2 : clamped;
+      _pageCtrl.animateToPage(
+        pageIndex,
+        duration: Duration(
+          milliseconds: _settings.animatePageTransition ? 250 : 0,
+        ),
+        curve: Curves.easeOut,
+      );
     }
     _schedulePageSave(clamped);
   }
@@ -723,16 +800,24 @@ class _MangaReaderScreenState extends ConsumerState<MangaReaderScreen>
         settings: _settings,
         onChanged: (s) {
           final oldMode = _settings.readingMode;
+          final oldBook = _settings.bookMode;
+          final oldRotation = _settings.rotationMode;
+          final oldKeepOn = _settings.keepScreenOn;
+          // Preserve the live page before the view swaps (webtoon ↔ paged
+          // or book-mode toggle) so we can restore it after rebuild.
+          final livePage = _currentPageNotifier.value;
           setState(() => _settings = s);
           _saveSettings();
           _applySystemUI();
-          if (s.keepScreenOn) {
-            WidgetsBinding.instance.scheduleFrame();
+          if (oldKeepOn != s.keepScreenOn) {
+            _applyWakelock();
           }
-          if (oldMode != s.readingMode) {
-            WidgetsBinding.instance.addPostFrameCallback((_) {
-              if (mounted) _initProgress();
-            });
+          if (oldBook != s.bookMode || oldRotation != s.rotationMode) {
+            _applyOrientation();
+          }
+          if (oldMode != s.readingMode || oldBook != s.bookMode) {
+            _flushPageProgress();
+            _jumpToFlatIndex(livePage, animate: false);
           }
         },
       ),
@@ -887,10 +972,8 @@ class _MangaReaderScreenState extends ConsumerState<MangaReaderScreen>
       },
       child: Scaffold(
         backgroundColor: Colors.black,
-        body: OrientationBuilder(
-          builder: (context, orientation) {
-            final showBookMode =
-                _settings.bookMode && orientation == Orientation.landscape;
+        body: Builder(
+          builder: (context) {
             final props = _viewProps();
             return Stack(
               children: [
@@ -911,7 +994,7 @@ class _MangaReaderScreenState extends ConsumerState<MangaReaderScreen>
                           pageController: _pageCtrl,
                           axis: axis,
                           reverse: reverse,
-                          bookMode: showBookMode,
+                          bookMode: _isBookModeActive,
                         ),
                 ),
 
