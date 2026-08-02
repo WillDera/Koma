@@ -45,7 +45,7 @@ class SettingsScreen extends StatelessWidget {
             const OneHandSpacer(),
             const LibraryHeader(
               title: 'Settings',
-              subtitle: 'Version 2.24.3',
+              subtitle: 'Version 2.24.4',
               padding: EdgeInsets.fromLTRB(24, 20, 20, 12),
             ),
             const StaggeredEntrance(

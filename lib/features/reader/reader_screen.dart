@@ -203,11 +203,16 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
     final ch = _provider?.chapters;
     if (ch != null && newIndex >= 0 && newIndex < ch.length) {
       final repos = ref.watch(repositoriesProvider);
-      repos.books.getHighlightsForChapter(ch[newIndex].id).then((hl) {
+      final targetChapterId = ch[newIndex].id;
+      repos.books.getHighlightsForChapter(targetChapterId).then((hl) {
+        // Stale response: user may have navigated again while this loaded.
+        if (!mounted || _provider?.currentChapter?.id != targetChapterId) {
+          return;
+        }
         // The repository returns a fixed-length list (growable: false), and
         // _saveHighlight appends to it. Rebuild into a growable copy so a new
         // mark can't hit "cannot add to a fixed-length list".
-        if (mounted) setState(() => _highlights = List<Highlight>.of(hl));
+        setState(() => _highlights = List<Highlight>.of(hl));
       });
     } else {
       _highlights = [];
@@ -933,12 +938,13 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
           color: color,
           text: selected,
         ));
-        // Bug 1 fix: immediately insert into the local list so the reader
-        // re-renders with the highlight visible. Use the id the store
-        // assigned so this copy matches the persisted row (and survives a
-        // later delete-by-id instead of being a permanent orphan).
-        if (mounted) {
+        // Only mutate the in-memory list when we're still viewing the chapter
+        // this mark belongs to. Otherwise a mid-await chapter change replaces
+        // `_highlights` with another chapter's rows and we'd append here,
+        // orphaning the mark until the user navigates back.
+        if (mounted && _provider?.currentChapter?.id == chapterId) {
           setState(() {
+            if (_highlights.any((h) => h.id == storedId)) return;
             _highlights.add(Highlight(
               id: storedId,
               bookId: bookId,
