@@ -203,17 +203,58 @@ class KeiyoushiService {
         .toList(growable: false);
   }
 
+  /// Search every extension currently loaded in the Dalvik cache.
+  ///
+  /// Prefer the native `searchAllInstalled` fan-out. If the server doesn't
+  /// know that method (older builds) or returns an error map, fall back to
+  /// calling [searchManga] per loaded source so Discover still works.
   Future<List<Map<String, dynamic>>> searchAllInstalled({
     String query = '',
     int page = 1,
   }) async {
-    final res = await _post({
-      'method': 'searchAllInstalled',
-      'query': query,
-      'page': page,
-    });
-    if (res is! List) return [];
-    return res.cast<Map<String, dynamic>>();
+    try {
+      final res = await _post({
+        'method': 'searchAllInstalled',
+        'query': query,
+        'page': page,
+      });
+      if (res is List) {
+        return res
+            .whereType<Map>()
+            .map((e) => Map<String, dynamic>.from(e))
+            .toList(growable: false);
+      }
+      // Unknown-method / error payload → Dart fan-out below.
+    } catch (_) {
+      // Dalvik unreachable or timed out → try per-source path.
+    }
+
+    final loaded = await listLoadedExtensions();
+    if (loaded.isEmpty) return const [];
+
+    final results = await Future.wait(
+      loaded.map((ext) async {
+        final sourceId = ext['sourceId'] as String? ?? '';
+        if (sourceId.isEmpty) return null;
+        try {
+          final pageResult = await searchManga(
+            sourceId: sourceId,
+            query: query,
+            page: page,
+          );
+          if (pageResult.mangas.isEmpty) return null;
+          return <String, dynamic>{
+            'sourceId': sourceId,
+            'sourceName': ext['name'] as String? ?? '',
+            'mangas': pageResult.mangas,
+            'hasNextPage': pageResult.hasNextPage,
+          };
+        } catch (_) {
+          return null;
+        }
+      }),
+    );
+    return results.whereType<Map<String, dynamic>>().toList(growable: false);
   }
 
   Future<List<Map<String, dynamic>>> getPageList({

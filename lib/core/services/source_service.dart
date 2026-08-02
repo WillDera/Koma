@@ -76,14 +76,17 @@ class SourceService {
       sources = await _repos.stats.getSources();
     }
     final active = sources.where((s) => s.enabled).toList();
-    final all = <SourceSearchResult>[];
-    for (final s in active) {
-      try {
-        final results = await _searchSource(s, query);
-        all.addAll(results);
-      } catch (_) {}
-    }
-    return all;
+    if (active.isEmpty) return [];
+    final batches = await Future.wait(
+      active.map((s) async {
+        try {
+          return await _searchSource(s, query);
+        } catch (_) {
+          return <SourceSearchResult>[];
+        }
+      }),
+    );
+    return batches.expand((e) => e).toList(growable: false);
   }
 
   Future<List<SourceSearchResult>> _searchSource(
@@ -108,35 +111,54 @@ class SourceService {
     if (response.statusCode != 200) return [];
 
     final doc = html_parser.parse(response.body);
-    final table = doc.querySelector('table.table.table-striped');
+    // Mirrors rotate markup: prefer the classic striped table, then known
+    // libgen ids, then any table that looks like a result grid.
+    var table = doc.querySelector('table.table.table-striped') ??
+        doc.querySelector('table#tablelibgen') ??
+        doc.querySelector('table.c');
+    if (table == null) {
+      for (final candidate in doc.querySelectorAll('table')) {
+        final candidateRows = candidate.querySelectorAll('tr');
+        if (candidateRows.length > 1 &&
+            candidateRows.first.querySelectorAll('td,th').length >= 5) {
+          table = candidate;
+          break;
+        }
+      }
+    }
     if (table == null) return [];
 
-    final tbody = table.querySelector('tbody');
-    if (tbody == null) return [];
-
+    final tbody = table.querySelector('tbody') ?? table;
     final rows = tbody.querySelectorAll('tr');
     var results = <SourceSearchResult>[];
 
     for (final row in rows) {
       try {
         final cols = row.querySelectorAll('td');
-        if (cols.length < 9) continue;
+        if (cols.length < 5) continue;
+        // Skip header-like rows.
+        if (row.querySelectorAll('th').isNotEmpty) continue;
 
         final imgTag = cols[0].querySelector('img');
         final imgSrc = imgTag?.attributes['src'];
 
-        final titleTag = cols[1].querySelector('a[title]');
-        final titleRaw = titleTag?.attributes['title'] ?? '';
-        final title = titleRaw.contains('<br>')
-            ? titleRaw.split('<br>')[1]
+        final titleTag =
+            cols[1].querySelector('a[title]') ?? cols[1].querySelector('a');
+        final titleRaw = (titleTag?.attributes['title'] ?? '').trim();
+        var title = titleRaw.contains('<br>')
+            ? titleRaw.split('<br>').last.trim()
             : titleRaw;
+        if (title.isEmpty) {
+          title = (titleTag?.text ?? cols[1].text).trim();
+        }
 
         final author = cols.length > 2 ? cols[2].text.trim() : '';
 
         String? year;
         if (cols.length > 4) {
           final nobr = cols[4].querySelector('nobr');
-          year = nobr?.text.trim();
+          year = (nobr?.text ?? cols[4].text).trim();
+          if (year.isEmpty) year = null;
         }
 
         final language = cols.length > 5 ? cols[5].text.trim() : '';
