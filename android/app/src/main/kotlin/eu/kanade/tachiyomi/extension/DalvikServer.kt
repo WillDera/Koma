@@ -114,6 +114,9 @@ class DalvikServer(
         return _port
     }
 
+    // Same monitor as [start]: callers (e.g. DalvikRuntimeManager restart)
+    // must not race mutations of isRunning / serverSocket / _port.
+    @Synchronized
     fun stop() {
         isRunning = false
         try {
@@ -457,6 +460,45 @@ class DalvikServer(
                             put("hasNextPage", mp.hasNextPage)
                         })
                     }
+                }
+                // Discover tab: fan-out search across every extension currently
+                // loaded in the Dalvik cache. Returns one object per source that
+                // produced at least one hit so the UI can group by sourceName.
+                "searchAllInstalled" -> {
+                    val page = root.int("page") ?: 1
+                    val query = root.str("query") ?: ""
+                    val snapshot = loadedExtensions.values.toList()
+                    val results = snapshot.mapNotNull { ext ->
+                        try {
+                            val filters = try {
+                                ext.source.getFilterList()
+                            } catch (_: AbstractMethodError) {
+                                FilterList()
+                            } catch (_: Throwable) {
+                                FilterList()
+                            }
+                            val mp = try {
+                                runBlocking { ext.source.getSearchManga(page, query, filters) }
+                            } catch (_: AbstractMethodError) {
+                                MangasPage(emptyList(), false)
+                            } catch (e: Exception) {
+                                Log.e(TAG, "searchAllInstalled failed for ${ext.source.name}", e)
+                                return@mapNotNull null
+                            }
+                            if (mp.mangas.isEmpty()) return@mapNotNull null
+                            buildJsonObject {
+                                put("sourceId", ext.sourceId)
+                                put("sourceName", ext.source.name)
+                                put("baseUrl", ext.source.baseUrl)
+                                put("mangas", JsonArray(mp.mangas.map { it.toMap().toJsonObject() }))
+                                put("hasNextPage", mp.hasNextPage)
+                            }
+                        } catch (e: Throwable) {
+                            Log.e(TAG, "searchAllInstalled: ${ext.sourceId}", e)
+                            null
+                        }
+                    }
+                    json.encodeToString(JsonArray(results))
                 }
                 "getMangaDetails" -> {
                     val url = root.str("url") ?: return errorJson("missing url")

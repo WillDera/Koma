@@ -411,8 +411,9 @@ void _handleResolveCf(HttpRequest request) async {
               isCloudFlare = false;
             }
           }
-          if (isCloudFlare)
+          if (isCloudFlare) {
             await Future.delayed(const Duration(milliseconds: 300));
+          }
 
           return isCloudFlare;
         });

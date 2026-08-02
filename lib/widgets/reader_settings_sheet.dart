@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+
 import '../theme/app_theme.dart';
 import '../theme/theme_provider.dart';
 import '../theme/tokens/app_spacing.dart';
@@ -23,7 +24,8 @@ class ReaderSettingsSheet extends ConsumerStatefulWidget {
   }
 
   @override
-  ConsumerState<ReaderSettingsSheet> createState() => _ReaderSettingsSheetState();
+  ConsumerState<ReaderSettingsSheet> createState() =>
+      _ReaderSettingsSheetState();
 }
 
 class _ReaderSettingsSheetState extends ConsumerState<ReaderSettingsSheet> {
@@ -57,15 +59,16 @@ class _ReaderSettingsSheetState extends ConsumerState<ReaderSettingsSheet> {
               const SizedBox(height: 6),
               Text(
                 'Preview',
-                style: AppType.reading(
-                  fontSize: p.fontSize,
-                  lineHeight: p.lineHeight,
-                  color: c.textPrimary,
-                ).copyWith(
-                  fontWeight: FontWeight.w600,
-                  height: p.lineHeight,
-                  fontSize: p.fontSize * 1.1,
-                ),
+                style:
+                    AppType.reading(
+                      fontSize: p.fontSize,
+                      lineHeight: p.lineHeight,
+                      color: c.textPrimary,
+                    ).copyWith(
+                      fontWeight: FontWeight.w600,
+                      height: p.lineHeight,
+                      fontSize: p.fontSize * 1.1,
+                    ),
               ),
               const SizedBox(height: 8),
               Text(
@@ -124,10 +127,7 @@ class _ReaderSettingsSheetState extends ConsumerState<ReaderSettingsSheet> {
                 ),
                 Text(
                   p.sepiaMode ? 'On' : 'Off',
-                  style: TextStyle(
-                    color: c.textTertiary,
-                    fontSize: 12,
-                  ),
+                  style: TextStyle(color: c.textTertiary, fontSize: 12),
                 ),
               ],
             ),
@@ -161,10 +161,7 @@ class _ReaderSettingsSheetState extends ConsumerState<ReaderSettingsSheet> {
                 ),
                 Text(
                   p.readingFont.label,
-                  style: TextStyle(
-                    color: c.textTertiary,
-                    fontSize: 13,
-                  ),
+                  style: TextStyle(color: c.textTertiary, fontSize: 13),
                 ),
                 const SizedBox(width: 4),
                 Icon(Icons.chevron_right, size: 16, color: c.textTertiary),
@@ -228,12 +225,43 @@ class _ReaderSettingsSheetState extends ConsumerState<ReaderSettingsSheet> {
                   p.textAlign == TextAlign.left
                       ? 'Left'
                       : p.textAlign == TextAlign.justify
-                          ? 'Justify'
-                          : 'Center',
-                  style: TextStyle(
-                    color: c.textTertiary,
-                    fontSize: 13,
+                      ? 'Justify'
+                      : 'Center',
+                  style: TextStyle(color: c.textTertiary, fontSize: 13),
+                ),
+                const SizedBox(width: 4),
+                Icon(Icons.chevron_right, size: 16, color: c.textTertiary),
+              ],
+            ),
+          ),
+        ),
+        const SizedBox(height: 16),
+        AnimatedPress(
+          onTap: () => _showPageStylePicker(context, p, tn),
+          child: Container(
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+            decoration: BoxDecoration(
+              color: c.surface,
+              borderRadius: AppSpacing.brLg,
+              border: Border.all(color: c.border, width: 0.5),
+            ),
+            child: Row(
+              children: [
+                Icon(Icons.auto_stories, size: 18, color: c.textSecondary),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    'Page style',
+                    style: TextStyle(
+                      color: c.textPrimary,
+                      fontSize: 14,
+                      fontWeight: FontWeight.w500,
+                    ),
                   ),
+                ),
+                Text(
+                  p.pageStyle.label,
+                  style: TextStyle(color: c.textTertiary, fontSize: 13),
                 ),
                 const SizedBox(width: 4),
                 Icon(Icons.chevron_right, size: 16, color: c.textTertiary),
@@ -247,6 +275,13 @@ class _ReaderSettingsSheetState extends ConsumerState<ReaderSettingsSheet> {
           subtitle: 'Bold first half of each word',
           value: p.bionicReading,
           onChanged: (v) => tn.setBionicReading(v),
+        ),
+        const SizedBox(height: 16),
+        _ToggleRow(
+          title: 'Immersive auto-hide',
+          subtitle: 'Hide UI after 3 seconds of inactivity',
+          value: p.immersiveAutoHide,
+          onChanged: (v) => tn.setImmersiveAutoHide(v),
         ),
       ],
     );
@@ -332,6 +367,43 @@ class _ReaderSettingsSheetState extends ConsumerState<ReaderSettingsSheet> {
       },
     );
   }
+
+  void _showPageStylePicker(
+    BuildContext context,
+    ThemeState p,
+    ThemeNotifier tn,
+  ) {
+    showDialog(
+      context: context,
+      builder: (ctx) {
+        final c = ctx.colors;
+        return AlertDialog(
+          backgroundColor: c.surface,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(18),
+            side: BorderSide(color: c.border, width: 0.5),
+          ),
+          content: SizedBox(
+            width: double.maxFinite,
+            child: ListView(
+              shrinkWrap: true,
+              children: [
+                for (final style in PageStyle.values)
+                  _PickerOption(
+                    label: style.label,
+                    selected: p.pageStyle == style,
+                    onTap: () {
+                      tn.setPageStyle(style);
+                      Navigator.of(ctx).pop();
+                    },
+                  ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
 }
 
 class _PickerOption extends StatelessWidget {
@@ -365,8 +437,7 @@ class _PickerOption extends StatelessWidget {
                   ),
                 ),
               ),
-              if (selected)
-                Icon(Icons.check, size: 20, color: c.accent),
+              if (selected) Icon(Icons.check, size: 20, color: c.accent),
             ],
           ),
         ),
@@ -458,18 +529,12 @@ class _ToggleRow extends StatelessWidget {
               if (subtitle != null)
                 Text(
                   subtitle!,
-                  style: TextStyle(
-                    color: c.textSecondary,
-                    fontSize: 12,
-                  ),
+                  style: TextStyle(color: c.textSecondary, fontSize: 12),
                 ),
             ],
           ),
         ),
-        Switch(
-          value: value,
-          onChanged: onChanged,
-        ),
+        Switch(value: value, onChanged: onChanged),
       ],
     );
   }

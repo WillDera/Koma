@@ -7,12 +7,7 @@ class Skeleton extends StatefulWidget {
   final double height;
   final BorderRadius? borderRadius;
 
-  const Skeleton({
-    super.key,
-    this.width,
-    this.height = 16,
-    this.borderRadius,
-  });
+  const Skeleton({super.key, this.width, this.height = 16, this.borderRadius});
 
   @override
   State<Skeleton> createState() => _SkeletonState();
@@ -59,11 +54,7 @@ class _SkeletonState extends State<Skeleton>
               gradient: LinearGradient(
                 begin: Alignment(-1 + _ctrl.value * 2, 0),
                 end: Alignment(1 + _ctrl.value * 2, 0),
-                colors: [
-                  c.surfaceMuted,
-                  c.surface,
-                  c.surfaceMuted,
-                ],
+                colors: [c.surfaceMuted, c.surface, c.surfaceMuted],
                 stops: const [0.0, 0.5, 1.0],
               ),
             ),

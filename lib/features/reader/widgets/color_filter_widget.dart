@@ -60,10 +60,26 @@ class ColorFilterWidget extends StatelessWidget {
     final bb = c * s;
 
     return Float64List.fromList([
-      rr,     rg,     rb,     0, brightnessOffset,
-      gr,     gg,     gb,     0, brightnessOffset,
-      br,     bg,     bb,     0, brightnessOffset,
-      0,      0,      0,      1, 0,
+      rr,
+      rg,
+      rb,
+      0,
+      brightnessOffset,
+      gr,
+      gg,
+      gb,
+      0,
+      brightnessOffset,
+      br,
+      bg,
+      bb,
+      0,
+      brightnessOffset,
+      0,
+      0,
+      0,
+      1,
+      0,
     ]);
   }
 }

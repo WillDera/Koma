@@ -29,16 +29,17 @@ class GoogleCloudTtsEngine implements TtsEngine {
   List<WordTimestamp> _allTimestamps = [];
   String _lastProgressWord = '';
 
-  static const _apiUrl = 'https://texttospeech.googleapis.com/v1/text:synthesize';
+  static const _apiUrl =
+      'https://texttospeech.googleapis.com/v1/text:synthesize';
 
   @override
   List<TtsVoice> get voices => _curatedVoices;
 
   @override
   TtsVoice? get selectedVoice => _curatedVoices.cast<TtsVoice?>().firstWhere(
-        (v) => v!.id == _voiceName,
-        orElse: () => _curatedVoices.first,
-      );
+    (v) => v!.id == _voiceName,
+    orElse: () => _curatedVoices.first,
+  );
 
   @override
   bool get isPlaying => _isPlaying;
@@ -99,9 +100,13 @@ class GoogleCloudTtsEngine implements TtsEngine {
       for (final chunk in chunks) {
         final result = await _synthesize(chunk);
         if (result == null) continue;
-        audioSources.add(AudioSource.uri(
-          Uri.parse('data:audio/mpeg;base64,${base64Encode(result.audioBytes)}'),
-        ));
+        audioSources.add(
+          AudioSource.uri(
+            Uri.parse(
+              'data:audio/mpeg;base64,${base64Encode(result.audioBytes)}',
+            ),
+          ),
+        );
         _allTimestamps.addAll(result.timestamps);
       }
 
@@ -139,7 +144,9 @@ class GoogleCloudTtsEngine implements TtsEngine {
     for (final s in sentences) {
       if (s.isEmpty) continue;
       if (buf.length + s.length > 4000 && buf.isNotEmpty) {
-        chunks.add(_Chunk(buf.toString(), baseOffset + charsInBuf - buf.length));
+        chunks.add(
+          _Chunk(buf.toString(), baseOffset + charsInBuf - buf.length),
+        );
         buf.clear();
       }
       buf.write(s);
@@ -154,10 +161,7 @@ class GoogleCloudTtsEngine implements TtsEngine {
   Future<_SynthesizeResult?> _synthesize(_Chunk chunk) async {
     final body = jsonEncode({
       'input': {'text': chunk.text},
-      'voice': {
-        'languageCode': _languageCode,
-        'name': _voiceName,
-      },
+      'voice': {'languageCode': _languageCode, 'name': _voiceName},
       'audioConfig': {
         'audioEncoding': 'MP3',
         'speakingRate': _rate,
@@ -188,8 +192,15 @@ class GoogleCloudTtsEngine implements TtsEngine {
     for (final tp in rawTimepoints) {
       final word = tp['markName'] as String? ?? '';
       final secs = (tp['timeSeconds'] as num?)?.toDouble() ?? 0;
-      final charOff = chunk.baseOffset + _findWordOffset(textWords, charsConsumed, word);
-      timestamps.add(WordTimestamp(word, Duration(milliseconds: (secs * 1000).round()), charOff));
+      final charOff =
+          chunk.baseOffset + _findWordOffset(textWords, charsConsumed, word);
+      timestamps.add(
+        WordTimestamp(
+          word,
+          Duration(milliseconds: (secs * 1000).round()),
+          charOff,
+        ),
+      );
       charsConsumed = min(charsConsumed + word.length + 1, chunk.text.length);
     }
 
@@ -199,7 +210,9 @@ class GoogleCloudTtsEngine implements TtsEngine {
   int _findWordOffset(List<String> words, int from, String word) {
     for (int i = 0; i < words.length; i++) {
       if (words[i] == word) {
-        final offset = words.take(i).fold<int>(0, (sum, w) => sum + w.length + 1);
+        final offset = words
+            .take(i)
+            .fold<int>(0, (sum, w) => sum + w.length + 1);
         return from + max(offset - 1, 0);
       }
     }
@@ -211,7 +224,10 @@ class GoogleCloudTtsEngine implements TtsEngine {
     final buf = StringBuffer();
     for (int i = 0; i < text.length; i++) {
       if (text[i] == ' ') {
-        if (buf.isNotEmpty) { words.add(buf.toString()); buf.clear(); }
+        if (buf.isNotEmpty) {
+          words.add(buf.toString());
+          buf.clear();
+        }
       } else {
         buf.write(text[i]);
       }
@@ -274,10 +290,14 @@ class GoogleCloudTtsEngine implements TtsEngine {
   }
 
   @override
-  void setRate(double rate) { _rate = rate; }
+  void setRate(double rate) {
+    _rate = rate;
+  }
 
   @override
-  void setPitch(double pitch) { _pitch = pitch; }
+  void setPitch(double pitch) {
+    _pitch = pitch;
+  }
 
   @override
   void dispose() {
@@ -286,21 +306,111 @@ class GoogleCloudTtsEngine implements TtsEngine {
   }
 
   static final List<TtsVoice> _curatedVoices = [
-    const TtsVoice(id: 'en-US-Chirp3-HD-Iapetus', name: 'Iapetus', gender: 'Male', isNeural: true, locale: 'en-US'),
-    const TtsVoice(id: 'en-US-Chirp3-HD-Orus', name: 'Orus', gender: 'Male', isNeural: true, locale: 'en-US'),
-    const TtsVoice(id: 'en-US-Chirp3-HD-Rasalgethi', name: 'Rasalgethi', gender: 'Male', isNeural: true, locale: 'en-US'),
-    const TtsVoice(id: 'en-US-Chirp3-HD-Fenrir', name: 'Fenrir', gender: 'Male', isNeural: true, locale: 'en-US'),
-    const TtsVoice(id: 'en-US-Chirp3-HD-Algieba', name: 'Algieba', gender: 'Male', isNeural: true, locale: 'en-US'),
-    const TtsVoice(id: 'en-US-Chirp3-HD-Athena', name: 'Athena', gender: 'Female', isNeural: true, locale: 'en-US'),
-    const TtsVoice(id: 'en-US-Chirp3-HD-Pixel', name: 'Pixel', gender: 'Female', isNeural: true, locale: 'en-US'),
-    const TtsVoice(id: 'en-US-Neural2-J', name: 'Neural2 J', gender: 'Male', isNeural: true, locale: 'en-US'),
-    const TtsVoice(id: 'en-US-Neural2-I', name: 'Neural2 I', gender: 'Male', isNeural: true, locale: 'en-US'),
-    const TtsVoice(id: 'en-US-Neural2-F', name: 'Neural2 F', gender: 'Female', isNeural: true, locale: 'en-US'),
-    const TtsVoice(id: 'en-GB-Neural2-B', name: 'Neural2 B', gender: 'Male', isNeural: true, locale: 'en-GB'),
-    const TtsVoice(id: 'en-GB-Neural2-A', name: 'Neural2 A', gender: 'Female', isNeural: true, locale: 'en-GB'),
-    const TtsVoice(id: 'en-US-Studio-M', name: 'Studio M', gender: 'Male', isNeural: true, locale: 'en-US'),
-    const TtsVoice(id: 'en-US-Studio-O', name: 'Studio O', gender: 'Male', isNeural: true, locale: 'en-US'),
-    const TtsVoice(id: 'en-GB-Studio-B', name: 'Studio B', gender: 'Male', isNeural: true, locale: 'en-GB'),
+    const TtsVoice(
+      id: 'en-US-Chirp3-HD-Iapetus',
+      name: 'Iapetus',
+      gender: 'Male',
+      isNeural: true,
+      locale: 'en-US',
+    ),
+    const TtsVoice(
+      id: 'en-US-Chirp3-HD-Orus',
+      name: 'Orus',
+      gender: 'Male',
+      isNeural: true,
+      locale: 'en-US',
+    ),
+    const TtsVoice(
+      id: 'en-US-Chirp3-HD-Rasalgethi',
+      name: 'Rasalgethi',
+      gender: 'Male',
+      isNeural: true,
+      locale: 'en-US',
+    ),
+    const TtsVoice(
+      id: 'en-US-Chirp3-HD-Fenrir',
+      name: 'Fenrir',
+      gender: 'Male',
+      isNeural: true,
+      locale: 'en-US',
+    ),
+    const TtsVoice(
+      id: 'en-US-Chirp3-HD-Algieba',
+      name: 'Algieba',
+      gender: 'Male',
+      isNeural: true,
+      locale: 'en-US',
+    ),
+    const TtsVoice(
+      id: 'en-US-Chirp3-HD-Athena',
+      name: 'Athena',
+      gender: 'Female',
+      isNeural: true,
+      locale: 'en-US',
+    ),
+    const TtsVoice(
+      id: 'en-US-Chirp3-HD-Pixel',
+      name: 'Pixel',
+      gender: 'Female',
+      isNeural: true,
+      locale: 'en-US',
+    ),
+    const TtsVoice(
+      id: 'en-US-Neural2-J',
+      name: 'Neural2 J',
+      gender: 'Male',
+      isNeural: true,
+      locale: 'en-US',
+    ),
+    const TtsVoice(
+      id: 'en-US-Neural2-I',
+      name: 'Neural2 I',
+      gender: 'Male',
+      isNeural: true,
+      locale: 'en-US',
+    ),
+    const TtsVoice(
+      id: 'en-US-Neural2-F',
+      name: 'Neural2 F',
+      gender: 'Female',
+      isNeural: true,
+      locale: 'en-US',
+    ),
+    const TtsVoice(
+      id: 'en-GB-Neural2-B',
+      name: 'Neural2 B',
+      gender: 'Male',
+      isNeural: true,
+      locale: 'en-GB',
+    ),
+    const TtsVoice(
+      id: 'en-GB-Neural2-A',
+      name: 'Neural2 A',
+      gender: 'Female',
+      isNeural: true,
+      locale: 'en-GB',
+    ),
+    const TtsVoice(
+      id: 'en-US-Studio-M',
+      name: 'Studio M',
+      gender: 'Male',
+      isNeural: true,
+      locale: 'en-US',
+    ),
+    const TtsVoice(
+      id: 'en-US-Studio-O',
+      name: 'Studio O',
+      gender: 'Male',
+      isNeural: true,
+      locale: 'en-US',
+    ),
+    const TtsVoice(
+      id: 'en-GB-Studio-B',
+      name: 'Studio B',
+      gender: 'Male',
+      isNeural: true,
+      locale: 'en-GB',
+    ),
   ];
 }
 

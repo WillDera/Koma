@@ -18,23 +18,28 @@ class SourcePreference {
   });
 
   Map<String, dynamic> toJson() => {
-        'key': key,
-        'type': type,
-        'defaultValue': defaultValue,
-        'title': title,
-        'summary': summary,
-        if (entries != null) 'entries': entries,
-        if (entryValues != null) 'entryValues': entryValues,
-      };
+    'key': key,
+    'type': type,
+    'defaultValue': defaultValue,
+    'title': title,
+    'summary': summary,
+    if (entries != null) 'entries': entries,
+    if (entryValues != null) 'entryValues': entryValues,
+  };
 
-  factory SourcePreference.fromJson(Map<String, dynamic> json) => SourcePreference(
+  factory SourcePreference.fromJson(Map<String, dynamic> json) =>
+      SourcePreference(
         key: json['key'] as String? ?? '',
         type: json['type'] as String? ?? 'switch',
         defaultValue: json['defaultValue'] as String?,
         title: json['title'] as String?,
         summary: json['summary'] as String?,
-        entries: json['entries'] != null ? List<String>.from(json['entries'] as List) : null,
-        entryValues: json['entryValues'] != null ? List<String>.from(json['entryValues'] as List) : null,
+        entries: json['entries'] != null
+            ? List<String>.from(json['entries'] as List)
+            : null,
+        entryValues: json['entryValues'] != null
+            ? List<String>.from(json['entryValues'] as List)
+            : null,
       );
 
   factory SourcePreference.fromDynamic(dynamic d) {

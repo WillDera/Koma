@@ -141,7 +141,8 @@ class _ContinueCard extends StatelessWidget {
             borderRadius: AppSpacing.brXl,
             border: Border.all(color: c.border, width: 0.5),
             boxShadow: AppSpacing.shadow1(
-                isDark: c.bg.computeLuminance() < 0.5),
+              isDark: c.bg.computeLuminance() < 0.5,
+            ),
           ),
           child: Row(
             children: [
@@ -149,10 +150,7 @@ class _ContinueCard extends StatelessWidget {
                 tag: 'book-cover-${book.id}',
                 child: SizedBox(
                   width: 80,
-                  child: BookCover(
-                    book: book,
-                    variant: BookCoverVariant.list,
-                  ),
+                  child: BookCover(book: book, variant: BookCoverVariant.list),
                 ),
               ),
               const SizedBox(width: 14),
@@ -179,10 +177,7 @@ class _ContinueCard extends StatelessWidget {
                         book.author!,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          color: c.textSecondary,
-                          fontSize: 12,
-                        ),
+                        style: TextStyle(color: c.textSecondary, fontSize: 12),
                       ),
                     ],
                     const SizedBox(height: 12),

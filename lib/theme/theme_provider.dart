@@ -1,11 +1,13 @@
 import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+
+import '../../core/services/system_font_service.dart';
 import 'app_theme.dart';
 import 'theme_state.dart';
 import 'tokens/app_type.dart';
-import '../../core/services/system_font_service.dart';
 
 export 'theme_state.dart';
 
@@ -39,6 +41,8 @@ class ThemeNotifier extends Notifier<ThemeState> {
   static const _keyAmoledMode = 'amoled_mode';
   static const _keyShowNsfwExtensions = 'show_nsfw_extensions';
   static const _keyShowObsoleteExtensions = 'show_obsolete_extensions';
+  static const _keyImmersiveAutoHide = 'immersive_auto_hide';
+  static const _keyPageStyle = 'page_style';
 
   @override
   ThemeState build() {
@@ -71,15 +75,21 @@ class ThemeNotifier extends Notifier<ThemeState> {
       useDeviceFont: prefs.getBool(_keyUseDeviceFont) ?? false,
       amoledMode: prefs.getBool(_keyAmoledMode) ?? false,
       showNsfwExtensions: prefs.getBool(_keyShowNsfwExtensions) ?? false,
-      showObsoleteExtensions: prefs.getBool(_keyShowObsoleteExtensions) ?? false,
+      showObsoleteExtensions:
+          prefs.getBool(_keyShowObsoleteExtensions) ?? false,
+      immersiveAutoHide: prefs.getBool(_keyImmersiveAutoHide) ?? false,
+      pageStyle:
+          PageStyle.values[(prefs.getInt(_keyPageStyle) ?? 0).clamp(
+            0,
+            PageStyle.values.length - 1,
+          )],
     );
     if (state.useDeviceFont) {
       unawaited(_resolveSystemFont());
     }
   }
 
-  static String? _nonEmpty(String? s) =>
-      s != null && s.isNotEmpty ? s : null;
+  static String? _nonEmpty(String? s) => s != null && s.isNotEmpty ? s : null;
 
   Future<String?> _resolveSystemFont() async {
     if (state.systemFontFamily != null) return state.systemFontFamily;
@@ -261,6 +271,18 @@ class ThemeNotifier extends Notifier<ThemeState> {
     await prefs.setBool(_keyShowObsoleteExtensions, value);
   }
 
+  Future<void> setImmersiveAutoHide(bool value) async {
+    state = state.copyWith(immersiveAutoHide: value);
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_keyImmersiveAutoHide, value);
+  }
+
+  Future<void> setPageStyle(PageStyle value) async {
+    state = state.copyWith(pageStyle: value);
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setInt(_keyPageStyle, value.index);
+  }
+
   void toggleTheme() {
     setThemeMode(state.isDark ? ThemeMode.light : ThemeMode.dark);
   }
@@ -270,5 +292,6 @@ class ThemeNotifier extends Notifier<ThemeState> {
 ///
 /// Read state: `ref.watch(themeProvider)` returns [ThemeState].
 /// Mutate: `ref.read(themeProvider.notifier).setFontSize(18)`.
-final themeProvider =
-    NotifierProvider<ThemeNotifier, ThemeState>(ThemeNotifier.new);
+final themeProvider = NotifierProvider<ThemeNotifier, ThemeState>(
+  ThemeNotifier.new,
+);

@@ -30,18 +30,18 @@ class ReadingStat {
   }
 
   Map<String, dynamic> toJson() => {
-        'id': id,
-        'date': date.toIso8601String().substring(0, 10),
-        'reading_time_seconds': readingTimeSeconds,
-        'snippets_created': snippetsCreated,
-        'books_completed': booksCompleted,
-      };
+    'id': id,
+    'date': date.toIso8601String().substring(0, 10),
+    'reading_time_seconds': readingTimeSeconds,
+    'snippets_created': snippetsCreated,
+    'books_completed': booksCompleted,
+  };
 
   factory ReadingStat.fromJson(Map<String, dynamic> json) => ReadingStat(
-        id: json['id'] as int,
-        date: DateTime.parse(json['date'] as String),
-        readingTimeSeconds: json['reading_time_seconds'] as int? ?? 0,
-        snippetsCreated: json['snippets_created'] as int? ?? 0,
-        booksCompleted: json['books_completed'] as int? ?? 0,
-      );
+    id: json['id'] as int,
+    date: DateTime.parse(json['date'] as String),
+    readingTimeSeconds: json['reading_time_seconds'] as int? ?? 0,
+    snippetsCreated: json['snippets_created'] as int? ?? 0,
+    booksCompleted: json['books_completed'] as int? ?? 0,
+  );
 }

@@ -14,17 +14,11 @@ class StatsService {
   }
 
   Future<void> trackSnippet() async {
-    await _repos.stats.upsertStatsForDate(
-      DateTime.now(),
-      snippetsCreated: 1,
-    );
+    await _repos.stats.upsertStatsForDate(DateTime.now(), snippetsCreated: 1);
   }
 
   Future<void> trackCompletion(int bookId) async {
-    await _repos.stats.upsertStatsForDate(
-      DateTime.now(),
-      booksCompleted: 1,
-    );
+    await _repos.stats.upsertStatsForDate(DateTime.now(), booksCompleted: 1);
   }
 
   Future<List<ReadingStat>> getStats(DateTime start, DateTime end) async {
@@ -51,10 +45,15 @@ class StatsService {
     return total;
   }
 
-  Future<({List<int> minutesPerDay, int currentStreak})> getWeeklyStreak() async {
+  Future<({List<int> minutesPerDay, int currentStreak})>
+  getWeeklyStreak() async {
     final now = DateTime.now();
     final sevenDaysAgo = now.subtract(const Duration(days: 6));
-    final start = DateTime(sevenDaysAgo.year, sevenDaysAgo.month, sevenDaysAgo.day);
+    final start = DateTime(
+      sevenDaysAgo.year,
+      sevenDaysAgo.month,
+      sevenDaysAgo.day,
+    );
     final stats = await _repos.stats.getStatsRange(
       start,
       DateTime(now.year, now.month, now.day, 23, 59, 59),
@@ -67,7 +66,11 @@ class StatsService {
       final dayStart = DateTime(day.year, day.month, day.day);
       final seconds = byDate[dayStart] ?? 0;
       minutesPerDay.add(seconds ~/ 60);
-      if (seconds > 0) { streak++; } else { streak = 0; }
+      if (seconds > 0) {
+        streak++;
+      } else {
+        streak = 0;
+      }
     }
     return (minutesPerDay: minutesPerDay, currentStreak: streak);
   }

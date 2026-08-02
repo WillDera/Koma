@@ -32,7 +32,7 @@ class PageIndicator extends StatelessWidget {
       right: 0,
       child: ValueListenableBuilder<int>(
         valueListenable: pageListenable,
-        builder: (_, page, __) {
+        builder: (_, page, _) {
           return Text(
             '${page + 1} / $totalPages',
             textAlign: TextAlign.center,

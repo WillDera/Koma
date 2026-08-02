@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'models/page_data.dart';
 import 'reader_settings_sheet.dart';
 
-
 class DoublePageView extends StatefulWidget {
   final List<PageData> pages;
   final int initialPage;
@@ -151,9 +150,11 @@ class _MangaImagePage extends StatelessWidget {
           fit: BoxFit.contain,
           loadingBuilder: (context, child, progress) {
             if (progress == null) return child;
-            return const Center(child: CircularProgressIndicator(strokeWidth: 2));
+            return const Center(
+              child: CircularProgressIndicator(strokeWidth: 2),
+            );
           },
-          errorBuilder: (_, __, ___) => const Icon(Icons.broken_image, size: 48),
+          errorBuilder: (_, _, _) => const Icon(Icons.broken_image, size: 48),
         ),
       ),
     );
@@ -164,10 +165,7 @@ class _TransitionPage extends StatelessWidget {
   final PageData pageData;
   final VoidCallback? onOpenSettings;
 
-  const _TransitionPage({
-    required this.pageData,
-    this.onOpenSettings,
-  });
+  const _TransitionPage({required this.pageData, this.onOpenSettings});
 
   @override
   Widget build(BuildContext context) {
@@ -181,9 +179,9 @@ class _TransitionPage extends StatelessWidget {
             Text(
               isLast ? 'End of Manga' : 'Chapter Complete',
               style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                    color: Colors.white,
-                    fontWeight: FontWeight.w600,
-                  ),
+                color: Colors.white,
+                fontWeight: FontWeight.w600,
+              ),
             ),
             const SizedBox(height: 12),
             if (isLast)

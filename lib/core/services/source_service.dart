@@ -51,10 +51,13 @@ class SourceService {
     final client = _client();
     try {
       return await client
-          .get(Uri.parse(url), headers: {
-            'User-Agent':
-                'Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 Koma/1.0'
-          })
+          .get(
+            Uri.parse(url),
+            headers: {
+              'User-Agent':
+                  'Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 Koma/1.0',
+            },
+          )
           .timeout(const Duration(seconds: 15));
     } catch (_) {
       return http.Response('', 500);
@@ -73,18 +76,23 @@ class SourceService {
       sources = await _repos.stats.getSources();
     }
     final active = sources.where((s) => s.enabled).toList();
-    final all = <SourceSearchResult>[];
-    for (final s in active) {
-      try {
-        final results = await _searchSource(s, query);
-        all.addAll(results);
-      } catch (_) {}
-    }
-    return all;
+    if (active.isEmpty) return [];
+    final batches = await Future.wait(
+      active.map((s) async {
+        try {
+          return await _searchSource(s, query);
+        } catch (_) {
+          return <SourceSearchResult>[];
+        }
+      }),
+    );
+    return batches.expand((e) => e).toList(growable: false);
   }
 
   Future<List<SourceSearchResult>> _searchSource(
-      Source source, String query) async {
+    Source source,
+    String query,
+  ) async {
     switch (source.tag) {
       case 'libgen':
         return _searchLibGen(source, query);
@@ -94,42 +102,63 @@ class SourceService {
   }
 
   Future<List<SourceSearchResult>> _searchLibGen(
-      Source source, String query) async {
+    Source source,
+    String query,
+  ) async {
     final url =
         '${source.baseUrl}?req=${Uri.encodeQueryComponent(query)}&columns%5B%5D=t&columns%5B%5D=a&topics%5B%5D=l&topics%5B%5D=f&res=100&covers=on';
     final response = await _get(url);
     if (response.statusCode != 200) return [];
 
     final doc = html_parser.parse(response.body);
-    final table = doc.querySelector('table.table.table-striped');
+    // Mirrors rotate markup: prefer the classic striped table, then known
+    // libgen ids, then any table that looks like a result grid.
+    var table = doc.querySelector('table.table.table-striped') ??
+        doc.querySelector('table#tablelibgen') ??
+        doc.querySelector('table.c');
+    if (table == null) {
+      for (final candidate in doc.querySelectorAll('table')) {
+        final candidateRows = candidate.querySelectorAll('tr');
+        if (candidateRows.length > 1 &&
+            candidateRows.first.querySelectorAll('td,th').length >= 5) {
+          table = candidate;
+          break;
+        }
+      }
+    }
     if (table == null) return [];
 
-    final tbody = table.querySelector('tbody');
-    if (tbody == null) return [];
-
+    final tbody = table.querySelector('tbody') ?? table;
     final rows = tbody.querySelectorAll('tr');
     var results = <SourceSearchResult>[];
 
     for (final row in rows) {
       try {
         final cols = row.querySelectorAll('td');
-        if (cols.length < 9) continue;
+        if (cols.length < 5) continue;
+        // Skip header-like rows.
+        if (row.querySelectorAll('th').isNotEmpty) continue;
 
         final imgTag = cols[0].querySelector('img');
         final imgSrc = imgTag?.attributes['src'];
 
-        final titleTag = cols[1].querySelector('a[title]');
-        final titleRaw = titleTag?.attributes['title'] ?? '';
-        final title = titleRaw.contains('<br>')
-            ? titleRaw.split('<br>')[1]
+        final titleTag =
+            cols[1].querySelector('a[title]') ?? cols[1].querySelector('a');
+        final titleRaw = (titleTag?.attributes['title'] ?? '').trim();
+        var title = titleRaw.contains('<br>')
+            ? titleRaw.split('<br>').last.trim()
             : titleRaw;
+        if (title.isEmpty) {
+          title = (titleTag?.text ?? cols[1].text).trim();
+        }
 
         final author = cols.length > 2 ? cols[2].text.trim() : '';
 
         String? year;
         if (cols.length > 4) {
           final nobr = cols[4].querySelector('nobr');
-          year = nobr?.text.trim();
+          year = (nobr?.text ?? cols[4].text).trim();
+          if (year.isEmpty) year = null;
         }
 
         final language = cols.length > 5 ? cols[5].text.trim() : '';
@@ -137,13 +166,17 @@ class SourceService {
         final ext = cols.length > 8 ? cols[8].text.trim() : '';
 
         String? downloadUrl;
-        downloadUrl = row.querySelector('a[title="libgen.is"]')?.attributes['href'];
+        downloadUrl = row
+            .querySelector('a[title="libgen.is"]')
+            ?.attributes['href'];
         if (downloadUrl == null || downloadUrl.isEmpty) {
           final lastCol = cols.last;
           downloadUrl = lastCol.querySelector('a')?.attributes['href'];
         }
         if (downloadUrl == null || downloadUrl.isEmpty) {
-          downloadUrl = row.querySelector('a[href*="libgen"]')?.attributes['href'];
+          downloadUrl = row
+              .querySelector('a[href*="libgen"]')
+              ?.attributes['href'];
         }
         if (downloadUrl == null || downloadUrl.isEmpty) {
           downloadUrl = row.querySelector('a')?.attributes['href'];
@@ -153,25 +186,32 @@ class SourceService {
         }
 
         if (title.isNotEmpty) {
-          results.add(SourceSearchResult(
-            title: title,
-            author: author,
-            year: year,
-            size: size,
-            extension: ext,
-            language: language,
-            poster: imgSrc != null ? '${_base(source.baseUrl)}$imgSrc' : null,
-            downloadUrl: downloadUrl,
-            sourceName: source.name,
-            tag: 'libgen',
-          ));
+          results.add(
+            SourceSearchResult(
+              title: title,
+              author: author,
+              year: year,
+              size: size,
+              extension: ext,
+              language: language,
+              poster: imgSrc != null ? '${_base(source.baseUrl)}$imgSrc' : null,
+              downloadUrl: downloadUrl,
+              sourceName: source.name,
+              tag: 'libgen',
+            ),
+          );
         }
       } catch (_) {}
     }
     if (source.language != null && source.language!.isNotEmpty) {
       results = results
-          .where((r) =>
-              r.language?.toLowerCase().contains(source.language!.toLowerCase()) == true)
+          .where(
+            (r) =>
+                r.language?.toLowerCase().contains(
+                  source.language!.toLowerCase(),
+                ) ==
+                true,
+          )
           .toList();
     }
     return results;
@@ -194,14 +234,18 @@ class SourceService {
   }
 
   Future<Map<String, String>> showDownloadOptions(
-      SourceSearchResult result) async {
+    SourceSearchResult result,
+  ) async {
     if (result.downloadUrl == null || result.downloadUrl!.isEmpty) return {};
     return getDownloadLinks(result.downloadUrl!);
   }
 
   Future<bool> downloadFromLink(
-      String url, String title, String ext,
-      {void Function(double progress)? onProgress}) async {
+    String url,
+    String title,
+    String ext, {
+    void Function(double progress)? onProgress,
+  }) async {
     try {
       final client = http.Client();
       try {
@@ -268,10 +312,10 @@ class SourceService {
   }
 
   static List<Source> defaultSources() => [
-        Source(
-          name: 'Library Genesis',
-          tag: 'libgen',
-          baseUrl: 'https://libgen.gs/index.php',
-        ),
-      ];
+    Source(
+      name: 'Library Genesis',
+      tag: 'libgen',
+      baseUrl: 'https://libgen.gs/index.php',
+    ),
+  ];
 }
