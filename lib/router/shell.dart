@@ -77,7 +77,7 @@ class MainShell extends ConsumerWidget {
       drawer: NavDrawer(
         currentIndex: navigationShell.currentIndex,
         onTap: _onTap,
-        version: '2.25.2',
+        version: '2.25.3',
       ),
     );
   }

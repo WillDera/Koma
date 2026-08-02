@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import '../../core/providers.dart';
 import '../../core/services/keiyoushi_service.dart';
 import '../../core/services/source_service.dart';
+import '../../core/utils/custom_extended_image_provider.dart';
 import '../../core/utils/image_cache.dart';
 import '../../core/utils/image_headers.dart';
 import '../../router/router.dart';
@@ -595,7 +596,7 @@ class _DiscoverBookResults extends StatelessWidget {
   }
 }
 
-class _DiscoverMangaResults extends StatelessWidget {
+class _DiscoverMangaResults extends ConsumerWidget {
   final List<Map<String, dynamic>> sourceResults;
   final void Function(
     Map<String, dynamic> sourceResult,
@@ -610,7 +611,7 @@ class _DiscoverMangaResults extends StatelessWidget {
   });
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final c = context.colors;
     final mangaCount = sourceResults.fold<int>(
       0,
@@ -637,6 +638,14 @@ class _DiscoverMangaResults extends StatelessWidget {
       separatorBuilder: (_, _) => const SizedBox(height: 16),
       itemBuilder: (_, si) {
         final srcResult = sections.elementAt(si);
+        // Same header path as source browse: sync Referer from baseUrl so
+        // the first Image frame never races without CDN-required headers.
+        final baseUrl = (srcResult['baseUrl'] as String?)?.trim();
+        final headers = ref.watch(
+          imageHeadersProvider(
+            (baseUrl != null && baseUrl.isNotEmpty) ? baseUrl : null,
+          ),
+        );
         return Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -673,7 +682,8 @@ class _DiscoverMangaResults extends StatelessWidget {
                       width: 132,
                       child: _MangaCard(
                         manga: manga,
-                        sourceId: srcResult['sourceId'] as String?,
+                        baseUrl: baseUrl,
+                        headers: headers,
                         onTap: () => onTap(srcResult, manga),
                       ),
                     ),
@@ -971,21 +981,33 @@ class _GridResultCard extends StatelessWidget {
   }
 }
 
-class _MangaCard extends ConsumerWidget {
+class _MangaCard extends StatelessWidget {
   final Map<String, dynamic> manga;
   final VoidCallback onTap;
-  final String? sourceId;
+  final String? baseUrl;
+  final Map<String, String> headers;
 
-  const _MangaCard({required this.manga, required this.onTap, this.sourceId});
+  const _MangaCard({
+    required this.manga,
+    required this.onTap,
+    required this.headers,
+    this.baseUrl,
+  });
+
+  String? get _thumb {
+    final raw = manga['thumbnail_url'] as String?;
+    if (raw == null || raw.isEmpty) return null;
+    if (raw.startsWith('http://') || raw.startsWith('https://')) return raw;
+    final base = baseUrl;
+    if (base == null || base.isEmpty) return raw;
+    return Uri.parse(base).resolve(raw).toString();
+  }
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  Widget build(BuildContext context) {
     final c = context.colors;
     final title = manga['title'] as String? ?? '';
-    final thumb = manga['thumbnail_url'] as String?;
-    final headers = sourceId != null
-        ? ref.watch(sourceImageHeadersProvider(sourceId!)).value
-        : null;
+    final thumb = _thumb;
     return AnimatedPress(
       onTap: onTap,
       child: Container(
@@ -1001,7 +1023,13 @@ class _MangaCard extends ConsumerWidget {
             Expanded(
               child: thumb != null && thumb.isNotEmpty
                   ? Image(
-                      image: cachedCover(thumb, headers: headers),
+                      // Match source browse: custom provider + headers from
+                      // the first frame (Referer required by most CDNs).
+                      image: CustomExtendedNetworkImageProvider(
+                        thumb,
+                        headers: headers,
+                        showCloudFlareError: true,
+                      ),
                       width: double.infinity,
                       fit: BoxFit.cover,
                       errorBuilder: (_, _, _) => _placeholder(c),

@@ -18,9 +18,21 @@ class MainActivity : FlutterActivity() {
             "eu.kanade.tachiyomi/keiyoushi",
         ).setMethodCallHandler { call, result ->
             if (call.method == "getDalvikPort") {
-                val port = DalvikRuntimeManager.getOrStartServer()
-                if (port > 0) result.success(port)
-                else result.error("NOSERVER", "Dalvik server not running", null)
+                // getOrStartServer probes the port with a TCP connect — must
+                // not run on the main thread (StrictMode NetworkOnMainThread).
+                Thread {
+                    try {
+                        val port = DalvikRuntimeManager.getOrStartServer()
+                        runOnUiThread {
+                            if (port > 0) result.success(port)
+                            else result.error("NOSERVER", "Dalvik server not running", null)
+                        }
+                    } catch (e: Throwable) {
+                        runOnUiThread {
+                            result.error("NOSERVER", e.message, null)
+                        }
+                    }
+                }.start()
             } else {
                 result.notImplemented()
             }

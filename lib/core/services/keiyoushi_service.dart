@@ -246,6 +246,7 @@ class KeiyoushiService {
           return <String, dynamic>{
             'sourceId': sourceId,
             'sourceName': ext['name'] as String? ?? '',
+            'baseUrl': ext['baseUrl'] as String? ?? '',
             'mangas': pageResult.mangas,
             'hasNextPage': pageResult.hasNextPage,
           };
