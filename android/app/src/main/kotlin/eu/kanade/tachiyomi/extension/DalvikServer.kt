@@ -114,6 +114,9 @@ class DalvikServer(
         return _port
     }
 
+    // Same monitor as [start]: callers (e.g. DalvikRuntimeManager restart)
+    // must not race mutations of isRunning / serverSocket / _port.
+    @Synchronized
     fun stop() {
         isRunning = false
         try {
