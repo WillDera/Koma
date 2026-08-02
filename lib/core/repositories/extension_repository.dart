@@ -32,15 +32,13 @@ class ExtensionRepository {
   }
 
   Future<void> insertExtensionSource(ExtensionSource src) async {
-    await _isar.writeTxn(
-        () => _isar.extensionSources.put(_srcFromModel(src)));
+    await _isar.writeTxn(() => _isar.extensionSources.put(_srcFromModel(src)));
   }
 
   Future<void> deleteExtensionSource(String sourceId) async {
     await _isar.writeTxn(() async {
       // sourceId is the logical ID (String); the Isar row PK is auto-int.
-      final row =
-          await _isar.extensionSources.getBySourceId(sourceId);
+      final row = await _isar.extensionSources.getBySourceId(sourceId);
       if (row != null) {
         await _isar.extensionSources.delete(row.id ?? 0);
       }
@@ -49,8 +47,7 @@ class ExtensionRepository {
 
   // ── Sources: Stream API ────────────────────────────────────────────
 
-  Stream<List<ExtensionSource>> watchInstalled(
-      {bool fireImmediately = true}) {
+  Stream<List<ExtensionSource>> watchInstalled({bool fireImmediately = true}) {
     return _isar.extensionSources
         .where()
         .sortByCreatedAtDesc()
@@ -61,22 +58,22 @@ class ExtensionRepository {
   // ── Repos ──────────────────────────────────────────────────────────
 
   Future<List<ExtensionRepo>> getExtensionRepos() async {
-    final rows =
-        await _isar.extensionRepos.where().sortByCreatedAtDesc().findAll();
+    final rows = await _isar.extensionRepos
+        .where()
+        .sortByCreatedAtDesc()
+        .findAll();
     return rows.map(_repoToModel).toList(growable: false);
   }
 
   Future<int> insertExtensionRepo(ExtensionRepo repo) async {
-    return _isar.writeTxn(
-        () => _isar.extensionRepos.put(_repoFromModel(repo)));
+    return _isar.writeTxn(() => _isar.extensionRepos.put(_repoFromModel(repo)));
   }
 
   Future<void> deleteExtensionRepo(int id) async {
     await _isar.writeTxn(() => _isar.extensionRepos.delete(id));
   }
 
-  Stream<List<ExtensionRepo>> watchRepos(
-      {bool fireImmediately = true}) {
+  Stream<List<ExtensionRepo>> watchRepos({bool fireImmediately = true}) {
     return _isar.extensionRepos
         .where()
         .sortByCreatedAtDesc()
@@ -87,26 +84,26 @@ class ExtensionRepository {
   // ── Conversions ────────────────────────────────────────────────────
 
   static ExtensionSource _srcToModel(i.ExtensionSource s) => ExtensionSource(
-        id: s.sourceId,
-        sourceId: s.sourceId, // logical ID is what callers expect
-        name: s.name,
-        version: s.version,
-        versionLast: s.versionLast,
-        lang: s.lang,
-        apkPath: s.apkPath,
-        className: s.className,
-        iconUrl: s.iconUrl,
-        baseUrl: s.baseUrl,
-        sourceCodeUrl: s.sourceCodeUrl,
-        repoUrl: s.repoUrl,
-        isInstalled: s.isInstalled,
-        isActive: s.isActive,
-        isNsfw: s.isNsfw,
-        isPinned: s.isPinned,
-        isObsolete: s.isObsolete,
-        createdAt: s.createdAt,
-        updatedAt: s.updatedAt,
-      );
+    id: s.sourceId,
+    sourceId: s.sourceId, // logical ID is what callers expect
+    name: s.name,
+    version: s.version,
+    versionLast: s.versionLast,
+    lang: s.lang,
+    apkPath: s.apkPath,
+    className: s.className,
+    iconUrl: s.iconUrl,
+    baseUrl: s.baseUrl,
+    sourceCodeUrl: s.sourceCodeUrl,
+    repoUrl: s.repoUrl,
+    isInstalled: s.isInstalled,
+    isActive: s.isActive,
+    isNsfw: s.isNsfw,
+    isPinned: s.isPinned,
+    isObsolete: s.isObsolete,
+    createdAt: s.createdAt,
+    updatedAt: s.updatedAt,
+  );
 
   static i.ExtensionSource _srcFromModel(ExtensionSource s) =>
       i.ExtensionSource(
@@ -135,19 +132,18 @@ class ExtensionRepository {
       );
 
   static ExtensionRepo _repoToModel(i.ExtensionRepo r) => ExtensionRepo(
-        id: r.id ?? 0,
-        name: r.name,
-        url: r.url,
-        enabled: r.enabled,
-        createdAt: r.createdAt,
-      );
+    id: r.id ?? 0,
+    name: r.name,
+    url: r.url,
+    enabled: r.enabled,
+    createdAt: r.createdAt,
+  );
 
-  static i.ExtensionRepo _repoFromModel(ExtensionRepo r) =>
-      i.ExtensionRepo(
-        id: r.id == 0 ? Isar.autoIncrement : r.id,
-        name: r.name,
-        url: r.url,
-        enabled: r.enabled,
-        createdAt: r.createdAt,
-      );
+  static i.ExtensionRepo _repoFromModel(ExtensionRepo r) => i.ExtensionRepo(
+    id: r.id == 0 ? Isar.autoIncrement : r.id,
+    name: r.name,
+    url: r.url,
+    enabled: r.enabled,
+    createdAt: r.createdAt,
+  );
 }

@@ -54,9 +54,10 @@ class _ChapterSheetState extends State<ChapterSheet> {
     final filtered = _filter.trim().isEmpty
         ? widget.chapters
         : widget.chapters
-            .where((ch) =>
-                ch.title.toLowerCase().contains(_filter.toLowerCase()))
-            .toList();
+              .where(
+                (ch) => ch.title.toLowerCase().contains(_filter.toLowerCase()),
+              )
+              .toList();
 
     return Column(
       children: [
@@ -111,23 +112,16 @@ class _ChapterSheetState extends State<ChapterSheet> {
                           style: TextStyle(
                             color: c.textPrimary,
                             fontSize: 15,
-                            fontWeight:
-                                isCurrent ? FontWeight.w600 : FontWeight.w500,
+                            fontWeight: isCurrent
+                                ? FontWeight.w600
+                                : FontWeight.w500,
                           ),
                         ),
                       ),
                       if (isCurrent)
-                        Icon(
-                          Icons.bookmark,
-                          size: 16,
-                          color: c.accent,
-                        )
+                        Icon(Icons.bookmark, size: 16, color: c.accent)
                       else if (ch.readAt != null)
-                        Icon(
-                          Icons.check,
-                          size: 16,
-                          color: c.textTertiary,
-                        ),
+                        Icon(Icons.check, size: 16, color: c.textTertiary),
                     ],
                   ),
                 ),

@@ -1,6 +1,9 @@
 import 'dart:ui';
+
 import 'package:flutter/material.dart';
+
 import '../theme/app_theme.dart';
+import '../theme/tokens/app_colors.dart';
 import '../theme/tokens/app_motion.dart';
 import '../theme/tokens/app_spacing.dart';
 import 'animated_press.dart';
@@ -30,6 +33,11 @@ class ReaderSelectionToolbar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final c = context.colors;
+    final highlightColor = AppColors.highlight(
+      defaultHighlightColor,
+      Theme.of(context).brightness,
+      isSepia: c.bg == AppColors.sepiaBg,
+    );
     return Positioned(
       left: 16,
       right: 16,
@@ -56,6 +64,7 @@ class ReaderSelectionToolbar extends StatelessWidget {
                   _ToolAction(
                     icon: Icons.format_color_fill,
                     label: 'Mark',
+                    iconColor: highlightColor,
                     onTap: () => onHighlight(defaultHighlightColor),
                   ),
                   _Divider(),
@@ -65,11 +74,7 @@ class ReaderSelectionToolbar extends StatelessWidget {
                     onTap: onNote,
                   ),
                   _Divider(),
-                  _ToolAction(
-                    icon: Icons.copy,
-                    label: 'Copy',
-                    onTap: onCopy,
-                  ),
+                  _ToolAction(icon: Icons.copy, label: 'Copy', onTap: onCopy),
                   _Divider(),
                   _ToolAction(
                     icon: Icons.ios_share,
@@ -89,10 +94,12 @@ class ReaderSelectionToolbar extends StatelessWidget {
 class _ToolAction extends StatelessWidget {
   final IconData icon;
   final String label;
+  final Color? iconColor;
   final VoidCallback onTap;
   const _ToolAction({
     required this.icon,
     required this.label,
+    this.iconColor,
     required this.onTap,
   });
 
@@ -107,7 +114,7 @@ class _ToolAction extends StatelessWidget {
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(icon, color: c.bg, size: 16),
+            Icon(icon, color: iconColor ?? c.bg, size: 16),
             const SizedBox(width: 6),
             Text(
               label,

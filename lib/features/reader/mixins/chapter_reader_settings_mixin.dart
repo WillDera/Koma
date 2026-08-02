@@ -24,9 +24,7 @@ mixin class ChapterReaderSettingsMixin {
       rotationMode: overrides.rotationMode != RotationMode.free
           ? overrides.rotationMode
           : existing.rotationMode,
-      tapZones: overrides.tapZones != TapZoneMode.leftRight
-          ? overrides.tapZones
-          : existing.tapZones,
+      tapZones: overrides.tapZones,
       sidePadding: overrides.sidePadding,
       cropBorders: overrides.cropBorders,
       bookMode: overrides.bookMode,

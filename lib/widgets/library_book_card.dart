@@ -55,7 +55,10 @@ class LibraryBookCard extends StatelessWidget {
                   top: 6,
                   left: 6,
                   child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 6,
+                      vertical: 2,
+                    ),
                     decoration: BoxDecoration(
                       color: Colors.black.withValues(alpha: 0.7),
                       borderRadius: AppSpacing.brPill,
@@ -94,16 +97,14 @@ class LibraryBookCard extends StatelessWidget {
                     width: 24,
                     height: 24,
                     decoration: BoxDecoration(
-                      color: selected ? c.accent : Colors.black.withValues(alpha: 0.4),
+                      color: selected
+                          ? c.accent
+                          : Colors.black.withValues(alpha: 0.4),
                       shape: BoxShape.circle,
-                      border: Border.all(
-                        color: Colors.white,
-                        width: 1.5,
-                      ),
+                      border: Border.all(color: Colors.white, width: 1.5),
                     ),
                     child: selected
-                        ? Icon(Icons.check,
-                            size: 14, color: c.onAccent)
+                        ? Icon(Icons.check, size: 14, color: c.onAccent)
                         : null,
                   ),
                 ),
@@ -143,9 +144,7 @@ class LibraryBookCard extends StatelessWidget {
           children: [
             if (selectionMode) ...[
               Icon(
-                selected
-                    ? Icons.check_circle
-                    : Icons.radio_button_unchecked,
+                selected ? Icons.check_circle : Icons.radio_button_unchecked,
                 size: 22,
                 color: selected ? c.accent : c.textTertiary,
               ),
@@ -159,7 +158,10 @@ class LibraryBookCard extends StatelessWidget {
                     top: 2,
                     left: 2,
                     child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 4,
+                        vertical: 1,
+                      ),
                       decoration: BoxDecoration(
                         color: Colors.black.withValues(alpha: 0.7),
                         borderRadius: AppSpacing.brPill,
@@ -199,10 +201,7 @@ class LibraryBookCard extends StatelessWidget {
                       book.author!,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        color: c.textSecondary,
-                        fontSize: 13,
-                      ),
+                      style: TextStyle(color: c.textSecondary, fontSize: 13),
                     ),
                   ],
                   const SizedBox(height: 8),
@@ -340,7 +339,9 @@ class LibraryBookCard extends StatelessWidget {
                       width: 24,
                       height: 24,
                       decoration: BoxDecoration(
-                        color: selected ? c.accent : Colors.black.withValues(alpha: 0.4),
+                        color: selected
+                            ? c.accent
+                            : Colors.black.withValues(alpha: 0.4),
                         shape: BoxShape.circle,
                         border: Border.all(color: Colors.white, width: 1.5),
                       ),

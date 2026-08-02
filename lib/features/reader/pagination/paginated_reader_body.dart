@@ -1,0 +1,408 @@
+import 'dart:async';
+
+import 'package:flutter/material.dart';
+
+import '../../../core/models/chapter.dart';
+import '../../../core/models/highlight.dart';
+import '../../../core/utils/text_extractor.dart';
+import '../../../theme/app_theme.dart';
+import '../../../theme/theme_state.dart';
+import '../../../widgets/page_curl/page_curl_view.dart';
+import 'book_page_cursor.dart';
+import 'chapter_paginator.dart';
+import 'paginated_chapter_view.dart';
+import 'reading_spans.dart';
+import 'resume_resolver.dart';
+
+/// The paginated (curl) reader body: measures each chapter into pages and turns
+/// between them with [PageCurlView].
+///
+/// ## Why the curl's page index is not a book-wide page number
+///
+/// [PageCurlView] addresses pages with a single int, but a book-wide page number
+/// would mean paginating every chapter up front just to know where chapter N
+/// starts — which defeats [BookPageCursor]'s lazy per-chapter measurement.
+///
+/// [PageCurlView] only ever asks for `pageIndex - 1`, `pageIndex` and
+/// `pageIndex + 1`, so the int is treated as an opaque monotonic counter and
+/// mapped onto relative cursor moves. Returning null for a neighbour is how the
+/// curl learns it cannot turn that way, which falls out naturally at the ends of
+/// the book.
+class PaginatedReaderBody extends StatefulWidget {
+  const PaginatedReaderBody({
+    super.key,
+    required this.chapters,
+    required this.chapterIndex,
+    required this.themeProv,
+    required this.charOffsetFor,
+    required this.pixelOffsetFor,
+    this.contentHeightFor,
+    this.highlights = const [],
+    this.highlightVersion = 0,
+    this.ttsActive = false,
+    this.ttsStart = 0,
+    this.ttsEnd = 0,
+    this.onPositionChanged,
+    this.onChapterChanged,
+    this.onSelected,
+    this.onSelectionCleared,
+    this.onSelectionCollapsed,
+    this.onTap,
+  });
+
+  final List<Chapter> chapters;
+
+  /// Chapter the host reader considers current. A change that did not originate
+  /// from a page turn (chapter list tap, next/previous chapter button) re-seeks.
+  final int chapterIndex;
+
+  final ThemeState themeProv;
+
+  /// Stored resume sources, forwarded to [ResumeResolver].
+  final int? Function(int chapterIndex) charOffsetFor;
+  final double Function(int chapterIndex) pixelOffsetFor;
+  final double? Function(int chapterIndex)? contentHeightFor;
+
+  final List<Highlight> highlights;
+  final int highlightVersion;
+
+  final bool ttsActive;
+  final int ttsStart;
+  final int ttsEnd;
+
+  /// Fires on every settled page turn with the new position and the character
+  /// offset that page starts at. [exact] is false only when the offset was
+  /// approximated from a legacy pixel position, which the host should persist
+  /// straight away so the approximation happens once.
+  final void Function(
+    BookPosition position,
+    int charOffset, {
+    required bool exact,
+  })?
+  onPositionChanged;
+
+  /// Fires when a turn crosses into a different chapter.
+  final ValueChanged<int>? onChapterChanged;
+
+  final void Function(int start, int end)? onSelected;
+  final VoidCallback? onSelectionCleared;
+  final VoidCallback? onSelectionCollapsed;
+  final VoidCallback? onTap;
+
+  @override
+  State<PaginatedReaderBody> createState() => _PaginatedReaderBodyState();
+}
+
+class _PaginatedReaderBodyState extends State<PaginatedReaderBody> {
+  BookPageCursor? _cursor;
+  late BookPosition _position;
+
+  /// The curl's opaque counter for [_position]. Only differences matter.
+  int _curlIndex = 0;
+
+  /// Set once the first layout has resolved a resume position, so build knows
+  /// whether [_position] is meaningful yet.
+  bool _seeded = false;
+
+  /// Guards against re-seeking to a chapter we ourselves just turned into.
+  int _lastHostChapter = -1;
+
+  Size _viewport = Size.zero;
+
+  /// Text scaler in force, captured in build so measurement outside the build
+  /// phase (the settle timer) uses the same value the pages render with.
+  TextScaler _textScaler = TextScaler.noScaling;
+
+  /// The key the cached pagination was measured against, so a change can be
+  /// detected in build — where derived measurements are already up to date.
+  PaginationKey? _measuredKey;
+
+  /// True while reading settings are still changing. Neighbouring chapters are
+  /// not measured during this window; see [_pageAt].
+  bool _settling = false;
+  Timer? _settleTimer;
+
+  @override
+  void initState() {
+    super.initState();
+    _position = BookPosition(widget.chapterIndex, 0);
+    _lastHostChapter = widget.chapterIndex;
+  }
+
+  @override
+  void didUpdateWidget(PaginatedReaderBody old) {
+    super.didUpdateWidget(old);
+
+    // A settings change is handled in build, not here: re-measuring needs the
+    // title inset for the *new* settings, which is only computed once the build
+    // phase has laid the title out.
+    if (_keyFor(_viewport) != _keyFor(_viewport, prov: old.themeProv)) {
+      _markSettling();
+    }
+
+    if (!identical(widget.chapters, old.chapters)) {
+      _cursor = null;
+      _measuredKey = null;
+      _seeded = false;
+    }
+
+    // A chapter change the host initiated (not one of our page turns).
+    if (widget.chapterIndex != _lastHostChapter &&
+        widget.chapterIndex != _position.chapterIndex) {
+      _lastHostChapter = widget.chapterIndex;
+      _seeded = false;
+    } else {
+      _lastHostChapter = widget.chapterIndex;
+    }
+  }
+
+  @override
+  void dispose() {
+    _settleTimer?.cancel();
+    super.dispose();
+  }
+
+  PaginationKey _keyFor(Size viewport, {ThemeState? prov}) =>
+      PaginationKey.from(prov ?? widget.themeProv, viewport);
+
+  /// Builds (or rebuilds) the cursor for the current viewport and settings.
+  ///
+  /// The span builder closes over the same [ReadingSpans] the page renders, so
+  /// measurement and rendering cannot disagree — including bionic bold, which
+  /// changes glyph widths.
+  ///
+  /// The style is resolved inside the builder rather than captured here: the
+  /// cursor outlives settings changes, and a captured style would keep
+  /// re-measuring against the font the reader was opened with.
+  ///
+  /// Keying is left to the caller: [_applyKeyChange] has to read the outgoing
+  /// pagination before it is discarded, so this must not clear the cache.
+  BookPageCursor _cursorFor(Size viewport) {
+    final existing = _cursor;
+    if (existing != null) return existing;
+
+    final cursor = BookPageCursor(
+      chapters: widget.chapters,
+      paginatorFor: (i) {
+        final chapter = widget.chapters[i];
+        final text = TextExtractor.extractCached(chapter.id, chapter.content);
+        final baseStyle = ReadingSpans.style(
+          widget.themeProv,
+          context.colors.textPrimary,
+        );
+        return ChapterPaginator(
+          spanBuilder: (start, end) => ReadingSpans.build(
+            text: text,
+            prov: widget.themeProv,
+            baseStyle: baseStyle,
+            brightness: Theme.of(context).brightness,
+            // Highlights and TTS tint colour only — they never change metrics,
+            // and excluding them keeps pagination stable as they change.
+            rangeStart: start,
+            rangeEnd: end,
+          ),
+          // Measured per chapter: titles wrap to different heights, so sharing
+          // one inset would mis-measure every chapter but the one it came from.
+          firstPageInset: _titleInsetFor(i),
+        );
+      },
+    );
+    _cursor = cursor;
+    return cursor;
+  }
+
+  /// Height reserved above the first page of [chapterIndex] for its title.
+  double _titleInsetFor(int chapterIndex) {
+    if (chapterIndex < 0 || chapterIndex >= widget.chapters.length) return 28;
+    if (_viewport.width <= 0) return 28;
+    return PaginatedChapterView.titleInsetFor(
+      context,
+      widget.themeProv,
+      widget.chapters[chapterIndex].title,
+      _viewport.width,
+      textScaler: _textScaler,
+    );
+  }
+
+  /// Opens the "settings are changing" window, during which only the chapter
+  /// being read is measured. Each further change pushes the window out, so a
+  /// slider drag re-measures one chapter per step instead of three.
+  void _markSettling() {
+    _settling = true;
+    _settleTimer?.cancel();
+    _settleTimer = Timer(const Duration(milliseconds: 250), () {
+      if (!mounted) return;
+      setState(() => _settling = false);
+    });
+  }
+
+  /// Re-measures against [key], keeping the reader on the same text by carrying
+  /// the current page's character offset across the change.
+  ///
+  /// Called from build so the per-chapter title inset it measures with reflects
+  /// the settings being applied, not the ones being replaced.
+  void _applyKeyChange(BookPageCursor cursor, PaginationKey key) {
+    // Read the offset under the *old* pagination, before it is discarded.
+    final offset = _seeded ? cursor.offsetAt(_position) : 0;
+    cursor.updateKey(key);
+    _measuredKey = key;
+    if (_seeded) {
+      _position = cursor.positionForOffset(_position.chapterIndex, offset);
+    }
+  }
+
+  /// Resolves where to open the chapter the host asked for, once per seek.
+  void _seed(BookPageCursor cursor) {
+    final resolver = ResumeResolver(
+      cursor: cursor,
+      charOffsetFor: widget.charOffsetFor,
+      pixelOffsetFor: widget.pixelOffsetFor,
+      contentHeightFor: widget.contentHeightFor ?? (_) => null,
+    );
+    final target = resolver.resolve(widget.chapterIndex);
+    _position = target.position;
+    _seeded = true;
+
+    // An approximated position should be written back as a character offset so
+    // the pixel guess is never repeated for this chapter.
+    if (!target.exact) {
+      widget.onPositionChanged?.call(
+        _position,
+        cursor.offsetAt(_position),
+        exact: false,
+      );
+    }
+  }
+
+  void _onCurlPageChanged(BookPageCursor cursor, int nextCurlIndex) {
+    final delta = nextCurlIndex - _curlIndex;
+    if (delta == 0) return;
+
+    var target = _position;
+    for (var i = 0; i < delta.abs(); i++) {
+      final step = delta > 0 ? cursor.next(target) : cursor.previous(target);
+      if (step == null) break; // Start or end of the book.
+      target = step;
+    }
+    if (target == _position) return;
+
+    final previousChapter = _position.chapterIndex;
+    setState(() {
+      _position = target;
+      _curlIndex = nextCurlIndex;
+    });
+
+    widget.onPositionChanged?.call(
+      target,
+      cursor.offsetAt(target),
+      exact: true,
+    );
+    if (target.chapterIndex != previousChapter) {
+      widget.onChapterChanged?.call(target.chapterIndex);
+    }
+  }
+
+  /// The page at [_position] offset by [delta], or null when there is none —
+  /// which is how [PageCurlView] learns it cannot turn that way.
+  /// Whether stepping once from [pos] toward [delta] stays inside the chapter,
+  /// avoiding a measure of a fresh chapter.
+  bool _staysInChapter(BookPageCursor cursor, BookPosition pos, int delta) {
+    if (delta > 0) {
+      return pos.pageIndex + 1 < cursor.pageCountOf(pos.chapterIndex);
+    }
+    return pos.pageIndex > 0;
+  }
+
+  Widget? _pageAt(BookPageCursor cursor, int delta) {
+    var pos = _position;
+    for (var i = 0; i < delta.abs(); i++) {
+      // While settings are still changing, decline neighbours that would force
+      // a fresh chapter to be measured — the pagination is about to be thrown
+      // away by the next change anyway. The page being read is always built
+      // (delta 0), so the reader never sees a gap.
+      if (_settling && !_staysInChapter(cursor, pos, delta)) return null;
+      final step = delta > 0 ? cursor.next(pos) : cursor.previous(pos);
+      if (step == null) return null;
+      pos = step;
+    }
+
+    // pageAt yields an empty range when the chapter has no pages to show.
+    final page = cursor.pageAt(pos);
+    if (page.isEmpty) return null;
+    final chapter = widget.chapters[pos.chapterIndex];
+    final text = TextExtractor.extractCached(chapter.id, chapter.content);
+
+    return PaginatedChapterView(
+      text: text,
+      page: page,
+      chapterTitle: chapter.title,
+      showTitle: pos.pageIndex == 0,
+      themeProv: widget.themeProv,
+      // Highlights are per-chapter, so they only apply to pages of the chapter
+      // the host loaded them for.
+      highlights: pos.chapterIndex == widget.chapterIndex
+          ? widget.highlights
+          : const [],
+      highlightVersion: widget.highlightVersion,
+      ttsActive: widget.ttsActive && pos.chapterIndex == widget.chapterIndex,
+      ttsStart: widget.ttsStart,
+      ttsEnd: widget.ttsEnd,
+      onSelected: widget.onSelected,
+      onSelectionCleared: widget.onSelectionCleared,
+      onSelectionCollapsed: widget.onSelectionCollapsed,
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (widget.chapters.isEmpty) return const SizedBox.shrink();
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final viewport = Size(constraints.maxWidth, constraints.maxHeight);
+        if (viewport.width <= 0 || viewport.height <= 0) {
+          return const SizedBox.shrink();
+        }
+
+        // Recorded before any measuring: the per-chapter title inset and the
+        // span builder both read them.
+        _viewport = viewport;
+        _textScaler = MediaQuery.textScalerOf(context);
+
+        final cursor = _cursorFor(viewport);
+        final key = _keyFor(viewport);
+        if (_measuredKey != key) {
+          // Covers both a settings change and a resize, since the viewport is
+          // part of the key.
+          _applyKeyChange(cursor, key);
+        }
+        if (!_seeded) _seed(cursor);
+
+        // The tap handler sits *behind* the curl, not around each page: the
+        // curl's gesture handler is translucent, so a detector wrapping the
+        // page content would win the arena and swallow the edge taps that turn
+        // pages. Here it only sees taps the curl itself declined — i.e. middle
+        // taps — while text selection still works because SelectableText's own
+        // recognizers are nearer the pointer.
+        return Stack(
+          children: [
+            Positioned.fill(
+              child: GestureDetector(
+                onTap: widget.onTap,
+                behavior: HitTestBehavior.translucent,
+              ),
+            ),
+            Positioned.fill(
+              child: PageCurlView(
+                pageIndex: _curlIndex,
+                onPageChanged: (i) => _onCurlPageChanged(cursor, i),
+                pageBuilder: (context, index) =>
+                    _pageAt(cursor, index - _curlIndex),
+              ),
+            ),
+          ],
+        );
+      },
+    );
+  }
+}

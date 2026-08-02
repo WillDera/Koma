@@ -1,9 +1,8 @@
 package com.koma.koma
 
 import android.graphics.Typeface
-import android.os.Build
 import android.util.Log
-import eu.kanade.tachiyomi.extension.DalvikServer
+import eu.kanade.tachiyomi.extension.DalvikRuntimeManager
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
@@ -13,15 +12,27 @@ class MainActivity : FlutterActivity() {
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
-        DalvikServer.initialize(applicationContext).start()
+        DalvikRuntimeManager.initialize(applicationContext)
         MethodChannel(
             flutterEngine.dartExecutor.binaryMessenger,
             "eu.kanade.tachiyomi/keiyoushi",
         ).setMethodCallHandler { call, result ->
             if (call.method == "getDalvikPort") {
-                val port = DalvikServer.getInstance().port
-                if (port > 0) result.success(port)
-                else result.error("NOSERVER", "Dalvik server not running", null)
+                // getOrStartServer probes the port with a TCP connect — must
+                // not run on the main thread (StrictMode NetworkOnMainThread).
+                Thread {
+                    try {
+                        val port = DalvikRuntimeManager.getOrStartServer()
+                        runOnUiThread {
+                            if (port > 0) result.success(port)
+                            else result.error("NOSERVER", "Dalvik server not running", null)
+                        }
+                    } catch (e: Throwable) {
+                        runOnUiThread {
+                            result.error("NOSERVER", e.message, null)
+                        }
+                    }
+                }.start()
             } else {
                 result.notImplemented()
             }
@@ -67,7 +78,8 @@ class MainActivity : FlutterActivity() {
     }
 
     override fun cleanUpFlutterEngine(flutterEngine: FlutterEngine) {
-        DalvikServer.getInstance().stop()
+        // The runtime is process-scoped (DalvikRuntimeManager): it must survive
+        // the Activity's engine so background WorkManager tasks can reuse it.
         super.cleanUpFlutterEngine(flutterEngine)
     }
 }

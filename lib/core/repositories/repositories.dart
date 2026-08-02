@@ -40,10 +40,10 @@ class Repositories {
   final CookieRepository cookies;
 
   Repositories(this.isar)
-      : books = BookRepository(isar),
-        manga = MangaRepository(isar),
-        snippets = SnippetRepository(isar),
-        extensions = ExtensionRepository(isar),
+    : books = BookRepository(isar),
+      manga = MangaRepository(isar),
+      snippets = SnippetRepository(isar),
+      extensions = ExtensionRepository(isar),
       stats = StatsRepository(isar),
       bookmarks = BookmarkRepository(isar),
       cookies = CookieRepository(isar);

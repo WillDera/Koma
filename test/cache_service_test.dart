@@ -94,16 +94,8 @@ void main() {
 
   group('clearCache', () {
     test('removes all cached entries', () async {
-      await service.cacheContent(
-        'https://example.com/1',
-        'P1',
-        '<p>1</p>',
-      );
-      await service.cacheContent(
-        'https://example.com/2',
-        'P2',
-        '<p>2</p>',
-      );
+      await service.cacheContent('https://example.com/1', 'P1', '<p>1</p>');
+      await service.cacheContent('https://example.com/2', 'P2', '<p>2</p>');
 
       expect(await service.isCached('https://example.com/1'), isTrue);
       expect(await service.isCached('https://example.com/2'), isTrue);

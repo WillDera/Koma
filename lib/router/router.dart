@@ -45,7 +45,18 @@ abstract final class Routes {
 // (already above the shell). Only tab-reachable / root-level destinations
 // need go_router entries.
 
-typedef ReaderArgs = ({int bookId, int? snippetChapterId, double? snippetScrollOffset});
+// Snippet jumps carry the stored character offsets, not a pixel scroll
+// position: pixels are invalid the moment font size, width or reading mode
+// changes, and mean nothing at all in paginated mode. snippetScrollOffset is
+// kept as a last-resort fallback for older snippets saved before offsets were
+// recorded.
+typedef ReaderArgs = ({
+  int bookId,
+  int? snippetChapterId,
+  double? snippetScrollOffset,
+  int? snippetStartOffset,
+  int? snippetEndOffset,
+});
 
 typedef MangaReaderArgs = ({
   int? mangaId,
@@ -53,7 +64,7 @@ typedef MangaReaderArgs = ({
   String mangaUrl,
   String chapterUrl,
   String chapterName,
-int? pageNumber,
+  int? pageNumber,
 });
 
 typedef MangaDetailArgs = ({
@@ -63,8 +74,9 @@ typedef MangaDetailArgs = ({
   Manga? manga,
 });
 
-final GlobalKey<NavigatorState> rootNavigatorKey =
-    GlobalKey<NavigatorState>(debugLabel: 'root');
+final GlobalKey<NavigatorState> rootNavigatorKey = GlobalKey<NavigatorState>(
+  debugLabel: 'root',
+);
 
 /// The app's GoRouter. Bottom-nav tabs live in a
 /// [StatefulShellRoute.indexedStack] so each tab keeps its own Navigator
@@ -81,48 +93,60 @@ final GoRouter appRouter = GoRouter(
       builder: (context, state, navigationShell) =>
           MainShell(navigationShell: navigationShell),
       branches: [
-        StatefulShellBranch(routes: [
-          GoRoute(
-            path: '/library',
-            name: Routes.library,
-            builder: (context, state) => const LibraryScreen(),
-          ),
-        ]),
-        StatefulShellBranch(routes: [
-          GoRoute(
-            path: '/history',
-            name: Routes.history,
-            builder: (context, state) => const HistoryScreen(),
-          ),
-        ]),
-        StatefulShellBranch(routes: [
-          GoRoute(
-            path: '/snippets',
-            name: Routes.snippets,
-            builder: (context, state) => const SnippetsScreen(),
-          ),
-        ]),
-        StatefulShellBranch(routes: [
-          GoRoute(
-            path: '/discover',
-            name: Routes.discover,
-            builder: (context, state) => const DiscoverScreen(),
-          ),
-        ]),
-        StatefulShellBranch(routes: [
-          GoRoute(
-            path: '/search',
-            name: Routes.search,
-            builder: (context, state) => const SearchScreen(),
-          ),
-        ]),
-        StatefulShellBranch(routes: [
-          GoRoute(
-            path: '/settings',
-            name: Routes.settings,
-            builder: (context, state) => const SettingsScreen(),
-          ),
-        ]),
+        StatefulShellBranch(
+          routes: [
+            GoRoute(
+              path: '/library',
+              name: Routes.library,
+              builder: (context, state) => const LibraryScreen(),
+            ),
+          ],
+        ),
+        StatefulShellBranch(
+          routes: [
+            GoRoute(
+              path: '/history',
+              name: Routes.history,
+              builder: (context, state) => const HistoryScreen(),
+            ),
+          ],
+        ),
+        StatefulShellBranch(
+          routes: [
+            GoRoute(
+              path: '/snippets',
+              name: Routes.snippets,
+              builder: (context, state) => const SnippetsScreen(),
+            ),
+          ],
+        ),
+        StatefulShellBranch(
+          routes: [
+            GoRoute(
+              path: '/discover',
+              name: Routes.discover,
+              builder: (context, state) => const DiscoverScreen(),
+            ),
+          ],
+        ),
+        StatefulShellBranch(
+          routes: [
+            GoRoute(
+              path: '/search',
+              name: Routes.search,
+              builder: (context, state) => const SearchScreen(),
+            ),
+          ],
+        ),
+        StatefulShellBranch(
+          routes: [
+            GoRoute(
+              path: '/settings',
+              name: Routes.settings,
+              builder: (context, state) => const SettingsScreen(),
+            ),
+          ],
+        ),
       ],
     ),
 
@@ -137,6 +161,8 @@ final GoRouter appRouter = GoRouter(
           bookId: a.bookId,
           snippetChapterId: a.snippetChapterId,
           snippetScrollOffset: a.snippetScrollOffset,
+          snippetStartOffset: a.snippetStartOffset,
+          snippetEndOffset: a.snippetEndOffset,
         );
       },
     ),

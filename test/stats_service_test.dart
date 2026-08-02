@@ -1,5 +1,4 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:koma/core/models/reading_stat.dart';
 import 'package:koma/core/repositories/repositories.dart';
 
 import 'helpers/test_database.dart';
@@ -94,9 +93,18 @@ void main() {
 
   group('getStatsRange', () {
     test('returns stats within date range', () async {
-      await repos.stats.upsertStatsForDate(DateTime(2025, 6, 10), readingTimeSeconds: 60);
-      await repos.stats.upsertStatsForDate(DateTime(2025, 6, 12), readingTimeSeconds: 120);
-      await repos.stats.upsertStatsForDate(DateTime(2025, 6, 15), readingTimeSeconds: 90);
+      await repos.stats.upsertStatsForDate(
+        DateTime(2025, 6, 10),
+        readingTimeSeconds: 60,
+      );
+      await repos.stats.upsertStatsForDate(
+        DateTime(2025, 6, 12),
+        readingTimeSeconds: 120,
+      );
+      await repos.stats.upsertStatsForDate(
+        DateTime(2025, 6, 15),
+        readingTimeSeconds: 90,
+      );
 
       final stats = await repos.stats.getStatsRange(
         DateTime(2025, 6, 10),
@@ -116,7 +124,10 @@ void main() {
     });
 
     test('returns single day when start equals end', () async {
-      await repos.stats.upsertStatsForDate(DateTime(2025, 7, 1), readingTimeSeconds: 45);
+      await repos.stats.upsertStatsForDate(
+        DateTime(2025, 7, 1),
+        readingTimeSeconds: 45,
+      );
 
       final stats = await repos.stats.getStatsRange(
         DateTime(2025, 7, 1),
@@ -156,7 +167,10 @@ void main() {
     test('weekly range aggregates correctly', () async {
       for (var i = 0; i < 7; i++) {
         final day = DateTime(2025, 7, 1 + i);
-        await repos.stats.upsertStatsForDate(day, readingTimeSeconds: (i + 1) * 60);
+        await repos.stats.upsertStatsForDate(
+          day,
+          readingTimeSeconds: (i + 1) * 60,
+        );
       }
 
       final stats = await repos.stats.getStatsRange(
@@ -165,7 +179,10 @@ void main() {
       );
       expect(stats.length, 7);
 
-      final totalSeconds = stats.fold<int>(0, (sum, s) => sum + s.readingTimeSeconds);
+      final totalSeconds = stats.fold<int>(
+        0,
+        (sum, s) => sum + s.readingTimeSeconds,
+      );
       expect(totalSeconds, 1680);
     });
   });

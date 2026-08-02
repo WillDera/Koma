@@ -58,7 +58,8 @@ class JsRuntime {
     String sourceCode,
     String functionCall,
   ) {
-    final wrapped = '''
+    final wrapped =
+        '''
 $sourceCode
 var __result = $functionCall;
 JSON.stringify(__result);
@@ -79,11 +80,9 @@ JSON.stringify(__result);
     return [];
   }
 
-  Map<String, dynamic>? evaluateDetail(
-    String sourceCode,
-    String functionCall,
-  ) {
-    final wrapped = '''
+  Map<String, dynamic>? evaluateDetail(String sourceCode, String functionCall) {
+    final wrapped =
+        '''
 $sourceCode
 var __result = $functionCall;
 JSON.stringify(__result);
@@ -98,11 +97,9 @@ JSON.stringify(__result);
     }
   }
 
-  List<dynamic> evaluateList(
-    String sourceCode,
-    String functionCall,
-  ) {
-    final wrapped = '''
+  List<dynamic> evaluateList(String sourceCode, String functionCall) {
+    final wrapped =
+        '''
 $sourceCode
 var __result = $functionCall;
 JSON.stringify(__result);

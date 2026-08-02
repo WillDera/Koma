@@ -7,6 +7,12 @@ class Chapter {
   final DateTime? readAt;
   final double scrollPosition;
 
+  /// Reading position as a character offset into the extracted plain text.
+  ///
+  /// Survives font and viewport changes, unlike [scrollPosition]. Null for
+  /// chapters last read before pagination existed.
+  final int? readingCharOffset;
+
   Chapter({
     required this.id,
     required this.bookId,
@@ -15,6 +21,7 @@ class Chapter {
     required this.index,
     this.readAt,
     this.scrollPosition = 0.0,
+    this.readingCharOffset,
   });
 
   Chapter copyWith({
@@ -25,6 +32,7 @@ class Chapter {
     int? index,
     DateTime? readAt,
     double? scrollPosition,
+    int? Function()? readingCharOffset,
   }) {
     return Chapter(
       id: id ?? this.id,
@@ -34,29 +42,33 @@ class Chapter {
       index: index ?? this.index,
       readAt: readAt ?? this.readAt,
       scrollPosition: scrollPosition ?? this.scrollPosition,
+      readingCharOffset: readingCharOffset != null
+          ? readingCharOffset()
+          : this.readingCharOffset,
     );
   }
 
   Map<String, dynamic> toJson() => {
-        'id': id,
-        'book_id': bookId,
-        'title': title,
-        'content': content,
-        'index': index,
-        'read_at': readAt?.toIso8601String(),
-        'scroll_position': scrollPosition,
-      };
+    'id': id,
+    'book_id': bookId,
+    'title': title,
+    'content': content,
+    'index': index,
+    'read_at': readAt?.toIso8601String(),
+    'scroll_position': scrollPosition,
+    'reading_char_offset': readingCharOffset,
+  };
 
   factory Chapter.fromJson(Map<String, dynamic> json) => Chapter(
-        id: json['id'] as int,
-        bookId: json['book_id'] as int,
-        title: json['title'] as String,
-        content: json['content'] as String? ?? '',
-        index: json['index'] as int,
-        readAt: json['read_at'] != null
-            ? DateTime.parse(json['read_at'] as String)
-            : null,
-        scrollPosition:
-            (json['scroll_position'] as num?)?.toDouble() ?? 0.0,
-      );
+    id: json['id'] as int,
+    bookId: json['book_id'] as int,
+    title: json['title'] as String,
+    content: json['content'] as String? ?? '',
+    index: json['index'] as int,
+    readAt: json['read_at'] != null
+        ? DateTime.parse(json['read_at'] as String)
+        : null,
+    scrollPosition: (json['scroll_position'] as num?)?.toDouble() ?? 0.0,
+    readingCharOffset: (json['reading_char_offset'] as num?)?.toInt(),
+  );
 }

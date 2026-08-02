@@ -19,12 +19,14 @@ class TtsProvider extends ChangeNotifier {
 
   bool get isPlaying => _engine.isPlaying;
   bool get isPaused => _engine.isPaused;
-  bool get isActive => _engine.isPlaying || _engine.isPaused || _engine.isBuffering;
+  bool get isActive =>
+      _engine.isPlaying || _engine.isPaused || _engine.isBuffering;
   bool get isBuffering => _engine.isBuffering;
   int get currentIndex => _currentIndex;
   int get totalSentences => _sentences.length;
-  int get currentSentenceOffset =>
-      _currentIndex < _sentenceOffsets.length ? _sentenceOffsets[_currentIndex] : 0;
+  int get currentSentenceOffset => _currentIndex < _sentenceOffsets.length
+      ? _sentenceOffsets[_currentIndex]
+      : 0;
   int get currentSentenceEnd {
     if (_currentIndex + 1 < _sentenceOffsets.length) {
       return _sentenceOffsets[_currentIndex + 1];
@@ -42,8 +44,11 @@ class TtsProvider extends ChangeNotifier {
       }).toList();
       if (deviceVoices.isEmpty) {
         return [
-          const TtsVoice(id: 'default', name: 'System Default',
-              engineType: TtsEngineType.device),
+          const TtsVoice(
+            id: 'default',
+            name: 'System Default',
+            engineType: TtsEngineType.device,
+          ),
         ];
       }
       return deviceVoices;
@@ -52,9 +57,10 @@ class TtsProvider extends ChangeNotifier {
   }
 
   TtsVoice? get selectedVoice => _engine.selectedVoice;
-  String get selectedVoiceName => _engine.selectedVoice?.displayName ?? 'Default';
-  int get selectedVoiceIndex => voices
-      .indexWhere((v) => v.id == _engine.selectedVoice?.id);
+  String get selectedVoiceName =>
+      _engine.selectedVoice?.displayName ?? 'Default';
+  int get selectedVoiceIndex =>
+      voices.indexWhere((v) => v.id == _engine.selectedVoice?.id);
 
   Future<void> init(String text, {TtsEngineType? engineType}) async {
     if (engineType != null) {
@@ -90,7 +96,9 @@ class TtsProvider extends ChangeNotifier {
           _sentenceOffsets.add(start);
         }
         start = i + 1;
-        while (start < text.length && text[start] == ' ') start++;
+        while (start < text.length && text[start] == ' ') {
+          start++;
+        }
       }
     }
     if (start < text.length) {
@@ -223,7 +231,8 @@ class TtsProvider extends ChangeNotifier {
     _engine.stop();
     await _switchEngine(type);
     await _engine.init();
-    if (_sentences.isNotEmpty && _currentIndex < _sentences.length) _speakFromCurrent();
+    if (_sentences.isNotEmpty && _currentIndex < _sentences.length)
+      _speakFromCurrent();
     notifyListeners();
   }
 
