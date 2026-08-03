@@ -27,6 +27,7 @@ import '../../widgets/tts_controls.dart';
 import 'pagination/paginated_reader_body.dart';
 import 'pagination/reading_spans.dart';
 import 'reader_provider.dart';
+import 'tts/tts_engine.dart';
 import 'tts_provider.dart';
 
 class ReaderScreen extends ConsumerStatefulWidget {
@@ -110,6 +111,7 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
     _toolbarCtrl = AnimationController(vsync: this, duration: AppMotion.sheet);
     _colorCtrl = AnimationController(vsync: this, duration: AppMotion.base);
     _ttsProvider = TtsProvider()..addListener(_onTtsChanged);
+    unawaited(_ttsProvider!.loadPrefs());
     Future.microtask(() => _loadAndRestore());
   }
 
@@ -216,11 +218,15 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
     // Re-init TTS for the new chapter if TTS was active.
     if (_ttsProvider != null && _ttsListening && ch != null) {
       final tts = _ttsProvider!;
+      final chapter = ch[newIndex];
+      final text = TextExtractor.extractCached(chapter.id, chapter.content);
       tts.stop();
-      tts.init(
-        TextExtractor.extractCached(ch[newIndex].id, ch[newIndex].content),
-      );
-      tts.play();
+      unawaited(() async {
+        await tts.init(text, chapterId: chapter.id.toString());
+        if (!_ttsListening) return;
+        tts.playFromCurrent();
+        _prefetchNextChapterAudio();
+      }());
     }
     // Jump to the saved scroll position for this chapter.  The
     // provider's _scrollPosition may be 0 for an unvisited chapter,
@@ -279,7 +285,9 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
 
   void _autoAdvanceChapterOnTtsEnd() {
     final tts = _ttsProvider;
-    if (tts == null || tts.isPlaying || tts.isPaused) return;
+    if (tts == null || tts.isPlaying || tts.isPaused || tts.isBuffering) {
+      return;
+    }
     // ponytail: simple end-of-chapter detection
     if (tts.currentIndex >= tts.totalSentences - 1 && tts.totalSentences > 0) {
       final p = _provider;
@@ -287,6 +295,18 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
         p.goToNextChapter();
       }
     }
+  }
+
+  void _prefetchNextChapterAudio() {
+    final tts = _ttsProvider;
+    final p = _provider;
+    if (tts == null || p == null) return;
+    if (!tts.optimistic || tts.engineType != TtsEngineType.edge) return;
+    final next = p.currentIndex + 1;
+    if (next >= p.chapters.length) return;
+    final chapter = p.chapters[next];
+    final text = TextExtractor.extractCached(chapter.id, chapter.content);
+    tts.prefetchChapter(chapter.id.toString(), text);
   }
 
   String get _currentText {
@@ -759,22 +779,25 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
               right: 0,
               child: ValueListenableBuilder<bool>(
                 valueListenable: _showUI,
-                builder: (_, showUI, _) => ReaderTopBar(
-                  bookTitle: book.title,
-                  chapterTitle: chapter.title,
-                  progress: progress,
-                  visible: showUI,
-                  onBack: () async {
-                    _ttsProvider?.stop();
-                    if (_provider != null) {
-                      await _provider!.stopReadingTimer();
-                    }
-                    _didHandleBack = true;
-                    if (mounted) Navigator.pop(context);
-                  },
-                  onSettings: () => ReaderSettingsSheet.show(context),
-                  onTtsToggle: _toggleTts,
-                  isTtsActive: _ttsProvider?.isActive ?? false,
+                builder: (_, showUI, _) => ListenableBuilder(
+                  listenable: _ttsProvider!,
+                  builder: (_, _) => ReaderTopBar(
+                    bookTitle: book.title,
+                    chapterTitle: chapter.title,
+                    progress: progress,
+                    visible: showUI,
+                    onBack: () async {
+                      _ttsProvider?.stop();
+                      if (_provider != null) {
+                        await _provider!.stopReadingTimer();
+                      }
+                      _didHandleBack = true;
+                      if (mounted) Navigator.pop(context);
+                    },
+                    onSettings: () => ReaderSettingsSheet.show(context),
+                    onTtsToggle: _toggleTts,
+                    isTtsActive: _ttsProvider?.isActive ?? false,
+                  ),
                 ),
               ),
             ),
@@ -864,47 +887,83 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
                   ),
                 ),
               ),
-            // TTS controls overlay
-            if (_ttsProvider != null && _ttsProvider!.isActive)
-              Positioned(
-                bottom: 0,
-                left: 0,
-                right: 0,
-                child: TtsControls(provider: _ttsProvider!),
+            // TTS controls overlay — must stay Positioned so an inactive
+            // SizedBox.shrink never becomes a non-positioned Stack child
+            // (that collapses the whole body to 0×0).
+            Positioned(
+              bottom: 0,
+              left: 0,
+              right: 0,
+              child: ListenableBuilder(
+                listenable: _ttsProvider!,
+                builder: (_, _) {
+                  if (!_ttsProvider!.isActive) {
+                    return const SizedBox.shrink();
+                  }
+                  return TtsControls(provider: _ttsProvider!);
+                },
               ),
+            ),
           ],
         ),
       ),
     );
   }
 
-  void _toggleTts() {
+  Future<void> _toggleTts() async {
     final tts = _ttsProvider;
     if (tts == null) return;
+    await tts.loadPrefs();
+    if (!mounted) return;
+
     if (tts.isActive) {
       tts.stop();
       _ttsListening = false;
-    } else {
-      final text = _currentText;
-      if (text.isEmpty) return;
-      tts.init(text);
-      // ponytail: start from user's rough scroll position
-      if (_scrollController.hasClients) {
-        final ratio =
-            _scrollController.offset /
-            _scrollController.position.maxScrollExtent.clamp(
-              1,
-              double.infinity,
-            );
-        final idx = (ratio * tts.totalSentences).round().clamp(
-          0,
-          tts.totalSentences - 1,
-        );
+      return;
+    }
+
+    if (tts.rememberSelection) {
+      await _startTtsFromScroll();
+      return;
+    }
+
+    final shouldStart = await TtsSettingsSheet.show(
+      context,
+      tts,
+      startOnClose: true,
+    );
+    if (!mounted || !shouldStart) return;
+    await _startTtsFromScroll();
+  }
+
+  Future<void> _startTtsFromScroll() async {
+    final tts = _ttsProvider;
+    if (tts == null) return;
+    final text = _currentText;
+    if (text.isEmpty) return;
+    final chapterId = _provider?.currentChapter?.id.toString();
+
+    await tts.init(text, chapterId: chapterId);
+    if (!mounted) return;
+
+    if (_scrollController.hasClients &&
+        tts.totalSentences > 0 &&
+        _scrollController.position.maxScrollExtent > 0) {
+      final ratio =
+          (_scrollController.offset /
+                  _scrollController.position.maxScrollExtent)
+              .clamp(0.0, 1.0);
+      final idx = (ratio * tts.totalSentences)
+          .round()
+          .clamp(0, tts.totalSentences - 1);
+      if (idx > 0) {
         tts.seekToSentence(idx);
       }
-      tts.play();
-      _ttsListening = true;
     }
+
+    tts.playFromCurrent();
+    _ttsListening = true;
+    _prefetchNextChapterAudio();
   }
 
   TextStyle _readingStyle(ThemeState themeProv) {
