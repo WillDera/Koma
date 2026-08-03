@@ -37,8 +37,7 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
   bool _loaded = false;
   bool _gridView = false;
   _DiscoverSection _section = _DiscoverSection.books;
-  double _scrollProgress = 0;
-  DateTime? _lastScroll;
+  final ValueNotifier<double> _scrollProgress = ValueNotifier<double>(0);
   final Map<String, double> _downloading = {};
   bool get _oneHand => ref.watch(themeProvider).oneHandMode;
 
@@ -53,19 +52,14 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
     _ctrl.dispose();
     _scrollCtrl.removeListener(_onScroll);
     _scrollCtrl.dispose();
+    _scrollProgress.dispose();
     super.dispose();
   }
 
   void _onScroll() {
     final p = (_scrollCtrl.offset / 60).clamp(0.0, 1.0);
-    final now = DateTime.now();
-    final minTime =
-        _lastScroll == null ||
-        now.difference(_lastScroll!) > const Duration(milliseconds: 120);
-    final delta = (p - _scrollProgress).abs();
-    if (minTime && delta > 0.02) {
-      _lastScroll = now;
-      setState(() => _scrollProgress = p);
+    if ((p - _scrollProgress.value).abs() > 0.02) {
+      _scrollProgress.value = p;
     }
   }
 
@@ -313,148 +307,161 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
     return ScreenBackdrop(
       child: SafeArea(
         bottom: false,
-        child: ListView(
+        child: CustomScrollView(
           controller: _scrollCtrl,
           physics: const AlwaysScrollableScrollPhysics(),
-          padding: const EdgeInsets.only(bottom: 100),
-          children: [
-            const OneHandSpacer(),
-            LibraryHeader(
-              title: 'Discover',
-              subtitle: 'Find books from your sources',
-              shrinkProgress: _scrollProgress,
-              titleSize: titleSize,
-            ),
-            StaggeredEntrance(
-              child: FeaturePanel(
-                icon: AppIcons.compass,
-                title: 'Search across every shelf',
-                subtitle:
-                    'Pull from book sources and installed manga extensions without leaving your desk.',
-                stats: [
-                  PanelStat(value: '${_results.length}', label: 'Books'),
-                  PanelStat(value: '$_mangaItemCount', label: 'Manga'),
-                  PanelStat(value: _gridView ? 'Grid' : 'List', label: 'View'),
-                ],
-              ),
-            ),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(20, 8, 20, 12),
-              child: TextField(
-                controller: _ctrl,
-                decoration: InputDecoration(
-                  hintText: 'Search for a book…',
-                  suffixIcon: _ctrl.text.isNotEmpty
-                      ? IconButton(
-                          icon: const Icon(Icons.clear, size: 18),
-                          onPressed: () {
-                            _ctrl.clear();
-                            setState(() {
-                              _results = [];
-                              _mangaResults = [];
-                              _loaded = false;
-                              _section = _DiscoverSection.books;
-                            });
-                          },
-                        )
-                      : null,
+          slivers: [
+            const SliverToBoxAdapter(child: OneHandSpacer()),
+            SliverToBoxAdapter(
+              child: ValueListenableBuilder<double>(
+                valueListenable: _scrollProgress,
+                builder: (_, progress, _) => LibraryHeader(
+                  title: 'Discover',
+                  subtitle: 'Find books from your sources',
+                  shrinkProgress: progress,
+                  titleSize: titleSize,
                 ),
-                onSubmitted: (_) => _search(),
               ),
             ),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 20),
-              child: SizedBox(
-                width: double.infinity,
-                child: AnimatedPress(
-                  onTap: _searching ? null : _search,
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(vertical: 12),
-                    decoration: BoxDecoration(
-                      color: c.accent,
-                      borderRadius: AppSpacing.brLg,
+            SliverToBoxAdapter(
+              child: StaggeredEntrance(
+                child: FeaturePanel(
+                  icon: AppIcons.compass,
+                  title: 'Search across every shelf',
+                  subtitle:
+                      'Pull from book sources and installed manga extensions without leaving your desk.',
+                  stats: [
+                    PanelStat(value: '${_results.length}', label: 'Books'),
+                    PanelStat(value: '$_mangaItemCount', label: 'Manga'),
+                    PanelStat(
+                      value: _gridView ? 'Grid' : 'List',
+                      label: 'View',
                     ),
-                    child: Center(
-                      child: _searching
-                          ? SizedBox(
-                              width: 18,
-                              height: 18,
-                              child: CircularProgressIndicator(
-                                strokeWidth: 2,
-                                color: c.onAccent,
+                  ],
+                ),
+              ),
+            ),
+            SliverToBoxAdapter(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(20, 8, 20, 12),
+                child: TextField(
+                  controller: _ctrl,
+                  decoration: InputDecoration(
+                    hintText: 'Search for a book…',
+                    suffixIcon: _ctrl.text.isNotEmpty
+                        ? IconButton(
+                            icon: const Icon(Icons.clear, size: 18),
+                            onPressed: () {
+                              _ctrl.clear();
+                              setState(() {
+                                _results = [];
+                                _mangaResults = [];
+                                _loaded = false;
+                                _section = _DiscoverSection.books;
+                              });
+                            },
+                          )
+                        : null,
+                  ),
+                  onSubmitted: (_) => _search(),
+                ),
+              ),
+            ),
+            SliverToBoxAdapter(
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 20),
+                child: SizedBox(
+                  width: double.infinity,
+                  child: AnimatedPress(
+                    onTap: _searching ? null : _search,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                      decoration: BoxDecoration(
+                        color: c.accent,
+                        borderRadius: AppSpacing.brLg,
+                      ),
+                      child: Center(
+                        child: _searching
+                            ? SizedBox(
+                                width: 18,
+                                height: 18,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  color: c.onAccent,
+                                ),
+                              )
+                            : Text(
+                                'Search',
+                                style: TextStyle(
+                                  color: c.onAccent,
+                                  fontWeight: FontWeight.w600,
+                                ),
                               ),
-                            )
-                          : Text(
-                              'Search',
-                              style: TextStyle(
-                                color: c.onAccent,
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
+                      ),
                     ),
                   ),
                 ),
               ),
             ),
-            const SizedBox(height: 16),
+            const SliverToBoxAdapter(child: SizedBox(height: 16)),
             if (_results.isEmpty && _mangaResults.isEmpty)
-              Padding(
-                padding: const EdgeInsets.symmetric(
-                  vertical: 40,
-                  horizontal: 20,
-                ),
-                child: Center(
-                  child: Text(
-                    _loaded
-                        ? 'No results'
-                        : 'Enter a title to search across your sources',
-                    style: TextStyle(color: c.textTertiary, fontSize: 14),
+              SliverToBoxAdapter(
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(
+                    vertical: 40,
+                    horizontal: 20,
+                  ),
+                  child: Center(
+                    child: Text(
+                      _loaded
+                          ? 'No results'
+                          : 'Enter a title to search across your sources',
+                      style: TextStyle(color: c.textTertiary, fontSize: 14),
+                    ),
                   ),
                 ),
               )
             else ...[
-              _DiscoverControls(
-                section: _section,
-                bookCount: _results.length,
-                mangaCount: _mangaItemCount,
-                gridView: _gridView,
-                onSectionChanged: (section) => setState(() {
-                  _section = section;
-                }),
-                onLayoutChanged: () => setState(() {
-                  _gridView = !_gridView;
-                }),
+              SliverToBoxAdapter(
+                child: _DiscoverControls(
+                  section: _section,
+                  bookCount: _results.length,
+                  mangaCount: _mangaItemCount,
+                  gridView: _gridView,
+                  onSectionChanged: (section) => setState(() {
+                    _section = section;
+                  }),
+                  onLayoutChanged: () => setState(() {
+                    _gridView = !_gridView;
+                  }),
+                ),
               ),
-              AnimatedSwitcher(
-                duration: const Duration(milliseconds: 260),
-                switchInCurve: Curves.easeOutCubic,
-                switchOutCurve: Curves.easeInCubic,
-                child: _section == _DiscoverSection.books
-                    ? _DiscoverBookResults(
-                        key: const ValueKey('discover-books'),
-                        results: _results,
-                        gridView: _gridView,
-                        downloading: _downloading,
-                        onTap: (result) => _showResultOptions(context, result),
-                      )
-                    : _DiscoverMangaResults(
-                        key: const ValueKey('discover-manga'),
-                        sourceResults: _mangaResults,
-                        onTap: (srcResult, manga) => context.pushNamed(
-                          Routes.mangaDetail,
-                          extra:
-                              (
-                                    sourceId:
-                                        srcResult['sourceId'] as String? ?? '',
-                                    url: manga['url'] as String? ?? '',
-                                    title: manga['title'] as String? ?? '',
-                                    manga: null,
-                                  )
-                                  as MangaDetailArgs,
-                        ),
-                      ),
-              ),
+              if (_section == _DiscoverSection.books)
+                _DiscoverBookResults(
+                  key: const ValueKey('discover-books'),
+                  results: _results,
+                  gridView: _gridView,
+                  downloading: _downloading,
+                  onTap: (result) => _showResultOptions(context, result),
+                )
+              else
+                _DiscoverMangaResults(
+                  key: const ValueKey('discover-manga'),
+                  sourceResults: _mangaResults,
+                  onTap: (srcResult, manga) => context.pushNamed(
+                    Routes.mangaDetail,
+                    extra:
+                        (
+                              sourceId: srcResult['sourceId'] as String? ?? '',
+                              url: manga['url'] as String? ?? '',
+                              title: manga['title'] as String? ?? '',
+                              manga: null,
+                            )
+                            as MangaDetailArgs,
+                  ),
+                ),
             ],
+            const SliverToBoxAdapter(child: SizedBox(height: 100)),
           ],
         ),
       ),
@@ -545,51 +552,58 @@ class _DiscoverBookResults extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (results.isEmpty) {
-      return const SizedBox(
-        height: 240,
-        child: EmptyState(
-          icon: AppIcons.search,
-          title: 'No book results',
-          subtitle: 'Try another title or switch to manga.',
+      return const SliverToBoxAdapter(
+        child: SizedBox(
+          height: 240,
+          child: EmptyState(
+            icon: AppIcons.search,
+            title: 'No book results',
+            subtitle: 'Try another title or switch to manga.',
+          ),
         ),
       );
     }
     if (gridView) {
-      return Padding(
+      return SliverPadding(
         padding: const EdgeInsets.symmetric(horizontal: 20),
-        child: GridView.builder(
-          shrinkWrap: true,
-          physics: const NeverScrollableScrollPhysics(),
+        sliver: SliverGrid(
           gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
             crossAxisCount: 2,
             mainAxisSpacing: 8,
             crossAxisSpacing: 8,
             childAspectRatio: 0.65,
           ),
-          itemCount: results.length,
-          itemBuilder: (_, i) => StaggeredEntrance(
-            index: i + 1,
-            child: _GridResultCard(
-              result: results[i],
-              downloadProgress: downloading[results[i].title],
-              onTap: () => onTap(results[i]),
+          delegate: SliverChildBuilderDelegate(
+            (_, i) => StaggeredEntrance(
+              index: i + 1,
+              child: _GridResultCard(
+                result: results[i],
+                downloadProgress: downloading[results[i].title],
+                onTap: () => onTap(results[i]),
+              ),
             ),
+            childCount: results.length,
           ),
         ),
       );
     }
-    return ListView.separated(
-      shrinkWrap: true,
-      physics: const NeverScrollableScrollPhysics(),
+    return SliverPadding(
       padding: const EdgeInsets.symmetric(horizontal: 12),
-      itemCount: results.length,
-      separatorBuilder: (_, _) => const SizedBox(height: 8),
-      itemBuilder: (_, i) => StaggeredEntrance(
-        index: i + 1,
-        child: _ResultCard(
-          result: results[i],
-          downloadProgress: downloading[results[i].title],
-          onTap: () => onTap(results[i]),
+      sliver: SliverList(
+        delegate: SliverChildBuilderDelegate(
+          (_, index) {
+            if (index.isOdd) return const SizedBox(height: 8);
+            final i = index ~/ 2;
+            return StaggeredEntrance(
+              index: i + 1,
+              child: _ResultCard(
+                result: results[i],
+                downloadProgress: downloading[results[i].title],
+                onTap: () => onTap(results[i]),
+              ),
+            );
+          },
+          childCount: results.length * 2 - 1,
         ),
       ),
     );
@@ -618,82 +632,84 @@ class _DiscoverMangaResults extends ConsumerWidget {
       (sum, src) => sum + ((src['mangas'] as List?)?.length ?? 0),
     );
     if (mangaCount == 0) {
-      return const SizedBox(
-        height: 240,
-        child: EmptyState(
-          icon: AppIcons.search,
-          title: 'No manga results',
-          subtitle: 'Try another title or switch to books.',
+      return const SliverToBoxAdapter(
+        child: SizedBox(
+          height: 240,
+          child: EmptyState(
+            icon: AppIcons.search,
+            title: 'No manga results',
+            subtitle: 'Try another title or switch to books.',
+          ),
         ),
       );
     }
-    final sections = sourceResults.where(
-      (src) => (src['mangas'] as List?)?.isNotEmpty ?? false,
-    );
-    return ListView.separated(
-      shrinkWrap: true,
-      physics: const NeverScrollableScrollPhysics(),
-      padding: EdgeInsets.zero,
-      itemCount: sections.length,
-      separatorBuilder: (_, _) => const SizedBox(height: 16),
-      itemBuilder: (_, si) {
-        final srcResult = sections.elementAt(si);
-        // Same header path as source browse: sync Referer from baseUrl so
-        // the first Image frame never races without CDN-required headers.
-        final baseUrl = (srcResult['baseUrl'] as String?)?.trim();
-        final headers = ref.watch(
-          imageHeadersProvider(
-            (baseUrl != null && baseUrl.isNotEmpty) ? baseUrl : null,
-          ),
-        );
-        return Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Padding(
-              padding: const EdgeInsets.fromLTRB(20, 12, 20, 8),
-              child: Align(
-                alignment: Alignment.centerLeft,
-                child: Text(
-                  srcResult['sourceName'] as String? ?? '',
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    color: c.textPrimary,
-                    fontSize: 17,
-                    fontWeight: FontWeight.w400,
+    final sections = sourceResults
+        .where((src) => (src['mangas'] as List?)?.isNotEmpty ?? false)
+        .toList();
+    return SliverList(
+      delegate: SliverChildBuilderDelegate(
+        (_, si) {
+          // Separators between source sections.
+          if (si.isOdd) return const SizedBox(height: 16);
+          final srcResult = sections[si ~/ 2];
+          // Same header path as source browse: sync Referer from baseUrl so
+          // the first Image frame never races without CDN-required headers.
+          final baseUrl = (srcResult['baseUrl'] as String?)?.trim();
+          final headers = ref.watch(
+            imageHeadersProvider(
+              (baseUrl != null && baseUrl.isNotEmpty) ? baseUrl : null,
+            ),
+          );
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(20, 12, 20, 8),
+                child: Align(
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    srcResult['sourceName'] as String? ?? '',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: c.textPrimary,
+                      fontSize: 17,
+                      fontWeight: FontWeight.w400,
+                    ),
                   ),
                 ),
               ),
-            ),
-            SizedBox(
-              height: 224,
-              child: ListView.separated(
-                scrollDirection: Axis.horizontal,
-                padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
-                itemCount: (srcResult['mangas'] as List?)?.length ?? 0,
-                separatorBuilder: (_, _) => const SizedBox(width: 10),
-                itemBuilder: (_, i) {
-                  final manga = Map<String, dynamic>.from(
-                    (srcResult['mangas'] as List)[i],
-                  );
-                  return StaggeredEntrance(
-                    index: i + 1,
-                    child: SizedBox(
-                      width: 132,
-                      child: _MangaCard(
-                        manga: manga,
-                        baseUrl: baseUrl,
-                        headers: headers,
-                        onTap: () => onTap(srcResult, manga),
+              SizedBox(
+                height: 224,
+                child: ListView.separated(
+                  scrollDirection: Axis.horizontal,
+                  padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
+                  itemCount: (srcResult['mangas'] as List?)?.length ?? 0,
+                  separatorBuilder: (_, _) => const SizedBox(width: 10),
+                  itemBuilder: (_, i) {
+                    final manga = Map<String, dynamic>.from(
+                      (srcResult['mangas'] as List)[i],
+                    );
+                    return StaggeredEntrance(
+                      index: i + 1,
+                      child: SizedBox(
+                        width: 132,
+                        child: _MangaCard(
+                          manga: manga,
+                          baseUrl: baseUrl,
+                          headers: headers,
+                          onTap: () => onTap(srcResult, manga),
+                        ),
                       ),
-                    ),
-                  );
-                },
+                    );
+                  },
+                ),
               ),
-            ),
-          ],
-        );
-      },
+            ],
+          );
+        },
+        childCount: sections.isEmpty ? 0 : sections.length * 2 - 1,
+      ),
     );
   }
 }

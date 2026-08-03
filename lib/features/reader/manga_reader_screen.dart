@@ -68,7 +68,7 @@ class _MangaReaderScreenState extends ConsumerState<MangaReaderScreen>
   final ItemPositionsListener _itemPositionsListener =
       ItemPositionsListener.create();
   final ValueNotifier<int> _currentPageNotifier = ValueNotifier<int>(0);
-  bool _showToolbar = false;
+  final ValueNotifier<bool> _showToolbar = ValueNotifier<bool>(false);
   bool _showNavigationOverlay = false;
   bool _isBookmarked = false;
   final List<TransformationController> _zoomCtrls = [];
@@ -133,6 +133,7 @@ class _MangaReaderScreenState extends ConsumerState<MangaReaderScreen>
     WidgetsBinding.instance.removeObserver(this);
     _pageCtrl.dispose();
     _currentPageNotifier.dispose();
+    _showToolbar.dispose();
     for (final c in _zoomCtrls) {
       c.dispose();
     }
@@ -439,7 +440,7 @@ class _MangaReaderScreenState extends ConsumerState<MangaReaderScreen>
     _saveProgress();
   }
 
-  void _toggleToolbar() => setState(() => _showToolbar = !_showToolbar);
+  void _toggleToolbar() => _showToolbar.value = !_showToolbar.value;
 
   // ── Scroll listener (continuous modes — webtoon, long strip) ──
 
@@ -977,25 +978,28 @@ class _MangaReaderScreenState extends ConsumerState<MangaReaderScreen>
             final props = _viewProps();
             return Stack(
               children: [
-                ColorFilterWidget(
-                  brightness: _settings.brightness,
-                  contrast: _settings.contrast,
-                  saturation: _settings.saturation,
-                  tint: _settings.tintColor,
-                  tintOpacity: _settings.tintOpacity,
-                  child: isContinuous
-                      ? MangaImageViewWebtoon(
-                          props: props,
-                          itemScrollController: _itemScrollCtrl,
-                          itemPositionsListener: _itemPositionsListener,
-                        )
-                      : MangaImageViewPaged(
-                          props: props,
-                          pageController: _pageCtrl,
-                          axis: axis,
-                          reverse: reverse,
-                          bookMode: _isBookModeActive,
-                        ),
+                // Page stack is isolated from toolbar chrome rebuilds.
+                RepaintBoundary(
+                  child: ColorFilterWidget(
+                    brightness: _settings.brightness,
+                    contrast: _settings.contrast,
+                    saturation: _settings.saturation,
+                    tint: _settings.tintColor,
+                    tintOpacity: _settings.tintOpacity,
+                    child: isContinuous
+                        ? MangaImageViewWebtoon(
+                            props: props,
+                            itemScrollController: _itemScrollCtrl,
+                            itemPositionsListener: _itemPositionsListener,
+                          )
+                        : MangaImageViewPaged(
+                            props: props,
+                            pageController: _pageCtrl,
+                            axis: axis,
+                            reverse: reverse,
+                            bookMode: _isBookModeActive,
+                          ),
+                  ),
                 ),
 
                 if (_showNavigationOverlay)
@@ -1005,56 +1009,63 @@ class _MangaReaderScreenState extends ConsumerState<MangaReaderScreen>
                     navigationLayout: 0,
                   ),
 
-                if (_showToolbar)
-                  Positioned.fill(
-                    child: GestureDetector(
-                      onTap: _toggleToolbar,
-                      behavior: HitTestBehavior.translucent,
-                      child: const SizedBox.expand(),
-                    ),
-                  )
-                else if (!_showNavigationOverlay)
-                  Positioned.fill(
-                    child: isContinuous
-                        ? GestureDetector(
+                ValueListenableBuilder<bool>(
+                  valueListenable: _showToolbar,
+                  builder: (_, showToolbar, _) => Stack(
+                    children: [
+                      if (showToolbar)
+                        Positioned.fill(
+                          child: GestureDetector(
                             onTap: _toggleToolbar,
-                            onLongPress: _showLongPressMenu,
                             behavior: HitTestBehavior.translucent,
                             child: const SizedBox.expand(),
-                          )
-                        : ReaderTapZones(props: props),
+                          ),
+                        )
+                      else if (!_showNavigationOverlay)
+                        Positioned.fill(
+                          child: isContinuous
+                              ? GestureDetector(
+                                  onTap: _toggleToolbar,
+                                  onLongPress: _showLongPressMenu,
+                                  behavior: HitTestBehavior.translucent,
+                                  child: const SizedBox.expand(),
+                                )
+                              : ReaderTapZones(props: props),
+                        ),
+                      ReaderAppBar(
+                        chapterName:
+                            _currentChapter?.name ?? widget.chapterName,
+                        isBookmarked: _isBookmarked,
+                        isVisible: showToolbar,
+                        onClose: () {
+                          _saveProgress().then((_) {
+                            if (context.mounted) {
+                              Navigator.of(context).pop();
+                            }
+                          });
+                        },
+                        onBookmarkToggle: _toggleBookmark,
+                        onChapterList: _showChapterList,
+                      ),
+                      ReaderBottomBar(
+                        pageListenable: _currentPageNotifier,
+                        totalPages: _pages.length,
+                        showNavigator: _settings.showPageNavigator,
+                        onPageChanged: _goToPage,
+                        onSettings: _showSettings,
+                        onCropToggle: _toggleCropBorders,
+                        onPreviousChapter: _navigateToPrevChapter,
+                        onNextChapter: _navigateToNextChapter,
+                        isVisible: showToolbar,
+                      ),
+                      PageIndicator(
+                        pageListenable: _currentPageNotifier,
+                        totalPages: _pages.length,
+                        isVisible: showToolbar,
+                        showPageNumbers: _settings.showPageNumber,
+                      ),
+                    ],
                   ),
-
-                ReaderAppBar(
-                  chapterName: _currentChapter?.name ?? widget.chapterName,
-                  isBookmarked: _isBookmarked,
-                  isVisible: _showToolbar,
-                  onClose: () {
-                    _saveProgress().then((_) {
-                      if (context.mounted) Navigator.of(context).pop();
-                    });
-                  },
-                  onBookmarkToggle: _toggleBookmark,
-                  onChapterList: _showChapterList,
-                ),
-
-                ReaderBottomBar(
-                  pageListenable: _currentPageNotifier,
-                  totalPages: _pages.length,
-                  showNavigator: _settings.showPageNavigator,
-                  onPageChanged: _goToPage,
-                  onSettings: _showSettings,
-                  onCropToggle: _toggleCropBorders,
-                  onPreviousChapter: _navigateToPrevChapter,
-                  onNextChapter: _navigateToNextChapter,
-                  isVisible: _showToolbar,
-                ),
-
-                PageIndicator(
-                  pageListenable: _currentPageNotifier,
-                  totalPages: _pages.length,
-                  isVisible: _showToolbar,
-                  showPageNumbers: _settings.showPageNumber,
                 ),
               ],
             );

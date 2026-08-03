@@ -1,7 +1,7 @@
-import 'dart:ui';
 import 'package:flutter/material.dart';
 import '../theme/app_theme.dart';
 import '../theme/tokens/app_motion.dart';
+import '../theme/tokens/glass_blur.dart';
 import 'icon_button_round.dart';
 
 class ReaderBottomBar extends StatelessWidget {
@@ -38,10 +38,8 @@ class ReaderBottomBar extends StatelessWidget {
       duration: AppMotion.base,
       curve: AppMotion.standard,
       offset: visible ? Offset.zero : const Offset(0, 1),
-      child: ClipRect(
-        child: BackdropFilter(
-          filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
-          child: Container(
+      child: GlassBlur.layer(
+        child: Container(
             color: bg.withValues(alpha: 0.78),
             child: SafeArea(
               top: false,
@@ -100,7 +98,6 @@ class ReaderBottomBar extends StatelessWidget {
               ),
             ),
           ),
-        ),
       ),
     );
   }
