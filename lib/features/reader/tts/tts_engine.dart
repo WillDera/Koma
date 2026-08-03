@@ -1,6 +1,6 @@
 import 'dart:typed_data';
 
-enum TtsEngineType { device, googleCloud, edge }
+enum TtsEngineType { device, edge }
 
 class TtsVoice {
   final String id;
@@ -16,7 +16,7 @@ class TtsVoice {
     this.gender,
     this.isNeural = false,
     this.locale,
-    this.engineType = TtsEngineType.googleCloud,
+    this.engineType = TtsEngineType.device,
   });
 
   String get displayName {
