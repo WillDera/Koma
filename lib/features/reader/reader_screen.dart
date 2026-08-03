@@ -76,7 +76,7 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
   /// end is derived from the selected text, so only the start is tracked.
   int? _selStart;
 
-  bool _showUI = true;
+  final ValueNotifier<bool> _showUI = ValueNotifier<bool>(true);
   bool _toolbarVisible = false;
 
   /// Pending dismissal of the quick toolbar after its selection went away.
@@ -126,8 +126,8 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
 
   void _resetUiHideTimer() {
     _cancelUiHideTimer();
-    if (!_showUI) {
-      setState(() => _showUI = true);
+    if (!_showUI.value) {
+      _showUI.value = true;
     }
     _applySystemUiMode();
     if (ref.read(themeProvider).immersiveAutoHide &&
@@ -139,7 +139,7 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
             !_toolbarVisible &&
             !_colorPickerVisible &&
             !(_ttsProvider?.isActive ?? false)) {
-          setState(() => _showUI = false);
+          _showUI.value = false;
           _applySystemUiMode();
         }
       });
@@ -149,7 +149,7 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
   void _applySystemUiMode() {
     if (!mounted) return;
     final showSystemUi =
-        _showUI ||
+        _showUI.value ||
         _toolbarVisible ||
         _colorPickerVisible ||
         (_ttsProvider?.isActive ?? false);
@@ -248,10 +248,10 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
 
   void _onTtsChanged() {
     if (!mounted) return;
-    // ponytail: defer rebuild to avoid setState during build
+    // Highlight rebuilds via ListenableBuilder around the text only —
+    // avoid a full-screen setState on every sentence tick.
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
-      setState(() {});
       _applySystemUiMode();
       _scrollToTtsSentence();
       _autoAdvanceChapterOnTtsEnd();
@@ -315,6 +315,7 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
     _ttsProvider?.dispose();
     _scrollController.dispose();
     _toolbarCtrl.dispose();
+    _showUI.dispose();
     _colorCtrl.dispose();
     super.dispose();
   }
@@ -333,7 +334,7 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
       if (mounted) {
         setState(() {
           _lastScrollOffset = 0;
-          _showUI = true;
+          _showUI.value = true;
         });
       }
       HapticFeedback.lightImpact();
@@ -345,7 +346,7 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
       if (mounted) {
         setState(() {
           _lastScrollOffset = 0;
-          _showUI = true;
+          _showUI.value = true;
         });
       }
       HapticFeedback.lightImpact();
@@ -366,14 +367,14 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
       // Hide UI chrome while scrolling down, show on scroll up.
       final diff = currentOffset - _lastScrollOffset;
       if (diff > 8 && currentOffset > 80) {
-        if (_showUI) {
-          setState(() => _showUI = false);
+        if (_showUI.value) {
+          _showUI.value = false;
           _hideToolbar();
         }
         _lastScrollOffset = currentOffset;
       } else if (diff < -4 || currentOffset <= 0) {
-        if (!_showUI) {
-          setState(() => _showUI = true);
+        if (!_showUI.value) {
+          _showUI.value = true;
           _resetUiHideTimer();
         }
         _applySystemUiMode();
@@ -401,7 +402,7 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
         provider.goToPreviousChapter();
         setState(() {
           _lastScrollOffset = 0;
-          _showUI = true;
+          _showUI.value = true;
         });
         _scheduleDirectionReset();
         _resetUiHideTimer();
@@ -411,7 +412,7 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
         provider.goToNextChapter();
         setState(() {
           _lastScrollOffset = 0;
-          _showUI = true;
+          _showUI.value = true;
         });
         _scheduleDirectionReset();
         _resetUiHideTimer();
@@ -480,7 +481,7 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
     return Padding(
       padding: EdgeInsets.fromLTRB(
         pad,
-        MediaQuery.of(context).padding.top + (_showUI ? 88 : 32),
+        MediaQuery.of(context).padding.top + 32,
         pad,
         MediaQuery.of(context).padding.bottom + 16,
       ),
@@ -579,18 +580,21 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
           : SystemUiOverlayStyle.dark,
       child: Scaffold(
         backgroundColor: themeProv.bgColor,
-        bottomNavigationBar: ReaderBottomBar(
-          visible: _showUI && !_toolbarVisible,
-          onChapters: () =>
-              _openChapters(context, ref.read(readerProvider.notifier)),
-          onPrevious: () =>
-              ref.read(readerProvider.notifier).goToPreviousChapter(),
-          onNext: () => ref.read(readerProvider.notifier).goToNextChapter(),
-          canGoNext: provider.currentIndex < provider.chapters.length - 1,
-          canGoPrevious: provider.currentIndex > 0,
-          currentIndex: provider.currentIndex,
-          totalChapters: provider.chapters.length,
-          readingTimeRemaining: readingTime,
+        bottomNavigationBar: ValueListenableBuilder<bool>(
+          valueListenable: _showUI,
+          builder: (_, showUI, _) => ReaderBottomBar(
+            visible: showUI && !_toolbarVisible,
+            onChapters: () =>
+                _openChapters(context, ref.read(readerProvider.notifier)),
+            onPrevious: () =>
+                ref.read(readerProvider.notifier).goToPreviousChapter(),
+            onNext: () => ref.read(readerProvider.notifier).goToNextChapter(),
+            canGoNext: provider.currentIndex < provider.chapters.length - 1,
+            canGoPrevious: provider.currentIndex > 0,
+            currentIndex: provider.currentIndex,
+            totalChapters: provider.chapters.length,
+            readingTimeRemaining: readingTime,
+          ),
         ),
         body: Stack(
           children: [
@@ -616,8 +620,7 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
                             controller: _scrollController,
                             padding: EdgeInsets.fromLTRB(
                               _horizontalPadding(themeProv.pageWidth),
-                              MediaQuery.of(context).padding.top +
-                                  (_showUI ? 88 : 32),
+                              MediaQuery.of(context).padding.top + 32,
                               _horizontalPadding(themeProv.pageWidth),
                               MediaQuery.of(context).padding.bottom + 16,
                             ),
@@ -680,7 +683,9 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
                                               ),
                                         ),
                                         const SizedBox(height: 28),
-                                        SelectableText.rich(
+                                        ListenableBuilder(
+                                          listenable: _ttsProvider!,
+                                          builder: (_, _) => SelectableText.rich(
                                           key: ValueKey(
                                             'content-$_highlightVersion',
                                           ),
@@ -734,6 +739,7 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
                                             }
                                           },
                                         ),
+                                        ),
                                         const SizedBox(height: 80),
                                       ],
                                     ), // Column
@@ -751,22 +757,25 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
               top: 0,
               left: 0,
               right: 0,
-              child: ReaderTopBar(
-                bookTitle: book.title,
-                chapterTitle: chapter.title,
-                progress: progress,
-                visible: _showUI,
-                onBack: () async {
-                  _ttsProvider?.stop();
-                  if (_provider != null) {
-                    await _provider!.stopReadingTimer();
-                  }
-                  _didHandleBack = true;
-                  if (mounted) Navigator.pop(context);
-                },
-                onSettings: () => ReaderSettingsSheet.show(context),
-                onTtsToggle: _toggleTts,
-                isTtsActive: _ttsProvider?.isActive ?? false,
+              child: ValueListenableBuilder<bool>(
+                valueListenable: _showUI,
+                builder: (_, showUI, _) => ReaderTopBar(
+                  bookTitle: book.title,
+                  chapterTitle: chapter.title,
+                  progress: progress,
+                  visible: showUI,
+                  onBack: () async {
+                    _ttsProvider?.stop();
+                    if (_provider != null) {
+                      await _provider!.stopReadingTimer();
+                    }
+                    _didHandleBack = true;
+                    if (mounted) Navigator.pop(context);
+                  },
+                  onSettings: () => ReaderSettingsSheet.show(context),
+                  onTtsToggle: _toggleTts,
+                  isTtsActive: _ttsProvider?.isActive ?? false,
+                ),
               ),
             ),
 
@@ -1166,7 +1175,7 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
         provider.navigateToChapter(i);
         setState(() {
           _lastScrollOffset = 0;
-          _showUI = true;
+          _showUI.value = true;
         });
       },
       onPrevious: () => provider.goToPreviousChapter(),

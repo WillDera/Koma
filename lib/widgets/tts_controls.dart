@@ -1,9 +1,9 @@
-import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../features/reader/tts/tts_engine.dart';
 import '../features/reader/tts_provider.dart';
 import '../theme/app_theme.dart';
+import '../theme/tokens/glass_blur.dart';
 import 'icon_button_round.dart';
 
 class TtsControls extends StatelessWidget {
@@ -14,10 +14,8 @@ class TtsControls extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final c = context.colors;
-    return ClipRect(
-      child: BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
-        child: Container(
+    return GlassBlur.layer(
+      child: Container(
           color: c.bg.withValues(alpha: 0.82),
           child: SafeArea(
             top: false,
@@ -93,7 +91,6 @@ class TtsControls extends StatelessWidget {
               ),
             ),
           ),
-        ),
       ),
     );
   }

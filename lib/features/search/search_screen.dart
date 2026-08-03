@@ -123,185 +123,219 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
   Widget build(BuildContext context) {
     return SafeArea(
       bottom: false,
-      child: ListView(
+      child: CustomScrollView(
         controller: _scrollCtrl,
         physics: const AlwaysScrollableScrollPhysics(),
-        padding: EdgeInsets.zero,
-        children: [
-          const OneHandSpacer(),
-          LibraryHeader(
-            title: 'Search',
-            titleSize: _oneHand ? 64 : 32,
-            shrinkProgress: _oneHand ? _scrollProgress : 0.0,
-            subtitle: 'Across your library, chapters, and snippets',
-          ),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(20, 4, 20, 12),
-            child: StashTextField(
-              controller: _searchController,
-              focusNode: _focusNode,
-              hint: 'Find anything…',
-              leadingIcon: Icons.search,
-              showClearButton: true,
-              onChanged: _search,
+        slivers: [
+          const SliverToBoxAdapter(child: OneHandSpacer()),
+          SliverToBoxAdapter(
+            child: LibraryHeader(
+              title: 'Search',
+              titleSize: _oneHand ? 64 : 32,
+              shrinkProgress: _oneHand ? _scrollProgress : 0.0,
+              subtitle: 'Across your library, chapters, and snippets',
             ),
           ),
-          _buildBody(context),
+          SliverToBoxAdapter(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(20, 4, 20, 12),
+              child: StashTextField(
+                controller: _searchController,
+                focusNode: _focusNode,
+                hint: 'Find anything…',
+                leadingIcon: Icons.search,
+                showClearButton: true,
+                onChanged: _search,
+              ),
+            ),
+          ),
+          ..._bodySlivers(context),
         ],
       ),
     );
   }
 
-  Widget _buildBody(BuildContext context) {
+  List<Widget> _bodySlivers(BuildContext context) {
     if (_searching) {
-      return ListView(
-        padding: const EdgeInsets.fromLTRB(20, 8, 20, 32),
-        shrinkWrap: true,
-        physics: const NeverScrollableScrollPhysics(),
-        children: [
-          for (var i = 0; i < 5; i++)
-            const Padding(
-              padding: EdgeInsets.only(bottom: 8),
-              child: Skeleton(
-                height: 64,
-                borderRadius: BorderRadius.all(Radius.circular(18)),
-              ),
-            ),
-        ],
-      );
-    }
-    if (_query.isEmpty) return _buildIdle(context);
-    if (_results.isEmpty) {
-      return EmptyState(
-        icon: AppIcons.search,
-        title: 'No results',
-        subtitle: 'Nothing matched "$_query". Try a different keyword.',
-      );
-    }
-    return _buildResults(context);
-  }
-
-  Widget _buildIdle(BuildContext context) {
-    final c = context.colors;
-    if (_recentSearches.isEmpty) {
-      return EmptyState(
-        icon: AppIcons.search,
-        title: 'Search your library',
-        subtitle:
-            'Type a title, author, phrase, or tag. Results stream as you type.',
-      );
-    }
-    return ListView(
-      padding: const EdgeInsets.fromLTRB(20, 8, 20, 32),
-      shrinkWrap: true,
-      physics: const NeverScrollableScrollPhysics(),
-      children: [
-        Row(
-          children: [
-            Text(
-              'Recent searches',
-              style: TextStyle(
-                color: c.textPrimary,
-                fontSize: 14,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-            const Spacer(),
-            AnimatedPress(
-              onTap: _clearRecentSearches,
-              child: Text(
-                'Clear',
-                style: TextStyle(
-                  color: c.textSecondary,
-                  fontSize: 13,
-                  fontWeight: FontWeight.w500,
+      return [
+        SliverPadding(
+          padding: const EdgeInsets.fromLTRB(20, 8, 20, 32),
+          sliver: SliverList(
+            delegate: SliverChildBuilderDelegate(
+              (_, i) => const Padding(
+                padding: EdgeInsets.only(bottom: 8),
+                child: Skeleton(
+                  height: 64,
+                  borderRadius: BorderRadius.all(Radius.circular(18)),
                 ),
               ),
-            ),
-          ],
-        ),
-        const SizedBox(height: 12),
-        for (final q in _recentSearches) ...[
-          AnimatedPress(
-            onTap: () {
-              _searchController.text = q;
-              _search(q);
-            },
-            child: Container(
-              margin: const EdgeInsets.only(bottom: 6),
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-              decoration: BoxDecoration(
-                color: c.surface,
-                borderRadius: AppSpacing.brLg,
-                border: Border.all(color: c.border, width: 0.5),
-              ),
-              child: Row(
-                children: [
-                  Icon(Icons.history, size: 18, color: c.textTertiary),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Text(
-                      q,
-                      style: TextStyle(
-                        color: c.textPrimary,
-                        fontSize: 15,
-                        fontWeight: FontWeight.w500,
-                      ),
-                    ),
-                  ),
-                  Icon(Icons.north_west, size: 16, color: c.textTertiary),
-                ],
-              ),
+              childCount: 5,
             ),
           ),
-        ],
-      ],
-    );
+        ),
+      ];
+    }
+    if (_query.isEmpty) return _idleSlivers(context);
+    if (_results.isEmpty) {
+      return [
+        SliverToBoxAdapter(
+          child: EmptyState(
+            icon: AppIcons.search,
+            title: 'No results',
+            subtitle: 'Nothing matched "$_query". Try a different keyword.',
+          ),
+        ),
+      ];
+    }
+    return _resultSlivers(context);
   }
 
-  Widget _buildResults(BuildContext context) {
+  List<Widget> _idleSlivers(BuildContext context) {
+    final c = context.colors;
+    if (_recentSearches.isEmpty) {
+      return [
+        const SliverToBoxAdapter(
+          child: EmptyState(
+            icon: AppIcons.search,
+            title: 'Search your library',
+            subtitle:
+                'Type a title, author, phrase, or tag. Results stream as you type.',
+          ),
+        ),
+      ];
+    }
+    return [
+      SliverPadding(
+        padding: const EdgeInsets.fromLTRB(20, 8, 20, 32),
+        sliver: SliverList(
+          delegate: SliverChildBuilderDelegate(
+            (_, index) {
+              if (index == 0) {
+                return Padding(
+                  padding: const EdgeInsets.only(bottom: 12),
+                  child: Row(
+                    children: [
+                      Text(
+                        'Recent searches',
+                        style: TextStyle(
+                          color: c.textPrimary,
+                          fontSize: 14,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      const Spacer(),
+                      AnimatedPress(
+                        onTap: _clearRecentSearches,
+                        child: Text(
+                          'Clear',
+                          style: TextStyle(
+                            color: c.textSecondary,
+                            fontSize: 13,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                );
+              }
+              final q = _recentSearches[index - 1];
+              return AnimatedPress(
+                onTap: () {
+                  _searchController.text = q;
+                  _search(q);
+                },
+                child: Container(
+                  margin: const EdgeInsets.only(bottom: 6),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 14,
+                  ),
+                  decoration: BoxDecoration(
+                    color: c.surface,
+                    borderRadius: AppSpacing.brLg,
+                    border: Border.all(color: c.border, width: 0.5),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(Icons.history, size: 18, color: c.textTertiary),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Text(
+                          q,
+                          style: TextStyle(
+                            color: c.textPrimary,
+                            fontSize: 15,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      ),
+                      Icon(Icons.north_west, size: 16, color: c.textTertiary),
+                    ],
+                  ),
+                ),
+              );
+            },
+            childCount: 1 + _recentSearches.length,
+          ),
+        ),
+      ),
+    ];
+  }
+
+  List<Widget> _resultSlivers(BuildContext context) {
     final books = _results.where((r) => r.type == 'book').toList();
     final chapters = _results.where((r) => r.type == 'chapter').toList();
     final snippets = _results.where((r) => r.type == 'snippet').toList();
 
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        if (books.isNotEmpty) ...[
-          _sectionHeader('Books', books.length),
-          const SizedBox(height: 8),
-          ...books.map(
-            (r) => Padding(
-              padding: const EdgeInsets.only(bottom: 8),
-              child: _bookResult(r),
-            ),
+    // Flat entries for lazy SliverList builds (headers, gaps, result rows).
+    final entries = <_SearchRow>[];
+    void addSection(
+      String title,
+      List<SearchResult> items,
+      _SearchItemKind kind,
+    ) {
+      if (items.isEmpty) return;
+      if (entries.isNotEmpty) {
+        entries.add(const _SearchRow.gap(16));
+      }
+      entries.add(_SearchRow.header(title, items.length));
+      entries.add(const _SearchRow.gap(8));
+      for (final r in items) {
+        entries.add(_SearchRow.item(r, kind));
+      }
+    }
+
+    addSection('Books', books, _SearchItemKind.book);
+    addSection('Chapters', chapters, _SearchItemKind.chapter);
+    addSection('Snippets', snippets, _SearchItemKind.snippet);
+
+    return [
+      SliverPadding(
+        padding: const EdgeInsets.fromLTRB(20, 0, 20, 32),
+        sliver: SliverList(
+          delegate: SliverChildBuilderDelegate(
+            (_, i) {
+              final entry = entries[i];
+              return switch (entry.kind) {
+                _SearchRowKind.gap => SizedBox(height: entry.gapHeight),
+                _SearchRowKind.header =>
+                  _sectionHeader(entry.title!, entry.count!),
+                _SearchRowKind.item => Padding(
+                  padding: const EdgeInsets.only(bottom: 8),
+                  child: switch (entry.itemKind!) {
+                    _SearchItemKind.book => _bookResult(entry.result!),
+                    _SearchItemKind.chapter => _chapterResult(entry.result!),
+                    _SearchItemKind.snippet => _snippetResult(entry.result!),
+                  },
+                ),
+              };
+            },
+            childCount: entries.length,
           ),
-        ],
-        if (chapters.isNotEmpty) ...[
-          const SizedBox(height: 16),
-          _sectionHeader('Chapters', chapters.length),
-          const SizedBox(height: 8),
-          ...chapters.map(
-            (r) => Padding(
-              padding: const EdgeInsets.only(bottom: 8),
-              child: _chapterResult(r),
-            ),
-          ),
-        ],
-        if (snippets.isNotEmpty) ...[
-          const SizedBox(height: 16),
-          _sectionHeader('Snippets', snippets.length),
-          const SizedBox(height: 8),
-          ...snippets.map(
-            (r) => Padding(
-              padding: const EdgeInsets.only(bottom: 8),
-              child: _snippetResult(r),
-            ),
-          ),
-        ],
-      ],
-    );
+        ),
+      ),
+    ];
   }
 
   Widget _sectionHeader(String title, int count) {
@@ -385,4 +419,36 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
               as ReaderArgs,
     );
   }
+}
+
+enum _SearchRowKind { gap, header, item }
+
+enum _SearchItemKind { book, chapter, snippet }
+
+class _SearchRow {
+  final _SearchRowKind kind;
+  final double gapHeight;
+  final String? title;
+  final int? count;
+  final SearchResult? result;
+  final _SearchItemKind? itemKind;
+
+  const _SearchRow.gap(this.gapHeight)
+    : kind = _SearchRowKind.gap,
+      title = null,
+      count = null,
+      result = null,
+      itemKind = null;
+
+  const _SearchRow.header(this.title, this.count)
+    : kind = _SearchRowKind.header,
+      gapHeight = 0,
+      result = null,
+      itemKind = null;
+
+  const _SearchRow.item(this.result, this.itemKind)
+    : kind = _SearchRowKind.item,
+      gapHeight = 0,
+      title = null,
+      count = null;
 }

@@ -226,32 +226,39 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> with RouteAware {
   // ── States ──────────────────────────────────────────────────────────
 
   Widget _loading(BuildContext context, int gridColumns) {
-    return ListView(
-      padding: const EdgeInsets.fromLTRB(20, 8, 20, 16),
-      children: [
-        const OneHandSpacer(),
-        const Skeleton(height: 18, width: 120),
-        const SizedBox(height: 16),
-        GridView.builder(
-          shrinkWrap: true,
-          physics: const NeverScrollableScrollPhysics(),
-          gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-            crossAxisCount: gridColumns,
-            mainAxisSpacing: 16,
-            crossAxisSpacing: 16,
-            childAspectRatio: 0.62,
+    return CustomScrollView(
+      slivers: [
+        const SliverToBoxAdapter(child: OneHandSpacer()),
+        const SliverToBoxAdapter(
+          child: Padding(
+            padding: EdgeInsets.fromLTRB(20, 8, 20, 0),
+            child: Skeleton(height: 18, width: 120),
           ),
-          itemCount: 6,
-          itemBuilder: (_, _) => Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: const [
-              Skeleton(
-                height: 200,
-                borderRadius: BorderRadius.all(Radius.circular(14)),
+        ),
+        const SliverToBoxAdapter(child: SizedBox(height: 16)),
+        SliverPadding(
+          padding: const EdgeInsets.fromLTRB(20, 0, 20, 16),
+          sliver: SliverGrid(
+            gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+              crossAxisCount: gridColumns,
+              mainAxisSpacing: 16,
+              crossAxisSpacing: 16,
+              childAspectRatio: 0.62,
+            ),
+            delegate: SliverChildBuilderDelegate(
+              (_, _) => Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: const [
+                  Skeleton(
+                    height: 200,
+                    borderRadius: BorderRadius.all(Radius.circular(14)),
+                  ),
+                  SizedBox(height: 8),
+                  Skeleton(height: 12, width: 100),
+                ],
               ),
-              SizedBox(height: 8),
-              Skeleton(height: 12, width: 100),
-            ],
+              childCount: 6,
+            ),
           ),
         ),
       ],
@@ -303,87 +310,95 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> with RouteAware {
       color: context.colors.accent,
       backgroundColor: context.colors.surface,
       onRefresh: () => ref.read(libraryProvider.notifier).loadBooks(),
-      child: ListView(
+      child: CustomScrollView(
         controller: _scrollCtrl,
-        padding: const EdgeInsets.only(bottom: 100),
         physics: const AlwaysScrollableScrollPhysics(),
-        children: [
-          const OneHandSpacer(),
-          _LibraryHeaderController(
-            scrollController: _scrollCtrl,
-            oneHand: _oneHand,
-            selectionMode: provider.selectionMode,
-            selectedCount: provider.selectedIds.length,
-            onSelectAll: () => ref.read(libraryProvider.notifier).selectAll(),
-            onDeleteSelected: () => _confirmDelete(context, provider),
-            onClearSelection: () =>
-                ref.read(libraryProvider.notifier).clearSelection(),
+        slivers: [
+          const SliverToBoxAdapter(child: OneHandSpacer()),
+          SliverToBoxAdapter(
+            child: _LibraryHeaderController(
+              scrollController: _scrollCtrl,
+              oneHand: _oneHand,
+              selectionMode: provider.selectionMode,
+              selectedCount: provider.selectedIds.length,
+              onSelectAll: () => ref.read(libraryProvider.notifier).selectAll(),
+              onDeleteSelected: () => _confirmDelete(context, provider),
+              onClearSelection: () =>
+                  ref.read(libraryProvider.notifier).clearSelection(),
+            ),
           ),
           if (!provider.selectionMode)
-            StaggeredEntrance(
-              index: 0,
-              child: FeaturePanel(
-                icon: AppIcons.books,
-                title: 'Your reading stack',
-                subtitle:
-                    'Books, manga, web saves, and notes arranged for fast return.',
-                stats: [
-                  PanelStat(value: '${provider.books.length}', label: 'Books'),
-                  PanelStat(value: '${provider.mangas.length}', label: 'Manga'),
-                  PanelStat(
-                    value:
-                        '${provider.books.where((b) => b.progress > 0).length}',
-                    label: 'Active',
-                  ),
-                ],
+            SliverToBoxAdapter(
+              child: StaggeredEntrance(
+                index: 0,
+                child: FeaturePanel(
+                  icon: AppIcons.books,
+                  title: 'Your reading stack',
+                  subtitle:
+                      'Books, manga, web saves, and notes arranged for fast return.',
+                  stats: [
+                    PanelStat(
+                      value: '${provider.books.length}',
+                      label: 'Books',
+                    ),
+                    PanelStat(
+                      value: '${provider.mangas.length}',
+                      label: 'Manga',
+                    ),
+                    PanelStat(
+                      value:
+                          '${provider.books.where((b) => b.progress > 0).length}',
+                      label: 'Active',
+                    ),
+                  ],
+                ),
               ),
             ),
-          _LibraryControls(
-            section: _section,
-            sort: _sort,
-            bookCount: provider.books.length,
-            mangaCount: provider.mangas.length,
-            queryController: _section == _LibrarySection.books
-                ? _bookSearchCtrl
-                : _mangaSearchCtrl,
-            onSectionChanged: (section) => setState(() => _section = section),
-            onSortChanged: (sort) => setState(() => _sort = sort),
-            filters: _filters,
-            onFilterChanged: (filter, mode) {
-              setState(() => _filters[filter] = mode);
-            },
-            onQueryChanged: (_) => setState(() {}),
-            showSourcePills: provider.showSourcePills,
-            onShowSourcePillsChanged: (value) {
-              ref.read(libraryProvider.notifier).setShowSourcePills(value);
-            },
+          SliverToBoxAdapter(
+            child: _LibraryControls(
+              section: _section,
+              sort: _sort,
+              bookCount: provider.books.length,
+              mangaCount: provider.mangas.length,
+              queryController: _section == _LibrarySection.books
+                  ? _bookSearchCtrl
+                  : _mangaSearchCtrl,
+              onSectionChanged: (section) => setState(() => _section = section),
+              onSortChanged: (sort) => setState(() => _sort = sort),
+              filters: _filters,
+              onFilterChanged: (filter, mode) {
+                setState(() => _filters[filter] = mode);
+              },
+              onQueryChanged: (_) => setState(() {}),
+              showSourcePills: provider.showSourcePills,
+              onShowSourcePillsChanged: (value) {
+                ref.read(libraryProvider.notifier).setShowSourcePills(value);
+              },
+            ),
           ),
-          AnimatedSwitcher(
-            duration: const Duration(milliseconds: 260),
-            switchInCurve: Curves.easeOutCubic,
-            switchOutCurve: Curves.easeInCubic,
-            child: _section == _LibrarySection.books
-                ? _BookShelf(
-                    key: const ValueKey('books-shelf'),
-                    books: _visibleBooks(provider.books),
-                    provider: provider,
-                    notifier: ref.read(libraryProvider.notifier),
-                    showSourcePills: provider.showSourcePills,
-                    onOpen: (id) => _openReader(context, id),
-                    onBookLongPress: _showBookActions,
-                  )
-                : _MangaShelf(
-                    key: const ValueKey('manga-shelf'),
-                    mangas: _visibleMangas(provider.mangas),
-                    gridView: provider.isGridView,
-                    provider: provider,
-                    notifier: ref.read(libraryProvider.notifier),
-                    extensionNames: provider.extensionNames,
-                    mangaThumbnails: _mangaThumbnails,
-                    showSourcePills: provider.showSourcePills,
-                    onOpen: (manga) => _openManga(context, manga),
-                  ),
-          ),
+          if (_section == _LibrarySection.books)
+            _BookShelf(
+              key: const ValueKey('books-shelf'),
+              books: _visibleBooks(provider.books),
+              provider: provider,
+              notifier: ref.read(libraryProvider.notifier),
+              showSourcePills: provider.showSourcePills,
+              onOpen: (id) => _openReader(context, id),
+              onBookLongPress: _showBookActions,
+            )
+          else
+            _MangaShelf(
+              key: const ValueKey('manga-shelf'),
+              mangas: _visibleMangas(provider.mangas),
+              gridView: provider.isGridView,
+              provider: provider,
+              notifier: ref.read(libraryProvider.notifier),
+              extensionNames: provider.extensionNames,
+              mangaThumbnails: _mangaThumbnails,
+              showSourcePills: provider.showSourcePills,
+              onOpen: (manga) => _openManga(context, manga),
+            ),
+          const SliverToBoxAdapter(child: SizedBox(height: 100)),
         ],
       ),
     );
@@ -927,24 +942,12 @@ class _LibraryHeaderController extends StatefulWidget {
 }
 
 class _LibraryHeaderControllerState extends State<_LibraryHeaderController> {
-  double _scrollProgress = 0;
-  int _bmCalls = 0;
-  Timer? _bmTimer;
-  DateTime? _lastSetState;
+  final ValueNotifier<double> _scrollProgress = ValueNotifier<double>(0);
 
   @override
   void initState() {
     super.initState();
     widget.scrollController.addListener(_onScroll);
-    _bmTimer = Timer.periodic(const Duration(seconds: 2), (_) {
-      if (_bmCalls > 0 && mounted) {
-        BenchmarkLogger.log(
-          'lib_scroll_setstate',
-          'calls=$_bmCalls elapsed=2s',
-        );
-        _bmCalls = 0;
-      }
-    });
   }
 
   @override
@@ -957,25 +960,19 @@ class _LibraryHeaderControllerState extends State<_LibraryHeaderController> {
   }
 
   void _onScroll() {
-    _bmCalls++;
     final max = widget.scrollController.position.maxScrollExtent;
     final p = max <= 0
         ? 0.0
         : (widget.scrollController.offset / max).clamp(0.0, 1.0);
-    final now = DateTime.now();
-    final minTime =
-        _lastSetState == null ||
-        now.difference(_lastSetState!) > const Duration(milliseconds: 100);
-    if (minTime && (p - _scrollProgress).abs() > 0.02) {
-      _lastSetState = now;
-      setState(() => _scrollProgress = p);
+    if ((p - _scrollProgress.value).abs() > 0.02) {
+      _scrollProgress.value = p;
     }
   }
 
   @override
   void dispose() {
-    _bmTimer?.cancel();
     widget.scrollController.removeListener(_onScroll);
+    _scrollProgress.dispose();
     super.dispose();
   }
 
@@ -1014,10 +1011,16 @@ class _LibraryHeaderControllerState extends State<_LibraryHeaderController> {
         ],
       );
     }
-    return LibraryHeader(
-      title: 'Library',
-      titleSize: widget.oneHand ? 64 : 32,
-      shrinkProgress: widget.oneHand ? _scrollProgress : 0.0,
+    if (!widget.oneHand) {
+      return const LibraryHeader(title: 'Library', titleSize: 32);
+    }
+    return ValueListenableBuilder<double>(
+      valueListenable: _scrollProgress,
+      builder: (_, progress, _) => LibraryHeader(
+        title: 'Library',
+        titleSize: 64,
+        shrinkProgress: progress,
+      ),
     );
   }
 }
@@ -1494,44 +1497,47 @@ class _BookShelf extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (books.isEmpty) {
-      return const SizedBox(
-        height: 260,
-        child: EmptyState(
-          icon: AppIcons.search,
-          title: 'No books found',
-          subtitle: 'Try another title, author, genre, or format.',
+      return const SliverToBoxAdapter(
+        child: SizedBox(
+          height: 260,
+          child: EmptyState(
+            icon: AppIcons.search,
+            title: 'No books found',
+            subtitle: 'Try another title, author, genre, or format.',
+          ),
         ),
       );
     }
     final sw = Stopwatch()..start();
+    late final Widget result;
     if (provider.isGridView) {
-      final result = Padding(
+      result = SliverPadding(
         padding: const EdgeInsets.symmetric(horizontal: 20),
-        child: GridView.builder(
-          shrinkWrap: true,
-          physics: const NeverScrollableScrollPhysics(),
+        sliver: SliverGrid(
           gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
             crossAxisCount: provider.gridColumns,
             mainAxisSpacing: 18,
             crossAxisSpacing: 18,
             childAspectRatio: 0.6,
           ),
-          itemCount: books.length,
-          itemBuilder: (ctx, i) => StaggeredEntrance(
-            index: i + 1,
-            child: LibraryBookCard(
-              book: books[i],
-              variant: LibraryCardVariant.grid,
-              selected: provider.selectedIds.contains('b:${books[i].id}'),
-              selectionMode: provider.selectionMode,
-              showSourcePills: provider.showSourcePills,
-              onTap: () => provider.selectionMode
-                  ? notifier.toggleSelection('b:${books[i].id}')
-                  : onOpen(books[i].id),
-              onLongPress: () => provider.selectionMode
-                  ? notifier.toggleSelection('b:${books[i].id}')
-                  : onBookLongPress(books[i]),
+          delegate: SliverChildBuilderDelegate(
+            (ctx, i) => StaggeredEntrance(
+              index: i + 1,
+              child: LibraryBookCard(
+                book: books[i],
+                variant: LibraryCardVariant.grid,
+                selected: provider.selectedIds.contains('b:${books[i].id}'),
+                selectionMode: provider.selectionMode,
+                showSourcePills: provider.showSourcePills,
+                onTap: () => provider.selectionMode
+                    ? notifier.toggleSelection('b:${books[i].id}')
+                    : onOpen(books[i].id),
+                onLongPress: () => provider.selectionMode
+                    ? notifier.toggleSelection('b:${books[i].id}')
+                    : onBookLongPress(books[i]),
+              ),
             ),
+            childCount: books.length,
           ),
         ),
       );
@@ -1541,26 +1547,31 @@ class _BookShelf extends StatelessWidget {
       );
       return result;
     }
-    final result = ListView.separated(
-      shrinkWrap: true,
-      physics: const NeverScrollableScrollPhysics(),
+    result = SliverPadding(
       padding: const EdgeInsets.symmetric(horizontal: 20),
-      itemCount: books.length,
-      separatorBuilder: (_, _) => const SizedBox(height: 4),
-      itemBuilder: (ctx, i) => StaggeredEntrance(
-        index: i + 1,
-        child: LibraryBookCard(
-          book: books[i],
-          variant: LibraryCardVariant.list,
-          selected: provider.selectedIds.contains('b:${books[i].id}'),
-          selectionMode: provider.selectionMode,
-          showSourcePills: provider.showSourcePills,
-          onTap: () => provider.selectionMode
-              ? notifier.toggleSelection('b:${books[i].id}')
-              : onOpen(books[i].id),
-          onLongPress: () => provider.selectionMode
-              ? notifier.toggleSelection('b:${books[i].id}')
-              : onBookLongPress(books[i]),
+      sliver: SliverList(
+        delegate: SliverChildBuilderDelegate(
+          (ctx, index) {
+            if (index.isOdd) return const SizedBox(height: 4);
+            final i = index ~/ 2;
+            return StaggeredEntrance(
+              index: i + 1,
+              child: LibraryBookCard(
+                book: books[i],
+                variant: LibraryCardVariant.list,
+                selected: provider.selectedIds.contains('b:${books[i].id}'),
+                selectionMode: provider.selectionMode,
+                showSourcePills: provider.showSourcePills,
+                onTap: () => provider.selectionMode
+                    ? notifier.toggleSelection('b:${books[i].id}')
+                    : onOpen(books[i].id),
+                onLongPress: () => provider.selectionMode
+                    ? notifier.toggleSelection('b:${books[i].id}')
+                    : onBookLongPress(books[i]),
+              ),
+            );
+          },
+          childCount: books.length * 2 - 1,
         ),
       ),
     );
@@ -1597,49 +1608,53 @@ class _MangaShelf extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (mangas.isEmpty) {
-      return const SizedBox(
-        height: 260,
-        child: EmptyState(
-          icon: AppIcons.search,
-          title: 'No manga found',
-          subtitle: 'Try another title, author, source, or genre.',
+      return const SliverToBoxAdapter(
+        child: SizedBox(
+          height: 260,
+          child: EmptyState(
+            icon: AppIcons.search,
+            title: 'No manga found',
+            subtitle: 'Try another title, author, source, or genre.',
+          ),
         ),
       );
     }
     final sw = Stopwatch()..start();
+    late final Widget result;
     if (gridView) {
-      final result = Padding(
+      result = SliverPadding(
         padding: const EdgeInsets.symmetric(horizontal: 20),
-        child: GridView.builder(
-          shrinkWrap: true,
-          physics: const NeverScrollableScrollPhysics(),
+        sliver: SliverGrid(
           gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
             crossAxisCount: provider.gridColumns,
             mainAxisSpacing: 8,
             crossAxisSpacing: 8,
             childAspectRatio: 0.65,
           ),
-          itemCount: mangas.length,
-          itemBuilder: (ctx, i) {
-            final manga = mangas[i];
-            return StaggeredEntrance(
-              index: i + 1,
-              child: _MangaLibraryCard(
-                manga: manga,
-                newChapterCount: provider.newChapters[manga.id] ?? 0,
-                localImagePath: mangaThumbnails[manga.id],
-                selected: provider.selectedIds.contains('m:${manga.id}'),
-                selectionMode: provider.selectionMode,
-                extensionName: extensionNames[manga.sourceId] ?? manga.sourceId,
-                showSourcePills: showSourcePills,
-                variant: provider.cardVariant,
-                onTap: () => provider.selectionMode
-                    ? notifier.toggleSelection('m:${manga.id}')
-                    : onOpen(manga),
-                onLongPress: () => notifier.toggleSelection('m:${manga.id}'),
-              ),
-            );
-          },
+          delegate: SliverChildBuilderDelegate(
+            (ctx, i) {
+              final manga = mangas[i];
+              return StaggeredEntrance(
+                index: i + 1,
+                child: _MangaLibraryCard(
+                  manga: manga,
+                  newChapterCount: provider.newChapters[manga.id] ?? 0,
+                  localImagePath: mangaThumbnails[manga.id],
+                  selected: provider.selectedIds.contains('m:${manga.id}'),
+                  selectionMode: provider.selectionMode,
+                  extensionName:
+                      extensionNames[manga.sourceId] ?? manga.sourceId,
+                  showSourcePills: showSourcePills,
+                  variant: provider.cardVariant,
+                  onTap: () => provider.selectionMode
+                      ? notifier.toggleSelection('m:${manga.id}')
+                      : onOpen(manga),
+                  onLongPress: () => notifier.toggleSelection('m:${manga.id}'),
+                ),
+              );
+            },
+            childCount: mangas.length,
+          ),
         ),
       );
       BenchmarkLogger.log(
@@ -1648,31 +1663,34 @@ class _MangaShelf extends StatelessWidget {
       );
       return result;
     }
-    Widget result = ListView.separated(
-      shrinkWrap: true,
-      physics: const NeverScrollableScrollPhysics(),
+    result = SliverPadding(
       padding: const EdgeInsets.symmetric(horizontal: 20),
-      itemCount: mangas.length,
-      separatorBuilder: (_, _) => const SizedBox(height: 8),
-      itemBuilder: (ctx, i) {
-        final manga = mangas[i];
-        return StaggeredEntrance(
-          index: i + 1,
-          child: _MangaLibraryRow(
-            manga: manga,
-            newChapterCount: provider.newChapters[manga.id] ?? 0,
-            localImagePath: mangaThumbnails[manga.id],
-            selected: provider.selectedIds.contains('m:${manga.id}'),
-            selectionMode: provider.selectionMode,
-            extensionName: extensionNames[manga.sourceId] ?? manga.sourceId,
-            showSourcePills: showSourcePills,
-            onTap: () => provider.selectionMode
-                ? notifier.toggleSelection('m:${manga.id}')
-                : onOpen(manga),
-            onLongPress: () => notifier.toggleSelection('m:${manga.id}'),
-          ),
-        );
-      },
+      sliver: SliverList(
+        delegate: SliverChildBuilderDelegate(
+          (ctx, index) {
+            if (index.isOdd) return const SizedBox(height: 8);
+            final i = index ~/ 2;
+            final manga = mangas[i];
+            return StaggeredEntrance(
+              index: i + 1,
+              child: _MangaLibraryRow(
+                manga: manga,
+                newChapterCount: provider.newChapters[manga.id] ?? 0,
+                localImagePath: mangaThumbnails[manga.id],
+                selected: provider.selectedIds.contains('m:${manga.id}'),
+                selectionMode: provider.selectionMode,
+                extensionName: extensionNames[manga.sourceId] ?? manga.sourceId,
+                showSourcePills: showSourcePills,
+                onTap: () => provider.selectionMode
+                    ? notifier.toggleSelection('m:${manga.id}')
+                    : onOpen(manga),
+                onLongPress: () => notifier.toggleSelection('m:${manga.id}'),
+              ),
+            );
+          },
+          childCount: mangas.length * 2 - 1,
+        ),
+      ),
     );
     BenchmarkLogger.log(
       'manga_shelf_build',

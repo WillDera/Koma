@@ -1,10 +1,10 @@
-import 'dart:ui';
 
 import 'package:flutter/material.dart';
 
 import '../theme/app_theme.dart';
 import '../theme/tokens/app_colors.dart';
 import '../theme/tokens/app_motion.dart';
+import '../theme/tokens/glass_blur.dart';
 import '../theme/tokens/app_spacing.dart';
 import 'animated_press.dart';
 
@@ -43,11 +43,9 @@ class ReaderSelectionToolbar extends StatelessWidget {
       right: 16,
       bottom: 120,
       child: Center(
-        child: ClipRRect(
+        child: GlassBlur.layer(
           borderRadius: AppSpacing.brPill,
-          child: BackdropFilter(
-            filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
-            child: AnimatedContainer(
+          child: AnimatedContainer(
               duration: AppMotion.base,
               curve: AppMotion.standard,
               padding: const EdgeInsets.all(6),
@@ -85,7 +83,6 @@ class ReaderSelectionToolbar extends StatelessWidget {
               ),
             ),
           ),
-        ),
       ),
     );
   }

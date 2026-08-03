@@ -62,6 +62,11 @@ class StaggeredEntrance extends StatefulWidget {
   final int index;
   final Offset offset;
 
+  /// Caps staggered delay so large lists don't schedule dozens of tickers
+  /// (item 50 would otherwise wait ~1.75s). History previously capped locally;
+  /// this is shared for library/discover/snippets.
+  static const int maxStaggerIndex = 8;
+
   const StaggeredEntrance({
     super.key,
     required this.child,
@@ -92,7 +97,8 @@ class _StaggeredEntranceState extends State<StaggeredEntrance>
       begin: widget.offset,
       end: Offset.zero,
     ).animate(curved);
-    Future<void>.delayed(Duration(milliseconds: 35 * widget.index), () {
+    final capped = widget.index.clamp(0, StaggeredEntrance.maxStaggerIndex);
+    Future<void>.delayed(Duration(milliseconds: 35 * capped), () {
       if (mounted) _controller.forward();
     });
   }

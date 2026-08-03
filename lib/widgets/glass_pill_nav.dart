@@ -1,11 +1,10 @@
-import 'dart:ui';
-
 import 'package:flutter/material.dart';
 
 import '../theme/app_icons.dart';
 import '../theme/app_theme.dart';
 import '../theme/tokens/app_motion.dart';
 import '../theme/tokens/app_spacing.dart';
+import '../theme/tokens/glass_blur.dart';
 
 class NavItem {
   final AppIconData icon;
@@ -41,43 +40,41 @@ class GlassPillNav extends StatelessWidget {
       top: false,
       child: Padding(
         padding: margin,
-        child: ClipRRect(
+        child: GlassBlur.layer(
           borderRadius: AppSpacing.brPill,
-          child: BackdropFilter(
-            filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
-            child: Container(
-              height: height,
-              decoration: BoxDecoration(
-                color: glassColor,
-                borderRadius: AppSpacing.brPill,
-                border: Border.all(
-                  color: c.border.withValues(alpha: isDark ? 0.45 : 0.65),
-                  width: 0.5,
-                ),
+          child: Container(
+            height: height,
+            decoration: BoxDecoration(
+              color: glassColor,
+              borderRadius: AppSpacing.brPill,
+              border: Border.all(
+                color: c.border.withValues(alpha: isDark ? 0.45 : 0.65),
+                width: 0.5,
               ),
-              child: Row(
-                children: List.generate(items.length, (i) {
-                  final item = items[i];
-                  final isActive = i == currentIndex;
-                  return Expanded(
-                    child: GestureDetector(
-                      behavior: HitTestBehavior.opaque,
-                      onTap: () => onTap(i),
-                      child: Center(
-                        child: AnimatedSwitcher(
-                          duration: AppMotion.fast,
-                          transitionBuilder: (child, anim) => ScaleTransition(
-                            scale: anim,
-                            child: FadeTransition(opacity: anim, child: child),
-                          ),
-                          child: Column(
-                            key: ValueKey('${item.label}-$isActive'),
-                            mainAxisSize: MainAxisSize.min,
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              AppIcon(
-                                data: isActive
-                                    ? (item.activeIcon ?? item.icon)
+            ),
+            child: Row(
+              children: List.generate(items.length, (i) {
+                final item = items[i];
+                final isActive = i == currentIndex;
+                return Expanded(
+                  child: GestureDetector(
+                    behavior: HitTestBehavior.opaque,
+                    onTap: () => onTap(i),
+                    child: Center(
+                      child: AnimatedSwitcher(
+                        duration: AppMotion.fast,
+                        transitionBuilder: (child, anim) => ScaleTransition(
+                          scale: anim,
+                          child: FadeTransition(opacity: anim, child: child),
+                        ),
+                        child: Column(
+                          key: ValueKey('${item.label}-$isActive'),
+                          mainAxisSize: MainAxisSize.min,
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            AppIcon(
+                              data: isActive
+                                  ? (item.activeIcon ?? item.icon)
                                     : item.icon,
                                 size: 22,
                                 color: isActive ? c.accent : c.textTertiary,
@@ -104,7 +101,6 @@ class GlassPillNav extends StatelessWidget {
               ),
             ),
           ),
-        ),
       ),
     );
   }
