@@ -1009,62 +1009,67 @@ class _MangaReaderScreenState extends ConsumerState<MangaReaderScreen>
                     navigationLayout: 0,
                   ),
 
-                ValueListenableBuilder<bool>(
-                  valueListenable: _showToolbar,
-                  builder: (_, showToolbar, _) => Stack(
-                    children: [
-                      if (showToolbar)
-                        Positioned.fill(
-                          child: GestureDetector(
-                            onTap: _toggleToolbar,
-                            behavior: HitTestBehavior.translucent,
-                            child: const SizedBox.expand(),
+                // Must be Positioned.fill: the chrome Stack's children are all
+                // positioned, so without this the overlay collapses to 0×0 and
+                // eats no hits (taps/long-press appear dead).
+                Positioned.fill(
+                  child: ValueListenableBuilder<bool>(
+                    valueListenable: _showToolbar,
+                    builder: (_, showToolbar, _) => Stack(
+                      children: [
+                        if (showToolbar)
+                          Positioned.fill(
+                            child: GestureDetector(
+                              onTap: _toggleToolbar,
+                              behavior: HitTestBehavior.translucent,
+                              child: const SizedBox.expand(),
+                            ),
+                          )
+                        else if (!_showNavigationOverlay)
+                          Positioned.fill(
+                            child: isContinuous
+                                ? GestureDetector(
+                                    onTap: _toggleToolbar,
+                                    onLongPress: _showLongPressMenu,
+                                    behavior: HitTestBehavior.translucent,
+                                    child: const SizedBox.expand(),
+                                  )
+                                : ReaderTapZones(props: props),
                           ),
-                        )
-                      else if (!_showNavigationOverlay)
-                        Positioned.fill(
-                          child: isContinuous
-                              ? GestureDetector(
-                                  onTap: _toggleToolbar,
-                                  onLongPress: _showLongPressMenu,
-                                  behavior: HitTestBehavior.translucent,
-                                  child: const SizedBox.expand(),
-                                )
-                              : ReaderTapZones(props: props),
+                        ReaderAppBar(
+                          chapterName:
+                              _currentChapter?.name ?? widget.chapterName,
+                          isBookmarked: _isBookmarked,
+                          isVisible: showToolbar,
+                          onClose: () {
+                            _saveProgress().then((_) {
+                              if (context.mounted) {
+                                Navigator.of(context).pop();
+                              }
+                            });
+                          },
+                          onBookmarkToggle: _toggleBookmark,
+                          onChapterList: _showChapterList,
                         ),
-                      ReaderAppBar(
-                        chapterName:
-                            _currentChapter?.name ?? widget.chapterName,
-                        isBookmarked: _isBookmarked,
-                        isVisible: showToolbar,
-                        onClose: () {
-                          _saveProgress().then((_) {
-                            if (context.mounted) {
-                              Navigator.of(context).pop();
-                            }
-                          });
-                        },
-                        onBookmarkToggle: _toggleBookmark,
-                        onChapterList: _showChapterList,
-                      ),
-                      ReaderBottomBar(
-                        pageListenable: _currentPageNotifier,
-                        totalPages: _pages.length,
-                        showNavigator: _settings.showPageNavigator,
-                        onPageChanged: _goToPage,
-                        onSettings: _showSettings,
-                        onCropToggle: _toggleCropBorders,
-                        onPreviousChapter: _navigateToPrevChapter,
-                        onNextChapter: _navigateToNextChapter,
-                        isVisible: showToolbar,
-                      ),
-                      PageIndicator(
-                        pageListenable: _currentPageNotifier,
-                        totalPages: _pages.length,
-                        isVisible: showToolbar,
-                        showPageNumbers: _settings.showPageNumber,
-                      ),
-                    ],
+                        ReaderBottomBar(
+                          pageListenable: _currentPageNotifier,
+                          totalPages: _pages.length,
+                          showNavigator: _settings.showPageNavigator,
+                          onPageChanged: _goToPage,
+                          onSettings: _showSettings,
+                          onCropToggle: _toggleCropBorders,
+                          onPreviousChapter: _navigateToPrevChapter,
+                          onNextChapter: _navigateToNextChapter,
+                          isVisible: showToolbar,
+                        ),
+                        PageIndicator(
+                          pageListenable: _currentPageNotifier,
+                          totalPages: _pages.length,
+                          isVisible: showToolbar,
+                          showPageNumbers: _settings.showPageNumber,
+                        ),
+                      ],
+                    ),
                   ),
                 ),
               ],
