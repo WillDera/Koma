@@ -38,7 +38,7 @@ class SnippetsScreen extends ConsumerStatefulWidget {
 
 class _SnippetsScreenState extends ConsumerState<SnippetsScreen> {
   final ScrollController _scrollCtrl = ScrollController();
-  double _scrollProgress = 0;
+  final ValueNotifier<double> _scrollProgress = ValueNotifier<double>(0);
   int _tab = 0;
 
   @override
@@ -55,8 +55,8 @@ class _SnippetsScreenState extends ConsumerState<SnippetsScreen> {
     if (!_scrollCtrl.hasClients) return;
     final max = _scrollCtrl.position.maxScrollExtent;
     final p = max <= 0 ? 0.0 : (_scrollCtrl.offset / max).clamp(0.0, 1.0);
-    if ((p - _scrollProgress).abs() > 0.01) {
-      setState(() => _scrollProgress = p);
+    if ((p - _scrollProgress.value).abs() > 0.01) {
+      _scrollProgress.value = p;
     }
   }
 
@@ -64,10 +64,34 @@ class _SnippetsScreenState extends ConsumerState<SnippetsScreen> {
   void dispose() {
     _scrollCtrl.removeListener(_onScroll);
     _scrollCtrl.dispose();
+    _scrollProgress.dispose();
     super.dispose();
   }
 
   bool get _oneHand => ref.watch(themeProvider).oneHandMode;
+
+  Widget _shrinkingHeader({
+    required String title,
+    List<Widget> actions = const [],
+  }) {
+    final titleSize = _oneHand ? 64.0 : 32.0;
+    if (!_oneHand) {
+      return LibraryHeader(
+        title: title,
+        titleSize: titleSize,
+        actions: actions,
+      );
+    }
+    return ValueListenableBuilder<double>(
+      valueListenable: _scrollProgress,
+      builder: (_, progress, _) => LibraryHeader(
+        title: title,
+        titleSize: titleSize,
+        shrinkProgress: progress,
+        actions: actions,
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -106,11 +130,7 @@ class _SnippetsScreenState extends ConsumerState<SnippetsScreen> {
         padding: EdgeInsets.zero,
         children: [
           const OneHandSpacer(),
-          LibraryHeader(
-            title: 'Snippets',
-            titleSize: _oneHand ? 64 : 32,
-            shrinkProgress: _oneHand ? _scrollProgress : 0.0,
-          ),
+          _shrinkingHeader(title: 'Snippets'),
           _buildTabBar(),
           const SizedBox(height: 60),
           EmptyState(
@@ -157,11 +177,7 @@ class _SnippetsScreenState extends ConsumerState<SnippetsScreen> {
         padding: EdgeInsets.zero,
         children: [
           const OneHandSpacer(),
-          LibraryHeader(
-            title: 'Snippets',
-            titleSize: _oneHand ? 64 : 32,
-            shrinkProgress: _oneHand ? _scrollProgress : 0.0,
-          ),
+          _shrinkingHeader(title: 'Snippets'),
           _buildTabBar(),
           const SizedBox(height: 60),
           EmptyState(
@@ -337,10 +353,8 @@ class _SnippetsScreenState extends ConsumerState<SnippetsScreen> {
         ],
       );
     }
-    return LibraryHeader(
+    return _shrinkingHeader(
       title: 'Snippets',
-      titleSize: _oneHand ? 64 : 32,
-      shrinkProgress: _oneHand ? _scrollProgress : 0.0,
       actions: [
         IconButtonRound(
           icon: Icons.checklist_rtl_rounded,
@@ -634,11 +648,7 @@ class _SnippetsScreenState extends ConsumerState<SnippetsScreen> {
       padding: EdgeInsets.zero,
       children: [
         const OneHandSpacer(),
-        LibraryHeader(
-          title: 'Bookmarks',
-          titleSize: _oneHand ? 64 : 32,
-          shrinkProgress: _oneHand ? _scrollProgress : 0.0,
-        ),
+        _shrinkingHeader(title: 'Bookmarks'),
         _buildTabBar(),
         if (bp.loading && bookmarks.isEmpty)
           const Padding(
