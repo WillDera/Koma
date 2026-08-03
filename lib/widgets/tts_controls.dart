@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import '../features/reader/tts/tts_engine.dart';
 import '../features/reader/tts_provider.dart';
 import '../theme/app_theme.dart';
@@ -14,163 +13,167 @@ class TtsControls extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final c = context.colors;
-    return GlassBlur.layer(
-      child: Container(
-          color: c.bg.withValues(alpha: 0.82),
-          child: SafeArea(
-            top: false,
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-              child: Row(
-                children: [
-                  IconButtonRound(
-                    icon: Icons.close,
-                    size: 36,
-                    variant: IconButtonVariant.tonal,
-                    onPressed: () => provider.stop(),
-                  ),
-                  const SizedBox(width: 4),
-                  IconButtonRound(
-                    icon: Icons.skip_previous,
-                    size: 36,
-                    variant: IconButtonVariant.tonal,
-                    onPressed: provider.currentIndex > 0
-                        ? () => provider.previousSentence()
-                        : null,
-                  ),
-                  const SizedBox(width: 4),
-                  provider.isBuffering
-                      ? SizedBox(
-                          width: 36,
-                          height: 36,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2,
-                            color: c.accent,
-                          ),
-                        )
-                      : IconButtonRound(
-                          icon: provider.isPaused
-                              ? Icons.play_arrow
-                              : Icons.pause,
-                          size: 36,
-                          variant: IconButtonVariant.filled,
-                          iconColor: c.onAccent,
-                          backgroundColor: c.accent,
-                          onPressed: () {
-                            if (provider.isPaused) {
-                              provider.play();
-                            } else {
-                              provider.pause();
-                            }
-                          },
-                        ),
-                  const SizedBox(width: 4),
-                  IconButtonRound(
-                    icon: Icons.skip_next,
-                    size: 36,
-                    variant: IconButtonVariant.tonal,
-                    onPressed:
-                        provider.currentIndex < provider.totalSentences - 1
-                        ? () => provider.nextSentence()
-                        : null,
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      '${provider.currentIndex + 1} / ${provider.totalSentences}',
-                      style: TextStyle(color: c.textSecondary, fontSize: 12),
+    return ListenableBuilder(
+      listenable: provider,
+      builder: (context, _) {
+        return GlassBlur.layer(
+          child: Container(
+            color: c.bg.withValues(alpha: 0.82),
+            child: SafeArea(
+              top: false,
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                child: Row(
+                  children: [
+                    IconButtonRound(
+                      icon: Icons.close,
+                      size: 36,
+                      variant: IconButtonVariant.tonal,
+                      onPressed: () => provider.stop(),
                     ),
-                  ),
-                  IconButtonRound(
-                    icon: Icons.tune,
-                    size: 36,
-                    variant: IconButtonVariant.tonal,
-                    onPressed: () => _showSettings(context),
-                  ),
-                ],
+                    const SizedBox(width: 4),
+                    IconButtonRound(
+                      icon: Icons.skip_previous,
+                      size: 36,
+                      variant: IconButtonVariant.tonal,
+                      onPressed: provider.currentIndex > 0
+                          ? () => provider.previousSentence()
+                          : null,
+                    ),
+                    const SizedBox(width: 4),
+                    provider.isBuffering
+                        ? SizedBox(
+                            width: 36,
+                            height: 36,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: c.accent,
+                            ),
+                          )
+                        : IconButtonRound(
+                            icon: provider.isPaused
+                                ? Icons.play_arrow
+                                : Icons.pause,
+                            size: 36,
+                            variant: IconButtonVariant.filled,
+                            iconColor: c.onAccent,
+                            backgroundColor: c.accent,
+                            onPressed: () {
+                              if (provider.isPaused) {
+                                provider.playFromCurrent();
+                              } else {
+                                provider.pause();
+                              }
+                            },
+                          ),
+                    const SizedBox(width: 4),
+                    IconButtonRound(
+                      icon: Icons.skip_next,
+                      size: 36,
+                      variant: IconButtonVariant.tonal,
+                      onPressed:
+                          provider.currentIndex < provider.totalSentences - 1
+                          ? () => provider.nextSentence()
+                          : null,
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        '${provider.currentIndex + 1} / ${provider.totalSentences}',
+                        style: TextStyle(color: c.textSecondary, fontSize: 12),
+                      ),
+                    ),
+                    IconButtonRound(
+                      icon: Icons.tune,
+                      size: 36,
+                      variant: IconButtonVariant.tonal,
+                      onPressed: () => TtsSettingsSheet.show(
+                        context,
+                        provider,
+                        startOnClose: false,
+                      ),
+                    ),
+                  ],
+                ),
               ),
             ),
           ),
-      ),
+        );
+      },
     );
   }
+}
 
-  void _showSettings(BuildContext context) {
-    showModalBottomSheet(
+class TtsSettingsSheet extends StatefulWidget {
+  final TtsProvider provider;
+  final bool startOnClose;
+
+  const TtsSettingsSheet({
+    super.key,
+    required this.provider,
+    this.startOnClose = false,
+  });
+
+  /// Returns `true` when [startOnClose] is set and the sheet was dismissed
+  /// (user should begin TTS). Returns `false` if the sheet is cancelled in a
+  /// way that should not start (currently always dismissed → start when true).
+  static Future<bool> show(
+    BuildContext context,
+    TtsProvider provider, {
+    bool startOnClose = false,
+  }) async {
+    await provider.loadPrefs();
+    if (!context.mounted) return false;
+    await showModalBottomSheet<void>(
       context: context,
       backgroundColor: Colors.transparent,
       isScrollControlled: true,
-      builder: (_) => _TtsSettingsSheet(provider: provider),
+      builder: (_) => TtsSettingsSheet(
+        provider: provider,
+        startOnClose: startOnClose,
+      ),
     );
+    if (startOnClose) {
+      await provider.persistSelection();
+      return true;
+    }
+    return false;
   }
-}
-
-class _TtsSettingsSheet extends StatefulWidget {
-  final TtsProvider provider;
-  const _TtsSettingsSheet({required this.provider});
 
   @override
-  State<_TtsSettingsSheet> createState() => _TtsSettingsSheetState();
+  State<TtsSettingsSheet> createState() => _TtsSettingsSheetState();
 }
 
-class _TtsSettingsSheetState extends State<_TtsSettingsSheet> {
+class _TtsSettingsSheetState extends State<TtsSettingsSheet> {
   late double _rate;
   late double _pitch;
   late TtsEngineType _engineType;
-  late TextEditingController _apiCtrl;
+  late bool _remember;
+  late bool _optimistic;
 
   @override
   void initState() {
     super.initState();
-    _rate = switch (widget.provider.engineType) {
-      TtsEngineType.device => 0.5,
-      TtsEngineType.googleCloud => 1.0,
-      TtsEngineType.edge => 0.88,
-    };
-    _pitch = switch (widget.provider.engineType) {
-      TtsEngineType.device => 1.0,
-      TtsEngineType.googleCloud => 0.0,
-      TtsEngineType.edge => -0.02,
-    };
-    _engineType = widget.provider.engineType;
-    _apiCtrl = TextEditingController();
-    _loadApiKey();
+    final p = widget.provider;
+    _engineType = p.engineType;
+    _rate = p.rate;
+    _pitch = p.pitch;
+    _remember = p.rememberSelection;
+    _optimistic = p.optimistic;
   }
 
-  Future<void> _loadApiKey() async {
-    if (widget.provider.engineType != TtsEngineType.googleCloud) return;
-    final prefs = await SharedPreferences.getInstance();
-    final key = prefs.getString('google_tts_api_key') ?? '';
-    if (mounted) _apiCtrl.text = key;
-  }
-
-  void _onEngineChanged(TtsEngineType type) async {
-    _rate = switch (type) {
-      TtsEngineType.device => 0.5,
-      TtsEngineType.googleCloud => 1.0,
-      TtsEngineType.edge => 0.88,
-    };
-    _pitch = switch (type) {
-      TtsEngineType.device => 1.0,
-      TtsEngineType.googleCloud => 0.0,
-      TtsEngineType.edge => -0.02,
-    };
-    setState(() => _engineType = type);
-    widget.provider.setEngineType(type);
-    if (type == TtsEngineType.googleCloud && _apiCtrl.text.isEmpty) {
-      final prefs = await SharedPreferences.getInstance();
-      final key = prefs.getString('google_tts_api_key') ?? '';
-      if (mounted) _apiCtrl.text = key;
-      if (key.isNotEmpty) {
-        await widget.provider.setGoogleApiKey(key);
-      }
-    }
-  }
-
-  @override
-  void dispose() {
-    _apiCtrl.dispose();
-    super.dispose();
+  Future<void> _onEngineChanged(TtsEngineType type) async {
+    setState(() {
+      _engineType = type;
+      _rate = type == TtsEngineType.device ? 0.5 : 0.88;
+      _pitch = type == TtsEngineType.device ? 1.0 : -0.02;
+    });
+    await widget.provider.setEngineType(
+      type,
+      restartIfPlaying: !widget.startOnClose && widget.provider.isActive,
+    );
+    widget.provider.setRate(_rate);
+    widget.provider.setPitch(_pitch);
   }
 
   @override
@@ -220,7 +223,6 @@ class _TtsSettingsSheetState extends State<_TtsSettingsSheet> {
           ),
           const SizedBox(height: 8),
 
-          // Engine selector
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 20),
             child: Column(
@@ -238,10 +240,6 @@ class _TtsSettingsSheetState extends State<_TtsSettingsSheet> {
                       label: Text('Device'),
                     ),
                     ButtonSegment(
-                      value: TtsEngineType.googleCloud,
-                      label: Text('Google'),
-                    ),
-                    ButtonSegment(
                       value: TtsEngineType.edge,
                       label: Text('Edge'),
                     ),
@@ -253,36 +251,7 @@ class _TtsSettingsSheetState extends State<_TtsSettingsSheet> {
               ],
             ),
           ),
-          const SizedBox(height: 12),
 
-          // API key for Google Cloud
-          if (_engineType == TtsEngineType.googleCloud)
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 20),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'API Key',
-                    style: TextStyle(color: c.textSecondary, fontSize: 13),
-                  ),
-                  const SizedBox(height: 6),
-                  TextField(
-                    controller: _apiCtrl,
-                    decoration: InputDecoration(
-                      hintText: 'Enter your Google Cloud TTS API key',
-                      isDense: true,
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(10),
-                      ),
-                    ),
-                    style: TextStyle(color: c.textPrimary, fontSize: 14),
-                  ),
-                ],
-              ),
-            ),
-
-          // Voice selector
           if (widget.provider.voices.isNotEmpty) ...[
             const SizedBox(height: 12),
             Padding(
@@ -376,31 +345,46 @@ class _TtsSettingsSheetState extends State<_TtsSettingsSheet> {
               ],
             ),
           ),
-          // Save API key if Google Cloud
-          if (_engineType == TtsEngineType.googleCloud &&
-              _apiCtrl.text.isNotEmpty)
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 20),
-              child: SizedBox(
-                width: double.infinity,
-                child: FilledButton(
-                  style: FilledButton.styleFrom(backgroundColor: c.accent),
-                  onPressed: () async {
-                    await widget.provider.setGoogleApiKey(_apiCtrl.text.trim());
-                    if (context.mounted) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(
-                          content: const Text('API key saved'),
-                          backgroundColor: c.accent,
-                        ),
-                      );
-                    }
-                  },
-                  child: const Text('Save API Key'),
-                ),
+
+          if (_engineType == TtsEngineType.edge)
+            SwitchListTile(
+              contentPadding: const EdgeInsets.symmetric(horizontal: 20),
+              title: Text(
+                'Optimistic TTS',
+                style: TextStyle(color: c.textPrimary, fontSize: 14),
               ),
+              subtitle: Text(
+                'Preload the whole chapter (and the next) so playback starts faster',
+                style: TextStyle(color: c.textSecondary, fontSize: 12),
+              ),
+              value: _optimistic,
+              activeThumbColor: c.accent,
+              onChanged: (v) async {
+                setState(() => _optimistic = v);
+                await widget.provider.setOptimistic(v);
+              },
             ),
-          const SizedBox(height: 16),
+
+          CheckboxListTile(
+            contentPadding: const EdgeInsets.symmetric(horizontal: 12),
+            controlAffinity: ListTileControlAffinity.leading,
+            title: Text(
+              'Remember selection',
+              style: TextStyle(color: c.textPrimary, fontSize: 14),
+            ),
+            subtitle: Text(
+              'Skip this sheet next time and start with these settings',
+              style: TextStyle(color: c.textSecondary, fontSize: 12),
+            ),
+            value: _remember,
+            activeColor: c.accent,
+            onChanged: (v) async {
+              final value = v ?? false;
+              setState(() => _remember = value);
+              await widget.provider.setRememberSelection(value);
+            },
+          ),
+          const SizedBox(height: 8),
         ],
       ),
     );
