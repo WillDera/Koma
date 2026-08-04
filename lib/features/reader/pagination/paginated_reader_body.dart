@@ -42,6 +42,11 @@ class PaginatedReaderBody extends StatefulWidget {
     this.ttsActive = false,
     this.ttsStart = 0,
     this.ttsEnd = 0,
+    this.focusStart = 0,
+    this.focusEnd = 0,
+    this.focusAlpha = 0,
+    this.overrideCharOffset,
+    this.onOverrideApplied,
     this.onPositionChanged,
     this.onChapterChanged,
     this.onSelected,
@@ -69,6 +74,15 @@ class PaginatedReaderBody extends StatefulWidget {
   final bool ttsActive;
   final int ttsStart;
   final int ttsEnd;
+  final int focusStart;
+  final int focusEnd;
+  final double focusAlpha;
+
+  /// When set, the next [_seed] opens at this chapter char offset instead of the
+  /// stored resume position (snippet jump). Host clears it via
+  /// [onOverrideApplied] after the first successful seed.
+  final int? overrideCharOffset;
+  final VoidCallback? onOverrideApplied;
 
   /// Fires on every settled page turn with the new position and the character
   /// offset that page starts at. [exact] is false only when the offset was
@@ -258,6 +272,19 @@ class _PaginatedReaderBodyState extends State<PaginatedReaderBody> {
 
   /// Resolves where to open the chapter the host asked for, once per seek.
   void _seed(BookPageCursor cursor) {
+    final override = widget.overrideCharOffset;
+    if (override != null) {
+      _position = cursor.positionForOffset(widget.chapterIndex, override);
+      _seeded = true;
+      widget.onOverrideApplied?.call();
+      widget.onPositionChanged?.call(
+        _position,
+        override,
+        exact: true,
+      );
+      return;
+    }
+
     final resolver = ResumeResolver(
       cursor: cursor,
       charOffsetFor: widget.charOffsetFor,
@@ -355,6 +382,10 @@ class _PaginatedReaderBodyState extends State<PaginatedReaderBody> {
       ttsActive: widget.ttsActive && pos.chapterIndex == widget.chapterIndex,
       ttsStart: widget.ttsStart,
       ttsEnd: widget.ttsEnd,
+      focusStart: pos.chapterIndex == widget.chapterIndex ? widget.focusStart : 0,
+      focusEnd: pos.chapterIndex == widget.chapterIndex ? widget.focusEnd : 0,
+      focusAlpha:
+          pos.chapterIndex == widget.chapterIndex ? widget.focusAlpha : 0,
       onSelected: widget.onSelected,
       onSelectionCleared: widget.onSelectionCleared,
       onSelectionCollapsed: widget.onSelectionCollapsed,

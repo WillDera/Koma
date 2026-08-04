@@ -44,6 +44,9 @@ class PaginatedChapterView extends StatelessWidget {
   final bool ttsActive;
   final int ttsStart;
   final int ttsEnd;
+  final int focusStart;
+  final int focusEnd;
+  final double focusAlpha;
 
   /// Rebuild discriminator so edits to highlights re-run selection state.
   final int highlightVersion;
@@ -69,6 +72,9 @@ class PaginatedChapterView extends StatelessWidget {
     this.ttsActive = false,
     this.ttsStart = 0,
     this.ttsEnd = 0,
+    this.focusStart = 0,
+    this.focusEnd = 0,
+    this.focusAlpha = 0,
     this.highlightVersion = 0,
     this.contentWidth,
     this.onSelected,
@@ -126,6 +132,9 @@ class PaginatedChapterView extends StatelessWidget {
             ttsActive: ttsActive,
             ttsStart: ttsStart,
             ttsEnd: ttsEnd,
+            focusStart: focusStart,
+            focusEnd: focusEnd,
+            focusAlpha: focusAlpha,
             rangeStart: page.start,
             rangeEnd: page.end,
             contentWidth: width,
@@ -142,6 +151,9 @@ class PaginatedChapterView extends StatelessWidget {
             ttsActive: ttsActive,
             ttsStart: ttsStart,
             ttsEnd: ttsEnd,
+            focusStart: focusStart,
+            focusEnd: focusEnd,
+            focusAlpha: focusAlpha,
             rangeStart: page.start,
             rangeEnd: page.end,
           );
