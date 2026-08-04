@@ -40,6 +40,9 @@ class ReadingSpans {
     bool ttsActive = false,
     int ttsStart = 0,
     int ttsEnd = 0,
+    int focusStart = 0,
+    int focusEnd = 0,
+    double focusAlpha = 0,
     int rangeStart = 0,
     int? rangeEnd,
   }) {
@@ -54,6 +57,9 @@ class ReadingSpans {
       ttsActive: ttsActive,
       ttsStart: ttsStart,
       ttsEnd: ttsEnd,
+      focusStart: focusStart,
+      focusEnd: focusEnd,
+      focusAlpha: focusAlpha,
       rangeStart: rangeStart,
       rangeEnd: rangeEnd,
       contentWidth: null,
@@ -73,6 +79,9 @@ class ReadingSpans {
     bool ttsActive = false,
     int ttsStart = 0,
     int ttsEnd = 0,
+    int focusStart = 0,
+    int focusEnd = 0,
+    double focusAlpha = 0,
     int rangeStart = 0,
     int? rangeEnd,
     double? contentWidth,
@@ -94,6 +103,9 @@ class ReadingSpans {
       ttsActive: ttsActive,
       ttsStart: ttsStart,
       ttsEnd: ttsEnd,
+      focusStart: focusStart,
+      focusEnd: focusEnd,
+      focusAlpha: focusAlpha,
       rangeStart: rangeStart,
       rangeEnd: rangeEnd,
       contentWidth: contentWidth,
@@ -104,7 +116,7 @@ class ReadingSpans {
     );
   }
 
-  /// Core builder: merges HTML style runs with highlight / TTS overlays.
+  /// Core builder: merges HTML style runs with highlight / TTS / focus overlays.
   static List<InlineSpan> buildInline({
     required String text,
     required List<StyleRun> styleRuns,
@@ -117,6 +129,9 @@ class ReadingSpans {
     bool ttsActive = false,
     int ttsStart = 0,
     int ttsEnd = 0,
+    int focusStart = 0,
+    int focusEnd = 0,
+    double focusAlpha = 0,
     int rangeStart = 0,
     int? rangeEnd,
     double? contentWidth,
@@ -167,6 +182,14 @@ class ReadingSpans {
         cuts.add(e);
       }
     }
+    if (focusAlpha > 0 && focusEnd > focusStart) {
+      final s = max(focusStart.clamp(0, text.length), start);
+      final e = min(focusEnd.clamp(0, text.length), end);
+      if (e > s) {
+        cuts.add(s);
+        cuts.add(e);
+      }
+    }
     if (includeImages) {
       for (final e in embeds) {
         if (e.afterOffset >= start && e.afterOffset <= end) {
@@ -198,6 +221,7 @@ class ReadingSpans {
       final htmlFlags = _flagsAt(styleRuns, a);
       final hlColor = _highlightAt(highlights, a, text.length);
       final ttsOn = ttsActive && a >= ttsStart && a < ttsEnd;
+      final focusOn = focusAlpha > 0 && a >= focusStart && a < focusEnd;
       var style = baseStyle;
       if (applyHeadingMetrics) {
         final heading = _headingAt(blocks, a);
@@ -216,7 +240,15 @@ class ReadingSpans {
         htmlFlags,
         linkColor: linkColor ?? baseStyle.color,
       );
-      style = _decorate(style, prov, brightness, hlColor, ttsOn);
+      style = _decorate(
+        style,
+        prov,
+        brightness,
+        hlColor,
+        ttsOn,
+        focusOn: focusOn,
+        focusAlpha: focusAlpha,
+      );
 
       GestureRecognizer? recognizer;
       if (htmlFlags.linkHref != null &&
@@ -350,8 +382,10 @@ class ReadingSpans {
     ThemeState prov,
     Brightness brightness,
     String? highlightColor,
-    bool ttsOn,
-  ) {
+    bool ttsOn, {
+    bool focusOn = false,
+    double focusAlpha = 0,
+  }) {
     var style = base;
     if (highlightColor != null) {
       style = style.copyWith(
@@ -370,6 +404,18 @@ class ReadingSpans {
           prov.accentColor.withValues(alpha: 0.15),
           1.0,
         ),
+      );
+    }
+    // Snippet-arrival flash: yellow wash layered over marks / TTS.
+    if (focusOn && focusAlpha > 0) {
+      final bg = style.backgroundColor ?? Colors.transparent;
+      final flash = AppColors.highlight(
+        'yellow',
+        brightness,
+        isSepia: false,
+      ).withValues(alpha: focusAlpha);
+      style = style.copyWith(
+        backgroundColor: Color.alphaBlend(flash, bg),
       );
     }
     return style;
