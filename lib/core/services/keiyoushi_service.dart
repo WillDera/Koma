@@ -25,6 +25,10 @@ class KeiyoushiService {
     if (port <= 0) {
       try {
         final prefs = await SharedPreferences.getInstance();
+        // Kotlin writes flutter.dalvik_port into the native store after the
+        // Dart cache may already have been loaded — reload before reading.
+        await prefs.reload();
+        // Logical key; SharedPreferences strips/adds the "flutter." prefix.
         port = prefs.getInt('dalvik_port') ?? 0;
       } catch (_) {
         port = 0;
