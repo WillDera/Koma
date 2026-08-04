@@ -4,6 +4,7 @@ import 'package:kindle_unpack/kindle_unpack.dart';
 import 'package:path_provider/path_provider.dart';
 import '../models/book.dart';
 import '../models/chapter.dart';
+import 'ebook_media_store.dart';
 import 'epub_service.dart';
 
 class _RawPart {
@@ -18,12 +19,14 @@ class _MobiRaw {
   final Uint8List? coverBytes;
   final String? coverExtension;
   final List<_RawPart> parts;
+  final List<({String name, Uint8List data, String ext})> images;
   _MobiRaw({
     required this.title,
     this.author,
     this.coverBytes,
     this.coverExtension,
     required this.parts,
+    required this.images,
   });
 }
 
@@ -57,12 +60,24 @@ Future<_MobiRaw> _parseMobiIsolate(Uint8List bytes) async {
     parts.add(_RawPart(Uint8List.fromList(book.rawML), 0));
   }
 
+  final images = <({String name, Uint8List data, String ext})>[];
+  try {
+    for (final img in book.images.all) {
+      images.add((
+        name: img.name,
+        data: Uint8List.fromList(img.data),
+        ext: img.format.extension,
+      ));
+    }
+  } catch (_) {}
+
   return _MobiRaw(
     title: book.title,
     author: author,
     coverBytes: coverBytes,
     coverExtension: coverExtension,
     parts: parts,
+    images: images,
   );
 }
 
@@ -72,6 +87,9 @@ class MobiService {
       final bytes = await File(filePath).readAsBytes();
       final raw = await compute(_parseMobiIsolate, Uint8List.fromList(bytes));
       final bookIdFinal = bookId ?? 0;
+      final sessionId = bookId != null && bookId > 0
+          ? '$bookId'
+          : EbookMediaStore.newSessionId();
 
       // Save cover image (main isolate for path_provider)
       String? coverPath;
@@ -88,12 +106,63 @@ class MobiService {
         } catch (_) {}
       }
 
+      final imagePaths = <String, String>{};
+      for (final img in raw.images) {
+        final path = await EbookMediaStore.storeBytes(
+          bookOrSessionId: sessionId,
+          bytes: img.data,
+          preferredExt: img.ext,
+          logicalName: img.name,
+        );
+        imagePaths[img.name] = path;
+        // Also index by basename without path for recindex-style refs.
+        final base = img.name.split('/').last;
+        imagePaths.putIfAbsent(base, () => path);
+      }
+
       // Chapters from parts
       final chapters = <Chapter>[];
       if (raw.parts.isNotEmpty) {
         for (final part in raw.parts) {
-          final html = String.fromCharCodes(part.bytes);
+          var html = String.fromCharCodes(part.bytes);
           final chTitle = _extractTitle(html) ?? 'Chapter ${part.index + 1}';
+          if (imagePaths.isNotEmpty) {
+            html = EbookMediaStore.rewriteImgSrcs(html, (src) {
+              final key = EbookMediaStore.matchContentKey(src, imagePaths.keys);
+              return key == null ? null : imagePaths[key];
+            });
+            // Kindle often uses recindex="N" without a normal src — promote
+            // to img src when we can map N → imageNNNNN.
+            html = html.replaceAllMapped(
+              RegExp(
+                r'''<img\b([^>]*?)\brecindex\s*=\s*["']?(\d+)["']?([^>]*)>''',
+                caseSensitive: false,
+              ),
+              (m) {
+                final idx = int.tryParse(m.group(2) ?? '') ?? -1;
+                if (idx < 0) return m.group(0)!;
+                final name =
+                    'image${idx.toString().padLeft(5, '0')}.jpg';
+                final altNames = [
+                  name,
+                  'image${idx.toString().padLeft(5, '0')}.png',
+                  'image${idx.toString().padLeft(5, '0')}.gif',
+                ];
+                String? path;
+                for (final n in altNames) {
+                  path = imagePaths[n];
+                  if (path != null) break;
+                }
+                // Fallback: Nth image in enumeration order.
+                if (path == null && idx < raw.images.length) {
+                  path = imagePaths[raw.images[idx].name];
+                }
+                if (path == null) return m.group(0)!;
+                final uri = Uri.file(path).toString();
+                return '<img src="$uri"${m.group(1) ?? ''}${m.group(3) ?? ''}>';
+              },
+            );
+          }
           chapters.add(
             Chapter(
               id: 0,
@@ -116,7 +185,11 @@ class MobiService {
         totalChapters: chapters.length,
       );
 
-      return EpubResult(book: ebook, chapters: chapters);
+      return EpubResult(
+        book: ebook,
+        chapters: chapters,
+        mediaSessionId: sessionId,
+      );
     } catch (e) {
       throw Exception('Failed to parse MOBI/AZW3: $e');
     }
