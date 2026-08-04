@@ -1,3 +1,5 @@
+import '../../core/services/keiyoushi_service.dart';
+
 class MManga {
   final String url;
   final String title;
@@ -45,7 +47,7 @@ class MManga {
     artist: json['artist'] as String?,
     description: json['description'] as String?,
     status: json['status'] as int? ?? 0,
-    memo: json['memo'] as String?,
+    memo: coerceMemoJson(json['memo']),
     genres: json['genre'] != null
         ? (json['genre'] as String).split(',').map((g) => g.trim()).toList()
         : null,

@@ -427,7 +427,13 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> with RouteAware {
           onTap: () => context.pushNamed(
             Routes.mangaDetail,
             extra:
-                (sourceId: sourceId, url: url, title: name, manga: null)
+                (
+                      sourceId: sourceId,
+                      url: url,
+                      title: name,
+                      manga: manga,
+                      memo: manga.memo,
+                    )
                     as MangaDetailArgs,
           ),
           child: Container(

@@ -47,18 +47,31 @@ class ExtensionDispatchService implements ExtensionService {
   }) => _resolve(source).search(source, page, query, filters: filters);
 
   @override
-  Future<MManga?> getDetail(MSource source, String url) =>
-      _resolve(source).getDetail(source, url);
+  Future<MManga?> getDetail(
+    MSource source,
+    String url, {
+    String? memo,
+    String? title,
+  }) =>
+      _resolve(source).getDetail(source, url, memo: memo, title: title);
 
   @override
-  Future<List<MChapter>> getChapterList(MSource source, String url) =>
-      _resolve(source).getChapterList(source, url);
+  Future<List<MChapter>> getChapterList(
+    MSource source,
+    String url, {
+    String? memo,
+    String? title,
+  }) =>
+      _resolve(source).getChapterList(source, url, memo: memo, title: title);
 
   @override
   Future<({MManga? manga, List<MChapter> chapters})> getMangaDetail(
     MSource source,
-    String url,
-  ) => _resolve(source).getMangaDetail(source, url);
+    String url, {
+    String? memo,
+    String? title,
+  }) =>
+      _resolve(source).getMangaDetail(source, url, memo: memo, title: title);
 
   @override
   Future<List<MPages>> getPageList(MSource source, MChapter chapter) =>
