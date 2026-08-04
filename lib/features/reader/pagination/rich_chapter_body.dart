@@ -21,6 +21,9 @@ class RichChapterBody extends StatelessWidget {
   final bool ttsActive;
   final int ttsStart;
   final int ttsEnd;
+  final int focusStart;
+  final int focusEnd;
+  final double focusAlpha;
   final String contentKey;
   final TextAlign textAlign;
   final void Function(TextSelection selection)? onSelectionChanged;
@@ -36,6 +39,9 @@ class RichChapterBody extends StatelessWidget {
     this.ttsActive = false,
     this.ttsStart = 0,
     this.ttsEnd = 0,
+    this.focusStart = 0,
+    this.focusEnd = 0,
+    this.focusAlpha = 0,
     required this.contentKey,
     required this.textAlign,
     this.onSelectionChanged,
@@ -60,6 +66,9 @@ class RichChapterBody extends StatelessWidget {
             ttsActive: ttsActive,
             ttsStart: ttsStart,
             ttsEnd: ttsEnd,
+            focusStart: focusStart,
+            focusEnd: focusEnd,
+            focusAlpha: focusAlpha,
             linkColor: c.accent,
             onLinkTap: ReadingSpans.openLink,
           ),
@@ -177,6 +186,9 @@ class RichChapterBody extends StatelessWidget {
       ttsActive: ttsActive,
       ttsStart: ttsStart,
       ttsEnd: ttsEnd,
+      focusStart: focusStart,
+      focusEnd: focusEnd,
+      focusAlpha: focusAlpha,
       rangeStart: block.start,
       rangeEnd: block.end,
       includeImages: false,

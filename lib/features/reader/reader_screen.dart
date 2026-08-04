@@ -102,15 +102,48 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
 
   late final AnimationController _toolbarCtrl;
   late final AnimationController _colorCtrl;
+  late final AnimationController _focusCtrl;
 
   Timer? _uiHideTimer;
   static const _autoHideDelay = Duration(seconds: 3);
+
+  /// Transient snippet-arrival flash range into chapter plain text.
+  int _focusStart = 0;
+  int _focusEnd = 0;
+  bool _snippetFocusArmed = false;
+  bool _snippetScrollSeekDone = false;
+  bool _snippetCharConsumed = false;
+
+  /// False until this screen's [loadBook] finishes. Prevents painting the
+  /// leftover [readerProvider] chapter (often scrolled to the end) before
+  /// the snippet target is applied.
+  bool _sessionReady = false;
+
+  /// Successful layout-settle frames at the snippet scroll target.
+  int _snippetSeekSettleCount = 0;
+  /// Total post-frame attempts (including waiting for the scroll view).
+  int _snippetSeekAttempts = 0;
+  static const _snippetSeekSettleFrames = 6;
+  static const _snippetSeekMaxAttempts = 40;
 
   @override
   void initState() {
     super.initState();
     _toolbarCtrl = AnimationController(vsync: this, duration: AppMotion.sheet);
     _colorCtrl = AnimationController(vsync: this, duration: AppMotion.base);
+    _focusCtrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1500),
+    );
+    _focusCtrl.addStatusListener((status) {
+      if (status == AnimationStatus.completed && mounted) {
+        setState(() {
+          _focusStart = 0;
+          _focusEnd = 0;
+          _highlightVersion++;
+        });
+      }
+    });
     _ttsProvider = TtsProvider()..addListener(_onTtsChanged);
     unawaited(_ttsProvider!.loadPrefs());
     Future.microtask(() => _loadAndRestore());
@@ -168,33 +201,127 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
   }
 
   Future<void> _loadAndRestore() async {
+    // Char offsets are authoritative for snippet jumps; skip pixel scroll so
+    // we don't briefly land at the wrong place before the char seek runs.
     await _provider!.loadBook(
       widget.bookId,
       targetChapterId: widget.snippetChapterId,
-      targetScrollOffset: widget.snippetScrollOffset,
+      targetScrollOffset: widget.snippetStartOffset != null
+          ? null
+          : widget.snippetScrollOffset,
     );
     if (!mounted) return;
+    // Reset so a seek that ran against stale pre-load content cannot win.
+    _snippetScrollSeekDone = false;
+    _snippetSeekSettleCount = 0;
+    _snippetSeekAttempts = 0;
+    _lastSeenChapterIndex = -1;
+    setState(() => _sessionReady = true);
     _restoreScrollPosition();
   }
 
-  void _restoreScrollPosition() {
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) return;
-      if (_scrollController.hasClients) {
-        final pos = _provider!.scrollPosition;
-        if (pos > 0) {
-          _scrollController.jumpTo(
-            pos.clamp(0, _scrollController.position.maxScrollExtent),
-          );
-        }
-      }
+  /// Peak flash opacity during snippet-arrival animation (0→peak→0).
+  double get _focusAlpha {
+    if (_focusEnd <= _focusStart) return 0;
+    final t = _focusCtrl.value;
+    if (t < 0.2) return (t / 0.2) * 0.55;
+    if (t < 0.5) return 0.55;
+    return ((1.0 - (t - 0.5) / 0.5).clamp(0.0, 1.0)) * 0.55;
+  }
+
+  void _armSnippetFocusIfNeeded() {
+    if (_snippetFocusArmed) return;
+    final start = widget.snippetStartOffset;
+    final end = widget.snippetEndOffset;
+    if (start == null || end == null || end <= start) return;
+    final ch = _provider?.currentChapter;
+    if (widget.snippetChapterId != null && ch?.id != widget.snippetChapterId) {
+      return;
+    }
+    _snippetFocusArmed = true;
+    setState(() {
+      _focusStart = start;
+      _focusEnd = end;
+      _highlightVersion++;
     });
+    _focusCtrl.forward(from: 0);
+    // Remounting the body (highlightVersion) can collapse maxScrollExtent
+    // briefly and clamp the offset — re-assert the snippet jump next frames.
+    if (widget.snippetStartOffset != null) {
+      _snippetScrollSeekDone = false;
+      _snippetSeekSettleCount = 0;
+      _snippetSeekAttempts = 0;
+      _seekScrollForSnippetOrResume();
+    }
+  }
+
+  /// Scroll mode: jump to [snippetStartOffset] via char/length ratio, falling
+  /// back to the provider's pixel scroll for older snippets without offsets.
+  void _seekScrollForSnippetOrResume() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || !_sessionReady) return;
+
+      final start = widget.snippetStartOffset;
+
+      bool retry() {
+        _snippetSeekAttempts++;
+        if (_snippetSeekAttempts < _snippetSeekMaxAttempts) {
+          _seekScrollForSnippetOrResume();
+          return true;
+        }
+        return false;
+      }
+
+      if (!_scrollController.hasClients) {
+        // Content not attached yet (still swapping off the spinner).
+        if (start != null && !_snippetScrollSeekDone) retry();
+        return;
+      }
+
+      // Snippet jump wins over saved reading progress (often the chapter end
+      // after the user finished scrolling the chapter).
+      if (start != null) {
+        if (_snippetScrollSeekDone) return;
+        final text = _currentText;
+        final extent = _scrollController.position.maxScrollExtent;
+        if (text.isEmpty || extent <= 0) {
+          retry();
+          return;
+        }
+        final ratio = start.clamp(0, text.length) / text.length;
+        final target = (ratio * extent).clamp(0.0, extent);
+        if ((_scrollController.offset - target).abs() > 1.0) {
+          _scrollController.jumpTo(target);
+          _snippetSeekSettleCount = 0; // extent moved us; resettle
+        } else {
+          _snippetSeekSettleCount++;
+        }
+        // Keep correcting across layout settles / focus remount frames.
+        if (_snippetSeekSettleCount < _snippetSeekSettleFrames) {
+          retry();
+          return;
+        }
+        _snippetScrollSeekDone = true;
+        _armSnippetFocusIfNeeded();
+        return;
+      }
+
+      final pos = _provider?.scrollPosition ?? 0;
+      _scrollController.jumpTo(
+        pos.clamp(0.0, _scrollController.position.maxScrollExtent),
+      );
+    });
+  }
+
+  void _restoreScrollPosition() {
+    _seekScrollForSnippetOrResume();
   }
 
   /// Called from the Consumer builder when the current chapter index
   /// changes (e.g. next/prev). Drops the scroll to the position saved
   /// for that chapter — or 0 if it has never been visited.
   void _onChapterChanged(int newIndex) {
+    if (!_sessionReady) return;
     if (newIndex == _lastSeenChapterIndex) return;
     _lastSeenChapterIndex = newIndex;
     _lastScrollOffset = 0;
@@ -229,26 +356,9 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
         _prefetchNextChapterAudio();
       }());
     }
-    // Jump to the saved scroll position for this chapter.  The
-    // provider's _scrollPosition may be 0 for an unvisited chapter,
-    // but a snippet-jump sets a specific offset (startOffset) that
-    // should be used instead.
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted || !_scrollController.hasClients) return;
-      final pos = _provider?.scrollPosition ?? 0;
-      if (pos > 0) {
-        _scrollController.jumpTo(
-          pos.clamp(0, _scrollController.position.maxScrollExtent),
-        );
-      }
-    });
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted || !_scrollController.hasClients) return;
-      final pos = _provider?.scrollPosition ?? 0;
-      _scrollController.jumpTo(
-        pos.clamp(0, _scrollController.position.maxScrollExtent),
-      );
-    });
+    // Jump to the saved scroll position for this chapter — or the snippet
+    // character offset when opening from a snippet link.
+    _seekScrollForSnippetOrResume();
   }
 
   bool _didHandleBack = false;
@@ -338,6 +448,7 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
     _toolbarCtrl.dispose();
     _showUI.dispose();
     _colorCtrl.dispose();
+    _focusCtrl.dispose();
     super.dispose();
   }
 
@@ -509,53 +620,68 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
       child: Center(
         child: ConstrainedBox(
           constraints: BoxConstraints(maxWidth: themeProv.pageWidth),
-          child: PaginatedReaderBody(
-            chapters: provider.chapters,
-            chapterIndex: provider.currentIndex,
-            themeProv: themeProv,
-            highlights: _highlights,
-            highlightVersion: _highlightVersion,
-            ttsActive: _ttsProvider?.isActive ?? false,
-            ttsStart: _ttsProvider?.currentSentenceOffset ?? 0,
-            ttsEnd: _ttsProvider?.currentSentenceEnd ?? 0,
-            charOffsetFor: (i) => _provider?.readingOffsetFor(i),
-            pixelOffsetFor: (i) => i < provider.chapters.length
-                ? provider.chapters[i].scrollPosition
-                : 0,
-            // Edge taps belong to the curl (it turns pages with them), so a tap
-            // reaching us is a middle tap: manage the UI only, never jump
-            // chapters the way scroll mode's edge taps do.
-            onTap: () {
-              if (_toolbarVisible) {
-                _hideToolbar();
-              }
-              _resetUiHideTimer();
-            },
-            onSelected: (start, end) {
-              final text = TextExtractor.extractCached(
-                chapter.id,
-                chapter.content,
-              );
-              if (end <= text.length) {
-                _selStart = start;
-                _selectedText = text.substring(start, end);
-                _showToolbar(Offset.zero);
-              }
-            },
-            onSelectionCleared: _hideToolbarOnSelectionLost,
-            // A collapsed selection means the handles are gone: the toolbar
-            // acts on a selection that no longer exists, so it must go too.
-            // Previously this only reset the hide timer, stranding the toolbar
-            // until the user tapped it or guessed at empty space.
-            onSelectionCollapsed: _hideToolbarOnSelectionLost,
-            onChapterChanged: (index) {
-              if (index != provider.currentIndex) {
-                _provider?.navigateToChapter(index);
-              }
-            },
-            onPositionChanged: (pos, charOffset, {required exact}) {
-              _provider?.updateReadingOffset(charOffset);
-            },
+          child: AnimatedBuilder(
+            animation: _focusCtrl,
+            builder: (context, _) => PaginatedReaderBody(
+              chapters: provider.chapters,
+              chapterIndex: provider.currentIndex,
+              themeProv: themeProv,
+              highlights: _highlights,
+              highlightVersion: _highlightVersion,
+              ttsActive: _ttsProvider?.isActive ?? false,
+              ttsStart: _ttsProvider?.currentSentenceOffset ?? 0,
+              ttsEnd: _ttsProvider?.currentSentenceEnd ?? 0,
+              focusStart: _focusStart,
+              focusEnd: _focusEnd,
+              focusAlpha: _focusAlpha,
+              // Snippet jump beats stored reading progress (which is often past
+              // the clipped passage). Consumed after the first successful seed.
+              overrideCharOffset: _snippetCharConsumed
+                  ? null
+                  : widget.snippetStartOffset,
+              onOverrideApplied: () {
+                _snippetCharConsumed = true;
+              },
+              charOffsetFor: (i) => _provider?.readingOffsetFor(i),
+              pixelOffsetFor: (i) => i < provider.chapters.length
+                  ? provider.chapters[i].scrollPosition
+                  : 0,
+              // Edge taps belong to the curl (it turns pages with them), so a tap
+              // reaching us is a middle tap: manage the UI only, never jump
+              // chapters the way scroll mode's edge taps do.
+              onTap: () {
+                if (_toolbarVisible) {
+                  _hideToolbar();
+                }
+                _resetUiHideTimer();
+              },
+              onSelected: (start, end) {
+                final text = TextExtractor.extractCached(
+                  chapter.id,
+                  chapter.content,
+                );
+                if (end <= text.length) {
+                  _selStart = start;
+                  _selectedText = text.substring(start, end);
+                  _showToolbar(Offset.zero);
+                }
+              },
+              onSelectionCleared: _hideToolbarOnSelectionLost,
+              // A collapsed selection means the handles are gone: the toolbar
+              // acts on a selection that no longer exists, so it must go too.
+              // Previously this only reset the hide timer, stranding the toolbar
+              // until the user tapped it or guessed at empty space.
+              onSelectionCollapsed: _hideToolbarOnSelectionLost,
+              onChapterChanged: (index) {
+                if (index != provider.currentIndex) {
+                  _provider?.navigateToChapter(index);
+                }
+              },
+              onPositionChanged: (pos, charOffset, {required exact}) {
+                _provider?.updateReadingOffset(charOffset);
+                _armSnippetFocusIfNeeded();
+              },
+            ),
           ),
         ),
       ),
@@ -566,8 +692,7 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
   Widget build(BuildContext context) {
     final themeProv = ref.watch(themeProvider);
     final provider = ref.watch(readerProvider);
-    _onChapterChanged(provider.currentIndex);
-    if (provider.loading) {
+    if (provider.loading || !_sessionReady) {
       return Scaffold(
         backgroundColor: themeProv.isSepia
             ? AppColors.sepiaBg
@@ -575,6 +700,7 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
         body: const Center(child: CircularProgressIndicator()),
       );
     }
+    _onChapterChanged(provider.currentIndex);
     if (provider.error != null || provider.currentChapter == null) {
       return Scaffold(
         backgroundColor: themeProv.isSepia
@@ -705,7 +831,10 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
                                         ),
                                         const SizedBox(height: 28),
                                         ListenableBuilder(
-                                          listenable: _ttsProvider!,
+                                          listenable: Listenable.merge([
+                                            _ttsProvider!,
+                                            _focusCtrl,
+                                          ]),
                                           builder: (_, _) {
                                             final doc =
                                                 TextExtractor.documentCached(
@@ -733,6 +862,9 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
                                                   _ttsProvider
                                                       ?.currentSentenceEnd ??
                                                   0,
+                                              focusStart: _focusStart,
+                                              focusEnd: _focusEnd,
+                                              focusAlpha: _focusAlpha,
                                               contentKey:
                                                   'content-$_highlightVersion-${chapter.id}',
                                               textAlign: themeProv.textAlign,
