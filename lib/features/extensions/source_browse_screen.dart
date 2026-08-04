@@ -492,6 +492,7 @@ class _SourceBrowseScreenState extends ConsumerState<SourceBrowseScreen>
                         status: m.status,
                         genres: m.genres,
                         sourceId: widget.sourceId,
+                        memo: m.memo,
                       );
                       final id = await repos.manga.insertManga(manga);
                       if (!context.mounted) return;
@@ -583,6 +584,7 @@ class _SourceBrowseScreenState extends ConsumerState<SourceBrowseScreen>
               status: m.status,
               genres: m.genres,
               sourceId: widget.sourceId,
+              memo: m.memo,
             );
             final id = await repos.manga.insertManga(manga);
             if (!context.mounted) return;

@@ -30,6 +30,30 @@ enum _DownloadMode { all, unread, range }
 /// Normalize a chapter URL for consistent key matching between DB and network.
 String _normalizeUrl(String url) => url.trim().replaceAll(RegExp(r'^/+'), '');
 
+/// Prefer a non-blank remote title; otherwise keep the seeded/catalog title.
+String _preferTitle(String? remote, String fallback) {
+  final t = remote?.trim() ?? '';
+  return t.isNotEmpty ? t : fallback;
+}
+
+Map<String, dynamic> _mergeDetailsPreservingTitle(
+  Map<String, dynamic>? existing,
+  Map<String, dynamic> incoming,
+) {
+  final merged = <String, dynamic>{...?existing, ...incoming};
+  final remoteTitle = (incoming['title'] as String?)?.trim() ?? '';
+  if (remoteTitle.isEmpty) {
+    final keep =
+        (existing?['title'] as String?)?.trim().isNotEmpty == true
+        ? existing!['title']
+        : null;
+    if (keep != null) {
+      merged['title'] = keep;
+    }
+  }
+  return merged;
+}
+
 class MangaDetailScreen extends ConsumerStatefulWidget {
   final String sourceId;
   final String url;
@@ -295,6 +319,7 @@ class _MangaDetailScreenState extends ConsumerState<MangaDetailScreen> {
       sourceId: widget.sourceId,
       url: widget.url,
       title: widget.title,
+      memo: widget.memo ?? widget.manga?.memo,
     );
     _mangaId = null;
     _inLibrary = false;
@@ -320,13 +345,15 @@ class _MangaDetailScreenState extends ConsumerState<MangaDetailScreen> {
       final notifier = ref.read(mangaDetailProvider.notifier);
       notifier
         ..setDetails({
-          'title': m.name,
+          'title': _preferTitle(m.name, widget.title),
           'thumbnail_url': m.imageUrl,
           'author': m.author,
           'artist': m.artist,
           'description': m.description,
           'status': m.status,
           'genre': m.genres.join(', '),
+          if ((widget.memo ?? m.memo) != null)
+            'memo': widget.memo ?? m.memo,
         })
         ..setSourceName(
           (await repos.extensions.getInstalledExtensions())
@@ -389,13 +416,15 @@ class _MangaDetailScreenState extends ConsumerState<MangaDetailScreen> {
     final notifier = ref.read(mangaDetailProvider.notifier);
     notifier
       ..setDetails({
-        'title': m.name,
+        'title': _preferTitle(m.name, widget.title),
         'thumbnail_url': m.imageUrl,
         'author': m.author,
         'artist': m.artist,
         'description': m.description,
         'status': m.status,
         'genre': m.genres.join(', '),
+        if ((widget.memo ?? m.memo) != null)
+          'memo': widget.memo ?? m.memo,
       })
       ..setMangaId(m.id)
       ..setInLibrary(m.inLibrary, m.id)
@@ -456,6 +485,15 @@ class _MangaDetailScreenState extends ConsumerState<MangaDetailScreen> {
           }
         }
       });
+      // Seed catalog title/memo so the UI isn't blank if refresh fails,
+      // and so getMangaUpdate can hydrate AllAnime-style memo.
+      final seed = <String, dynamic>{
+        if (widget.title.trim().isNotEmpty) 'title': widget.title,
+        if ((widget.memo ?? '').isNotEmpty) 'memo': widget.memo,
+      };
+      if (seed.isNotEmpty) {
+        ref.read(mangaDetailProvider.notifier).setDetails(seed);
+      }
       // Trigger network fetch since no cached data
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted && gen == _loadGen) _refreshFromSource(gen: gen);
@@ -512,10 +550,20 @@ class _MangaDetailScreenState extends ConsumerState<MangaDetailScreen> {
       final result = await _service.getMangaUpdate(
         sourceId: widget.sourceId,
         url: widget.url,
-        memo: widget.memo,
+        memo: widget.memo ?? widget.manga?.memo,
+        title: widget.title.isNotEmpty
+            ? widget.title
+            : (ref.read(mangaDetailProvider).details?['title'] as String?),
+        thumbnailUrl:
+            ref.read(mangaDetailProvider).details?['thumbnail_url'] as String?,
+        author: ref.read(mangaDetailProvider).details?['author'] as String?,
+        artist: ref.read(mangaDetailProvider).details?['artist'] as String?,
+        description:
+            ref.read(mangaDetailProvider).details?['description'] as String?,
+        genre: ref.read(mangaDetailProvider).details?['genre'] as String?,
       );
       if (!mounted || expectedGen != _loadGen || !_isCurrentBinding) return;
-      final details = result.details;
+      var details = Map<String, dynamic>.from(result.details);
       var chapters = result.chapters;
 
       if (chapters.isEmpty) {
@@ -523,7 +571,8 @@ class _MangaDetailScreenState extends ConsumerState<MangaDetailScreen> {
           final fallback = await _service.getChapterList(
             sourceId: widget.sourceId,
             url: widget.url,
-            memo: widget.memo,
+            memo: widget.memo ?? widget.manga?.memo,
+            title: widget.title,
           );
           if (!mounted || expectedGen != _loadGen || !_isCurrentBinding) {
             return;
@@ -556,8 +605,9 @@ class _MangaDetailScreenState extends ConsumerState<MangaDetailScreen> {
       }
       if (!mounted || expectedGen != _loadGen || !_isCurrentBinding) return;
       final notifier = ref.read(mangaDetailProvider.notifier);
+      final existing = ref.read(mangaDetailProvider).details;
       notifier
-        ..setDetails(details)
+        ..setDetails(_mergeDetailsPreservingTitle(existing, details))
         ..setChapters(
           chapters.map((ch) => Map<String, dynamic>.from(ch)).toList(),
         )
@@ -582,8 +632,11 @@ class _MangaDetailScreenState extends ConsumerState<MangaDetailScreen> {
     final manga = await repos.manga.getMangaById(mangaId);
     if (manga == null) return;
     if (details.isNotEmpty) {
+      final incomingTitle = (details['title'] as String?)?.trim() ?? '';
+      final incomingMemo = details['memo'] as String?;
       await repos.manga.updateManga(
         manga.copyWith(
+          name: incomingTitle.isNotEmpty ? incomingTitle : manga.name,
           imageUrl: details['thumbnail_url'] as String? ?? manga.imageUrl,
           author: details['author'] as String? ?? manga.author,
           artist: details['artist'] as String? ?? manga.artist,
@@ -594,6 +647,9 @@ class _MangaDetailScreenState extends ConsumerState<MangaDetailScreen> {
               .map((g) => g.trim())
               .where((g) => g.isNotEmpty)
               .toList(),
+          memo: (incomingMemo != null && incomingMemo.isNotEmpty)
+              ? incomingMemo
+              : manga.memo,
         ),
       );
     }
@@ -651,13 +707,15 @@ class _MangaDetailScreenState extends ConsumerState<MangaDetailScreen> {
     final notifier = ref.read(mangaDetailProvider.notifier);
     notifier
       ..setDetails({
-        'title': manga.name,
+        'title': _preferTitle(manga.name, widget.title),
         'thumbnail_url': manga.imageUrl,
         'author': manga.author,
         'artist': manga.artist,
         'description': manga.description,
         'status': manga.status,
         'genre': manga.genres.join(', '),
+        if ((widget.memo ?? manga.memo) != null)
+          'memo': widget.memo ?? manga.memo,
       })
       ..setLoading(false)
       ..setError(null);
@@ -770,7 +828,7 @@ class _MangaDetailScreenState extends ConsumerState<MangaDetailScreen> {
         final d = ref.read(mangaDetailProvider).details;
         await repos.manga.updateManga(
           m.copyWith(
-            name: d?['title'] as String? ?? widget.title,
+            name: _preferTitle(d?['title'] as String?, widget.title),
             imageUrl: d?['thumbnail_url'] as String?,
             author: d?['author'] as String?,
             artist: d?['artist'] as String?,
@@ -781,6 +839,9 @@ class _MangaDetailScreenState extends ConsumerState<MangaDetailScreen> {
                 .map((g) => g.trim())
                 .where((g) => g.isNotEmpty)
                 .toList(),
+            memo: (d?['memo'] as String?)?.isNotEmpty == true
+                ? d!['memo'] as String
+                : (widget.memo ?? m.memo),
           ),
         );
       }
@@ -798,7 +859,7 @@ class _MangaDetailScreenState extends ConsumerState<MangaDetailScreen> {
       final d = detail.details ?? {};
       final manga = Manga(
         id: 0,
-        name: d['title'] as String? ?? widget.title,
+        name: _preferTitle(d['title'] as String?, widget.title),
         url: widget.url,
         imageUrl: d['thumbnail_url'] as String?,
         author: d['author'] as String?,
@@ -812,6 +873,9 @@ class _MangaDetailScreenState extends ConsumerState<MangaDetailScreen> {
             .toList(),
         sourceId: widget.sourceId,
         inLibrary: true,
+        memo: (d['memo'] as String?)?.isNotEmpty == true
+            ? d['memo'] as String
+            : widget.memo,
       );
       final id = await repos.manga.insertManga(manga);
       if (!mounted || gen != _loadGen || !_isCurrentBinding) return;
@@ -1442,23 +1506,24 @@ class _MangaDetailScreenState extends ConsumerState<MangaDetailScreen> {
           ),
         ),
       ),
-      body: detail.loading
-          ? const Center(child: CircularProgressIndicator())
-          : detail.error != null
-          ? Center(
-              child: Padding(
-                padding: const EdgeInsets.all(32),
-                child: Text(detail.error!, style: TextStyle(color: c.accent)),
-              ),
-            )
-          : CustomScrollView(
+      body: detail.details != null
+          ? CustomScrollView(
               slivers: [
-                if (detail.details == null)
-                  const SliverFillRemaining(
-                    child: Center(child: Text('Failed to load manga details')),
-                  )
-                else ...[
+                if (detail.loading)
+                  const SliverToBoxAdapter(
+                    child: LinearProgressIndicator(minHeight: 2),
+                  ),
+                if (detail.error != null)
                   SliverToBoxAdapter(
+                    child: Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+                      child: Text(
+                        detail.error!,
+                        style: TextStyle(color: c.accent, fontSize: 13),
+                      ),
+                    ),
+                  ),
+                SliverToBoxAdapter(
                     child: _Header(
                       details: detail.details!,
                       c: c,
@@ -1474,6 +1539,7 @@ class _MangaDetailScreenState extends ConsumerState<MangaDetailScreen> {
                       expanded: detail.expanded,
                       onExpandedChanged: (v) =>
                           ref.read(mangaDetailProvider.notifier).setExpanded(v),
+                      fallbackTitle: widget.title,
                     ),
                   ),
                   SliverToBoxAdapter(child: const SizedBox(height: 24)),
@@ -1673,9 +1739,18 @@ class _MangaDetailScreenState extends ConsumerState<MangaDetailScreen> {
                             );
                           },
                         ),
-                ],
               ],
-            ),
+            )
+          : detail.loading
+          ? const Center(child: CircularProgressIndicator())
+          : detail.error != null
+          ? Center(
+              child: Padding(
+                padding: const EdgeInsets.all(32),
+                child: Text(detail.error!, style: TextStyle(color: c.accent)),
+              ),
+            )
+          : const Center(child: Text('Failed to load manga details')),
     );
   }
 
@@ -1835,6 +1910,8 @@ class _Header extends StatefulWidget {
   final String lastChapterDate;
   final bool expanded;
   final ValueChanged<bool> onExpandedChanged;
+  /// Catalog/nav title used when remote details omit or blank the title.
+  final String fallbackTitle;
 
   const _Header({
     required this.details,
@@ -1850,6 +1927,7 @@ class _Header extends StatefulWidget {
     this.lastChapterDate = '',
     required this.expanded,
     required this.onExpandedChanged,
+    this.fallbackTitle = '',
   });
 
   @override
@@ -1891,7 +1969,10 @@ class _HeaderState extends State<_Header> {
 
   @override
   Widget build(BuildContext context) {
-    final title = widget.details['title'] as String? ?? '';
+    final rawTitle = widget.details['title'] as String? ?? '';
+    final title = rawTitle.trim().isNotEmpty
+        ? rawTitle
+        : widget.fallbackTitle;
     final thumb = widget.details['thumbnail_url'] as String?;
     final author = widget.details['author'] as String?;
     final artist = widget.details['artist'] as String?;

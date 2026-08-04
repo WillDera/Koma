@@ -345,6 +345,7 @@ class MangaRepository {
     sourceId: m.sourceId,
     inLibrary: m.inLibrary,
     readingStatus: m.readingStatus,
+    memo: m.memo,
     createdAt: m.createdAt,
     updatedAt: m.updatedAt,
   );
@@ -362,6 +363,7 @@ class MangaRepository {
     sourceId: m.sourceId,
     inLibrary: m.inLibrary,
     readingStatus: m.readingStatus,
+    memo: m.memo,
     createdAt: m.createdAt,
     updatedAt: m.updatedAt,
   );

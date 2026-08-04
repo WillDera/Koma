@@ -72,6 +72,7 @@ typedef MangaDetailArgs = ({
   String url,
   String title,
   Manga? manga,
+  String? memo,
 });
 
 final GlobalKey<NavigatorState> rootNavigatorKey = GlobalKey<NavigatorState>(
@@ -221,6 +222,7 @@ final GoRouter appRouter = GoRouter(
           url: a.url,
           title: a.title,
           manga: a.manga,
+          memo: a.memo ?? a.manga?.memo,
         );
       },
     ),
