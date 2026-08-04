@@ -8,7 +8,7 @@ Always update app version after each code change. Bump the patch number in both 
 
 ## Build / Toolchain
 
-- **Android Gradle:** 9.1.0 / AGP 8.7.3 / Kotlin 2.4.10 / `compileSdk` follows Flutter's default (currently 35/36). The AGP/Kotlin versions will be dropped by Flutter soon — bump when convenient.
+- **Android Gradle:** 9.5.1 / AGP 8.11.1 / Kotlin 2.4.10 / `compileSdk` follows Flutter's default (currently 35/36). The AGP/Kotlin versions will be dropped by Flutter soon — bump when convenient.
 - **JDK:** Build with **JDK 25** (`/Library/Java/JavaVirtualMachines/jdk-25.jdk/Contents/Home`). JDK 26 hits a `jlink` bug against `android-35/core-for-system-modules.jar` and fails inside the `flutter_plugin_android_lifecycle` / `jni` plugin chain before `:app:compileDebugKotlin` even runs. Pinned via `flutter config --jdk-dir=...` (sticky).
 - **Source/target compat:** Java 17 in `android/app/build.gradle.kts`. Don't change it.
 - **Keystore:** `android/app/koma-debug.keystore` is tracked in the repository so all builds share the same signing certificate, preventing "App not installed" update failures. The `koma` signing config in `build.gradle.kts` uses credentials (`k0m@k0m@`) to sign debug, profile, and release builds consistently.

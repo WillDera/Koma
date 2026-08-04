@@ -179,80 +179,130 @@ class _TtsSettingsSheetState extends State<TtsSettingsSheet> {
   @override
   Widget build(BuildContext context) {
     final c = context.colors;
-    return Container(
-      decoration: BoxDecoration(
-        color: c.bgElevated,
-        borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      padding: EdgeInsets.only(
-        bottom: MediaQuery.of(context).padding.bottom + 16,
-      ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Container(
-            margin: const EdgeInsets.symmetric(vertical: 12),
-            width: 36,
-            height: 4,
-            decoration: BoxDecoration(
-              color: c.textTertiary.withValues(alpha: 0.4),
-              borderRadius: BorderRadius.circular(2),
+    // Material (not Container+DecoratedBox) so Switch/Checkbox ListTiles
+    // can paint ink splashes on a real Material ancestor.
+    return Material(
+      color: c.bgElevated,
+      borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+      clipBehavior: Clip.antiAlias,
+      child: Padding(
+        padding: EdgeInsets.only(
+          bottom: MediaQuery.of(context).padding.bottom + 16,
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              margin: const EdgeInsets.symmetric(vertical: 12),
+              width: 36,
+              height: 4,
+              decoration: BoxDecoration(
+                color: c.textTertiary.withValues(alpha: 0.4),
+                borderRadius: BorderRadius.circular(2),
+              ),
             ),
-          ),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 20),
-            child: Row(
-              children: [
-                Text(
-                  'Speech Settings',
-                  style: TextStyle(
-                    color: c.textPrimary,
-                    fontSize: 16,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-                const Spacer(),
-                IconButtonRound(
-                  icon: Icons.close,
-                  size: 32,
-                  variant: IconButtonVariant.plain,
-                  onPressed: () => Navigator.pop(context),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 8),
-
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 20),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'Engine',
-                  style: TextStyle(color: c.textSecondary, fontSize: 13),
-                ),
-                const SizedBox(height: 6),
-                SegmentedButton<TtsEngineType>(
-                  segments: const [
-                    ButtonSegment(
-                      value: TtsEngineType.device,
-                      label: Text('Device'),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 20),
+              child: Row(
+                children: [
+                  Text(
+                    'Speech Settings',
+                    style: TextStyle(
+                      color: c.textPrimary,
+                      fontSize: 16,
+                      fontWeight: FontWeight.w600,
                     ),
-                    ButtonSegment(
-                      value: TtsEngineType.edge,
-                      label: Text('Edge'),
+                  ),
+                  const Spacer(),
+                  IconButtonRound(
+                    icon: Icons.close,
+                    size: 32,
+                    variant: IconButtonVariant.plain,
+                    onPressed: () => Navigator.pop(context),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 8),
+
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 20),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Engine',
+                    style: TextStyle(color: c.textSecondary, fontSize: 13),
+                  ),
+                  const SizedBox(height: 6),
+                  SegmentedButton<TtsEngineType>(
+                    segments: const [
+                      ButtonSegment(
+                        value: TtsEngineType.device,
+                        label: Text('Device'),
+                      ),
+                      ButtonSegment(
+                        value: TtsEngineType.edge,
+                        label: Text('Edge'),
+                      ),
+                    ],
+                    selected: {_engineType},
+                    onSelectionChanged: (selected) =>
+                        _onEngineChanged(selected.first),
+                  ),
+                ],
+              ),
+            ),
+
+            if (widget.provider.voices.isNotEmpty) ...[
+              const SizedBox(height: 12),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 20),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Voice',
+                      style: TextStyle(color: c.textSecondary, fontSize: 13),
+                    ),
+                    const SizedBox(height: 6),
+                    ListenableBuilder(
+                      listenable: widget.provider,
+                      builder: (context, _) {
+                        return DropdownButton<int>(
+                          value: widget.provider.selectedVoiceIndex >= 0
+                              ? widget.provider.selectedVoiceIndex
+                              : null,
+                          isExpanded: true,
+                          dropdownColor: c.bgElevated,
+                          style: TextStyle(color: c.textPrimary, fontSize: 14),
+                          underline: const SizedBox(),
+                          items: List.generate(widget.provider.voices.length, (
+                            i,
+                          ) {
+                            final v = widget.provider.voices[i];
+                            return DropdownMenuItem(
+                              value: i,
+                              child: Text(
+                                v.displayName,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            );
+                          }),
+                          onChanged: (idx) {
+                            if (idx == null) return;
+                            widget.provider.setVoice(
+                              widget.provider.voices[idx],
+                            );
+                          },
+                        );
+                      },
                     ),
                   ],
-                  selected: {_engineType},
-                  onSelectionChanged: (selected) =>
-                      _onEngineChanged(selected.first),
                 ),
-              ],
-            ),
-          ),
+              ),
+            ],
 
-          if (widget.provider.voices.isNotEmpty) ...[
             const SizedBox(height: 12),
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 20),
@@ -260,132 +310,87 @@ class _TtsSettingsSheetState extends State<TtsSettingsSheet> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    'Voice',
+                    'Speed',
                     style: TextStyle(color: c.textSecondary, fontSize: 13),
                   ),
-                  const SizedBox(height: 6),
-                  ListenableBuilder(
-                    listenable: widget.provider,
-                    builder: (context, _) {
-                      return DropdownButton<int>(
-                        value: widget.provider.selectedVoiceIndex >= 0
-                            ? widget.provider.selectedVoiceIndex
-                            : null,
-                        isExpanded: true,
-                        dropdownColor: c.bgElevated,
-                        style: TextStyle(color: c.textPrimary, fontSize: 14),
-                        underline: const SizedBox(),
-                        items: List.generate(widget.provider.voices.length, (
-                          i,
-                        ) {
-                          final v = widget.provider.voices[i];
-                          return DropdownMenuItem(
-                            value: i,
-                            child: Text(
-                              v.displayName,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          );
-                        }),
-                        onChanged: (idx) {
-                          if (idx == null) return;
-                          widget.provider.setVoice(widget.provider.voices[idx]);
-                        },
-                      );
-                    },
+                  Slider(
+                    value: _rate,
+                    min: _engineType == TtsEngineType.device ? 0.0 : 0.25,
+                    max: _engineType == TtsEngineType.device ? 1.0 : 2.0,
+                    divisions: _engineType == TtsEngineType.device ? 20 : 35,
+                    activeColor: c.accent,
+                    onChanged: (v) => setState(() => _rate = v),
+                    onChangeEnd: (v) => widget.provider.setRate(v),
                   ),
                 ],
               ),
             ),
-          ],
-
-          const SizedBox(height: 12),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 20),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'Speed',
-                  style: TextStyle(color: c.textSecondary, fontSize: 13),
-                ),
-                Slider(
-                  value: _rate,
-                  min: _engineType == TtsEngineType.device ? 0.0 : 0.25,
-                  max: _engineType == TtsEngineType.device ? 1.0 : 2.0,
-                  divisions: _engineType == TtsEngineType.device ? 20 : 35,
-                  activeColor: c.accent,
-                  onChanged: (v) => setState(() => _rate = v),
-                  onChangeEnd: (v) => widget.provider.setRate(v),
-                ),
-              ],
-            ),
-          ),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 20),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'Pitch',
-                  style: TextStyle(color: c.textSecondary, fontSize: 13),
-                ),
-                Slider(
-                  value: _pitch.clamp(
-                    _engineType == TtsEngineType.device ? 0.5 : -0.5,
-                    _engineType == TtsEngineType.device ? 2.0 : 0.5,
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 20),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Pitch',
+                    style: TextStyle(color: c.textSecondary, fontSize: 13),
                   ),
-                  min: _engineType == TtsEngineType.device ? 0.5 : -0.5,
-                  max: _engineType == TtsEngineType.device ? 2.0 : 0.5,
-                  divisions: _engineType == TtsEngineType.device ? 15 : 20,
-                  activeColor: c.accent,
-                  onChanged: (v) => setState(() => _pitch = v),
-                  onChangeEnd: (v) => widget.provider.setPitch(v),
-                ),
-              ],
+                  Slider(
+                    value: _pitch.clamp(
+                      _engineType == TtsEngineType.device ? 0.5 : -0.5,
+                      _engineType == TtsEngineType.device ? 2.0 : 0.5,
+                    ),
+                    min: _engineType == TtsEngineType.device ? 0.5 : -0.5,
+                    max: _engineType == TtsEngineType.device ? 2.0 : 0.5,
+                    divisions: _engineType == TtsEngineType.device ? 15 : 20,
+                    activeColor: c.accent,
+                    onChanged: (v) => setState(() => _pitch = v),
+                    onChangeEnd: (v) => widget.provider.setPitch(v),
+                  ),
+                ],
+              ),
             ),
-          ),
 
-          if (_engineType == TtsEngineType.edge)
-            SwitchListTile(
-              contentPadding: const EdgeInsets.symmetric(horizontal: 20),
+            if (_engineType == TtsEngineType.edge)
+              SwitchListTile(
+                contentPadding: const EdgeInsets.symmetric(horizontal: 20),
+                title: Text(
+                  'Optimistic TTS',
+                  style: TextStyle(color: c.textPrimary, fontSize: 14),
+                ),
+                subtitle: Text(
+                  'Preload the whole chapter (and the next) so playback starts faster',
+                  style: TextStyle(color: c.textSecondary, fontSize: 12),
+                ),
+                value: _optimistic,
+                activeThumbColor: c.accent,
+                onChanged: (v) async {
+                  setState(() => _optimistic = v);
+                  await widget.provider.setOptimistic(v);
+                },
+              ),
+
+            CheckboxListTile(
+              contentPadding: const EdgeInsets.symmetric(horizontal: 12),
+              controlAffinity: ListTileControlAffinity.leading,
               title: Text(
-                'Optimistic TTS',
+                'Remember selection',
                 style: TextStyle(color: c.textPrimary, fontSize: 14),
               ),
               subtitle: Text(
-                'Preload the whole chapter (and the next) so playback starts faster',
+                'Skip this sheet next time and start with these settings',
                 style: TextStyle(color: c.textSecondary, fontSize: 12),
               ),
-              value: _optimistic,
-              activeThumbColor: c.accent,
+              value: _remember,
+              activeColor: c.accent,
               onChanged: (v) async {
-                setState(() => _optimistic = v);
-                await widget.provider.setOptimistic(v);
+                final value = v ?? false;
+                setState(() => _remember = value);
+                await widget.provider.setRememberSelection(value);
               },
             ),
-
-          CheckboxListTile(
-            contentPadding: const EdgeInsets.symmetric(horizontal: 12),
-            controlAffinity: ListTileControlAffinity.leading,
-            title: Text(
-              'Remember selection',
-              style: TextStyle(color: c.textPrimary, fontSize: 14),
-            ),
-            subtitle: Text(
-              'Skip this sheet next time and start with these settings',
-              style: TextStyle(color: c.textSecondary, fontSize: 12),
-            ),
-            value: _remember,
-            activeColor: c.accent,
-            onChanged: (v) async {
-              final value = v ?? false;
-              setState(() => _remember = value);
-              await widget.provider.setRememberSelection(value);
-            },
-          ),
-          const SizedBox(height: 8),
-        ],
+            const SizedBox(height: 8),
+          ],
+        ),
       ),
     );
   }
