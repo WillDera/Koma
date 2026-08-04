@@ -56,30 +56,33 @@ class ReaderSelectionToolbar extends StatelessWidget {
                   isDark: c.bg.computeLuminance() < 0.5,
                 ),
               ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  _ToolAction(
-                    icon: Icons.format_color_fill,
-                    label: 'Mark',
-                    iconColor: highlightColor,
-                    onTap: () => onHighlight(defaultHighlightColor),
-                  ),
-                  _Divider(),
-                  _ToolAction(
-                    icon: Icons.edit_note,
-                    label: 'Snippet',
-                    onTap: onNote,
-                  ),
-                  _Divider(),
-                  _ToolAction(icon: Icons.copy, label: 'Copy', onTap: onCopy),
-                  _Divider(),
-                  _ToolAction(
-                    icon: Icons.ios_share,
-                    label: 'Share',
-                    onTap: onShare,
-                  ),
-                ],
+              child: FittedBox(
+                fit: BoxFit.scaleDown,
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    _ToolAction(
+                      icon: Icons.format_color_fill,
+                      label: 'Mark',
+                      iconColor: highlightColor,
+                      onTap: () => onHighlight(defaultHighlightColor),
+                    ),
+                    _Divider(),
+                    _ToolAction(
+                      icon: Icons.edit_note,
+                      label: 'Snippet',
+                      onTap: onNote,
+                    ),
+                    _Divider(),
+                    _ToolAction(icon: Icons.copy, label: 'Copy', onTap: onCopy),
+                    _Divider(),
+                    _ToolAction(
+                      icon: Icons.ios_share,
+                      label: 'Share',
+                      onTap: onShare,
+                    ),
+                  ],
+                ),
               ),
             ),
           ),
@@ -107,7 +110,7 @@ class _ToolAction extends StatelessWidget {
       onTap: onTap,
       scaleDown: 0.92,
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [

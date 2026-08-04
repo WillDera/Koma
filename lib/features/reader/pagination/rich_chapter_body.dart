@@ -7,6 +7,7 @@ import '../../../theme/app_theme.dart';
 import '../../../theme/theme_state.dart';
 import '../../../theme/tokens/app_spacing.dart';
 import '../html/reading_document.dart';
+import 'empty_selection_menu.dart';
 import 'reading_spans.dart';
 
 /// Hybrid scroll-mode chapter body: block widgets for headings / quotes /
@@ -64,6 +65,7 @@ class RichChapterBody extends StatelessWidget {
           ),
         ),
         textAlign: textAlign,
+        contextMenuBuilder: emptyTextSelectionContextMenu,
         onSelectionChanged: (sel, _) {
           if (sel.isValid && !sel.isCollapsed) {
             onSelectionChanged?.call(sel);
@@ -184,6 +186,7 @@ class RichChapterBody extends StatelessWidget {
     return SelectableText.rich(
       TextSpan(style: style, children: children),
       textAlign: textAlign,
+      contextMenuBuilder: emptyTextSelectionContextMenu,
       onSelectionChanged: (sel, _) {
         if (sel.isValid && !sel.isCollapsed) {
           // Rebase page-local selection into chapter plain-text coordinates.
