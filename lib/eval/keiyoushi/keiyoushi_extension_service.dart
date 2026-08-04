@@ -59,20 +59,34 @@ class KeiyoushiExtensionService implements ExtensionService {
   }
 
   @override
-  Future<MManga?> getDetail(MSource source, String url) async {
+  Future<MManga?> getDetail(
+    MSource source,
+    String url, {
+    String? memo,
+    String? title,
+  }) async {
     final result = await _keiyoushi.getMangaDetails(
       sourceId: source.sourceId,
       url: url,
+      memo: memo,
+      title: title,
     );
     if (result.isEmpty) return null;
     return MManga.fromMap(result);
   }
 
   @override
-  Future<List<MChapter>> getChapterList(MSource source, String url) async {
+  Future<List<MChapter>> getChapterList(
+    MSource source,
+    String url, {
+    String? memo,
+    String? title,
+  }) async {
     final result = await _keiyoushi.getChapterList(
       sourceId: source.sourceId,
       url: url,
+      memo: memo,
+      title: title,
     );
     return result.map((c) => MChapter.fromMap(c)).toList();
   }
@@ -80,11 +94,15 @@ class KeiyoushiExtensionService implements ExtensionService {
   @override
   Future<({MManga? manga, List<MChapter> chapters})> getMangaDetail(
     MSource source,
-    String url,
-  ) async {
+    String url, {
+    String? memo,
+    String? title,
+  }) async {
     final result = await _keiyoushi.getMangaUpdate(
       sourceId: source.sourceId,
       url: url,
+      memo: memo,
+      title: title,
     );
     final details = result.details;
     final manga = details.isNotEmpty ? MManga.fromMap(details) : null;

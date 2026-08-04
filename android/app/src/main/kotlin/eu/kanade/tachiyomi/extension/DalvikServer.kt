@@ -503,16 +503,14 @@ class DalvikServer(
                 "getMangaDetails" -> {
                     val url = root.str("url") ?: return errorJson("missing url")
                     withLoadedExtension(root.str("sourceId"), data) { src ->
-                        val manga = SManga.create().apply {
-                            this.url = url
-                            memo = root.memo()
-                        }
+                        // Mihon parity: hydrate catalogue fields (title/memo/…) before
+                        // getMangaUpdate — AllAnime and similar sources NPE on empty memo.
+                        val manga = hydrateSManga(root)
                         val result = try {
                             runBlocking { src.getMangaUpdate(manga, emptyList(), fetchDetails = true, fetchChapters = false) }
                         } catch (e: Exception) {
                             Log.e(TAG, "getMangaDetails failed for $url", e)
-                            manga.also { it.initialized = true }
-                            return@withLoadedExtension json.encodeToString(manga.toMap().toJsonObject())
+                            return@withLoadedExtension errorJson("getMangaDetails failed: ${e.message}")
                         }
                         val details = result.manga
                         if (!details.initialized) details.initialized = true
@@ -522,19 +520,14 @@ class DalvikServer(
                 "getMangaUpdate" -> {
                     val url = root.str("url") ?: return errorJson("missing url")
                     withLoadedExtension(root.str("sourceId"), data) { src ->
-                        val manga = SManga.create().apply {
-                            this.url = url
-                            memo = root.memo()
-                        }
+                        val manga = hydrateSManga(root)
                         val update = try {
                             runBlocking { src.getMangaUpdate(manga, emptyList(), fetchDetails = true, fetchChapters = true) }
                         } catch (e: Exception) {
                             Log.e(TAG, "getMangaUpdate failed for $url", e)
-                            manga.also { it.initialized = true }
-                            return@withLoadedExtension json.encodeToString(buildJsonObject {
-                                put("manga", manga.toMap().toJsonObject())
-                                put("chapters", JsonArray(emptyList()))
-                            })
+                            // Do not return a fake empty manga — Dart treats that as
+                            // success and wipes the seeded catalogue title.
+                            return@withLoadedExtension errorJson("getMangaUpdate failed: ${e.message}")
                         }
                         json.encodeToString(buildJsonObject {
                             put("manga", update.manga.toMap().toJsonObject())
@@ -545,15 +538,12 @@ class DalvikServer(
                 "getChapterList" -> {
                     val url = root.str("url") ?: return errorJson("missing url")
                     withLoadedExtension(root.str("sourceId"), data) { src ->
-                        val manga = SManga.create().apply {
-                            this.url = url
-                            memo = root.memo()
-                        }
+                        val manga = hydrateSManga(root)
                         val update = try {
                             runBlocking { src.getMangaUpdate(manga, emptyList(), fetchDetails = false, fetchChapters = true) }
                         } catch (e: Exception) {
                             Log.e(TAG, "getChapterList failed for $url", e)
-                            return@withLoadedExtension json.encodeToString(JsonArray(emptyList()))
+                            return@withLoadedExtension errorJson("getChapterList failed: ${e.message}")
                         }
                         json.encodeToString(JsonArray(update.chapters.map { it.toMap().toJsonObject() }))
                     }
@@ -687,6 +677,26 @@ class DalvikServer(
     }
 
     // -- Helpers -----------------------------------------------------------
+
+    /**
+     * Build an [SManga] with the same fields Mihon puts in `Manga.toSManga()`
+     * before calling `getMangaUpdate`. Extensions such as AllAnime read
+     * memo/title during details fetch and NPE when they stay at defaults.
+     */
+    private fun hydrateSManga(root: JsonObject): SManga {
+        val url = root.str("url") ?: ""
+        return SManga.create().apply {
+            this.url = url
+            title = root.str("title") ?: ""
+            artist = root.str("artist")
+            author = root.str("author")
+            description = root.str("description")
+            genre = root.str("genre")
+            status = root.int("status") ?: 0
+            thumbnail_url = root.str("thumbnail_url")
+            memo = root.memo()
+        }
+    }
 
     private fun JsonObject.str(key: String): String? = (this[key] as? JsonPrimitive)?.content
 

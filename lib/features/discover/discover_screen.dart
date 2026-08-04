@@ -456,6 +456,7 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
                               url: manga['url'] as String? ?? '',
                               title: manga['title'] as String? ?? '',
                               manga: null,
+                              memo: coerceMemoJson(manga['memo']),
                             )
                             as MangaDetailArgs,
                   ),

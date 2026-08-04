@@ -119,7 +119,12 @@ class JsExtensionService implements ExtensionService {
   }
 
   @override
-  Future<MManga?> getDetail(MSource source, String url) async {
+  Future<MManga?> getDetail(
+    MSource source,
+    String url, {
+    String? memo,
+    String? title,
+  }) async {
     final rt = _ensureRuntime();
     final result = rt.evaluateDetail(
       source.sourceCode ?? '',
@@ -130,7 +135,12 @@ class JsExtensionService implements ExtensionService {
   }
 
   @override
-  Future<List<MChapter>> getChapterList(MSource source, String url) async {
+  Future<List<MChapter>> getChapterList(
+    MSource source,
+    String url, {
+    String? memo,
+    String? title,
+  }) async {
     final rt = _ensureRuntime();
     final results = rt.evaluateList(
       source.sourceCode ?? '',
@@ -142,10 +152,13 @@ class JsExtensionService implements ExtensionService {
   @override
   Future<({MManga? manga, List<MChapter> chapters})> getMangaDetail(
     MSource source,
-    String url,
-  ) async {
-    final manga = await getDetail(source, url);
-    final chapters = await getChapterList(source, url);
+    String url, {
+    String? memo,
+    String? title,
+  }) async {
+    final manga = await getDetail(source, url, memo: memo, title: title);
+    final chapters =
+        await getChapterList(source, url, memo: memo, title: title);
     return (manga: manga, chapters: chapters);
   }
 

@@ -41,6 +41,8 @@ class LibraryUpdateService {
         final raw = await _keiyoushi.getChapterList(
           sourceId: manga.sourceId,
           url: manga.url,
+          memo: manga.memo,
+          title: manga.name,
         );
         if (raw.isEmpty) continue;
 

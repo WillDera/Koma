@@ -911,6 +911,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> with RouteAware {
                 url: manga.url,
                 title: manga.name,
                 manga: manga, // Pass full Manga object for instant first frame
+                memo: manga.memo,
               )
               as MangaDetailArgs,
     );

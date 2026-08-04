@@ -4,6 +4,37 @@ import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 
+/// Normalize source `SManga.memo` to a JSON string for round-trip to Dalvik.
+/// Accepts an already-encoded string, a nested Map, or empty/null.
+String? coerceMemoJson(dynamic memo) {
+  if (memo == null) return null;
+  if (memo is String) {
+    final t = memo.trim();
+    return t.isEmpty ? null : t;
+  }
+  if (memo is Map) {
+    try {
+      return jsonEncode(Map<String, dynamic>.from(memo));
+    } catch (_) {
+      return null;
+    }
+  }
+  final s = memo.toString().trim();
+  return s.isEmpty ? null : s;
+}
+
+Map<String, dynamic> _normalizeMangaMap(Map<String, dynamic> manga) {
+  final memo = coerceMemoJson(manga['memo']);
+  if (memo == null) {
+    if (!manga.containsKey('memo')) return manga;
+    final copy = Map<String, dynamic>.from(manga);
+    copy.remove('memo');
+    return copy;
+  }
+  if (identical(manga['memo'], memo)) return manga;
+  return {...manga, 'memo': memo};
+}
+
 class KeiyoushiService {
   static const _channel = MethodChannel('eu.kanade.tachiyomi/keiyoushi');
 
@@ -155,13 +186,30 @@ class KeiyoushiService {
     required String sourceId,
     required String url,
     String? memo,
+    String? title,
+    String? thumbnailUrl,
+    String? author,
+    String? artist,
+    String? description,
+    String? genre,
+    int? status,
   }) async {
     final res = await _post({
       'method': 'getMangaUpdate',
       'sourceId': sourceId,
       'url': url,
       'memo': ?memo,
+      'title': ?title,
+      'thumbnail_url': ?thumbnailUrl,
+      'author': ?author,
+      'artist': ?artist,
+      'description': ?description,
+      'genre': ?genre,
+      'status': ?status,
     });
+    if (res is Map && res.containsKey('error')) {
+      throw Exception(res['error']);
+    }
     final Map<String, dynamic> raw = res is Map
         ? Map<String, dynamic>.from(res)
         : <String, dynamic>{};
@@ -177,15 +225,19 @@ class KeiyoushiService {
     required String sourceId,
     required String url,
     String? memo,
+    String? title,
   }) async {
     final res = await _post({
       'method': 'getMangaDetails',
       'sourceId': sourceId,
       'url': url,
       'memo': ?memo,
+      'title': ?title,
     });
     if (res is! Map) return {};
-    if (res.containsKey('error')) return {};
+    if (res.containsKey('error')) {
+      throw Exception(res['error']);
+    }
     return Map<String, dynamic>.from(res);
   }
 
@@ -193,13 +245,18 @@ class KeiyoushiService {
     required String sourceId,
     required String url,
     String? memo,
+    String? title,
   }) async {
     final res = await _post({
       'method': 'getChapterList',
       'sourceId': sourceId,
       'url': url,
       'memo': ?memo,
+      'title': ?title,
     });
+    if (res is Map && res.containsKey('error')) {
+      throw Exception(res['error']);
+    }
     if (res is! List) return [];
     return res
         .cast<Map>()
@@ -223,10 +280,15 @@ class KeiyoushiService {
         'page': page,
       });
       if (res is List) {
-        return res
-            .whereType<Map>()
-            .map((e) => Map<String, dynamic>.from(e))
-            .toList(growable: false);
+        return res.whereType<Map>().map((e) {
+          final entry = Map<String, dynamic>.from(e);
+          final mangas = (entry['mangas'] as List? ?? const [])
+              .whereType<Map>()
+              .map((m) => _normalizeMangaMap(Map<String, dynamic>.from(m)))
+              .toList(growable: false);
+          entry['mangas'] = mangas;
+          return entry;
+        }).toList(growable: false);
       }
       // Unknown-method / error payload → Dart fan-out below.
     } catch (_) {
@@ -319,7 +381,7 @@ class KeiyoushiService {
     }
     final mangas = ((raw['mangas'] as List?) ?? const [])
         .cast<Map>()
-        .map((e) => Map<String, dynamic>.from(e))
+        .map((e) => _normalizeMangaMap(Map<String, dynamic>.from(e)))
         .toList(growable: false);
     final hasNext = (raw['hasNextPage'] as bool?) ?? false;
     return (mangas: mangas, hasNextPage: hasNext);

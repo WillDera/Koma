@@ -77,7 +77,12 @@ final updateMangaDetailProvider =
         baseUrl: '',
         sourceType: SourceType.mihon,
       );
-      final result = await service.getMangaDetail(source, manga.url);
+      final result = await service.getMangaDetail(
+        source,
+        manga.url,
+        memo: manga.memo,
+        title: manga.name.isNotEmpty ? manga.name : null,
+      );
 
       final mmanga = result.manga;
       final chapters = result.chapters;
@@ -85,13 +90,18 @@ final updateMangaDetailProvider =
       // Update manga metadata from network response. This triggers the
       // watchObject stream for this manga.
       if (mmanga != null) {
+        final remoteTitle = mmanga.title.trim();
         final updatedManga = manga.copyWith(
+          name: remoteTitle.isNotEmpty ? remoteTitle : manga.name,
           imageUrl: mmanga.thumbnailUrl ?? manga.imageUrl,
           author: mmanga.author ?? manga.author,
           artist: mmanga.artist ?? manga.artist,
           description: mmanga.description ?? manga.description,
           status: mmanga.status,
           genres: mmanga.genres.isNotEmpty ? mmanga.genres : manga.genres,
+          memo: (mmanga.memo != null && mmanga.memo!.isNotEmpty)
+              ? mmanga.memo
+              : manga.memo,
           updatedAt: DateTime.now(),
         );
         await repos.manga.updateManga(updatedManga);
@@ -251,16 +261,19 @@ class MangaDetailNotifier extends Notifier<MangaDetailState> {
     required String sourceId,
     required String url,
     String? title,
+    String? memo,
   }) {
     _boundSourceId = sourceId;
     _boundUrl = url;
+    final seed = <String, dynamic>{
+      if (title != null && title.isNotEmpty) 'title': title,
+      if (memo != null && memo.isNotEmpty) 'memo': memo,
+    };
     state = MangaDetailState(
       loading: true,
       sortMode: state.sortMode,
       filterModes: state.filterModes,
-      details: title != null && title.isNotEmpty
-          ? <String, dynamic>{'title': title}
-          : null,
+      details: seed.isNotEmpty ? seed : null,
     );
   }
 

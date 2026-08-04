@@ -39,6 +39,10 @@ class Manga {
   /// 0 = unread, 1 = reading, 2 = read. Mirrors existing column.
   int readingStatus;
 
+  /// Source-side `SManga.memo` JSON. Persisted so library reopen / poll can
+  /// round-trip it to Dalvik (AllAnime and similar need slug-in-memo).
+  String? memo;
+
   DateTime? createdAt;
   DateTime? updatedAt;
 
@@ -55,6 +59,7 @@ class Manga {
     required this.sourceId,
     this.inLibrary = false,
     this.readingStatus = 0,
+    this.memo,
     this.createdAt,
     this.updatedAt,
   });
@@ -72,6 +77,7 @@ class Manga {
     'source_id': sourceId,
     'in_library': inLibrary ? 1 : 0,
     'reading_status': readingStatus,
+    'memo': memo,
     'created_at': createdAt?.toIso8601String(),
     'updated_at': updatedAt?.toIso8601String(),
   };
@@ -89,6 +95,7 @@ class Manga {
     sourceId: json['source_id'] as String? ?? '',
     inLibrary: (json['in_library'] as int? ?? 0) == 1,
     readingStatus: json['reading_status'] as int? ?? 0,
+    memo: json['memo'] as String?,
     createdAt: json['created_at'] != null
         ? DateTime.parse(json['created_at'] as String)
         : null,
