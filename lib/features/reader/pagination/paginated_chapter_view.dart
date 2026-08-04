@@ -6,6 +6,7 @@ import '../../../theme/theme_state.dart';
 import '../../../theme/tokens/app_type.dart';
 import '../html/reading_document.dart';
 import 'chapter_paginator.dart';
+import 'empty_selection_menu.dart';
 import 'reading_spans.dart';
 
 /// Renders exactly one page of a chapter, with no scroll view.
@@ -152,6 +153,7 @@ class PaginatedChapterView extends StatelessWidget {
         children: children,
       ),
       textAlign: themeProv.textAlign,
+      contextMenuBuilder: emptyTextSelectionContextMenu,
       onSelectionChanged: (selection, cause) {
         if (selection.isValid && !selection.isCollapsed) {
           // SelectableText reports offsets into the spans it rendered, which
