@@ -28,6 +28,8 @@ import java.net.Socket
 object DalvikRuntimeManager {
     private const val TAG = "DalvikRuntimeManager"
     private const val PREFS_NAME = "FlutterSharedPreferences"
+    // Dart SharedPreferences.getInt('dalvik_port') stores/reads the native key
+    // with the "flutter." prefix. Flutter setInt writes Longs — use putLong.
     private const val KEY_PORT = "dalvik_port"
     private const val KEY_PORT_PREF = "flutter.$KEY_PORT"
 
@@ -110,7 +112,7 @@ object DalvikRuntimeManager {
         try {
             val prefs: SharedPreferences =
                 ctx.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-            prefs.edit().putInt(KEY_PORT_PREF, port).apply()
+            prefs.edit().putLong(KEY_PORT_PREF, port.toLong()).apply()
         } catch (e: Throwable) {
             Log.w(TAG, "persistPort failed", e)
         }
