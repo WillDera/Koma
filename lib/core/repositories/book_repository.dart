@@ -10,6 +10,7 @@ import '../models/book.dart';
 import '../models/book_metadata.dart';
 import '../models/chapter.dart';
 import '../models/highlight.dart';
+import '../services/ebook_media_store.dart';
 
 /// Bookshelf repository: books + ebook chapters + highlights.
 ///
@@ -98,6 +99,7 @@ class BookRepository {
   }
 
   Future<void> deleteBook(int id) async {
+    await EbookMediaStore.deleteBookMedia(id);
     await _isar.writeTxn(() async {
       // Cascade: delete the book's chapters + highlights first.
       // (Isar has no FK cascade; we do it manually, mirroring the

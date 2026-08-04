@@ -26,6 +26,7 @@ import '../../widgets/toast.dart';
 import '../../widgets/tts_controls.dart';
 import 'pagination/paginated_reader_body.dart';
 import 'pagination/reading_spans.dart';
+import 'pagination/rich_chapter_body.dart';
 import 'reader_provider.dart';
 import 'tts/tts_engine.dart';
 import 'tts_provider.dart';
@@ -705,18 +706,22 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
                                         const SizedBox(height: 28),
                                         ListenableBuilder(
                                           listenable: _ttsProvider!,
-                                          builder: (_, _) => SelectableText.rich(
-                                          key: ValueKey(
-                                            'content-$_highlightVersion',
-                                          ),
-                                          TextSpan(
-                                            style: _readingStyle(themeProv),
-                                            children: _buildReadingSpans(
-                                              themeProv,
-                                              TextExtractor.extractCached(
-                                                chapter.id,
-                                                chapter.content,
+                                          builder: (_, _) {
+                                            final doc =
+                                                TextExtractor.documentCached(
+                                                  chapter.id,
+                                                  chapter.content,
+                                                );
+                                            return RichChapterBody(
+                                              document: doc,
+                                              themeProv: themeProv,
+                                              baseStyle: _readingStyle(
+                                                themeProv,
                                               ),
+                                              brightness: Theme.of(
+                                                context,
+                                              ).brightness,
+                                              highlights: _highlights,
                                               ttsActive:
                                                   _ttsProvider?.isActive ??
                                                   false,
@@ -728,37 +733,26 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
                                                   _ttsProvider
                                                       ?.currentSentenceEnd ??
                                                   0,
-                                            ),
-                                          ),
-                                          textAlign: themeProv.textAlign,
-                                          onSelectionChanged: (selection, cause) {
-                                            if (selection.isValid &&
-                                                !selection.isCollapsed) {
-                                              final content =
-                                                  TextExtractor.extractCached(
-                                                    chapter.id,
-                                                    chapter.content,
-                                                  );
-                                              if (selection.end <=
-                                                  content.length) {
-                                                // Scroll mode renders the whole chapter,
-                                                // so these offsets are already chapter-
-                                                // relative.
-                                                _selStart = selection.start;
-                                                _selectedText = content
-                                                    .substring(
-                                                      selection.start,
-                                                      selection.end,
-                                                    );
-                                                _showToolbar(Offset.zero);
-                                              }
-                                            } else {
-                                              // Cleared or collapsed: either way the
-                                              // selection the toolbar acts on is gone.
-                                              _hideToolbarOnSelectionLost();
-                                            }
+                                              contentKey:
+                                                  'content-$_highlightVersion-${chapter.id}',
+                                              textAlign: themeProv.textAlign,
+                                              onSelectionChanged: (selection) {
+                                                final content = doc.plainText;
+                                                if (selection.end <=
+                                                    content.length) {
+                                                  _selStart = selection.start;
+                                                  _selectedText = content
+                                                      .substring(
+                                                        selection.start,
+                                                        selection.end,
+                                                      );
+                                                  _showToolbar(Offset.zero);
+                                                }
+                                              },
+                                              onSelectionCleared:
+                                                  _hideToolbarOnSelectionLost,
+                                            );
                                           },
-                                        ),
                                         ),
                                         const SizedBox(height: 80),
                                       ],
@@ -968,25 +962,6 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
 
   TextStyle _readingStyle(ThemeState themeProv) {
     return ReadingSpans.style(themeProv, context.colors.textPrimary);
-  }
-
-  List<TextSpan> _buildReadingSpans(
-    ThemeState themeProv,
-    String text, {
-    bool ttsActive = false,
-    int ttsStart = 0,
-    int ttsEnd = 0,
-  }) {
-    return ReadingSpans.build(
-      text: text,
-      prov: themeProv,
-      baseStyle: _readingStyle(themeProv),
-      brightness: Theme.of(context).brightness,
-      highlights: _highlights,
-      ttsActive: ttsActive,
-      ttsStart: ttsStart,
-      ttsEnd: ttsEnd,
-    );
   }
 
   double _horizontalPadding(double maxWidth) {

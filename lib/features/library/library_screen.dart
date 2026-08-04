@@ -16,6 +16,7 @@ import '../../core/models/manga.dart';
 import '../../core/providers.dart';
 import '../../core/services/cache_service.dart';
 import '../../core/services/ebook_service.dart';
+import '../../core/services/ebook_media_store.dart';
 import '../../core/services/metadata_enrichment_service.dart';
 import '../../core/services/web_scraper_service.dart';
 import '../../core/utils/benchmark_logger.dart';
@@ -640,8 +641,13 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> with RouteAware {
         return;
       }
       final bookId = await ln.addBook(parsed.book);
-      for (final ch in parsed.chapters) {
-        await repos.books.insertChapter(ch.copyWith(bookId: bookId));
+      final chapters = await EbookMediaStore.promote(
+        sessionId: parsed.mediaSessionId,
+        bookId: bookId,
+        chapters: parsed.chapters,
+      );
+      for (final ch in chapters) {
+        await repos.books.insertChapter(ch);
       }
       if (context.mounted) {
         StashToast.show(
