@@ -8,6 +8,7 @@ import 'package:path_provider/path_provider.dart';
 import '../models/source.dart';
 import '../repositories/repositories.dart';
 import 'ebook_service.dart';
+import 'ebook_media_store.dart';
 
 class SourceSearchResult {
   final String title;
@@ -286,8 +287,13 @@ class SourceService {
         if (result == null) return false;
 
         final bookId = await _repos.books.insertBook(result.book);
-        for (final ch in result.chapters) {
-          await _repos.books.insertChapter(ch.copyWith(bookId: bookId));
+        final chapters = await EbookMediaStore.promote(
+          sessionId: result.mediaSessionId,
+          bookId: bookId,
+          chapters: result.chapters,
+        );
+        for (final ch in chapters) {
+          await _repos.books.insertChapter(ch);
         }
         return true;
       } finally {

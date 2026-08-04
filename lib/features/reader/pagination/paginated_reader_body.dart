@@ -185,14 +185,16 @@ class _PaginatedReaderBodyState extends State<PaginatedReaderBody> {
       chapters: widget.chapters,
       paginatorFor: (i) {
         final chapter = widget.chapters[i];
-        final text = TextExtractor.extractCached(chapter.id, chapter.content);
+        final doc = TextExtractor.documentCached(chapter.id, chapter.content);
+        final text = doc.plainText;
         final baseStyle = ReadingSpans.style(
           widget.themeProv,
           context.colors.textPrimary,
         );
+        final width = _viewport.width > 0 ? _viewport.width : 360.0;
         return ChapterPaginator(
-          spanBuilder: (start, end) => ReadingSpans.build(
-            text: text,
+          spanBuilder: (start, end) => ReadingSpans.buildFromDocument(
+            doc: doc,
             prov: widget.themeProv,
             baseStyle: baseStyle,
             brightness: Theme.of(context).brightness,
@@ -200,6 +202,9 @@ class _PaginatedReaderBodyState extends State<PaginatedReaderBody> {
             // and excluding them keeps pagination stable as they change.
             rangeStart: start,
             rangeEnd: end,
+            contentWidth: width,
+            includeImages: true,
+            applyHeadingMetrics: true,
           ),
           // Measured per chapter: titles wrap to different heights, so sharing
           // one inset would mis-measure every chapter but the one it came from.
@@ -330,14 +335,17 @@ class _PaginatedReaderBodyState extends State<PaginatedReaderBody> {
     final page = cursor.pageAt(pos);
     if (page.isEmpty) return null;
     final chapter = widget.chapters[pos.chapterIndex];
-    final text = TextExtractor.extractCached(chapter.id, chapter.content);
+    final doc = TextExtractor.documentCached(chapter.id, chapter.content);
+    final text = doc.plainText;
 
     return PaginatedChapterView(
       text: text,
+      document: doc,
       page: page,
       chapterTitle: chapter.title,
       showTitle: pos.pageIndex == 0,
       themeProv: widget.themeProv,
+      contentWidth: _viewport.width,
       // Highlights are per-chapter, so they only apply to pages of the chapter
       // the host loaded them for.
       highlights: pos.chapterIndex == widget.chapterIndex

@@ -4,12 +4,21 @@ import 'package:image/image.dart' as img;
 import 'package:path_provider/path_provider.dart';
 import '../models/book.dart';
 import '../models/chapter.dart';
+import 'ebook_media_store.dart';
 
 class EpubResult {
   final Book book;
   final List<Chapter> chapters;
 
-  EpubResult({required this.book, required this.chapters});
+  /// Pending media folder key written during parse; promote via
+  /// [EbookMediaStore.promote] after Isar assigns a real book id.
+  final String? mediaSessionId;
+
+  EpubResult({
+    required this.book,
+    required this.chapters,
+    this.mediaSessionId,
+  });
 }
 
 class EpubService {
@@ -47,10 +56,36 @@ class EpubService {
       }
 
       final bookIdFinal = bookId ?? 0;
+      final sessionId = bookId != null && bookId > 0
+          ? '$bookId'
+          : EbookMediaStore.newSessionId();
+
+      // Map EPUB image file names → absolute local paths.
+      final imagePaths = <String, String>{};
+      final images = epubBook.Content?.Images;
+      if (images != null) {
+        for (final entry in images.entries) {
+          final content = entry.value.Content;
+          if (content == null || content.isEmpty) continue;
+          final path = await EbookMediaStore.storeBytes(
+            bookOrSessionId: sessionId,
+            bytes: content,
+            logicalName: entry.key,
+          );
+          imagePaths[entry.key] = path;
+        }
+      }
+
       final chapters = <Chapter>[];
 
       if (epubBook.Chapters != null) {
-        _extractChapters(epubBook.Chapters!, bookIdFinal, chapters, 0);
+        _extractChapters(
+          epubBook.Chapters!,
+          bookIdFinal,
+          chapters,
+          0,
+          imagePaths,
+        );
       }
 
       // Sort by index
@@ -66,7 +101,11 @@ class EpubService {
         totalChapters: chapters.length,
       );
 
-      return EpubResult(book: book, chapters: chapters);
+      return EpubResult(
+        book: book,
+        chapters: chapters,
+        mediaSessionId: sessionId,
+      );
     } catch (e) {
       throw Exception('Failed to parse EPUB: $e');
     }
@@ -77,6 +116,7 @@ class EpubService {
     int bookId,
     List<Chapter> output,
     int startIndex,
+    Map<String, String> imagePaths,
   ) {
     int idx = startIndex;
     for (final ec in epubChapters) {
@@ -92,6 +132,12 @@ class EpubService {
         RegExp(r'@[a-z]+\s*\{[^}]*\}', dotAll: true, caseSensitive: false),
         '',
       );
+      if (imagePaths.isNotEmpty) {
+        content = EbookMediaStore.rewriteImgSrcs(content, (src) {
+          final key = EbookMediaStore.matchContentKey(src, imagePaths.keys);
+          return key == null ? null : imagePaths[key];
+        });
+      }
       output.add(
         Chapter(
           id: 0,
@@ -103,7 +149,13 @@ class EpubService {
       );
       // Process subchapters
       if (ec.SubChapters != null && ec.SubChapters!.isNotEmpty) {
-        idx = _extractChapters(ec.SubChapters!, bookId, output, idx);
+        idx = _extractChapters(
+          ec.SubChapters!,
+          bookId,
+          output,
+          idx,
+          imagePaths,
+        );
       }
     }
     return idx;
