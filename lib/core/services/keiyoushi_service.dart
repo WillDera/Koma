@@ -346,38 +346,85 @@ class KeiyoushiService {
     required String sourceId,
     required String mangaUrl,
     required List<Map<String, dynamic>> chapters,
+    void Function(String chapterUrl, int done, int total)? onProgress,
   }) async {
+    if (!_initialized) await init();
     final urls = chapters.map((ch) => ch['url'] as String? ?? '').toList();
     final names = chapters.map((ch) => ch['name'] as String? ?? '').toList();
     final memos = chapters.map((ch) => ch['memo'] as String? ?? '').toList();
     // Chapter downloads (esp. Cloudflare-challenged sources) commonly exceed
     // the default 60s request timeout — that surfaced as "Future not completed".
-    final res = await _post(
-      {
+    final timeout = Duration(minutes: 2 + chapters.length.clamp(1, 20));
+    final request = http.Request('POST', Uri.parse(_baseUrl))
+      ..headers['Content-Type'] = 'application/json'
+      ..body = jsonEncode({
         'method': 'downloadChapters',
         'sourceId': sourceId,
         'mangaUrl': mangaUrl,
         'chapterUrls': urls,
         'chapterNames': names,
         'chapterMemos': memos,
-      },
-      timeout: Duration(minutes: 2 + chapters.length.clamp(1, 20)),
-    );
-    if (res is! Map) {
-      throw Exception('Unexpected download response');
-    }
-    final map = Map<String, dynamic>.from(res);
-    if (map.containsKey('error')) {
-      throw Exception(map['error']?.toString() ?? 'Download failed');
-    }
-    final out = <String, List<String>>{};
-    for (final entry in map.entries) {
-      final v = entry.value;
-      if (v is List) {
-        out[entry.key] = v.map((e) => e.toString()).toList();
+      });
+    final client = http.Client();
+    try {
+      final streamed = await client.send(request).timeout(timeout);
+      if (streamed.statusCode != 200) {
+        throw Exception('Dalvik server returned ${streamed.statusCode}');
       }
+      Map<String, List<String>>? result;
+      // Overall timeout for the whole download — not per-line idle
+      // (individual pages can stall under Cloudflare for a long time).
+      await Future(() async {
+        await for (final line in streamed.stream
+            .transform(utf8.decoder)
+            .transform(const LineSplitter())) {
+          final trimmed = line.trim();
+          if (trimmed.isEmpty) continue;
+          final dynamic decoded;
+          try {
+            decoded = jsonDecode(trimmed);
+          } catch (_) {
+            throw Exception('Invalid download progress line');
+          }
+          if (decoded is! Map) continue;
+          final map = Map<String, dynamic>.from(decoded);
+          final type = map['type']?.toString();
+          if (type == 'progress') {
+            final chapterUrl = map['chapterUrl']?.toString() ?? '';
+            final done = (map['done'] as num?)?.toInt() ?? 0;
+            final total = (map['total'] as num?)?.toInt() ?? 0;
+            if (chapterUrl.isNotEmpty && total > 0) {
+              onProgress?.call(chapterUrl, done, total);
+            }
+          } else if (type == 'result') {
+            final chaptersRaw = map['chapters'];
+            final out = <String, List<String>>{};
+            if (chaptersRaw is Map) {
+              for (final entry in chaptersRaw.entries) {
+                final v = entry.value;
+                if (v is List) {
+                  out[entry.key.toString()] =
+                      v.map((e) => e.toString()).toList();
+                }
+              }
+            }
+            result = out;
+          } else if (type == 'error') {
+            throw Exception(map['message']?.toString() ?? 'Download failed');
+          } else if (map.containsKey('error')) {
+            // Legacy single-JSON error shape.
+            throw Exception(map['error']?.toString() ?? 'Download failed');
+          }
+        }
+      }).timeout(timeout);
+      final chapters = result;
+      if (chapters == null) {
+        throw Exception('Download ended without result');
+      }
+      return chapters;
+    } finally {
+      client.close();
     }
-    return out;
   }
 
   Future<List<String>> getLocalPages({
