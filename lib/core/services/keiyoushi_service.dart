@@ -23,6 +23,15 @@ String? coerceMemoJson(dynamic memo) {
   return s.isEmpty ? null : s;
 }
 
+/// Thrown when the client aborts an in-flight [KeiyoushiService.downloadChapters]
+/// by closing the HTTP connection (pause / cancel).
+class DownloadAbortedException implements Exception {
+  const DownloadAbortedException();
+
+  @override
+  String toString() => 'DownloadAbortedException';
+}
+
 Map<String, dynamic> _normalizeMangaMap(Map<String, dynamic> manga) {
   final memo = coerceMemoJson(manga['memo']);
   if (memo == null) {
@@ -347,11 +356,16 @@ class KeiyoushiService {
     required String mangaUrl,
     required List<Map<String, dynamic>> chapters,
     void Function(String chapterUrl, int done, int total)? onProgress,
+    /// When aborted (client closed), the NDJSON stream ends and this throws
+    /// [DownloadAbortedException] so the queue can re-queue the chapter.
+    Object? abort,
   }) async {
     if (!_initialized) await init();
     final urls = chapters.map((ch) => ch['url'] as String? ?? '').toList();
     final names = chapters.map((ch) => ch['name'] as String? ?? '').toList();
-    final memos = chapters.map((ch) => ch['memo'] as String? ?? '').toList();
+    final memos = chapters
+        .map((ch) => coerceMemoJson(ch['memo']) ?? '')
+        .toList();
     // Chapter downloads (esp. Cloudflare-challenged sources) commonly exceed
     // the default 60s request timeout — that surfaced as "Future not completed".
     final timeout = Duration(minutes: 2 + chapters.length.clamp(1, 20));
@@ -366,6 +380,10 @@ class KeiyoushiService {
         'chapterMemos': memos,
       });
     final client = http.Client();
+    // DownloadAbortController.attach — duck-typed to avoid a hard cycle.
+    try {
+      (abort as dynamic)?.attach(client);
+    } catch (_) {}
     try {
       final streamed = await client.send(request).timeout(timeout);
       if (streamed.statusCode != 200) {
@@ -417,11 +435,33 @@ class KeiyoushiService {
           }
         }
       }).timeout(timeout);
+      final aborted = () {
+        try {
+          return (abort as dynamic)?.isAborted == true;
+        } catch (_) {
+          return false;
+        }
+      }();
+      if (aborted) {
+        throw const DownloadAbortedException();
+      }
       final chapters = result;
       if (chapters == null) {
         throw Exception('Download ended without result');
       }
       return chapters;
+    } on DownloadAbortedException {
+      rethrow;
+    } catch (e) {
+      final aborted = () {
+        try {
+          return (abort as dynamic)?.isAborted == true;
+        } catch (_) {
+          return false;
+        }
+      }();
+      if (aborted) throw const DownloadAbortedException();
+      rethrow;
     } finally {
       client.close();
     }
