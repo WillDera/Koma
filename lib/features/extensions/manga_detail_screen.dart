@@ -1295,8 +1295,13 @@ class _MangaDetailScreenState extends ConsumerState<MangaDetailScreen> {
         ..setDownloadProgress(newProgress)
         ..setLocalChapters(localChapters);
       if (mounted) {
+        final failed = targets.length - result.length;
+        final msg = failed <= 0
+            ? 'Downloaded ${result.length} chapter(s)'
+            : 'Downloaded ${result.length} of ${targets.length} '
+                '(incomplete or blocked — try again after opening the chapter online)';
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Downloaded ${result.length} chapter(s)')),
+          SnackBar(content: Text(msg)),
         );
       }
     } catch (e) {
@@ -1358,7 +1363,10 @@ class _MangaDetailScreenState extends ConsumerState<MangaDetailScreen> {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(
-              '${result.containsKey(url) ? "Downloaded" : "Failed"} ${ch['name'] ?? 'chapter'}',
+              done
+                  ? 'Downloaded ${ch['name'] ?? 'chapter'}'
+                  : 'Incomplete download — site may be Cloudflare-blocked. '
+                      'Open the chapter once online, then retry.',
             ),
           ),
         );
@@ -1389,7 +1397,8 @@ class _MangaDetailScreenState extends ConsumerState<MangaDetailScreen> {
     final url = ch['url'] as String? ?? '';
     final local = localChapters[url];
     final isRead = local?['is_read'] as bool? ?? false;
-    final isDownloaded = local != null;
+    // Presence in the DB ≠ downloaded; use the persisted download flag.
+    final isDownloaded = local?['is_downloaded'] as bool? ?? false;
 
     final downloadedMatch =
         modes[ChapterFilter.downloaded] == FilterMode.ignore ||

@@ -29,19 +29,29 @@ class ReaderPageImage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final imgUrl = page.imageUrl;
+    final localPath = page.localPath;
 
     if (webtoon) {
+      // Prefer on-disk pages (downloaded chapters) — must check before the
+      // empty-URL guard so offline reading does not render as broken.
+      if (localPath != null && localPath.isNotEmpty) {
+        return Image(
+          image: FileImage(File(localPath)),
+          key: ValueKey('p${page.chapter?.id ?? 0}-${page.index}-local'),
+          fit: BoxFit.contain,
+          width: double.infinity,
+          errorBuilder: (_, _, _) => _brokenBox(),
+        );
+      }
       if (imgUrl.isEmpty) return _brokenBox();
       return Image(
-        image: page.localPath != null
-            ? FileImage(File(page.localPath!))
-            : CustomExtendedNetworkImageProvider(
-                imgUrl,
-                headers: page.headers,
-                cacheMaxAge: const Duration(days: 7),
-                imageCacheFolderName: 'cacheimagemanga',
-                showCloudFlareError: true,
-              ),
+        image: CustomExtendedNetworkImageProvider(
+          imgUrl,
+          headers: page.headers,
+          cacheMaxAge: const Duration(days: 7),
+          imageCacheFolderName: 'cacheimagemanga',
+          showCloudFlareError: true,
+        ),
         key: ValueKey('p${page.chapter?.id ?? 0}-${page.index}'),
         fit: BoxFit.contain,
         width: double.infinity,

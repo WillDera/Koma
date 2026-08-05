@@ -73,7 +73,7 @@ class _SourcesScreenState extends ConsumerState<SourcesScreen> {
   Future<void> _navigateToLatest(ExtensionSource src) async {
     setState(() => _lastUsedId = src.id);
     if (!mounted) return;
-    // Browse with a pre-applied search of "latest" (mangayomi's "Latest" button)
+    // Open Popular/Latest browse on the Latest tab (mangayomi parity).
     Navigator.push(
       context,
       MaterialPageRoute(
@@ -81,6 +81,7 @@ class _SourcesScreenState extends ConsumerState<SourcesScreen> {
           sourceId: src.sourceId,
           sourceName: src.name,
           baseUrl: src.baseUrl,
+          initialTab: 'latest',
         ),
       ),
     );

@@ -42,6 +42,7 @@ import uy.kohesive.injekt.api.addSingletonFactory
 import uy.kohesive.injekt.api.get
 import java.io.BufferedReader
 import java.io.File
+import java.io.IOException
 import java.io.InputStreamReader
 import java.io.OutputStream
 import java.net.ServerSocket
@@ -582,49 +583,61 @@ class DalvikServer(
                         baseDir.mkdirs()
                         val result = mutableMapOf<String, List<String>>()
                         for ((i, chapterUrl) in chapterUrls.withIndex()) {
+                            if (chapterUrl.isBlank()) continue
                             val chName = chapterNames.getOrElse(i) { chapterUrl }
                             val chKey = sha256(chapterUrl).take(16)
                             val chDir = File(baseDir, chKey)
                             chDir.mkdirs()
-                            val existing = chDir.listFiles()?.filter { it.isFile }?.sortedBy { it.name }
-                            if (existing != null && existing.isNotEmpty()) {
-                                result[chapterUrl] = existing.map { it.toURI().toString() }
-                                continue
-                            }
-                            val chapter = SChapter.create().apply {
-                                url = chapterUrl
-                                name = chName
-                                memo = chapterMemos.getOrElse(i) { "" }.let {
-                                    if (it.isBlank()) JsonObject.EMPTY
-                                    else runCatching { json.parseToJsonElement(it).jsonObject }
-                                        .getOrDefault(JsonObject.EMPTY)
-                                }
-                            }
-                            val pages: List<Page> = runBlocking { src.getPageList(chapter) }
-                            val localPaths = mutableListOf<String>()
-                            for (page in pages) {
-                                try {
-                                    if (page.imageUrl == null) {
-                                        page.imageUrl = runBlocking { src.getImageUrl(page) }
+                            try {
+                                val chapter = SChapter.create().apply {
+                                    url = chapterUrl
+                                    name = chName
+                                    memo = chapterMemos.getOrElse(i) { "" }.let {
+                                        if (it.isBlank()) JsonObject.EMPTY
+                                        else runCatching { json.parseToJsonElement(it).jsonObject }
+                                            .getOrDefault(JsonObject.EMPTY)
                                     }
-                                    if (page.imageUrl.isNullOrEmpty()) continue
-                                    val response = runBlocking { src.getImage(page) }
-                                    if (!response.isSuccessful) {
-                                        Log.w(TAG, "download: HTTP ${response.code} for page ${page.index}")
-                                        response.close()
+                                }
+                                // Always re-fetch page list so we know the expected
+                                // count — never treat a non-empty directory as done
+                                // (that falsely marked partial Cloudflare downloads complete).
+                                val pages: List<Page> = runBlocking { src.getPageList(chapter) }
+                                if (pages.isEmpty()) {
+                                    Log.w(TAG, "download: empty page list for $chName")
+                                    continue
+                                }
+                                val localPaths = mutableListOf<String>()
+                                var allOk = true
+                                for (page in pages) {
+                                    val file = File(chDir, "${page.index}.jpg")
+                                    if (file.exists() && file.length() > 0L) {
+                                        localPaths.add(file.absolutePath)
                                         continue
                                     }
-                                    val bytes = response.body.bytes()
-                                    response.close()
-                                    if (bytes == null || bytes.isEmpty()) continue
-                                    val file = File(chDir, "${page.index}.jpg")
-                                    file.writeBytes(bytes)
-                                    localPaths.add(file.toURI().toString())
-                                } catch (e: Exception) {
-                                    Log.e(TAG, "download: failed page ${page.index} of $chName", e)
+                                    val saved = downloadPageWithRetry(src, page, file, chName)
+                                    if (saved) {
+                                        localPaths.add(file.absolutePath)
+                                    } else {
+                                        allOk = false
+                                    }
                                 }
+                                // Mihon Downloader parity: only report success when
+                                // every page file exists. Incomplete chapters stay
+                                // unfinished so the UI does not show a checkmark.
+                                if (allOk && localPaths.size == pages.size) {
+                                    result[chapterUrl] = localPaths
+                                } else {
+                                    Log.w(
+                                        TAG,
+                                        "download: incomplete $chName " +
+                                            "${localPaths.size}/${pages.size} pages",
+                                    )
+                                }
+                            } catch (e: Exception) {
+                                // One chapter (or CF challenge) failing must not
+                                // abort the rest of the batch.
+                                Log.e(TAG, "download: chapter failed $chName", e)
                             }
-                            if (localPaths.isNotEmpty()) result[chapterUrl] = localPaths
                         }
                         json.encodeToString(result.toJsonElement())
                     }
@@ -677,6 +690,67 @@ class DalvikServer(
     }
 
     // -- Helpers -----------------------------------------------------------
+
+    /**
+     * Download a single page with Mihon Downloader–style retries (3 attempts,
+     * 2s / 4s backoff). Returns true when a non-empty file was written.
+     */
+    private fun downloadPageWithRetry(
+        src: HttpSource,
+        page: Page,
+        file: File,
+        chapterName: String,
+    ): Boolean {
+        var lastError: Exception? = null
+        for (attempt in 0 until 3) {
+            try {
+                if (page.imageUrl.isNullOrEmpty()) {
+                    page.imageUrl = runBlocking { src.getImageUrl(page) }
+                }
+                if (page.imageUrl.isNullOrEmpty()) {
+                    throw IOException("empty imageUrl for page ${page.index}")
+                }
+                val response = runBlocking { src.getImage(page) }
+                try {
+                    if (!response.isSuccessful) {
+                        throw IOException("HTTP ${response.code} for page ${page.index}")
+                    }
+                    val bytes = response.body.bytes()
+                    if (bytes == null || bytes.isEmpty()) {
+                        throw IOException("empty body for page ${page.index}")
+                    }
+                    file.parentFile?.mkdirs()
+                    // Write via temp then rename so a crashed attempt does not
+                    // leave a truncated JPEG counted as "exists".
+                    val tmp = File(file.parentFile, "${file.name}.tmp")
+                    tmp.writeBytes(bytes)
+                    if (file.exists()) file.delete()
+                    if (!tmp.renameTo(file)) {
+                        tmp.copyTo(file, overwrite = true)
+                        tmp.delete()
+                    }
+                    return file.exists() && file.length() > 0L
+                } finally {
+                    response.close()
+                }
+            } catch (e: Exception) {
+                lastError = e
+                Log.w(
+                    TAG,
+                    "download: page ${page.index} of $chapterName " +
+                        "attempt ${attempt + 1}/3 failed: ${e.message}",
+                )
+                if (attempt < 2) {
+                    try {
+                        Thread.sleep((2L shl attempt) * 1000L)
+                    } catch (_: InterruptedException) {
+                    }
+                }
+            }
+        }
+        Log.e(TAG, "download: giving up page ${page.index} of $chapterName", lastError)
+        return false
+    }
 
     /**
      * Build an [SManga] with the same fields Mihon puts in `Manga.toSManga()`
