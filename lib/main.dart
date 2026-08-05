@@ -92,6 +92,8 @@ void main() {
     // Start the library chapter poller (reads its enabled/interval prefs and
     // schedules a periodic check if auto-update is on).
     await container.read(libraryUpdateProvider.notifier).init();
+    // Restore persisted chapter download queue (Mihon DownloadStore parity).
+    unawaited(container.read(downloadManagerProvider.notifier).restore());
 
     runApp(
       UncontrolledProviderScope(
