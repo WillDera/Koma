@@ -7,6 +7,7 @@ import android.util.Base64
 import android.util.Log
 import eu.kanade.tachiyomi.network.NetworkHelper
 import eu.kanade.tachiyomi.network.defaultClient
+import eu.kanade.tachiyomi.source.ConfigurableSource
 import eu.kanade.tachiyomi.source.Source
 import eu.kanade.tachiyomi.source.SourceFactory
 import eu.kanade.tachiyomi.source.model.Filter
@@ -89,6 +90,55 @@ class DalvikServer(
     private val loadedApkPaths = mutableMapOf<String, File>()
     private val extensionsCacheDir: File by lazy {
         File(context.cacheDir, "dex-extensions").also { it.mkdirs() }
+    }
+
+    /**
+     * Looks up a loaded [HttpSource] by hex bridge id or Mihon numeric
+     * [Source.id]. Used by SourcePreferencesActivity (outside the TCP API).
+     */
+    fun findHttpSource(sourceId: String): HttpSource? {
+        if (sourceId.isBlank()) return null
+        loadedExtensions[sourceId]?.source?.let { return it }
+        for ((_, candidate) in loadedExtensions) {
+            if (candidate.source.id.toString() == sourceId) return candidate.source
+        }
+        return null
+    }
+
+    fun isConfigurableSource(sourceId: String): Boolean =
+        findHttpSource(sourceId) is ConfigurableSource
+
+    /**
+     * Load (or reuse) an extension APK and return whether the resulting source
+     * implements [ConfigurableSource].
+     */
+    @Synchronized
+    fun ensureLoadedAndConfigurable(apkPath: String, preferredSourceId: String? = null): Boolean {
+        ensureInjekt()
+        val apkFile = File(apkPath)
+        if (!apkFile.exists()) return false
+        // Prefer existing entry matching path or preferred id.
+        if (preferredSourceId != null) {
+            findHttpSource(preferredSourceId)?.let { return it is ConfigurableSource }
+        }
+        for ((_, ext) in loadedExtensions) {
+            if (ext.apkPath == apkPath) return ext.source is ConfigurableSource
+        }
+        return try {
+            val root = buildJsonObject {
+                put("apkPath", apkPath)
+            }
+            val resp = handleLoadExtension(root)
+            val parsed = json.parseToJsonElement(resp) as? JsonObject ?: return false
+            if (parsed.containsKey("error")) return false
+            val sid = (parsed["sourceId"] as? JsonPrimitive)?.content
+                ?: preferredSourceId
+                ?: return false
+            findHttpSource(sid) is ConfigurableSource
+        } catch (e: Exception) {
+            Log.e(TAG, "ensureLoadedAndConfigurable failed", e)
+            false
+        }
     }
 
     @Synchronized
