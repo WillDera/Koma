@@ -394,6 +394,32 @@ class KeiyoushiService {
     return res.cast<String>();
   }
 
+  /// Deletes on-disk page dirs for [chapterUrls] under
+  /// `filesDir/manga/{sourceId}/{mangaKey}/{chKey}/`. Returns the chapter
+  /// URLs that were removed (missing dirs still count as deleted).
+  Future<List<String>> deleteChapters({
+    required String sourceId,
+    required String mangaUrl,
+    required List<String> chapterUrls,
+  }) async {
+    final res = await _post({
+      'method': 'deleteChapters',
+      'sourceId': sourceId,
+      'mangaUrl': mangaUrl,
+      'chapterUrls': chapterUrls,
+    });
+    if (res is! Map) {
+      throw Exception('Unexpected delete response');
+    }
+    final map = Map<String, dynamic>.from(res);
+    if (map.containsKey('error')) {
+      throw Exception(map['error']?.toString() ?? 'Delete failed');
+    }
+    final deleted = map['deleted'];
+    if (deleted is! List) return [];
+    return deleted.map((e) => e.toString()).toList();
+  }
+
   ({List<Map<String, dynamic>> mangas, bool hasNextPage}) _parseMangasPage(
     Map<String, dynamic> raw,
   ) {

@@ -657,6 +657,44 @@ class DalvikServer(
                         ?: emptyList()
                     json.encodeToString(paths.toJsonElement())
                 }
+                "deleteChapters" -> {
+                    // Filesystem-only — no extension load required (Mihon
+                    // DownloadManager.deleteChapters parity).
+                    val sourceId = root.str("sourceId") ?: return errorJson("missing sourceId")
+                    val mangaUrl = root.str("mangaUrl") ?: return errorJson("missing mangaUrl")
+                    val chapterUrls = (root["chapterUrls"] as? JsonArray)
+                        ?.map { (it as? JsonPrimitive)?.content ?: "" }
+                        ?.filter { it.isNotBlank() }
+                        ?: emptyList()
+                    val mangaKey = sha256(mangaUrl).take(16)
+                    val mangaDir = File(context.filesDir, "manga/$sourceId/$mangaKey")
+                    val deleted = mutableListOf<String>()
+                    for (chapterUrl in chapterUrls) {
+                        val chKey = sha256(chapterUrl).take(16)
+                        val chDir = File(mangaDir, chKey)
+                        try {
+                            if (chDir.exists()) {
+                                chDir.deleteRecursively()
+                            }
+                            // Missing dir still counts as deleted (already gone).
+                            deleted.add(chapterUrl)
+                        } catch (e: Exception) {
+                            Log.e(TAG, "deleteChapters: failed $chapterUrl", e)
+                        }
+                    }
+                    // Prune empty manga directory (Mihon empty-manga prune).
+                    try {
+                        val leftover = mangaDir.listFiles()
+                        if (mangaDir.isDirectory && (leftover == null || leftover.isEmpty())) {
+                            mangaDir.delete()
+                        }
+                    } catch (e: Exception) {
+                        Log.w(TAG, "deleteChapters: prune manga dir failed", e)
+                    }
+                    json.encodeToString(buildJsonObject {
+                        put("deleted", JsonArray(deleted.map { JsonPrimitive(it) }))
+                    })
+                }
                 "getExtensionMetadata" -> {
                     withLoadedExtension(root.str("sourceId"), data) { src ->
                         json.encodeToString(buildJsonObject {

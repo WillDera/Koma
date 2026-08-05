@@ -1387,6 +1387,164 @@ class _MangaDetailScreenState extends ConsumerState<MangaDetailScreen> {
     }
   }
 
+  List<String> _downloadedChapterUrls() {
+    final detail = ref.read(mangaDetailProvider);
+    final urls = <String>{};
+    for (final entry in detail.downloadProgress.entries) {
+      if (entry.value == 'done' && entry.key.isNotEmpty) urls.add(entry.key);
+    }
+    for (final entry in detail.localChapters.entries) {
+      if (entry.value['is_downloaded'] == true && entry.key.isNotEmpty) {
+        urls.add(entry.key);
+      }
+    }
+    for (final ch in detail.chapters) {
+      final url = ch['url'] as String? ?? '';
+      if (url.isEmpty) continue;
+      if (ch['is_downloaded'] == true) urls.add(url);
+    }
+    return urls.toList();
+  }
+
+  Future<void> _clearLocalDownloadFlags(List<String> chapterUrls) async {
+    if (_mangaId == null || chapterUrls.isEmpty) return;
+    final repos = ref.read(repositoriesProvider);
+    for (final url in chapterUrls) {
+      final existing = await repos.manga.getMangaChapterByUrl(_mangaId!, url);
+      if (existing != null) {
+        await repos.manga.markMangaChapterDownloaded(existing.id, false);
+      }
+    }
+  }
+
+  void _applyDeletedInUi(List<String> chapterUrls) {
+    final notifier = ref.read(mangaDetailProvider.notifier);
+    final progress = Map<String, String>.from(
+      ref.read(mangaDetailProvider).downloadProgress,
+    );
+    final localChapters = Map<String, Map<String, dynamic>>.from(
+      ref.read(mangaDetailProvider).localChapters,
+    );
+    final chapters = ref
+        .read(mangaDetailProvider)
+        .chapters
+        .map((ch) {
+          final url = ch['url'] as String? ?? '';
+          if (!chapterUrls.contains(url)) return ch;
+          return {...ch, 'is_downloaded': false};
+        })
+        .toList();
+    for (final url in chapterUrls) {
+      progress.remove(url);
+      if (localChapters.containsKey(url)) {
+        localChapters[url] = {
+          ...localChapters[url]!,
+          'is_downloaded': false,
+        };
+      }
+    }
+    notifier
+      ..setDownloadProgress(progress)
+      ..setLocalChapters(localChapters)
+      ..setChapters(chapters);
+  }
+
+  Future<void> _deleteDownloadedChapterUrls(
+    List<String> chapterUrls, {
+    required String successMessage,
+  }) async {
+    if (chapterUrls.isEmpty) return;
+    try {
+      await _service.deleteChapters(
+        sourceId: widget.sourceId,
+        mangaUrl: widget.url,
+        chapterUrls: chapterUrls,
+      );
+      if (!mounted) return;
+      await _clearLocalDownloadFlags(chapterUrls);
+      if (!mounted) return;
+      _applyDeletedInUi(chapterUrls);
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(successMessage)));
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Delete failed: $e')));
+      }
+    }
+  }
+
+  Future<void> _confirmDeleteSingleChapter(Map<String, dynamic> ch) async {
+    final name = (ch['name'] as String?)?.trim();
+    final label = (name == null || name.isEmpty) ? 'this chapter' : name;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Delete download'),
+        content: Text('Delete download for $label?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    final url = ch['url'] as String? ?? '';
+    if (url.isEmpty) return;
+    await _deleteDownloadedChapterUrls(
+      [url],
+      successMessage: 'Deleted download for $label',
+    );
+  }
+
+  Future<void> _confirmDeleteAllDownloads() async {
+    final urls = _downloadedChapterUrls();
+    if (urls.isEmpty) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('No downloaded chapters')),
+        );
+      }
+      return;
+    }
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Delete downloads'),
+        content: Text(
+          'Delete all downloaded chapters for this title?\n'
+          '(${urls.length} chapter${urls.length == 1 ? '' : 's'})',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    await _deleteDownloadedChapterUrls(
+      urls,
+      successMessage:
+          'Deleted ${urls.length} download${urls.length == 1 ? '' : 's'}',
+    );
+  }
+
   bool _chapterMatchesFilter(
     Map<String, dynamic> ch,
     Map<ChapterFilter, FilterMode> modes,
@@ -1504,6 +1662,12 @@ class _MangaDetailScreenState extends ConsumerState<MangaDetailScreen> {
             tooltip: 'Download chapters',
             onPressed: detail.offlineMode ? null : _showDownloadDialog,
           ),
+          if (_downloadedChapterUrls().isNotEmpty)
+            IconButton(
+              icon: Icon(Icons.delete_outline_rounded, color: c.textPrimary),
+              tooltip: 'Delete downloads',
+              onPressed: _confirmDeleteAllDownloads,
+            ),
         ],
         flexibleSpace: Container(
           decoration: BoxDecoration(
@@ -1745,6 +1909,8 @@ class _MangaDetailScreenState extends ConsumerState<MangaDetailScreen> {
                                 }
                               },
                               onDownloadTap: (ch) => _downloadSingleChapter(ch),
+                              onDeleteTap: (ch) =>
+                                  _confirmDeleteSingleChapter(ch),
                             );
                           },
                         ),
@@ -1770,6 +1936,7 @@ class _MangaDetailScreenState extends ConsumerState<MangaDetailScreen> {
     required bool offlineMode,
     required void Function(Map<String, dynamic> ch) onChapterTap,
     required void Function(Map<String, dynamic> ch)? onDownloadTap,
+    required void Function(Map<String, dynamic> ch)? onDeleteTap,
   }) {
     final url = ch['url'] as String? ?? '';
     final isRead = ch['is_read'] as bool? ?? false;
@@ -1867,12 +2034,15 @@ class _MangaDetailScreenState extends ConsumerState<MangaDetailScreen> {
                 ],
               ),
             ),
-            if (downloadProgress[url] == 'done')
+            if (downloadProgress[url] == 'done' ||
+                ch['is_downloaded'] == true)
               IconButtonRound(
-                icon: Icons.check_circle_outline,
+                icon: Icons.delete_outline,
                 size: 32,
-                iconColor: Colors.green,
-                onPressed: null,
+                iconColor: c.textSecondary,
+                onPressed: onDeleteTap == null
+                    ? null
+                    : () => onDeleteTap(ch),
               )
             else if (downloadProgress[url] == 'error')
               IconButtonRound(
