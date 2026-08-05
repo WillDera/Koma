@@ -1,5 +1,6 @@
 import '../../core/models/manga_chapter.dart';
 import '../../core/repositories/repositories.dart';
+import '../../core/services/extension_manager.dart';
 import '../../core/services/keiyoushi_service.dart';
 
 /// Result of one library chapter-poll pass.
@@ -28,8 +29,20 @@ class LibraryUpdateReport {
 class LibraryUpdateService {
   final Repositories _repos;
   final KeiyoushiService _keiyoushi;
+  final ExtensionManager? _extensionManager;
 
-  LibraryUpdateService(this._repos, this._keiyoushi);
+  LibraryUpdateService(
+    this._repos,
+    this._keiyoushi, {
+    ExtensionManager? extensionManager,
+  }) : _extensionManager = extensionManager;
+
+  Future<String> _resolveSourceId(String sourceId) async {
+    final mgr = _extensionManager;
+    if (mgr == null) return sourceId;
+    final resolved = await mgr.resolveSourceId(sourceId);
+    return resolved.isNotEmpty ? resolved : sourceId;
+  }
 
   Future<LibraryUpdateReport> checkForNewChapters() async {
     final mangas = await _repos.manga.getMangasInLibrary();
@@ -38,8 +51,9 @@ class LibraryUpdateService {
 
     for (final manga in mangas) {
       try {
+        final sourceId = await _resolveSourceId(manga.sourceId);
         final raw = await _keiyoushi.getChapterList(
-          sourceId: manga.sourceId,
+          sourceId: sourceId,
           url: manga.url,
           memo: manga.memo,
           title: manga.name,

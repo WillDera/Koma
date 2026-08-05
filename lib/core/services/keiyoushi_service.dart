@@ -72,7 +72,10 @@ class KeiyoushiService {
     _initialized = true;
   }
 
-  Future<dynamic> _post(Map<String, dynamic> body) async {
+  Future<dynamic> _post(
+    Map<String, dynamic> body, {
+    Duration timeout = const Duration(seconds: 60),
+  }) async {
     if (!_initialized) await init();
     final res = await http
         .post(
@@ -80,7 +83,7 @@ class KeiyoushiService {
           headers: {'Content-Type': 'application/json'},
           body: jsonEncode(body),
         )
-        .timeout(const Duration(seconds: 60));
+        .timeout(timeout);
     if (res.statusCode != 200) {
       throw Exception('Dalvik server returned ${res.statusCode}');
     }
@@ -347,16 +350,34 @@ class KeiyoushiService {
     final urls = chapters.map((ch) => ch['url'] as String? ?? '').toList();
     final names = chapters.map((ch) => ch['name'] as String? ?? '').toList();
     final memos = chapters.map((ch) => ch['memo'] as String? ?? '').toList();
-    final res = await _post({
-      'method': 'downloadChapters',
-      'sourceId': sourceId,
-      'mangaUrl': mangaUrl,
-      'chapterUrls': urls,
-      'chapterNames': names,
-      'chapterMemos': memos,
-    });
-    if (res is! Map) return {};
-    return res.map((k, v) => MapEntry(k, (v as List).cast<String>()));
+    // Chapter downloads (esp. Cloudflare-challenged sources) commonly exceed
+    // the default 60s request timeout — that surfaced as "Future not completed".
+    final res = await _post(
+      {
+        'method': 'downloadChapters',
+        'sourceId': sourceId,
+        'mangaUrl': mangaUrl,
+        'chapterUrls': urls,
+        'chapterNames': names,
+        'chapterMemos': memos,
+      },
+      timeout: Duration(minutes: 2 + chapters.length.clamp(1, 20)),
+    );
+    if (res is! Map) {
+      throw Exception('Unexpected download response');
+    }
+    final map = Map<String, dynamic>.from(res);
+    if (map.containsKey('error')) {
+      throw Exception(map['error']?.toString() ?? 'Download failed');
+    }
+    final out = <String, List<String>>{};
+    for (final entry in map.entries) {
+      final v = entry.value;
+      if (v is List) {
+        out[entry.key] = v.map((e) => e.toString()).toList();
+      }
+    }
+    return out;
   }
 
   Future<List<String>> getLocalPages({

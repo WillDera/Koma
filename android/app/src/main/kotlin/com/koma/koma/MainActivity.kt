@@ -1,12 +1,21 @@
 package com.koma.koma
 
+import android.content.ContentValues
+import android.content.Intent
 import android.graphics.Typeface
+import android.media.MediaScannerConnection
+import android.net.Uri
+import android.os.Build
+import android.os.Environment
+import android.provider.MediaStore
 import android.util.Log
+import androidx.core.content.FileProvider
 import eu.kanade.tachiyomi.extension.DalvikRuntimeManager
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
 import java.io.File
+import java.io.FileOutputStream
 
 class MainActivity : FlutterActivity() {
 
@@ -47,6 +56,160 @@ class MainActivity : FlutterActivity() {
                 result.notImplemented()
             }
         }
+        MethodChannel(
+            flutterEngine.dartExecutor.binaryMessenger,
+            "com.koma.koma/media",
+        ).setMethodCallHandler { call, result ->
+            when (call.method) {
+                "saveToGallery" -> {
+                    Thread {
+                        try {
+                            val bytes = coerceByteArray(call.argument("bytes"))
+                                ?: throw IllegalArgumentException("missing bytes")
+                            val displayName = call.argument<String>("displayName")
+                                ?: "koma_image.jpg"
+                            val album = call.argument<String>("albumSubfolder")
+                            val mime = call.argument<String>("mimeType") ?: "image/jpeg"
+                            val uri = saveImageToGallery(bytes, displayName, album, mime)
+                            runOnUiThread {
+                                if (uri != null) result.success(uri.toString())
+                                else result.error("SAVE_FAILED", "MediaStore insert failed", null)
+                            }
+                        } catch (e: Throwable) {
+                            Log.e("MediaExport", "saveToGallery failed", e)
+                            runOnUiThread {
+                                result.error("SAVE_FAILED", e.message, null)
+                            }
+                        }
+                    }.start()
+                }
+                "shareImage" -> {
+                    try {
+                        val bytes = coerceByteArray(call.argument("bytes"))
+                            ?: throw IllegalArgumentException("missing bytes")
+                        val displayName = call.argument<String>("displayName")
+                            ?: "koma_image.jpg"
+                        val mime = call.argument<String>("mimeType") ?: "image/jpeg"
+                        shareImageBytes(bytes, displayName, mime)
+                        result.success(null)
+                    } catch (e: Throwable) {
+                        Log.e("MediaExport", "shareImage failed", e)
+                        result.error("SHARE_FAILED", e.message, null)
+                    }
+                }
+                else -> result.notImplemented()
+            }
+        }
+    }
+
+    private fun coerceByteArray(raw: Any?): ByteArray? = when (raw) {
+        null -> null
+        is ByteArray -> raw
+        is List<*> -> ByteArray(raw.size) { i ->
+            when (val v = raw[i]) {
+                is Number -> v.toByte()
+                else -> 0
+            }
+        }
+        else -> null
+    }
+
+    /**
+     * Mihon ImageSaver pattern: MediaStore insert under Pictures/Koma on
+     * API 29+, legacy public Pictures write + media scan below that.
+     * Do not use IS_PENDING (Mihon doesn't) — it left files invisible on some OEMs.
+     */
+    private fun saveImageToGallery(
+        bytes: ByteArray,
+        displayName: String,
+        albumSubfolder: String?,
+        mimeType: String,
+    ): Uri? {
+        var safeName = sanitizeFilename(displayName)
+        if (!safeName.contains('.')) {
+            safeName = when {
+                mimeType.contains("png") -> "$safeName.png"
+                mimeType.contains("webp") -> "$safeName.webp"
+                else -> "$safeName.jpg"
+            }
+        }
+        // Flat album — chapter names as nested folders break MediaStore inserts
+        // on some devices; put everything in Pictures/Koma/.
+        val relativePath = Environment.DIRECTORY_PICTURES + "/Koma"
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            val values = ContentValues().apply {
+                put(MediaStore.Images.Media.DISPLAY_NAME, safeName)
+                put(MediaStore.Images.Media.MIME_TYPE, mimeType)
+                put(MediaStore.Images.Media.RELATIVE_PATH, relativePath)
+            }
+            val resolver = contentResolver
+            // Prefer EXTERNAL (not PRIMARY-only) — more reliable across OEMs.
+            val collection = MediaStore.Images.Media.EXTERNAL_CONTENT_URI
+            val uri = resolver.insert(collection, values) ?: return null
+            try {
+                resolver.openOutputStream(uri)?.use { out ->
+                    out.write(bytes)
+                    out.flush()
+                } ?: run {
+                    resolver.delete(uri, null, null)
+                    return null
+                }
+            } catch (e: Throwable) {
+                Log.e("MediaExport", "write failed", e)
+                runCatching { resolver.delete(uri, null, null) }
+                return null
+            }
+            return uri
+        }
+
+        @Suppress("DEPRECATION")
+        val dir = File(
+            Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES),
+            "Koma",
+        )
+        if (!dir.exists() && !dir.mkdirs()) return null
+        val file = File(dir, safeName)
+        FileOutputStream(file).use { it.write(bytes) }
+        MediaScannerConnection.scanFile(
+            this,
+            arrayOf(file.absolutePath),
+            arrayOf(mimeType),
+            null,
+        )
+        @Suppress("DEPRECATION")
+        val values = ContentValues().apply {
+            put(MediaStore.Images.Media.DATA, file.absolutePath)
+            put(MediaStore.Images.Media.MIME_TYPE, mimeType)
+            put(MediaStore.Images.Media.DISPLAY_NAME, safeName)
+        }
+        return contentResolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values)
+            ?: Uri.fromFile(file)
+    }
+
+    private fun shareImageBytes(bytes: ByteArray, displayName: String, mimeType: String) {
+        val shareDir = File(cacheDir, "share").also { it.mkdirs() }
+        val file = File(shareDir, sanitizeFilename(displayName))
+        FileOutputStream(file).use { it.write(bytes) }
+        val uri = FileProvider.getUriForFile(
+            this,
+            "${applicationContext.packageName}.fileprovider",
+            file,
+        )
+        val intent = Intent(Intent.ACTION_SEND).apply {
+            type = mimeType
+            putExtra(Intent.EXTRA_STREAM, uri)
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        }
+        startActivity(Intent.createChooser(intent, null))
+    }
+
+    private fun sanitizeFilename(name: String): String {
+        val cleaned = name
+            .replace(Regex("[\\\\/:*?\"<>|]"), "_")
+            .trim()
+            .trimStart('.')
+        return cleaned.ifEmpty { "koma_image.jpg" }.take(200)
     }
 
     private fun resolveSystemTypeface(): String {

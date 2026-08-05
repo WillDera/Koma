@@ -406,6 +406,7 @@ class LibraryUpdateNotifier extends Notifier<LibraryUpdateState> {
       final service = LibraryUpdateService(
         ref.read(repositoriesProvider),
         ref.read(keiyoushiServiceProvider),
+        extensionManager: ref.read(extensionManagerProvider),
       );
       final report = await service.checkForNewChapters();
       // Reload library so the new-chapter badges + card state refresh.
