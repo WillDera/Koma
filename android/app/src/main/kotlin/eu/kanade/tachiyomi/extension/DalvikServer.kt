@@ -394,9 +394,23 @@ class DalvikServer(
             }
             val bodyStr = String(body, 0, read)
 
-            val response = handleRequest(bodyStr)
-            sendResponse(output, 200, response)
-            Log.d(TAG, "handleClient: response sent")
+            // downloadChapters streams NDJSON progress lines; other methods
+            // return a single JSON body via sendResponse.
+            val streamMethod = try {
+                val root = json.parseToJsonElement(bodyStr) as? JsonObject
+                (root?.get("method") as? JsonPrimitive)?.content
+            } catch (_: Throwable) {
+                null
+            }
+            if (streamMethod == "downloadChapters") {
+                val root = json.parseToJsonElement(bodyStr) as JsonObject
+                streamDownloadChapters(output, root)
+                Log.d(TAG, "handleClient: ndjson download stream finished")
+            } else {
+                val response = handleRequest(bodyStr)
+                sendResponse(output, 200, response)
+                Log.d(TAG, "handleClient: response sent")
+            }
         } catch (e: Throwable) {
             Log.e(TAG, "handleClient: caught", e)
         } finally {
@@ -569,79 +583,7 @@ class DalvikServer(
                         json.encodeToString(pages.toJsonElement())
                     }
                 }
-                "downloadChapters" -> {
-                    val mangaUrl = root.str("mangaUrl") ?: return errorJson("missing mangaUrl")
-                    val chapterUrls = (root["chapterUrls"] as? JsonArray)?.map { (it as? JsonPrimitive)?.content ?: "" } ?: emptyList()
-                    val chapterNames = (root["chapterNames"] as? JsonArray)?.map { (it as? JsonPrimitive)?.content ?: "" } ?: emptyList()
-                    val chapterMemos = (root["chapterMemos"] as? JsonArray)?.map {
-                        (it as? JsonPrimitive)?.content ?: ""
-                    } ?: emptyList()
-                    val sourceId = root.str("sourceId") ?: ""
-                    withLoadedExtension(root.str("sourceId"), data) { src ->
-                        val mangaKey = sha256(mangaUrl).take(16)
-                        val baseDir = File(context.filesDir, "manga/$sourceId/$mangaKey")
-                        baseDir.mkdirs()
-                        val result = mutableMapOf<String, List<String>>()
-                        for ((i, chapterUrl) in chapterUrls.withIndex()) {
-                            if (chapterUrl.isBlank()) continue
-                            val chName = chapterNames.getOrElse(i) { chapterUrl }
-                            val chKey = sha256(chapterUrl).take(16)
-                            val chDir = File(baseDir, chKey)
-                            chDir.mkdirs()
-                            try {
-                                val chapter = SChapter.create().apply {
-                                    url = chapterUrl
-                                    name = chName
-                                    memo = chapterMemos.getOrElse(i) { "" }.let {
-                                        if (it.isBlank()) JsonObject.EMPTY
-                                        else runCatching { json.parseToJsonElement(it).jsonObject }
-                                            .getOrDefault(JsonObject.EMPTY)
-                                    }
-                                }
-                                // Always re-fetch page list so we know the expected
-                                // count — never treat a non-empty directory as done
-                                // (that falsely marked partial Cloudflare downloads complete).
-                                val pages: List<Page> = runBlocking { src.getPageList(chapter) }
-                                if (pages.isEmpty()) {
-                                    Log.w(TAG, "download: empty page list for $chName")
-                                    continue
-                                }
-                                val localPaths = mutableListOf<String>()
-                                var allOk = true
-                                for (page in pages) {
-                                    val file = File(chDir, "${page.index}.jpg")
-                                    if (file.exists() && file.length() > 0L) {
-                                        localPaths.add(file.absolutePath)
-                                        continue
-                                    }
-                                    val saved = downloadPageWithRetry(src, page, file, chName)
-                                    if (saved) {
-                                        localPaths.add(file.absolutePath)
-                                    } else {
-                                        allOk = false
-                                    }
-                                }
-                                // Mihon Downloader parity: only report success when
-                                // every page file exists. Incomplete chapters stay
-                                // unfinished so the UI does not show a checkmark.
-                                if (allOk && localPaths.size == pages.size) {
-                                    result[chapterUrl] = localPaths
-                                } else {
-                                    Log.w(
-                                        TAG,
-                                        "download: incomplete $chName " +
-                                            "${localPaths.size}/${pages.size} pages",
-                                    )
-                                }
-                            } catch (e: Exception) {
-                                // One chapter (or CF challenge) failing must not
-                                // abort the rest of the batch.
-                                Log.e(TAG, "download: chapter failed $chName", e)
-                            }
-                        }
-                        json.encodeToString(result.toJsonElement())
-                    }
-                }
+                // downloadChapters is handled as an NDJSON stream in handleClient.
                 "getLocalPages" -> {
                     val sourceId = root.str("sourceId") ?: return errorJson("missing sourceId")
                     val mangaUrl = root.str("mangaUrl") ?: return errorJson("missing mangaUrl")
@@ -839,6 +781,138 @@ class DalvikServer(
         output.write(response.toByteArray(StandardCharsets.UTF_8))
         output.write(bodyBytes)
         output.flush()
+    }
+
+    /** Open an HTTP response that streams one JSON object per line. */
+    private fun beginNdjsonResponse(output: OutputStream) {
+        val header = "HTTP/1.1 200 OK\r\n" +
+            "Content-Type: application/x-ndjson\r\n" +
+            "Connection: close\r\n" +
+            "\r\n"
+        output.write(header.toByteArray(StandardCharsets.UTF_8))
+        output.flush()
+    }
+
+    private fun writeNdjsonLine(output: OutputStream, obj: JsonObject) {
+        val line = json.encodeToString(obj as JsonElement) + "\n"
+        output.write(line.toByteArray(StandardCharsets.UTF_8))
+        output.flush()
+    }
+
+    /**
+     * Streams download progress as NDJSON:
+     * - `{"type":"progress","chapterUrl":"...","done":n,"total":m}`
+     * - `{"type":"result","chapters":{ url: [paths...] }}`
+     * - `{"type":"error","message":"..."}` on fatal setup failure
+     */
+    private fun streamDownloadChapters(output: OutputStream, root: JsonObject) {
+        beginNdjsonResponse(output)
+        try {
+            val mangaUrl = root.str("mangaUrl")
+            if (mangaUrl == null) {
+                writeNdjsonLine(output, buildJsonObject {
+                    put("type", "error")
+                    put("message", "missing mangaUrl")
+                })
+                return
+            }
+            val chapterUrls = (root["chapterUrls"] as? JsonArray)
+                ?.map { (it as? JsonPrimitive)?.content ?: "" }
+                ?: emptyList()
+            val chapterNames = (root["chapterNames"] as? JsonArray)
+                ?.map { (it as? JsonPrimitive)?.content ?: "" }
+                ?: emptyList()
+            val chapterMemos = (root["chapterMemos"] as? JsonArray)
+                ?.map { (it as? JsonPrimitive)?.content ?: "" }
+                ?: emptyList()
+            val sourceId = root.str("sourceId") ?: ""
+            val data = (root["data"] as? JsonPrimitive)?.content
+
+            withLoadedExtension(root.str("sourceId"), data) { src ->
+                val mangaKey = sha256(mangaUrl).take(16)
+                val baseDir = File(context.filesDir, "manga/$sourceId/$mangaKey")
+                baseDir.mkdirs()
+                val result = mutableMapOf<String, List<String>>()
+                for ((i, chapterUrl) in chapterUrls.withIndex()) {
+                    if (chapterUrl.isBlank()) continue
+                    val chName = chapterNames.getOrElse(i) { chapterUrl }
+                    val chKey = sha256(chapterUrl).take(16)
+                    val chDir = File(baseDir, chKey)
+                    chDir.mkdirs()
+                    fun emitProgress(done: Int, total: Int) {
+                        writeNdjsonLine(output, buildJsonObject {
+                            put("type", "progress")
+                            put("chapterUrl", chapterUrl)
+                            put("done", done)
+                            put("total", total)
+                        })
+                    }
+                    try {
+                        val chapter = SChapter.create().apply {
+                            url = chapterUrl
+                            name = chName
+                            memo = chapterMemos.getOrElse(i) { "" }.let {
+                                if (it.isBlank()) JsonObject.EMPTY
+                                else runCatching { json.parseToJsonElement(it).jsonObject }
+                                    .getOrDefault(JsonObject.EMPTY)
+                            }
+                        }
+                        // Always re-fetch page list so we know the expected
+                        // count — never treat a non-empty directory as done.
+                        val pages: List<Page> = runBlocking { src.getPageList(chapter) }
+                        if (pages.isEmpty()) {
+                            Log.w(TAG, "download: empty page list for $chName")
+                            continue
+                        }
+                        emitProgress(0, pages.size)
+                        val localPaths = mutableListOf<String>()
+                        var allOk = true
+                        for ((pageIdx, page) in pages.withIndex()) {
+                            val file = File(chDir, "${page.index}.jpg")
+                            if (file.exists() && file.length() > 0L) {
+                                localPaths.add(file.absolutePath)
+                            } else {
+                                val saved = downloadPageWithRetry(src, page, file, chName)
+                                if (saved) {
+                                    localPaths.add(file.absolutePath)
+                                } else {
+                                    allOk = false
+                                }
+                            }
+                            emitProgress(pageIdx + 1, pages.size)
+                        }
+                        // Mihon Downloader parity: only report success when
+                        // every page file exists.
+                        if (allOk && localPaths.size == pages.size) {
+                            result[chapterUrl] = localPaths
+                        } else {
+                            Log.w(
+                                TAG,
+                                "download: incomplete $chName " +
+                                    "${localPaths.size}/${pages.size} pages",
+                            )
+                        }
+                    } catch (e: Exception) {
+                        // One chapter (or CF challenge) failing must not
+                        // abort the rest of the batch.
+                        Log.e(TAG, "download: chapter failed $chName", e)
+                    }
+                }
+                writeNdjsonLine(output, buildJsonObject {
+                    put("type", "result")
+                    put("chapters", result.toJsonElement())
+                })
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "streamDownloadChapters: fatal", e)
+            try {
+                writeNdjsonLine(output, buildJsonObject {
+                    put("type", "error")
+                    put("message", e.message ?: "Download failed")
+                })
+            } catch (_: Exception) {
+            }
+        }
     }
 
     private fun sha256(input: String): String =

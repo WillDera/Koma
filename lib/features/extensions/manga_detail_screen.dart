@@ -1260,6 +1260,15 @@ class _MangaDetailScreenState extends ConsumerState<MangaDetailScreen> {
         sourceId: widget.sourceId,
         mangaUrl: widget.url,
         chapters: targets,
+        onProgress: (chapterUrl, done, total) {
+          if (!mounted) return;
+          final n = ref.read(mangaDetailProvider.notifier);
+          final p = Map<String, String>.from(
+            ref.read(mangaDetailProvider).downloadProgress,
+          );
+          p[chapterUrl] = '$done/$total';
+          n.setDownloadProgress(p);
+        },
       );
       if (!mounted) return;
       final repos = ref.read(repositoriesProvider);
@@ -1336,6 +1345,15 @@ class _MangaDetailScreenState extends ConsumerState<MangaDetailScreen> {
         sourceId: widget.sourceId,
         mangaUrl: widget.url,
         chapters: [ch],
+        onProgress: (chapterUrl, done, total) {
+          if (!mounted) return;
+          final n = ref.read(mangaDetailProvider.notifier);
+          final p = Map<String, String>.from(
+            ref.read(mangaDetailProvider).downloadProgress,
+          );
+          p[chapterUrl] = '$done/$total';
+          n.setDownloadProgress(p);
+        },
       );
       if (!mounted) return;
       final done = result.containsKey(url);
@@ -1386,6 +1404,20 @@ class _MangaDetailScreenState extends ConsumerState<MangaDetailScreen> {
       }
     }
   }
+
+  /// Parses `"7/24"` style page progress from [downloadProgress] values.
+  static (int done, int total)? _parsePageProgress(String? status) {
+    if (status == null) return null;
+    final m = RegExp(r'^(\d+)/(\d+)$').firstMatch(status);
+    if (m == null) return null;
+    final done = int.tryParse(m.group(1)!);
+    final total = int.tryParse(m.group(2)!);
+    if (done == null || total == null || total <= 0) return null;
+    return (done, total);
+  }
+
+  static bool _isActiveDownload(String? status) =>
+      status == 'queued' || _parsePageProgress(status) != null;
 
   List<String> _downloadedChapterUrls() {
     final detail = ref.read(mangaDetailProvider);
@@ -1945,6 +1977,8 @@ class _MangaDetailScreenState extends ConsumerState<MangaDetailScreen> {
     final chNum = ch['chapter_number'] as num?;
     final scanlator = ch['scanlator'] as String?;
     final dateUpload = ch['date_upload'] as int? ?? 0;
+    final dlStatus = downloadProgress[url];
+    final pageProg = _parsePageProgress(dlStatus);
 
     final dateStr = dateUpload > 0
         ? DateFormat.yMMMd().format(
@@ -2022,7 +2056,31 @@ class _MangaDetailScreenState extends ConsumerState<MangaDetailScreen> {
                         ),
                     ],
                   ),
-                  if (downloadProgress[url] == 'queued')
+                  if (pageProg != null)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 6),
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: LinearProgressIndicator(
+                              value: pageProg.$1 / pageProg.$2,
+                              backgroundColor: c.surfaceMuted,
+                              color: c.accent,
+                              minHeight: 2,
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Text(
+                            '${pageProg.$1}/${pageProg.$2}',
+                            style: TextStyle(
+                              color: c.textTertiary,
+                              fontSize: 11,
+                            ),
+                          ),
+                        ],
+                      ),
+                    )
+                  else if (dlStatus == 'queued')
                     Padding(
                       padding: const EdgeInsets.only(top: 6),
                       child: LinearProgressIndicator(
@@ -2034,8 +2092,7 @@ class _MangaDetailScreenState extends ConsumerState<MangaDetailScreen> {
                 ],
               ),
             ),
-            if (downloadProgress[url] == 'done' ||
-                ch['is_downloaded'] == true)
+            if (dlStatus == 'done' || ch['is_downloaded'] == true)
               IconButtonRound(
                 icon: Icons.delete_outline,
                 size: 32,
@@ -2044,14 +2101,14 @@ class _MangaDetailScreenState extends ConsumerState<MangaDetailScreen> {
                     ? null
                     : () => onDeleteTap(ch),
               )
-            else if (downloadProgress[url] == 'error')
+            else if (dlStatus == 'error')
               IconButtonRound(
                 icon: Icons.error_outline,
                 size: 32,
                 iconColor: Colors.redAccent,
                 onPressed: () => onDownloadTap?.call(ch),
               )
-            else if (downloadProgress[url] == 'queued')
+            else if (_isActiveDownload(dlStatus))
               const Padding(
                 padding: EdgeInsets.all(4),
                 child: SizedBox(
