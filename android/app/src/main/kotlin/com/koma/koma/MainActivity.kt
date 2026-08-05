@@ -11,6 +11,7 @@ import android.provider.MediaStore
 import android.util.Log
 import androidx.core.content.FileProvider
 import eu.kanade.tachiyomi.extension.DalvikRuntimeManager
+import eu.kanade.tachiyomi.extension.DalvikServer
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
@@ -95,6 +96,69 @@ class MainActivity : FlutterActivity() {
                     } catch (e: Throwable) {
                         Log.e("MediaExport", "shareImage failed", e)
                         result.error("SHARE_FAILED", e.message, null)
+                    }
+                }
+                else -> result.notImplemented()
+            }
+        }
+        MethodChannel(
+            flutterEngine.dartExecutor.binaryMessenger,
+            "com.koma.koma/source_prefs",
+        ).setMethodCallHandler { call, result ->
+            when (call.method) {
+                "isConfigurable" -> {
+                    Thread {
+                        try {
+                            DalvikRuntimeManager.initialize(applicationContext)
+                            DalvikRuntimeManager.getOrStartServer()
+                            val sourceId = call.argument<String>("sourceId") ?: ""
+                            val apkPath = call.argument<String>("apkPath")
+                            val server = DalvikServer.getInstance()
+                            val configurable = if (!apkPath.isNullOrBlank()) {
+                                server.ensureLoadedAndConfigurable(apkPath, sourceId)
+                            } else {
+                                server.isConfigurableSource(sourceId)
+                            }
+                            runOnUiThread { result.success(configurable) }
+                        } catch (e: Throwable) {
+                            Log.e("SourcePrefs", "isConfigurable failed", e)
+                            runOnUiThread { result.success(false) }
+                        }
+                    }.start()
+                }
+                "openSourcePreferences" -> {
+                    try {
+                        val sourceId = call.argument<String>("sourceId")
+                            ?: throw IllegalArgumentException("missing sourceId")
+                        val apkPath = call.argument<String>("apkPath")
+                        val title = call.argument<String>("title")
+                        Thread {
+                            try {
+                                DalvikRuntimeManager.initialize(applicationContext)
+                                DalvikRuntimeManager.getOrStartServer()
+                                val server = DalvikServer.getInstance()
+                                if (!apkPath.isNullOrBlank()) {
+                                    server.ensureLoadedAndConfigurable(apkPath, sourceId)
+                                }
+                                runOnUiThread {
+                                    startActivity(
+                                        SourcePreferencesActivity.intent(
+                                            this,
+                                            sourceId,
+                                            title,
+                                        ),
+                                    )
+                                    result.success(null)
+                                }
+                            } catch (e: Throwable) {
+                                Log.e("SourcePrefs", "openSourcePreferences failed", e)
+                                runOnUiThread {
+                                    result.error("PREFS_FAILED", e.message, null)
+                                }
+                            }
+                        }.start()
+                    } catch (e: Throwable) {
+                        result.error("PREFS_FAILED", e.message, null)
                     }
                 }
                 else -> result.notImplemented()

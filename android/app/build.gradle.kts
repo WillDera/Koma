@@ -98,8 +98,9 @@ dependencies {
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json-okio:1.11.0")
     // RxJava 1 — source-api uses rx.Observable for deprecated fetch* methods
     implementation("io.reactivex:rxjava:1.3.8")
-    // AndroidX Preference — needed by ConfigurableSource
+    // AndroidX Preference — needed by ConfigurableSource + prefs Activity
     implementation("androidx.preference:preference-ktx:1.2.1")
+    implementation("androidx.appcompat:appcompat:1.7.0")
     // FileProvider + MediaStore helpers for gallery export / share
     implementation("androidx.core:core-ktx:1.15.0")
     // Keiyoushi extensions expect Injekt (dependency injection) at runtime

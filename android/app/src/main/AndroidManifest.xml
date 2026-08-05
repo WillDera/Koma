@@ -33,6 +33,12 @@
                 <category android:name="android.intent.category.LAUNCHER"/>
             </intent-filter>
         </activity>
+        <activity
+            android:name=".SourcePreferencesActivity"
+            android:exported="false"
+            android:label="@string/source_settings_title"
+            android:theme="@style/Theme.Koma.SourcePreferences"
+            android:parentActivityName=".MainActivity" />
         <provider
             android:name="androidx.core.content.FileProvider"
             android:authorities="${applicationId}.fileprovider"

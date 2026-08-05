@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../core/models/extension_source.dart';
 import '../../core/services/extension_icon_cache.dart';
+import '../../core/services/source_preferences_bridge.dart';
 import '../../core/utils/custom_extended_image_provider.dart';
 import '../../core/utils/language.dart';
 import '../../theme/app_theme.dart';
@@ -19,7 +20,8 @@ String _extractPkgFromApkPath(String apkPath) {
 
 /// Extension detail screen — ported from mangayomi's ExtensionDetail.
 ///
-/// Shows the extension icon, name, version, language, and uninstall action.
+/// Shows the extension icon, name, version, language, source settings
+/// (when ConfigurableSource), and uninstall action.
 class ExtensionDetailScreen extends StatelessWidget {
   final ExtensionSource source;
   final VoidCallback onUninstall;
@@ -33,6 +35,7 @@ class ExtensionDetailScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final c = context.colors;
+    final hasApk = source.apkPath.isNotEmpty;
     return Scaffold(
       backgroundColor: c.bg,
       appBar: AppBar(
@@ -141,6 +144,45 @@ class ExtensionDetailScreen extends StatelessWidget {
                 ),
               ),
             ],
+            if (hasApk)
+              FutureBuilder<bool>(
+                future: SourcePreferencesBridge.isConfigurable(
+                  sourceId: source.sourceId,
+                  apkPath: source.apkPath,
+                ),
+                builder: (context, snap) {
+                  if (snap.data != true) return const SizedBox.shrink();
+                  return Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
+                    child: SizedBox(
+                      width: double.infinity,
+                      child: OutlinedButton.icon(
+                        onPressed: () async {
+                          try {
+                            await SourcePreferencesBridge.open(
+                              sourceId: source.sourceId,
+                              apkPath: source.apkPath,
+                              title: source.name,
+                            );
+                          } catch (e) {
+                            if (!context.mounted) return;
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(
+                                content: Text('Could not open settings: $e'),
+                              ),
+                            );
+                          }
+                        },
+                        icon: Icon(Icons.tune_rounded, color: c.accent),
+                        label: Text(
+                          'Source settings',
+                          style: TextStyle(color: c.accent),
+                        ),
+                      ),
+                    ),
+                  );
+                },
+              ),
             const SizedBox(height: 16),
             // Uninstall button
             Padding(
