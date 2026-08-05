@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="source_settings_title">Source settings</string>
+    <string name="source_settings_missing">Missing source id</string>
+    <string name="source_settings_unavailable">This source has no settings</string>
+</resources>
