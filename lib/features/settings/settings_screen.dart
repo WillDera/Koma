@@ -46,7 +46,7 @@ class SettingsScreen extends StatelessWidget {
             const OneHandSpacer(),
             const LibraryHeader(
               title: 'Settings',
-              subtitle: 'Version 2.27.6',
+              subtitle: 'Version 2.28.2',
               padding: EdgeInsets.fromLTRB(24, 20, 20, 12),
             ),
             const StaggeredEntrance(
@@ -159,6 +159,8 @@ class _DataAndStatsPage extends StatelessWidget {
     return const Column(
       children: [
         _DataSection(),
+        SizedBox(height: 24),
+        _DownloadQueueSection(),
         SizedBox(height: 24),
         _LibraryUpdateSection(),
         SizedBox(height: 24),
@@ -999,6 +1001,32 @@ class _BookMetadataSectionState extends ConsumerState<_BookMetadataSection> {
                 )
               : null,
           onTap: progress.running ? null : _fetchAll,
+        ),
+      ],
+    );
+  }
+}
+
+// ─── Download queue ────────────────────────────────────────────────────
+class _DownloadQueueSection extends ConsumerWidget {
+  const _DownloadQueueSection();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final pending = ref.watch(downloadManagerProvider).pendingCount;
+    return SettingsSection(
+      title: 'Downloads',
+      footer:
+          'Chapter downloads run in a shared queue across titles. Pause, cancel, or retry from the queue screen.',
+      children: [
+        SettingsRow(
+          icon: Icons.download_outlined,
+          title: 'Download queue',
+          subtitle: pending > 0
+              ? '$pending chapter${pending == 1 ? '' : 's'} pending'
+              : 'Pause, cancel, or retry chapter downloads',
+          trailing: const Icon(Icons.chevron_right, size: 18),
+          onTap: () => context.pushNamed(Routes.downloadQueue),
         ),
       ],
     );
@@ -1853,7 +1881,7 @@ class _AboutSection extends StatelessWidget {
         SettingsRow(
           icon: Icons.info_outline,
           title: 'Koma',
-          subtitle: 'Version 2.27.6 · build 2.27.6+226',
+          subtitle: 'Version 2.28.2 · build 2.28.2+229',
         ),
         SettingsRow(
           icon: Icons.favorite_outline,

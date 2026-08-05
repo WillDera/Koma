@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 import '../app.dart' show routeObserver;
 import '../core/models/manga.dart';
 import '../features/discover/discover_screen.dart';
+import '../features/downloads/download_queue_screen.dart';
 import '../features/extensions/extensions_screen.dart';
 import '../features/extensions/manga_detail_screen.dart';
 import '../features/extensions/sources_screen.dart';
@@ -33,6 +34,7 @@ abstract final class Routes {
   static const mangaDetail = 'mangaDetail';
   static const extensions = 'extensions';
   static const sources = 'sources';
+  static const downloadQueue = 'downloadQueue';
 }
 
 // ── Typed argument records for detail routes ─────────────────────────
@@ -237,6 +239,12 @@ final GoRouter appRouter = GoRouter(
       name: Routes.sources,
       parentNavigatorKey: rootNavigatorKey,
       builder: (context, state) => const SourcesScreen(),
+    ),
+    GoRoute(
+      path: '/download-queue',
+      name: Routes.downloadQueue,
+      parentNavigatorKey: rootNavigatorKey,
+      builder: (context, state) => const DownloadQueueScreen(),
     ),
   ],
 );

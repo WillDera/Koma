@@ -917,19 +917,30 @@ class DalvikServer(
                         emitProgress(0, pages.size)
                         val localPaths = mutableListOf<String>()
                         var allOk = true
+                        var aborted = false
                         for ((pageIdx, page) in pages.withIndex()) {
-                            val file = File(chDir, "${page.index}.jpg")
-                            if (file.exists() && file.length() > 0L) {
-                                localPaths.add(file.absolutePath)
-                            } else {
-                                val saved = downloadPageWithRetry(src, page, file, chName)
-                                if (saved) {
+                            try {
+                                val file = File(chDir, "${page.index}.jpg")
+                                if (file.exists() && file.length() > 0L) {
                                     localPaths.add(file.absolutePath)
                                 } else {
-                                    allOk = false
+                                    val saved = downloadPageWithRetry(src, page, file, chName)
+                                    if (saved) {
+                                        localPaths.add(file.absolutePath)
+                                    } else {
+                                        allOk = false
+                                    }
                                 }
+                                emitProgress(pageIdx + 1, pages.size)
+                            } catch (e: java.io.IOException) {
+                                // Client closed the socket (cancel/pause).
+                                Log.w(TAG, "download: client disconnected, aborting", e)
+                                aborted = true
+                                break
                             }
-                            emitProgress(pageIdx + 1, pages.size)
+                        }
+                        if (aborted) {
+                            return@withLoadedExtension
                         }
                         // Mihon Downloader parity: only report success when
                         // every page file exists.

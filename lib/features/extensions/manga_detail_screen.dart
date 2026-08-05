@@ -13,6 +13,8 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../../core/models/manga.dart';
 import '../../core/models/manga_chapter.dart';
 import '../../core/providers.dart';
+import '../../core/services/download/chapter_download.dart';
+import '../../core/services/download/download_manager.dart';
 import '../../core/services/keiyoushi_service.dart';
 import '../../core/utils/image_cache.dart';
 import '../../core/utils/image_headers.dart';
@@ -1246,162 +1248,120 @@ class _MangaDetailScreenState extends ConsumerState<MangaDetailScreen> {
       return;
     }
 
-    try {
-      final notifier = ref.read(mangaDetailProvider.notifier);
-      final progress = Map<String, String>.from(
-        ref.read(mangaDetailProvider).downloadProgress,
-      );
-      for (final t in targets) {
-        final url = t['url'] as String? ?? '';
-        progress[url] = 'queued';
-      }
-      notifier.setDownloadProgress(progress);
-      final result = await _service.downloadChapters(
-        sourceId: widget.sourceId,
-        mangaUrl: widget.url,
-        chapters: targets,
-        onProgress: (chapterUrl, done, total) {
-          if (!mounted) return;
-          final n = ref.read(mangaDetailProvider.notifier);
-          final p = Map<String, String>.from(
-            ref.read(mangaDetailProvider).downloadProgress,
-          );
-          p[chapterUrl] = '$done/$total';
-          n.setDownloadProgress(p);
-        },
-      );
-      if (!mounted) return;
-      final repos = ref.read(repositoriesProvider);
-      for (final t in targets) {
-        final url = t['url'] as String? ?? '';
-        final done = result.containsKey(url);
-        if (_mangaId != null && done) {
-          final chUrl = url;
-          final existing = await repos.manga.getMangaChapterByUrl(
-            _mangaId!,
-            chUrl,
-          );
-          if (existing != null) {
-            await repos.manga.markMangaChapterDownloaded(existing.id, true);
-          }
-        }
-      }
-      final newProgress = Map<String, String>.from(
-        ref.read(mangaDetailProvider).downloadProgress,
-      );
-      final localChapters = Map<String, Map<String, dynamic>>.from(
-        ref.read(mangaDetailProvider).localChapters,
-      );
-      for (final t in targets) {
-        final url = t['url'] as String? ?? '';
-        final done = result.containsKey(url);
-        newProgress[url] = done ? 'done' : 'error';
-        if (done && localChapters.containsKey(url)) {
-          localChapters[url] = {...localChapters[url]!, 'is_downloaded': true};
-        }
-      }
-      notifier
-        ..setDownloadProgress(newProgress)
-        ..setLocalChapters(localChapters);
+    // Skip chapters already downloaded.
+    targets = targets.where((t) {
+      final url = t['url'] as String? ?? '';
+      final status = detail.downloadProgress[url];
+      if (status == 'done') return false;
+      final local = detail.localChapters[url];
+      return local?['is_downloaded'] != true;
+    }).toList();
+    if (targets.isEmpty) {
       if (mounted) {
-        final failed = targets.length - result.length;
-        final msg = failed <= 0
-            ? 'Downloaded ${result.length} chapter(s)'
-            : 'Downloaded ${result.length} of ${targets.length} '
-                '(incomplete or blocked — try again after opening the chapter online)';
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(msg)),
+          const SnackBar(content: Text('Selected chapters are already downloaded')),
         );
       }
-    } catch (e) {
-      if (!mounted) return;
-      final notifier = ref.read(mangaDetailProvider.notifier);
-      final progress = Map<String, String>.from(
-        ref.read(mangaDetailProvider).downloadProgress,
+      return;
+    }
+
+    final mgr = ref.read(downloadManagerProvider.notifier);
+    final mangaMemo = widget.memo ??
+        ref.read(mangaDetailProvider).details?['memo'] as String?;
+    await mgr.downloadChapters(
+      sourceId: widget.sourceId,
+      mangaUrl: widget.url,
+      mangaTitle: widget.title,
+      chapters: targets,
+      mangaId: _mangaId,
+      mangaMemo: mangaMemo,
+    );
+    _syncDownloadProgressFromQueue(mgr.manager);
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Queued ${targets.length} chapter${targets.length == 1 ? '' : 's'}',
+          ),
+          action: SnackBarAction(
+            label: 'Queue',
+            onPressed: () => context.pushNamed(Routes.downloadQueue),
+          ),
+        ),
       );
-      for (final t in targets) {
-        final url = t['url'] as String? ?? '';
-        progress[url] = 'error';
-      }
-      notifier.setDownloadProgress(progress);
-      if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('Download failed: $e')));
-      }
     }
   }
 
   Future<void> _downloadSingleChapter(Map<String, dynamic> ch) async {
     final url = ch['url'] as String? ?? '';
-    try {
-      final notifier = ref.read(mangaDetailProvider.notifier);
-      final progress = Map<String, String>.from(
-        ref.read(mangaDetailProvider).downloadProgress,
-      );
-      progress[url] = 'queued';
-      notifier.setDownloadProgress(progress);
-      final result = await _service.downloadChapters(
-        sourceId: widget.sourceId,
-        mangaUrl: widget.url,
-        chapters: [ch],
-        onProgress: (chapterUrl, done, total) {
-          if (!mounted) return;
-          final n = ref.read(mangaDetailProvider.notifier);
-          final p = Map<String, String>.from(
-            ref.read(mangaDetailProvider).downloadProgress,
-          );
-          p[chapterUrl] = '$done/$total';
-          n.setDownloadProgress(p);
-        },
-      );
-      if (!mounted) return;
-      final done = result.containsKey(url);
-      if (_mangaId != null && done) {
-        final repos = ref.read(repositoriesProvider);
-        final existing = await repos.manga.getMangaChapterByUrl(_mangaId!, url);
-        if (existing != null) {
-          await repos.manga.markMangaChapterDownloaded(existing.id, true);
+    final notifier = ref.read(downloadManagerProvider.notifier);
+    final mgr = notifier.manager;
+    final existing = mgr.getQueuedByChapterUrl(widget.sourceId, url);
+    if (existing != null) {
+      if (existing.status == DownloadState.error) {
+        existing.status = DownloadState.queue;
+        await notifier.startDownloads();
+      }
+      _syncDownloadProgressFromQueue(mgr);
+      return;
+    }
+    await notifier.downloadChapters(
+      sourceId: widget.sourceId,
+      mangaUrl: widget.url,
+      mangaTitle: widget.title,
+      chapters: [ch],
+      mangaId: _mangaId,
+      mangaMemo: widget.memo ??
+          ref.read(mangaDetailProvider).details?['memo'] as String?,
+    );
+    _syncDownloadProgressFromQueue(mgr);
+  }
+
+  void _syncDownloadProgressFromQueue(DownloadManager mgr) {
+    if (!mounted) return;
+    final notifier = ref.read(mangaDetailProvider.notifier);
+    final progress = Map<String, String>.from(
+      ref.read(mangaDetailProvider).downloadProgress,
+    );
+    final localChapters = Map<String, Map<String, dynamic>>.from(
+      ref.read(mangaDetailProvider).localChapters,
+    );
+    var localChanged = false;
+    final activeUrls = <String>{};
+    for (final d in mgr.queue) {
+      if (d.sourceId != widget.sourceId || d.mangaUrl != widget.url) continue;
+      activeUrls.add(d.chapterUrl);
+      final label = downloadProgressLabel(d);
+      if (label != null) progress[d.chapterUrl] = label;
+      if (d.status == DownloadState.downloaded) {
+        progress[d.chapterUrl] = 'done';
+        if (localChapters.containsKey(d.chapterUrl)) {
+          localChapters[d.chapterUrl] = {
+            ...localChapters[d.chapterUrl]!,
+            'is_downloaded': true,
+          };
+          localChanged = true;
         }
       }
-      final newProgress = Map<String, String>.from(
-        ref.read(mangaDetailProvider).downloadProgress,
-      );
-      final localChapters = Map<String, Map<String, dynamic>>.from(
-        ref.read(mangaDetailProvider).localChapters,
-      );
-      newProgress[url] = done ? 'done' : 'error';
-      if (done && localChapters.containsKey(url)) {
-        localChapters[url] = {...localChapters[url]!, 'is_downloaded': true};
+    }
+    // Drop transient active statuses for chapters that left the queue.
+    final stale = <String>[];
+    for (final entry in progress.entries) {
+      if (activeUrls.contains(entry.key)) continue;
+      if (_isActiveDownload(entry.value)) {
+        stale.add(entry.key);
       }
-      notifier
-        ..setDownloadProgress(newProgress)
-        ..setLocalChapters(localChapters);
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              done
-                  ? 'Downloaded ${ch['name'] ?? 'chapter'}'
-                  : 'Incomplete download — site may be Cloudflare-blocked. '
-                      'Open the chapter once online, then retry.',
-            ),
-          ),
-        );
+    }
+    for (final url in stale) {
+      if (localChapters[url]?['is_downloaded'] == true) {
+        progress[url] = 'done';
+      } else if (progress[url] != 'done' && progress[url] != 'error') {
+        progress.remove(url);
       }
-    } catch (e) {
-      if (!mounted) return;
-      final notifier = ref.read(mangaDetailProvider.notifier);
-      final progress = Map<String, String>.from(
-        ref.read(mangaDetailProvider).downloadProgress,
-      );
-      progress[url] = 'error';
-      notifier.setDownloadProgress(progress);
-      if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('Download failed: $e')));
-      }
+    }
+    notifier.setDownloadProgress(progress);
+    if (localChanged) {
+      notifier.setLocalChapters(localChapters);
     }
   }
 
@@ -1642,6 +1602,13 @@ class _MangaDetailScreenState extends ConsumerState<MangaDetailScreen> {
         },
       );
     }
+
+    // Mirror global download queue progress into this title's chapter rows.
+    ref.listen(downloadManagerProvider, (_, snap) {
+      _syncDownloadProgressFromQueue(
+        ref.read(downloadManagerProvider.notifier).manager,
+      );
+    });
 
     if (!_sessionReady) {
       return Scaffold(

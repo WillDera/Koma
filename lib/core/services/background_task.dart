@@ -2,6 +2,9 @@ import 'package:workmanager/workmanager.dart';
 
 import '../isar/isar.dart';
 import '../repositories/repositories.dart';
+import 'download/chapter_download.dart';
+import 'download/download_manager.dart';
+import 'download/download_store.dart';
 import 'extension_manager.dart';
 import 'keiyoushi_service.dart';
 import 'library_update_service.dart';
@@ -10,6 +13,9 @@ import 'notification_service.dart';
 /// Unique name for the periodic library-poll task. Used both to register and
 /// to cancel the WorkManager job (mangayomi's LibUpdatesAlarm parity).
 const String kLibraryPollTaskName = 'com.koma.library_update';
+
+/// Unique name for the one-off chapter download drain (Mihon DownloadJob).
+const String kDownloadTaskName = DownloadManager.downloadTaskName;
 
 /// WorkManager entry point. Runs in a background isolate on a fresh
 /// FlutterEngine, so it cannot rely on the MainActivity MethodChannel — the
@@ -23,6 +29,8 @@ void backgroundCallbackDispatcher() {
     try {
       if (task == kLibraryPollTaskName) {
         await _pollLibraryAndNotify();
+      } else if (task == kDownloadTaskName) {
+        await _drainDownloadQueue();
       }
       return true;
     } catch (_) {
@@ -48,4 +56,28 @@ Future<void> _pollLibraryAndNotify() async {
     await NotificationService.instance.init();
     await NotificationService.instance.notifyNewChapters(report);
   }
+}
+
+/// Background drain of the persisted download queue when the UI isolate is
+/// not the active runner (app backgrounded / killed mid-queue).
+Future<void> _drainDownloadQueue() async {
+  final store = DownloadStore();
+  if (await store.isPaused()) return;
+  if (await store.runner() == 'ui') return;
+
+  final isar = await openIsar();
+  final repos = Repositories(isar);
+  final keiyoushi = KeiyoushiService();
+  await keiyoushi.init();
+  final mgr = DownloadManager(keiyoushi: keiyoushi, repositories: repos);
+  await mgr.restore(autoStart: false);
+  if (mgr.queue.isEmpty || await store.isPaused()) return;
+
+  // Prefer pending queue items only — ERROR stays until explicit retry.
+  // Treating ERROR as work re-queued races with the UI and spawned a second
+  // FlutterEngine (looked like a crash).
+  final needsWork = mgr.queue.any((d) => d.status == DownloadState.queue);
+  if (!needsWork) return;
+
+  await mgr.runUntilIdle(runner: 'wm');
 }
