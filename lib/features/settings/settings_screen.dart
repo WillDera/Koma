@@ -46,7 +46,7 @@ class SettingsScreen extends StatelessWidget {
             const OneHandSpacer(),
             const LibraryHeader(
               title: 'Settings',
-              subtitle: 'Version 2.26.6',
+              subtitle: 'Version 2.27.1',
               padding: EdgeInsets.fromLTRB(24, 20, 20, 12),
             ),
             const StaggeredEntrance(
@@ -1827,6 +1827,15 @@ class _PluginsSection extends ConsumerWidget {
           prefKey: 'notify_extension_updates',
           defaultValue: true,
         ),
+        _PrefSwitchRow(
+          key: const Key('extension_auto_update_enabled'),
+          icon: Icons.system_update_alt_outlined,
+          title: 'Auto-install plugin updates',
+          subtitle:
+              'Download and reload newer extension APKs on launch when available',
+          prefKey: 'extension_auto_update_enabled',
+          defaultValue: false,
+        ),
       ],
     );
   }
@@ -1844,7 +1853,7 @@ class _AboutSection extends StatelessWidget {
         SettingsRow(
           icon: Icons.info_outline,
           title: 'Koma',
-          subtitle: 'Version 2.26.6 · build 2.26.6+219',
+          subtitle: 'Version 2.27.1 · build 2.27.1+221',
         ),
         SettingsRow(
           icon: Icons.favorite_outline,

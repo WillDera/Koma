@@ -328,6 +328,51 @@ class ExtensionManager {
     }
   }
 
+  /// When [autoInstall] is enabled (Mangayomi `autoUpdateExtensions` parity),
+  /// download and reload every installed source whose `versionLast` differs
+  /// from `version`. Skipped sources (missing index entry) are left as-is.
+  Future<int> autoInstallAvailableUpdates() async {
+    final installed = await listInstalled();
+    final outdated = installed.where((s) => s.isUpdateAvailable).toList();
+    if (outdated.isEmpty) return 0;
+
+    final repos = await listRepos();
+    final enabledRepos = repos.where((r) => r.enabled).toList();
+    final indexByRepoUrl = <String, List<ExtensionIndexEntry>>{};
+    var updated = 0;
+
+    for (final src in outdated) {
+      try {
+        ExtensionRepo? repo;
+        if (src.repoUrl != null && src.repoUrl!.isNotEmpty) {
+          for (final r in enabledRepos) {
+            if (r.url == src.repoUrl) {
+              repo = r;
+              break;
+            }
+          }
+        }
+        repo ??= enabledRepos.isEmpty ? null : enabledRepos.first;
+        if (repo == null) continue;
+
+        final entries = indexByRepoUrl[repo.url] ??= await fetchIndex(repo);
+        ExtensionIndexEntry? match;
+        for (final e in entries) {
+          if (src.className.isNotEmpty && e.className == src.className) {
+            match = e;
+            break;
+          }
+        }
+        if (match == null) continue;
+        await updateSource(src, match, repo.url);
+        updated++;
+      } catch (_) {
+        // One bad APK must not block the rest (same pattern as library poll).
+      }
+    }
+    return updated;
+  }
+
   Future<void> checkForObsoleteSources(
     List<ExtensionIndexEntry> freshEntries,
     String repoUrl,

@@ -2,6 +2,7 @@ import 'package:workmanager/workmanager.dart';
 
 import '../isar/isar.dart';
 import '../repositories/repositories.dart';
+import 'extension_manager.dart';
 import 'keiyoushi_service.dart';
 import 'library_update_service.dart';
 import 'notification_service.dart';
@@ -35,7 +36,13 @@ void backgroundCallbackDispatcher() {
 Future<void> _pollLibraryAndNotify() async {
   final isar = await openIsar();
   final repos = Repositories(isar);
-  final service = LibraryUpdateService(repos, KeiyoushiService());
+  final keiyoushi = KeiyoushiService();
+  final extensionManager = ExtensionManager(repos, keiyoushi);
+  final service = LibraryUpdateService(
+    repos,
+    keiyoushi,
+    extensionManager: extensionManager,
+  );
   final report = await service.checkForNewChapters();
   if (report.totalNew > 0) {
     await NotificationService.instance.init();

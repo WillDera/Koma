@@ -100,6 +100,8 @@ dependencies {
     implementation("io.reactivex:rxjava:1.3.8")
     // AndroidX Preference — needed by ConfigurableSource
     implementation("androidx.preference:preference-ktx:1.2.1")
+    // FileProvider + MediaStore helpers for gallery export / share
+    implementation("androidx.core:core-ktx:1.15.0")
     // Keiyoushi extensions expect Injekt (dependency injection) at runtime
     implementation("com.github.mihonapp:injekt:91edab2317")
 }

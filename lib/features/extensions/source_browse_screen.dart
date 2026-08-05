@@ -21,11 +21,15 @@ class SourceBrowseScreen extends ConsumerStatefulWidget {
   final String sourceName;
   final String? baseUrl;
 
+  /// Initial catalogue tab: `popular` (default) or `latest`.
+  final String initialTab;
+
   const SourceBrowseScreen({
     super.key,
     required this.sourceId,
     required this.sourceName,
     this.baseUrl,
+    this.initialTab = 'popular',
   });
 
   @override
@@ -69,7 +73,12 @@ class _SourceBrowseScreenState extends ConsumerState<SourceBrowseScreen>
       baseUrl: widget.baseUrl ?? '',
       sourceType: SourceType.mihon,
     );
-    _tabCtrl = TabController(length: 2, vsync: this);
+    _tabCtrl = TabController(
+      length: 2,
+      vsync: this,
+      initialIndex: widget.initialTab == 'latest' ? 1 : 0,
+    );
+    _tab = widget.initialTab == 'latest' ? 'latest' : 'popular';
     _scrollCtrl.addListener(_onScroll);
     _tabCtrl.addListener(() {
       if (!_tabCtrl.indexIsChanging) {

@@ -17,6 +17,7 @@ import '../../core/providers.dart';
 import '../../core/repositories/repositories.dart';
 import '../../core/services/extension_manager.dart';
 import '../../core/services/keiyoushi_service.dart';
+import '../../core/services/media_export_service.dart';
 import '../../features/snippets/bookmarks_provider.dart';
 import '../../router/router.dart';
 import '../../theme/app_theme.dart';
@@ -231,38 +232,136 @@ class _MangaReaderScreenState extends ConsumerState<MangaReaderScreen>
     return resolved.isNotEmpty ? resolved : widget.sourceId;
   }
 
+  /// Normalize Dalvik local page paths (`file://` URI or absolute path).
+  String _normalizeLocalPath(String path) {
+    if (path.startsWith('file:')) {
+      try {
+        return Uri.parse(path).toFilePath();
+      } catch (_) {
+        return path.replaceFirst(RegExp(r'^file://'), '');
+      }
+    }
+    return path;
+  }
+
+  /// Build [PageData] for [chapter], preferring on-disk downloads (Mihon
+  /// DownloadPageLoader / Mangayomi isLocale pattern) before the network
+  /// getPageList.
+  Future<List<PageData>> _pagesForChapter(MangaChapter chapter) async {
+    final sourceId = await _resolveSourceId();
+
+    try {
+      final local = await _service.getLocalPages(
+        sourceId: sourceId,
+        mangaUrl: widget.mangaUrl,
+        chapterUrl: chapter.url,
+      );
+      if (local.isNotEmpty) {
+        // Heal the DB flag if files exist but isDownloaded was never set.
+        if (!chapter.isDownloaded && chapter.id > 0 && _repos != null) {
+          unawaited(
+            _repos!.manga.markMangaChapterDownloaded(chapter.id, true),
+          );
+        }
+        return local.asMap().entries.map((e) {
+          final path = _normalizeLocalPath(local[e.key]);
+          return PageData.page(
+            mangaPage: MangaPage(
+              index: e.key,
+              imageUrl: path,
+              localPath: path,
+              chapterUrl: chapter.url,
+            ),
+            chapter: chapter,
+            pageIndex: e.key,
+          )..localPath = path;
+        }).toList();
+      }
+    } catch (_) {
+      // Fall through to network page list.
+    }
+
+    final raw = await _service.getPageList(
+      sourceId: sourceId,
+      url: chapter.url,
+      memo: chapter.memo,
+    );
+    return raw.asMap().entries.map((e) {
+      final imgUrl = e.value['imageUrl'] as String?;
+      final rawHeaders = e.value['headers'] as Map?;
+      final headers = rawHeaders?.map(
+        (k, v) => MapEntry(k.toString(), v.toString()),
+      );
+      return PageData.page(
+        mangaPage: MangaPage(
+          index: e.key,
+          imageUrl: imgUrl ?? (e.value['url'] as String? ?? ''),
+          headers: headers,
+          chapterUrl: chapter.url,
+        ),
+        chapter: chapter,
+        pageIndex: e.key,
+      );
+    }).toList();
+  }
+
   Future<void> _load() async {
     try {
-      final sourceId = await _resolveSourceId();
-      final raw = await _service.getPageList(
-        sourceId: sourceId,
-        url: widget.chapterUrl,
-        memo: _currentChapter?.memo,
-      );
-      if (!mounted) return;
-
       final currentCh = _getCurrentChapter();
       if (currentCh == null) {
-        if (mounted) setState(() => _loading = false);
+        // Chapter may not be in DB yet — synthesize a stub for page load.
+        final stub = MangaChapter(
+          id: 0,
+          mangaId: widget.mangaId ?? 0,
+          name: widget.chapterName,
+          url: widget.chapterUrl,
+          dateUpload: 0,
+          index: 0,
+        );
+        final pageDataList = await _pagesForChapter(stub);
+        if (!mounted) return;
+        if (pageDataList.isEmpty) {
+          setState(() {
+            _error = 'No pages found';
+            _loading = false;
+          });
+          return;
+        }
+        _currentChapter = stub;
+        initializePreloadManager(
+          pageDataList,
+          onPagesUpdated: () {
+            if (mounted) setState(() {});
+          },
+        );
+        setState(() {
+          _zoomCtrls.addAll(
+            List.generate(
+              pageDataList.length,
+              (_) => TransformationController(),
+            ),
+          );
+          _loading = false;
+        });
+        await _initProgress();
+        _proactivePreload();
+        _updateBookmarkState();
+        if (widget.pageNumber != null) {
+          _jumpToPageByNumber(widget.pageNumber!);
+        }
         return;
       }
 
-      final pageDataList = raw.asMap().entries.map((e) {
-        final imgUrl = e.value['imageUrl'] as String?;
-        final rawHeaders = e.value['headers'] as Map?;
-        final headers = rawHeaders?.map(
-          (k, v) => MapEntry(k.toString(), v.toString()),
-        );
-        return PageData.page(
-          mangaPage: MangaPage(
-            index: e.key,
-            imageUrl: imgUrl ?? (e.value['url'] as String? ?? ''),
-            headers: headers,
-          ),
-          chapter: currentCh,
-          pageIndex: e.key,
-        );
-      }).toList();
+      final pageDataList = await _pagesForChapter(currentCh);
+      if (!mounted) return;
+
+      if (pageDataList.isEmpty) {
+        setState(() {
+          _error = 'No pages found';
+          _loading = false;
+        });
+        return;
+      }
 
       // Initialize the preload manager with the current chapter's pages
       initializePreloadManager(
@@ -618,30 +717,11 @@ class _MangaReaderScreenState extends ConsumerState<MangaReaderScreen>
         _isNextChapterPreloading = false;
         return;
       }
-      final raw = await _service.getPageList(
-        sourceId: await _resolveSourceId(),
-        url: nextChapter.url,
-        memo: nextChapter.memo,
-      );
+      final nextPages = await _pagesForChapter(nextChapter);
       if (!mounted) {
         _isNextChapterPreloading = false;
         return;
       }
-      final nextPages = raw.asMap().entries.map((e) {
-        final imgUrl = e.value['imageUrl'] as String?;
-        final rawHeaders = e.value['headers'] as Map?;
-        final headers = rawHeaders?.map(
-          (k, v) => MapEntry(k.toString(), v.toString()),
-        );
-        return PageData.page(
-          mangaPage: MangaPage(
-            index: e.key,
-            imageUrl: imgUrl ?? (e.value['url'] as String? ?? ''),
-            headers: headers,
-          ),
-          chapter: nextChapter,
-        );
-      }).toList();
 
       if (nextPages.isEmpty) {
         _isNextChapterPreloading = false;
@@ -837,24 +917,69 @@ class _MangaReaderScreenState extends ConsumerState<MangaReaderScreen>
     setState(() {});
   }
 
+  Future<Uint8List?> _bytesForCurrentPage() async {
+    final current = _currentPageNotifier.value;
+    if (current >= _pages.length) return null;
+    final page = _pages[current];
+    final local = page.localPath ?? page.resolvedFilePath;
+    if (local != null && local.isNotEmpty) {
+      final file = File(local);
+      if (await file.exists()) return file.readAsBytes();
+    }
+    if (page.imageUrl.isEmpty) return null;
+    // Local absolute paths may be stored in imageUrl for downloaded pages.
+    if (!page.imageUrl.startsWith('http')) {
+      final file = File(_normalizeLocalPath(page.imageUrl));
+      if (await file.exists()) return file.readAsBytes();
+    }
+    final uri = Uri.parse(page.imageUrl);
+    final req = http.Request('GET', uri);
+    page.headers?.forEach((k, v) => req.headers[k] = v);
+    final streamed = await req.send();
+    if (streamed.statusCode < 200 || streamed.statusCode >= 300) {
+      throw Exception('HTTP ${streamed.statusCode}');
+    }
+    return streamed.stream.toBytes();
+  }
+
+  String _galleryFileName(int pageIndex) {
+    final chapter = _currentChapter?.name ?? widget.chapterName;
+    final manga = widget.mangaUrl.split('/').lastWhere(
+      (s) => s.isNotEmpty,
+      orElse: () => 'manga',
+    );
+    final safeManga = manga.replaceAll(RegExp(r'[\\/:*?"<>|]'), '_');
+    final safeChapter = chapter.replaceAll(RegExp(r'[\\/:*?"<>|]'), '_');
+    return '$safeManga - $safeChapter - ${pageIndex + 1}.jpg';
+  }
+
   Future<void> _saveCurrentPage() async {
     final current = _currentPageNotifier.value;
-    if (current >= _pages.length) return;
-    final page = _pages[current];
-    if (page.imageUrl.isEmpty) return;
     try {
-      final uri = Uri.parse(page.imageUrl);
-      final req = http.MultipartRequest('GET', uri);
-      page.headers?.forEach((k, v) => req.headers[k] = v);
-      final streamed = await req.send();
-      final bytes = await streamed.stream.toBytes();
-      if (!mounted) return;
-      final file = File('${Directory.systemTemp.path}/page_${current + 1}.jpg');
-      await file.writeAsBytes(bytes);
+      final bytes = await _bytesForCurrentPage();
+      if (bytes == null || bytes.isEmpty) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Nothing to save')),
+          );
+        }
+        return;
+      }
+      final name = _galleryFileName(current);
+      final uri = await MediaExportService().saveToGallery(
+        bytes: bytes,
+        displayName: name,
+      );
       if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('Saved to ${file.path}')));
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              uri != null && uri.startsWith('content:')
+                  ? 'Saved to Pictures/Koma'
+                  : 'Saved to gallery',
+            ),
+          ),
+        );
       }
     } catch (e) {
       if (mounted) {
@@ -865,20 +990,43 @@ class _MangaReaderScreenState extends ConsumerState<MangaReaderScreen>
     }
   }
 
-  void _shareCurrentPage() {
+  Future<void> _shareCurrentPage() async {
     final current = _currentPageNotifier.value;
-    Clipboard.setData(ClipboardData(text: _pages[current].imageUrl));
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Image URL copied to clipboard')),
-    );
+    try {
+      final bytes = await _bytesForCurrentPage();
+      if (bytes == null || bytes.isEmpty) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Nothing to share')),
+          );
+        }
+        return;
+      }
+      await MediaExportService().shareImage(
+        bytes: bytes,
+        displayName: _galleryFileName(current),
+      );
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Share failed: $e')));
+      }
+    }
   }
 
   void _copyCurrentPage() {
     final current = _currentPageNotifier.value;
-    Clipboard.setData(ClipboardData(text: _pages[current].imageUrl));
+    if (current >= _pages.length) return;
+    final page = _pages[current];
+    final text = page.imageUrl.isNotEmpty
+        ? page.imageUrl
+        : (page.localPath ?? '');
+    if (text.isEmpty) return;
+    Clipboard.setData(ClipboardData(text: text));
     ScaffoldMessenger.of(
       context,
-    ).showSnackBar(const SnackBar(content: Text('Image URL copied')));
+    ).showSnackBar(const SnackBar(content: Text('Copied')));
   }
 
   void _showLongPressMenu() {
