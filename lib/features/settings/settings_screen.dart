@@ -9,6 +9,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../../core/models/source.dart';
 import '../../core/providers.dart';
 import '../../core/services/export_service.dart';
+import '../../core/services/library_update_prefs.dart';
 import '../../core/services/metadata_enrichment_service.dart';
 import '../../core/services/source_service.dart';
 import '../../router/router.dart';
@@ -46,7 +47,7 @@ class SettingsScreen extends StatelessWidget {
             const OneHandSpacer(),
             const LibraryHeader(
               title: 'Settings',
-              subtitle: 'Version 2.28.13',
+              subtitle: 'Version 2.29.1',
               padding: EdgeInsets.fromLTRB(24, 20, 20, 12),
             ),
             const StaggeredEntrance(
@@ -1046,7 +1047,10 @@ class _LibraryUpdateSection extends ConsumerWidget {
     return SettingsSection(
       title: 'Library updates',
       footer:
-          'Automatically check library manga for new chapters and surface a badge on each card. A system notification can be sent when new chapters are found.',
+          'Background checks can wait for Wi‑Fi or charging. Smart-update '
+          'skips titles that match the filters below. Turning on auto-download '
+          'queues newly discovered chapters after each successful check. '
+          'Category filters arrive once library categories exist.',
       children: [
         SettingsRow(
           icon: Icons.autorenew,
@@ -1086,6 +1090,65 @@ class _LibraryUpdateSection extends ConsumerWidget {
               PopupMenuItem(value: 24, child: Text('24 hours')),
             ],
           ),
+        ),
+        SettingsRow(
+          icon: Icons.wifi,
+          title: 'Only on Wi‑Fi',
+          subtitle: 'Background checks wait for an unmetered network',
+          trailing: Switch(
+            value: update.wifiOnly,
+            activeThumbColor: c.accent,
+            onChanged: update.enabled
+                ? (v) =>
+                      ref.read(libraryUpdateProvider.notifier).setWifiOnly(v)
+                : null,
+          ),
+        ),
+        SettingsRow(
+          icon: Icons.battery_charging_full,
+          title: 'Only while charging',
+          subtitle: 'Background checks wait until the device is charging',
+          trailing: Switch(
+            value: update.chargingOnly,
+            activeThumbColor: c.accent,
+            onChanged: update.enabled
+                ? (v) => ref
+                      .read(libraryUpdateProvider.notifier)
+                      .setChargingOnly(v)
+                : null,
+          ),
+        ),
+        _PrefSwitchRow(
+          key: const Key('library_update_skip_completed'),
+          icon: Icons.check_circle_outline,
+          title: 'Skip completed titles',
+          subtitle: 'Do not check manga marked completed by the source',
+          prefKey: LibraryUpdatePrefs.keySkipCompleted,
+          defaultValue: LibraryUpdatePrefs.defaultSkipCompleted,
+        ),
+        _PrefSwitchRow(
+          key: const Key('library_update_skip_with_unread'),
+          icon: Icons.mark_email_unread_outlined,
+          title: 'Skip titles with unread chapters',
+          subtitle: 'Only check titles you are fully caught up on',
+          prefKey: LibraryUpdatePrefs.keySkipWithUnread,
+          defaultValue: LibraryUpdatePrefs.defaultSkipWithUnread,
+        ),
+        _PrefSwitchRow(
+          key: const Key('library_update_skip_not_started'),
+          icon: Icons.play_circle_outline,
+          title: 'Skip not-started titles',
+          subtitle: 'Only check titles you have started reading',
+          prefKey: LibraryUpdatePrefs.keySkipNotStarted,
+          defaultValue: LibraryUpdatePrefs.defaultSkipNotStarted,
+        ),
+        _PrefSwitchRow(
+          key: const Key('download_new'),
+          icon: Icons.download_outlined,
+          title: 'Download new chapters',
+          subtitle: 'Auto-queue chapters discovered by a library check',
+          prefKey: LibraryUpdatePrefs.keyDownloadNew,
+          defaultValue: LibraryUpdatePrefs.defaultDownloadNew,
         ),
         SettingsRow(
           icon: Icons.refresh,
@@ -1623,10 +1686,15 @@ class _StatsSectionState extends ConsumerState<_StatsSection> {
   List<int> _minutesPerDay = List.filled(7, 0);
   int _streak = 0;
   bool _loading = true;
+  bool _started = false;
 
   @override
-  void initState() {
-    super.initState();
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // Riverpod forbids ref.watch/read from initState before the element
+    // finishes mounting — load once after inherited-widget deps settle.
+    if (_started) return;
+    _started = true;
     _load();
   }
 
@@ -1637,8 +1705,8 @@ class _StatsSectionState extends ConsumerState<_StatsSection> {
   }
 
   Future<void> _load() async {
-    final repos = ref.watch(repositoriesProvider);
-    final statsSvc = ref.watch(statsServiceProvider);
+    final repos = ref.read(repositoriesProvider);
+    final statsSvc = ref.read(statsServiceProvider);
     final results = await Future.wait([
       repos.books.getGenreCounts(),
       repos.books.getExtensionCounts(),
@@ -1881,7 +1949,7 @@ class _AboutSection extends StatelessWidget {
         SettingsRow(
           icon: Icons.info_outline,
           title: 'Koma',
-          subtitle: 'Version 2.28.13 · build 2.28.13+240',
+          subtitle: 'Version 2.29.1 · build 2.29.1+242',
         ),
         SettingsRow(
           icon: Icons.favorite_outline,
