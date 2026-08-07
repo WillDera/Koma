@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -38,6 +40,8 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
   List<String> _recentSearches = [];
   bool _searching = false;
   String _query = '';
+  Timer? _debounce;
+  int _searchGen = 0;
 
   @override
   void initState() {
@@ -59,6 +63,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
 
   @override
   void dispose() {
+    _debounce?.cancel();
     _searchController.dispose();
     _focusNode.dispose();
     _scrollCtrl.removeListener(_onScroll);
@@ -90,22 +95,49 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
     if (mounted) setState(() => _recentSearches = []);
   }
 
-  Future<void> _search(String query) async {
+  /// Debounce live typing: wait 2s after the last keystroke before searching.
+  /// Empty query clears results immediately. Recent-chip taps use [_search].
+  void _onQueryChanged(String query) {
     setState(() => _query = query);
-    if (query.trim().isEmpty) {
-      setState(() => _results = []);
+    _debounce?.cancel();
+    if (query
+        .trim()
+        .isEmpty) {
+      _searchGen++;
+      setState(() {
+        _results = [];
+        _searching = false;
+      });
       return;
     }
+    _debounce = Timer(
+      const Duration(seconds: 2),
+          () => _search(query),
+    );
+  }
+
+  Future<void> _search(String query) async {
+    _debounce?.cancel();
+    setState(() => _query = query);
+    if (query.trim().isEmpty) {
+      _searchGen++;
+      setState(() {
+        _results = [];
+        _searching = false;
+      });
+      return;
+    }
+    final gen = ++_searchGen;
     setState(() => _searching = true);
     try {
       final results = await ref
           .read(searchServiceProvider)
           .searchAll(query.trim());
-      if (!mounted) return;
+      if (!mounted || gen != _searchGen) return;
       setState(() => _results = results);
       _saveSearch(query.trim());
     } catch (e) {
-      if (mounted) {
+      if (mounted && gen == _searchGen) {
         StashToast.show(
           context,
           message: 'Search failed: $e',
@@ -113,7 +145,9 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
         );
       }
     } finally {
-      if (mounted) setState(() => _searching = false);
+      if (mounted && gen == _searchGen) {
+        setState(() => _searching = false);
+      }
     }
   }
 
@@ -145,7 +179,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
                 hint: 'Find anything…',
                 leadingIcon: Icons.search,
                 showClearButton: true,
-                onChanged: _search,
+                onChanged: _onQueryChanged,
               ),
             ),
           ),
