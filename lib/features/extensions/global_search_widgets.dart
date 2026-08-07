@@ -2,14 +2,16 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../core/providers.dart';
 import '../../core/services/keiyoushi_service.dart';
-import '../../core/utils/custom_extended_image_provider.dart';
 import '../../core/utils/image_headers.dart';
 import '../../core/utils/language.dart';
 import '../../router/router.dart';
 import '../../theme/app_theme.dart';
 import '../../theme/tokens/app_spacing.dart';
-import '../../widgets/animated_press.dart';
+import '../../widgets/catalog_card_layout.dart';
+import '../../widgets/catalog_cover_card.dart';
+import '../../widgets/library_book_card.dart';
 import 'global_search_provider.dart';
 import 'source_browse_screen.dart';
 
@@ -203,16 +205,31 @@ class GlobalSearchSourceSection extends ConsumerWidget {
   final VoidCallback onHeaderTap;
   final void Function(Map<String, dynamic> manga) onMangaTap;
 
+  String? _thumb(Map<String, dynamic> manga, String? baseUrl) {
+    final raw = manga['thumbnail_url'] as String?;
+    if (raw == null || raw.isEmpty) return null;
+    if (raw.startsWith('http://') || raw.startsWith('https://')) return raw;
+    if (baseUrl == null || baseUrl.isEmpty) return raw;
+    return Uri.parse(baseUrl).resolve(raw).toString();
+  }
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final c = context.colors;
     final src = item.source;
     final lang = completeLanguageName(src.lang);
+    final library = ref.watch(libraryProvider);
     final headers = ref.watch(
       imageHeadersProvider(
         (src.baseUrl != null && src.baseUrl!.isNotEmpty) ? src.baseUrl : null,
       ),
     );
+    final gridView = library.isGridView;
+    final variant = gridView
+        ? CatalogCardLayout.gridVariant(library.cardVariant)
+        : LibraryCardVariant.list;
+    final columns = library.gridColumns;
+    final showPills = library.showSourcePills;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -281,97 +298,52 @@ class GlobalSearchSourceSection extends ConsumerWidget {
               style: TextStyle(color: c.textTertiary, fontSize: 12),
             ),
           ),
-          GlobalSearchItemKind.success => SizedBox(
-            height: 168,
-            child: ListView.separated(
-              scrollDirection: Axis.horizontal,
-              padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
-              itemCount: item.mangas.length,
-              separatorBuilder: (_, _) => const SizedBox(width: 8),
-              itemBuilder: (_, i) {
-                final manga = item.mangas[i];
-                return SizedBox(
-                  width: 96,
-                  child: GlobalSearchMangaCard(
-                    manga: manga,
-                    baseUrl: src.baseUrl,
-                    headers: headers,
-                    onTap: () => onMangaTap(manga),
+          GlobalSearchItemKind.success => gridView
+              ? Padding(
+                  padding: CatalogCardLayout.paddingFor(variant).add(
+                    const EdgeInsets.only(bottom: 12),
                   ),
-                );
-              },
-            ),
-          ),
+                  child: GridView.builder(
+                    shrinkWrap: true,
+                    physics: const NeverScrollableScrollPhysics(),
+                    gridDelegate: CatalogCardLayout.gridDelegate(
+                      columns: columns,
+                      variant: variant,
+                    ),
+                    itemCount: item.mangas.length,
+                    itemBuilder: (_, i) {
+                      final manga = item.mangas[i];
+                      return CatalogCoverCard(
+                        title: manga['title'] as String? ?? '',
+                        imageUrl: _thumb(manga, src.baseUrl),
+                        headers: headers,
+                        badge: src.name,
+                        showBadge: showPills,
+                        variant: variant,
+                        onTap: () => onMangaTap(manga),
+                      );
+                    },
+                  ),
+                )
+              : Padding(
+                  padding: const EdgeInsets.only(bottom: 8),
+                  child: Column(
+                    children: [
+                      for (final manga in item.mangas)
+                        CatalogCoverCard(
+                          title: manga['title'] as String? ?? '',
+                          imageUrl: _thumb(manga, src.baseUrl),
+                          headers: headers,
+                          badge: src.name,
+                          showBadge: showPills,
+                          variant: LibraryCardVariant.list,
+                          onTap: () => onMangaTap(manga),
+                        ),
+                    ],
+                  ),
+                ),
         },
       ],
-    );
-  }
-}
-
-class GlobalSearchMangaCard extends StatelessWidget {
-  const GlobalSearchMangaCard({
-    super.key,
-    required this.manga,
-    required this.headers,
-    required this.onTap,
-    this.baseUrl,
-  });
-
-  final Map<String, dynamic> manga;
-  final Map<String, String> headers;
-  final VoidCallback onTap;
-  final String? baseUrl;
-
-  String? get _thumb {
-    final raw = manga['thumbnail_url'] as String?;
-    if (raw == null || raw.isEmpty) return null;
-    if (raw.startsWith('http://') || raw.startsWith('https://')) return raw;
-    final base = baseUrl;
-    if (base == null || base.isEmpty) return raw;
-    return Uri.parse(base).resolve(raw).toString();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final c = context.colors;
-    final title = manga['title'] as String? ?? '';
-    final thumb = _thumb;
-    return AnimatedPress(
-      onTap: onTap,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Expanded(
-            child: ClipRRect(
-              borderRadius: AppSpacing.brSm,
-              child: thumb != null && thumb.isNotEmpty
-                  ? Image(
-                      image: CustomExtendedNetworkImageProvider(
-                        thumb,
-                        headers: headers,
-                        showCloudFlareError: true,
-                      ),
-                      width: double.infinity,
-                      fit: BoxFit.cover,
-                      errorBuilder: (_, _, _) =>
-                          Container(color: c.surfaceMuted),
-                    )
-                  : Container(color: c.surfaceMuted),
-            ),
-          ),
-          const SizedBox(height: 4),
-          Text(
-            title,
-            maxLines: 2,
-            overflow: TextOverflow.ellipsis,
-            style: TextStyle(
-              color: c.textPrimary,
-              fontSize: 11,
-              fontWeight: FontWeight.w500,
-            ),
-          ),
-        ],
-      ),
     );
   }
 }

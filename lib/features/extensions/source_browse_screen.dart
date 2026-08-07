@@ -5,15 +5,15 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/models/manga.dart';
 import '../../core/providers.dart';
-import '../../core/utils/custom_extended_image_provider.dart';
 import '../../core/utils/image_headers.dart';
 import '../../eval/dispatch_service.dart';
 import '../../eval/models/filter_list.dart';
 import '../../eval/models/m_manga.dart';
 import '../../eval/models/m_source.dart';
 import '../../theme/app_theme.dart';
-import '../../theme/tokens/app_spacing.dart';
-import '../../widgets/animated_press.dart';
+import '../../widgets/catalog_card_layout.dart';
+import '../../widgets/catalog_cover_card.dart';
+import '../../widgets/library_book_card.dart';
 import 'manga_detail_screen.dart';
 
 class SourceBrowseScreen extends ConsumerStatefulWidget {
@@ -388,6 +388,142 @@ class _SourceBrowseScreenState extends ConsumerState<SourceBrowseScreen>
     }
   }
 
+
+  VoidCallback _openManga(MManga m) {
+    return () async {
+      final repos = ref.read(repositoriesProvider);
+      final existing = await repos.manga.getMangaByKey(
+        widget.sourceId,
+        m.url,
+      );
+      if (existing != null) {
+        if (!mounted) return;
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (_) => MangaDetailScreen(
+              sourceId: widget.sourceId,
+              url: m.url,
+              title: m.title,
+              manga: existing,
+              memo: m.memo,
+            ),
+          ),
+        );
+        return;
+      }
+      final manga = Manga(
+        id: 0,
+        name: m.title,
+        url: m.url,
+        imageUrl: m.thumbnailUrl,
+        author: m.author,
+        artist: m.artist,
+        description: m.description,
+        status: m.status,
+        genres: m.genres,
+        sourceId: widget.sourceId,
+        memo: m.memo,
+      );
+      final id = await repos.manga.insertManga(manga);
+      if (!mounted) return;
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => MangaDetailScreen(
+            sourceId: widget.sourceId,
+            url: m.url,
+            title: m.title,
+            manga: manga.copyWith(id: id),
+            memo: m.memo,
+          ),
+        ),
+      );
+    };
+  }
+
+  Widget _catalogMangaBody({
+    required List<MManga> mangas,
+    required Map<String, String> headers,
+    ScrollController? controller,
+    bool hasNext = false,
+    Future<void> Function()? onRefresh,
+  }) {
+    final library = ref.watch(libraryProvider);
+    final gridView = library.isGridView;
+    final variant = gridView
+        ? CatalogCardLayout.gridVariant(library.cardVariant)
+        : LibraryCardVariant.list;
+    final columns = library.gridColumns;
+
+    Widget child;
+    if (gridView) {
+      child = GridView.builder(
+        controller: controller,
+        padding: CatalogCardLayout.paddingFor(variant).resolve(TextDirection.ltr).add(
+          const EdgeInsets.symmetric(vertical: 12),
+        ),
+        gridDelegate: CatalogCardLayout.gridDelegate(
+          columns: columns,
+          variant: variant,
+        ),
+        itemCount: mangas.length + (hasNext ? 1 : 0),
+        itemBuilder: (_, i) {
+          if (i >= mangas.length) {
+            return const Center(
+              child: SizedBox(
+                width: 24,
+                height: 24,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              ),
+            );
+          }
+          final m = mangas[i];
+          return CatalogCoverCard(
+            title: m.title,
+            imageUrl: m.thumbnailUrl,
+            headers: headers,
+            variant: variant,
+            showBadge: false,
+            onTap: _openManga(m),
+          );
+        },
+      );
+    } else {
+      child = ListView.builder(
+        controller: controller,
+        padding: const EdgeInsets.only(bottom: 24),
+        itemCount: mangas.length + (hasNext ? 1 : 0),
+        itemBuilder: (_, i) {
+          if (i >= mangas.length) {
+            return const Padding(
+              padding: EdgeInsets.all(16),
+              child: Center(
+                child: SizedBox(
+                  width: 24,
+                  height: 24,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                ),
+              ),
+            );
+          }
+          final m = mangas[i];
+          return CatalogCoverCard(
+            title: m.title,
+            subtitle: m.author,
+            imageUrl: m.thumbnailUrl,
+            headers: headers,
+            variant: LibraryCardVariant.list,
+            showBadge: false,
+            onTap: _openManga(m),
+          );
+        },
+      );
+    }
+    if (onRefresh == null) return child;
+    return RefreshIndicator(onRefresh: onRefresh, child: child);
+  }
+
   @override
   Widget build(BuildContext context) {
     final c = context.colors;
@@ -464,85 +600,12 @@ class _SourceBrowseScreenState extends ConsumerState<SourceBrowseScreen>
                 const Center(child: Text('Nothing found')),
               ],
             )
-          : RefreshIndicator(
+          : _catalogMangaBody(
+              mangas: _mangas,
+              headers: headers,
+              controller: _scrollCtrl,
+              hasNext: _hasNext,
               onRefresh: _refresh,
-              child: GridView.builder(
-                controller: _scrollCtrl,
-                padding: const EdgeInsets.all(16),
-                gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                  crossAxisCount: 3,
-                  mainAxisSpacing: 12,
-                  crossAxisSpacing: 12,
-                  childAspectRatio: 0.65,
-                ),
-                itemCount: _mangas.length + (_hasNext ? 1 : 0),
-                itemBuilder: (_, i) {
-                  if (i >= _mangas.length) {
-                    return const Center(
-                      child: SizedBox(
-                        width: 24,
-                        height: 24,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      ),
-                    );
-                  }
-                  final m = _mangas[i];
-                  return _MangaGridCard(
-                    manga: m,
-                    headers: headers,
-                    onTap: () async {
-                      final repos = ref.read(repositoriesProvider);
-                      final existing = await repos.manga.getMangaByKey(
-                        widget.sourceId,
-                        m.url,
-                      );
-                      if (existing != null) {
-                        if (!context.mounted) return;
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (_) => MangaDetailScreen(
-                              sourceId: widget.sourceId,
-                              url: m.url,
-                              title: m.title,
-                              manga: existing,
-                              memo: m.memo,
-                            ),
-                          ),
-                        );
-                        return;
-                      }
-                      final manga = Manga(
-                        id: 0,
-                        name: m.title,
-                        url: m.url,
-                        imageUrl: m.thumbnailUrl,
-                        author: m.author,
-                        artist: m.artist,
-                        description: m.description,
-                        status: m.status,
-                        genres: m.genres,
-                        sourceId: widget.sourceId,
-                        memo: m.memo,
-                      );
-                      final id = await repos.manga.insertManga(manga);
-                      if (!context.mounted) return;
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (_) => MangaDetailScreen(
-                            sourceId: widget.sourceId,
-                            url: m.url,
-                            title: m.title,
-                            manga: manga.copyWith(id: id),
-                            memo: m.memo,
-                          ),
-                        ),
-                      );
-                    },
-                  );
-                },
-              ),
             ),
     );
   }
@@ -568,143 +631,9 @@ class _SourceBrowseScreenState extends ConsumerState<SourceBrowseScreen>
         ],
       );
     }
-    return GridView.builder(
-      padding: const EdgeInsets.all(16),
-      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-        crossAxisCount: 3,
-        mainAxisSpacing: 12,
-        crossAxisSpacing: 12,
-        childAspectRatio: 0.65,
-      ),
-      itemCount: _searchResults.length,
-      itemBuilder: (_, i) {
-        final m = _searchResults[i];
-        return _MangaGridCard(
-          manga: m,
-          headers: headers,
-          onTap: () async {
-            final repos = ref.read(repositoriesProvider);
-            final existing = await repos.manga.getMangaByKey(
-              widget.sourceId,
-              m.url,
-            );
-            if (existing != null) {
-              if (!context.mounted) return;
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (_) => MangaDetailScreen(
-                    sourceId: widget.sourceId,
-                    url: m.url,
-                    title: m.title,
-                    manga: existing,
-                    memo: m.memo,
-                  ),
-                ),
-              );
-              return;
-            }
-            final manga = Manga(
-              id: 0,
-              name: m.title,
-              url: m.url,
-              imageUrl: m.thumbnailUrl,
-              author: m.author,
-              artist: m.artist,
-              description: m.description,
-              status: m.status,
-              genres: m.genres,
-              sourceId: widget.sourceId,
-              memo: m.memo,
-            );
-            final id = await repos.manga.insertManga(manga);
-            if (!context.mounted) return;
-            Navigator.push(
-              context,
-              MaterialPageRoute(
-                builder: (_) => MangaDetailScreen(
-                  sourceId: widget.sourceId,
-                  url: m.url,
-                  title: m.title,
-                  manga: manga.copyWith(id: id),
-                  memo: m.memo,
-                ),
-              ),
-            );
-          },
-        );
-      },
-    );
-  }
-}
-
-class _MangaGridCard extends StatelessWidget {
-  final MManga manga;
-  final VoidCallback onTap;
-  final Map<String, String>? headers;
-
-  const _MangaGridCard({
-    required this.manga,
-    required this.onTap,
-    this.headers,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final c = context.colors;
-    final title = manga.title;
-    final thumb = manga.thumbnailUrl;
-    return AnimatedPress(
-      onTap: onTap,
-      child: Container(
-        decoration: BoxDecoration(
-          color: c.surface,
-          borderRadius: AppSpacing.brMd,
-          border: Border.all(color: c.border, width: 0.5),
-        ),
-        clipBehavior: Clip.antiAlias,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Expanded(
-              child: thumb != null && thumb.isNotEmpty
-                  ? Image(
-                      image: CustomExtendedNetworkImageProvider(
-                        thumb,
-                        headers: headers,
-                        showCloudFlareError: true,
-                      ),
-                      width: double.infinity,
-                      fit: BoxFit.cover,
-                      errorBuilder: (_, _, _) => _placeholder(c),
-                    )
-                  : _placeholder(c),
-            ),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(8, 6, 8, 8),
-              child: Text(
-                title,
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  color: c.textPrimary,
-                  fontSize: 12,
-                  fontWeight: FontWeight.w500,
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _placeholder(KomaColors c) {
-    return Container(
-      color: c.surfaceMuted,
-      child: Center(
-        child: Icon(Icons.image_outlined, size: 32, color: c.textTertiary),
-      ),
+    return _catalogMangaBody(
+      mangas: _searchResults,
+      headers: headers,
     );
   }
 }

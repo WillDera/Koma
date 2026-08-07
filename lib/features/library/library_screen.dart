@@ -28,6 +28,7 @@ import '../../theme/app_theme.dart';
 import '../../theme/theme_provider.dart';
 import '../../theme/tokens/app_spacing.dart';
 import '../../widgets/animated_press.dart';
+import '../../widgets/catalog_card_layout.dart';
 import '../../widgets/dialog_sheet.dart';
 import '../../widgets/empty_state.dart';
 import '../../widgets/icon_button_round.dart';
@@ -1553,33 +1554,13 @@ class _BookShelf extends StatelessWidget {
     late final Widget result;
     if (provider.isGridView) {
       // List card-style in a grid context falls back to comfortable grid.
-      final variant = provider.cardVariant == LibraryCardVariant.list
-          ? LibraryCardVariant.grid
-          : provider.cardVariant;
-      final compact = variant == LibraryCardVariant.compact;
-      final overlay = variant == LibraryCardVariant.overlay;
+      final variant = CatalogCardLayout.gridVariant(provider.cardVariant);
       result = SliverPadding(
-        padding: EdgeInsets.symmetric(horizontal: compact || overlay ? 12 : 20),
+        padding: CatalogCardLayout.paddingFor(variant),
         sliver: SliverGrid(
-          gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-            crossAxisCount: provider.gridColumns,
-            // Mihon: CompactGrid denser than ComfortableGrid; CoverOnly tighter.
-            mainAxisSpacing: overlay
-                ? 8
-                : compact
-                ? 10
-                : 14,
-            crossAxisSpacing: overlay
-                ? 8
-                : compact
-                ? 10
-                : 14,
-            // Cover 2:3 ≈ 0.667; title modes need taller cells (lower ratio).
-            childAspectRatio: overlay
-                ? AppSpacing.coverAspectRatio
-                : compact
-                ? 0.62
-                : 0.58,
+          gridDelegate: CatalogCardLayout.gridDelegate(
+            columns: provider.gridColumns,
+            variant: variant,
           ),
           delegate: SliverChildBuilderDelegate(
             (ctx, i) => StaggeredEntrance(
@@ -1684,14 +1665,13 @@ class _MangaShelf extends StatelessWidget {
     final sw = Stopwatch()..start();
     late final Widget result;
     if (gridView) {
+      final variant = CatalogCardLayout.gridVariant(provider.cardVariant);
       result = SliverPadding(
-        padding: const EdgeInsets.symmetric(horizontal: 20),
+        padding: CatalogCardLayout.paddingFor(variant),
         sliver: SliverGrid(
-          gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-            crossAxisCount: provider.gridColumns,
-            mainAxisSpacing: 8,
-            crossAxisSpacing: 8,
-            childAspectRatio: 0.65,
+          gridDelegate: CatalogCardLayout.gridDelegate(
+            columns: provider.gridColumns,
+            variant: variant,
           ),
           delegate: SliverChildBuilderDelegate(
             (ctx, i) {
@@ -1707,7 +1687,7 @@ class _MangaShelf extends StatelessWidget {
                   extensionName:
                       extensionNames[manga.sourceId] ?? manga.sourceId,
                   showSourcePills: showSourcePills,
-                  variant: provider.cardVariant,
+                  variant: variant,
                   onTap: () => provider.selectionMode
                       ? notifier.toggleSelection('m:${manga.id}')
                       : onOpen(manga),
