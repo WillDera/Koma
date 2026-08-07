@@ -47,7 +47,7 @@ class SettingsScreen extends StatelessWidget {
             const OneHandSpacer(),
             const LibraryHeader(
               title: 'Settings',
-              subtitle: 'Version 2.29.1',
+              subtitle: 'Version 2.30.1',
               padding: EdgeInsets.fromLTRB(24, 20, 20, 12),
             ),
             const StaggeredEntrance(
@@ -1949,7 +1949,7 @@ class _AboutSection extends StatelessWidget {
         SettingsRow(
           icon: Icons.info_outline,
           title: 'Koma',
-          subtitle: 'Version 2.29.1 · build 2.29.1+242',
+          subtitle: 'Version 2.30.1 · build 2.30.1+244',
         ),
         SettingsRow(
           icon: Icons.favorite_outline,

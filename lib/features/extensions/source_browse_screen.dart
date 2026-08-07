@@ -24,12 +24,17 @@ class SourceBrowseScreen extends ConsumerStatefulWidget {
   /// Initial catalogue tab: `popular` (default) or `latest`.
   final String initialTab;
 
+  /// When set, opens catalogue search with this query (Global Search source
+  /// header → browse-with-query; Mihon BrowseSourceScreen parity).
+  final String? initialQuery;
+
   const SourceBrowseScreen({
     super.key,
     required this.sourceId,
     required this.sourceName,
     this.baseUrl,
     this.initialTab = 'popular',
+    this.initialQuery,
   });
 
   @override
@@ -56,6 +61,7 @@ class _SourceBrowseScreenState extends ConsumerState<SourceBrowseScreen>
   List<MManga> _searchResults = [];
   bool _searchLoading = false;
   Timer? _searchTimer;
+  late final TextEditingController _searchCtrl;
 
   List<Filter> _filters = [];
   Map<String, dynamic> _filterValues = {};
@@ -64,6 +70,7 @@ class _SourceBrowseScreenState extends ConsumerState<SourceBrowseScreen>
   @override
   void initState() {
     super.initState();
+    _searchCtrl = TextEditingController(text: widget.initialQuery ?? '');
     _service = ref.read(extensionServiceProvider);
     _source = MSource(
       id: widget.sourceId,
@@ -95,13 +102,24 @@ class _SourceBrowseScreenState extends ConsumerState<SourceBrowseScreen>
         }
       }
     });
-    _loadPage();
-    _loadFilters();
+    final initialQ = widget.initialQuery?.trim() ?? '';
+    if (initialQ.isNotEmpty) {
+      _searchActive = true;
+      _searchQuery = initialQ;
+      _loadFilters();
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _performSearch(initialQ);
+      });
+    } else {
+      _loadPage();
+      _loadFilters();
+    }
   }
 
   @override
   void dispose() {
     _searchTimer?.cancel();
+    _searchCtrl.dispose();
     _tabCtrl.dispose();
     _scrollCtrl.removeListener(_onScroll);
     _scrollCtrl.dispose();
@@ -123,6 +141,7 @@ class _SourceBrowseScreenState extends ConsumerState<SourceBrowseScreen>
       _searchActive = !_searchActive;
       if (!_searchActive) {
         _searchQuery = '';
+        _searchCtrl.clear();
         _searchResults = [];
       }
     });
@@ -381,7 +400,10 @@ class _SourceBrowseScreenState extends ConsumerState<SourceBrowseScreen>
         backgroundColor: c.bg,
         title: _searchActive
             ? TextField(
-                autofocus: true,
+                controller: _searchCtrl,
+                autofocus:
+                    widget.initialQuery == null ||
+                    widget.initialQuery!.trim().isEmpty,
                 decoration: InputDecoration(
                   hintText: 'Search...',
                   border: InputBorder.none,

@@ -2741,16 +2741,16 @@ class _HeroSection extends ConsumerWidget {
       );
     }
     final headers = ref.watch(sourceImageHeadersProvider(sourceId)).value;
+    // Do not pass both width+height into [cachedCover]/ its [ResizeImage]
+    // path resamples to exact pixels and permanently stretches covers.
+    // Layout size + [BoxFit.cover] crop correctly; decode uses coverProvider's
+    // maxBytes path (aspect preserved).
     return Image(
-      image: cachedCover(
-        thumb,
-        headers: headers,
-        width: width?.toInt(),
-        height: height?.toInt(),
-      ),
+      image: cachedCover(thumb, headers: headers),
       width: width,
       height: height,
       fit: fit,
+      alignment: Alignment.topCenter,
       errorBuilder: (context, exception, stackTrace) =>
           Container(width: width, height: height, color: c.surfaceMuted),
     );
