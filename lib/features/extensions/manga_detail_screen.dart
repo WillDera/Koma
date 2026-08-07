@@ -2758,7 +2758,10 @@ class _HeroSection extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final height = appBarHeight + 24 + 240 + 24;
+    // Mihon MangaAndSourceTitlesSmall: MangaCover.Book maxWidth 100.dp, ratio 2:3.
+    const coverWidth = 100.0;
+    const coverHeight = 150.0; // 100 * 3/2
+    final height = appBarHeight + 24 + coverHeight + 24;
     return SizedBox(
       height: height,
       child: Stack(
@@ -2791,16 +2794,17 @@ class _HeroSection extends ConsumerWidget {
             top: appBarHeight + 24,
             bottom: 24,
             child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Hero(
                   tag: 'manga-thumbnail-$sourceId-$url',
                   child: ClipRRect(
-                    borderRadius: AppSpacing.brMd,
+                    borderRadius: AppSpacing.brSm,
                     child: _buildImage(
                       context,
                       ref,
-                      width: 160,
-                      height: 240,
+                      width: coverWidth,
+                      height: coverHeight,
                       fit: BoxFit.cover,
                     ),
                   ),
