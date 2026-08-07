@@ -1,11 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
 import '../../core/models/extension_source.dart';
 import '../../core/providers.dart';
 import '../../core/services/extension_icon_cache.dart';
 import '../../core/utils/custom_extended_image_provider.dart';
 import '../../core/utils/language.dart';
+import '../../router/router.dart';
 import '../../theme/app_theme.dart';
 import '../../theme/tokens/app_spacing.dart';
 import '../../widgets/animated_press.dart';
@@ -108,6 +110,13 @@ class _SourcesScreenState extends ConsumerState<SourcesScreen> {
         backgroundColor: c.bg,
         title: Text('Sources', style: TextStyle(color: c.textPrimary)),
         iconTheme: IconThemeData(color: c.textPrimary),
+        actions: [
+          IconButton(
+            tooltip: 'Global search',
+            icon: Icon(Icons.travel_explore, color: c.textPrimary),
+            onPressed: () => context.pushNamed(Routes.globalSearch),
+          ),
+        ],
       ),
       body: _loading
           ? const Center(child: CircularProgressIndicator())

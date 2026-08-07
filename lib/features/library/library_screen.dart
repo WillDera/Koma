@@ -15,8 +15,8 @@ import '../../core/models/chapter.dart';
 import '../../core/models/manga.dart';
 import '../../core/providers.dart';
 import '../../core/services/cache_service.dart';
-import '../../core/services/ebook_service.dart';
 import '../../core/services/ebook_media_store.dart';
+import '../../core/services/ebook_service.dart';
 import '../../core/services/metadata_enrichment_service.dart';
 import '../../core/services/web_scraper_service.dart';
 import '../../core/utils/benchmark_logger.dart';
@@ -388,6 +388,39 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> with RouteAware {
               onBookLongPress: _showBookActions,
             )
           else
+            ...[
+              if (_mangaSearchCtrl.text
+                  .trim()
+                  .isNotEmpty)
+                SliverToBoxAdapter(
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
+                    child: ListTile(
+                      contentPadding: EdgeInsets.zero,
+                      leading: Icon(
+                        Icons.travel_explore,
+                        color: context.colors.accent,
+                      ),
+                      title: Text(
+                        'Search globally for “${_mangaSearchCtrl.text.trim()}”',
+                        style: TextStyle(
+                          color: context.colors.textPrimary,
+                          fontSize: 14,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                      trailing: Icon(
+                        Icons.chevron_right,
+                        color: context.colors.textTertiary,
+                      ),
+                      onTap: () =>
+                          context.pushNamed(
+                            Routes.globalSearch,
+                            extra: _mangaSearchCtrl.text.trim(),
+                          ),
+                    ),
+                  ),
+                ),
             _MangaShelf(
               key: const ValueKey('manga-shelf'),
               mangas: _visibleMangas(provider.mangas),
@@ -399,6 +432,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> with RouteAware {
               showSourcePills: provider.showSourcePills,
               onOpen: (manga) => _openManga(context, manga),
             ),
+            ],
           const SliverToBoxAdapter(child: SizedBox(height: 100)),
         ],
       ),
