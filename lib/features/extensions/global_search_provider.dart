@@ -65,6 +65,11 @@ class GlobalSearchState {
         .toList(growable: false);
   }
 
+  /// Total manga hits across successful sources (for Discover counts).
+  int get mangaHitCount => items
+      .where((i) => i.kind == GlobalSearchItemKind.success)
+      .fold<int>(0, (sum, i) => sum + i.mangas.length);
+
   GlobalSearchState copyWith({
     String? query,
     GlobalSearchSourceFilter? filter,

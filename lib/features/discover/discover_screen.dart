@@ -1,14 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:go_router/go_router.dart';
 
 import '../../core/providers.dart';
-import '../../core/services/keiyoushi_service.dart';
 import '../../core/services/source_service.dart';
-import '../../core/utils/custom_extended_image_provider.dart';
 import '../../core/utils/image_cache.dart';
-import '../../core/utils/image_headers.dart';
-import '../../router/router.dart';
 import '../../theme/app_icons.dart';
 import '../../theme/app_theme.dart';
 import '../../theme/theme_provider.dart';
@@ -20,6 +15,8 @@ import '../../widgets/one_hand_spacer.dart';
 import '../../widgets/screen_chrome.dart';
 import '../../widgets/segmented_control.dart';
 import '../../widgets/toast.dart';
+import '../extensions/global_search_provider.dart';
+import '../extensions/global_search_widgets.dart';
 
 class DiscoverScreen extends ConsumerStatefulWidget {
   const DiscoverScreen({super.key});
@@ -32,7 +29,6 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
   final _ctrl = TextEditingController();
   final _scrollCtrl = ScrollController();
   List<SourceSearchResult> _results = [];
-  List<Map<String, dynamic>> _mangaResults = [];
   bool _searching = false;
   bool _loaded = false;
   bool _gridView = false;
@@ -64,7 +60,6 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
   }
 
   SourceService _svc() => ref.read(sourceServiceProvider);
-  KeiyoushiService _mangaSvc() => ref.read(keiyoushiServiceProvider);
 
   Future<void> _search() async {
     final q = _ctrl.text.trim();
@@ -72,30 +67,40 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
     setState(() {
       _searching = true;
       _loaded = true;
+      _results = [];
+      // Show progressive per-source manga rows immediately.
+      _section = _DiscoverSection.manga;
     });
-    // Run book + manga search independently so a failure on one side
-    // (Dalvik down, LibGen timeout, cast error) never discards the other.
-    final bookFuture = _svc().search(q).then<List<SourceSearchResult>>(
+    // Manga: progressive Global Search (per-source Loading → Success/Error).
+    // Do not await — UI watches [globalSearchProvider].
+    ref.read(globalSearchProvider.notifier).search(q);
+
+    // Books stay independent so LibGen timeouts never block manga rows.
+    final books = await _svc().search(q).then<List<SourceSearchResult>>(
       (v) => v,
       onError: (_) => <SourceSearchResult>[],
     );
-    final mangaFuture = _mangaSvc().searchAllInstalled(query: q).then<List<Map<String, dynamic>>>(
-      (v) => v,
-      onError: (_) => <Map<String, dynamic>>[],
-    );
-    final results = await Future.wait([bookFuture, mangaFuture]);
     if (!mounted) return;
-    final books = results[0] as List<SourceSearchResult>;
-    final mangas = results[1] as List<Map<String, dynamic>>;
+    final mangaState = ref.read(globalSearchProvider);
     setState(() {
       _results = books;
-      _mangaResults = mangas;
-      if (_results.isEmpty && _mangaItemCount > 0) {
+      if (_results.isEmpty &&
+          (mangaState.mangaHitCount > 0 || mangaState.searching)) {
         _section = _DiscoverSection.manga;
       } else if (_results.isNotEmpty) {
         _section = _DiscoverSection.books;
       }
       _searching = false;
+    });
+  }
+
+  void _clearSearch() {
+    _ctrl.clear();
+    ref.read(globalSearchProvider.notifier).search('');
+    setState(() {
+      _results = [];
+      _loaded = false;
+      _section = _DiscoverSection.books;
     });
   }
 
@@ -304,6 +309,17 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
   Widget build(BuildContext context) {
     final c = context.colors;
     final titleSize = _oneHand ? 64.0 : 32.0;
+    final mangaState = ref.watch(globalSearchProvider);
+    final mangaItemCount = mangaState.mangaHitCount;
+    final mangaBusy = mangaState.searching;
+    final hasMangaUi =
+        mangaState.query
+            .trim()
+            .isNotEmpty &&
+            (mangaState.items.isNotEmpty || mangaBusy);
+    // Book wait only — manga has its own progressive spinner/progress bar.
+    final searching = _searching;
+
     return ScreenBackdrop(
       child: SafeArea(
         bottom: false,
@@ -332,7 +348,7 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
                       'Pull from book sources and installed manga extensions without leaving your desk.',
                   stats: [
                     PanelStat(value: '${_results.length}', label: 'Books'),
-                    PanelStat(value: '$_mangaItemCount', label: 'Manga'),
+                    PanelStat(value: '$mangaItemCount', label: 'Manga'),
                     PanelStat(
                       value: _gridView ? 'Grid' : 'List',
                       label: 'View',
@@ -347,19 +363,11 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
                 child: TextField(
                   controller: _ctrl,
                   decoration: InputDecoration(
-                    hintText: 'Search for a book…',
+                    hintText: 'Search for a book or manga…',
                     suffixIcon: _ctrl.text.isNotEmpty
                         ? IconButton(
                             icon: const Icon(Icons.clear, size: 18),
-                            onPressed: () {
-                              _ctrl.clear();
-                              setState(() {
-                                _results = [];
-                                _mangaResults = [];
-                                _loaded = false;
-                                _section = _DiscoverSection.books;
-                              });
-                            },
+                      onPressed: _clearSearch,
                           )
                         : null,
                   ),
@@ -373,7 +381,7 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
                 child: SizedBox(
                   width: double.infinity,
                   child: AnimatedPress(
-                    onTap: _searching ? null : _search,
+                    onTap: searching ? null : _search,
                     child: Container(
                       padding: const EdgeInsets.symmetric(vertical: 12),
                       decoration: BoxDecoration(
@@ -381,7 +389,7 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
                         borderRadius: AppSpacing.brLg,
                       ),
                       child: Center(
-                        child: _searching
+                        child: searching
                             ? SizedBox(
                                 width: 18,
                                 height: 18,
@@ -404,7 +412,7 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
               ),
             ),
             const SliverToBoxAdapter(child: SizedBox(height: 16)),
-            if (_results.isEmpty && _mangaResults.isEmpty)
+            if (_results.isEmpty && !hasMangaUi)
               SliverToBoxAdapter(
                 child: Padding(
                   padding: const EdgeInsets.symmetric(
@@ -426,7 +434,7 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
                 child: _DiscoverControls(
                   section: _section,
                   bookCount: _results.length,
-                  mangaCount: _mangaItemCount,
+                  mangaCount: mangaItemCount,
                   gridView: _gridView,
                   onSectionChanged: (section) => setState(() {
                     _section = section;
@@ -445,22 +453,12 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
                   onTap: (result) => _showResultOptions(context, result),
                 )
               else
-                _DiscoverMangaResults(
-                  key: const ValueKey('discover-manga'),
-                  sourceResults: _mangaResults,
-                  onTap: (srcResult, manga) => context.pushNamed(
-                    Routes.mangaDetail,
-                    extra:
-                        (
-                              sourceId: srcResult['sourceId'] as String? ?? '',
-                              url: manga['url'] as String? ?? '',
-                              title: manga['title'] as String? ?? '',
-                              manga: null,
-                              memo: coerceMemoJson(manga['memo']),
-                            )
-                            as MangaDetailArgs,
+                ...[
+                  const SliverToBoxAdapter(
+                    child: GlobalSearchFilterBar(compact: true),
                   ),
-                ),
+                  const GlobalSearchResultsSliver(),
+                ],
             ],
             const SliverToBoxAdapter(child: SizedBox(height: 100)),
           ],
@@ -468,11 +466,6 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
       ),
     );
   }
-
-  int get _mangaItemCount => _mangaResults.fold<int>(
-    0,
-    (sum, src) => sum + ((src['mangas'] as List?)?.length ?? 0),
-  );
 }
 
 enum _DiscoverSection { books, manga }
@@ -606,110 +599,6 @@ class _DiscoverBookResults extends StatelessWidget {
           },
           childCount: results.length * 2 - 1,
         ),
-      ),
-    );
-  }
-}
-
-class _DiscoverMangaResults extends ConsumerWidget {
-  final List<Map<String, dynamic>> sourceResults;
-  final void Function(
-    Map<String, dynamic> sourceResult,
-    Map<String, dynamic> manga,
-  )
-  onTap;
-
-  const _DiscoverMangaResults({
-    super.key,
-    required this.sourceResults,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final c = context.colors;
-    final mangaCount = sourceResults.fold<int>(
-      0,
-      (sum, src) => sum + ((src['mangas'] as List?)?.length ?? 0),
-    );
-    if (mangaCount == 0) {
-      return const SliverToBoxAdapter(
-        child: SizedBox(
-          height: 240,
-          child: EmptyState(
-            icon: AppIcons.search,
-            title: 'No manga results',
-            subtitle: 'Try another title or switch to books.',
-          ),
-        ),
-      );
-    }
-    final sections = sourceResults
-        .where((src) => (src['mangas'] as List?)?.isNotEmpty ?? false)
-        .toList();
-    return SliverList(
-      delegate: SliverChildBuilderDelegate(
-        (_, si) {
-          // Separators between source sections.
-          if (si.isOdd) return const SizedBox(height: 16);
-          final srcResult = sections[si ~/ 2];
-          // Same header path as source browse: sync Referer from baseUrl so
-          // the first Image frame never races without CDN-required headers.
-          final baseUrl = (srcResult['baseUrl'] as String?)?.trim();
-          final headers = ref.watch(
-            imageHeadersProvider(
-              (baseUrl != null && baseUrl.isNotEmpty) ? baseUrl : null,
-            ),
-          );
-          return Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Padding(
-                padding: const EdgeInsets.fromLTRB(20, 12, 20, 8),
-                child: Align(
-                  alignment: Alignment.centerLeft,
-                  child: Text(
-                    srcResult['sourceName'] as String? ?? '',
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      color: c.textPrimary,
-                      fontSize: 17,
-                      fontWeight: FontWeight.w400,
-                    ),
-                  ),
-                ),
-              ),
-              SizedBox(
-                height: 224,
-                child: ListView.separated(
-                  scrollDirection: Axis.horizontal,
-                  padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
-                  itemCount: (srcResult['mangas'] as List?)?.length ?? 0,
-                  separatorBuilder: (_, _) => const SizedBox(width: 10),
-                  itemBuilder: (_, i) {
-                    final manga = Map<String, dynamic>.from(
-                      (srcResult['mangas'] as List)[i],
-                    );
-                    return StaggeredEntrance(
-                      index: i + 1,
-                      child: SizedBox(
-                        width: 132,
-                        child: _MangaCard(
-                          manga: manga,
-                          baseUrl: baseUrl,
-                          headers: headers,
-                          onTap: () => onTap(srcResult, manga),
-                        ),
-                      ),
-                    );
-                  },
-                ),
-              ),
-            ],
-          );
-        },
-        childCount: sections.isEmpty ? 0 : sections.length * 2 - 1,
       ),
     );
   }
@@ -994,90 +883,6 @@ class _GridResultCard extends StatelessWidget {
     return Container(
       color: c.surfaceMuted,
       child: Center(child: Icon(Icons.book, size: 32, color: c.textTertiary)),
-    );
-  }
-}
-
-class _MangaCard extends StatelessWidget {
-  final Map<String, dynamic> manga;
-  final VoidCallback onTap;
-  final String? baseUrl;
-  final Map<String, String> headers;
-
-  const _MangaCard({
-    required this.manga,
-    required this.onTap,
-    required this.headers,
-    this.baseUrl,
-  });
-
-  String? get _thumb {
-    final raw = manga['thumbnail_url'] as String?;
-    if (raw == null || raw.isEmpty) return null;
-    if (raw.startsWith('http://') || raw.startsWith('https://')) return raw;
-    final base = baseUrl;
-    if (base == null || base.isEmpty) return raw;
-    return Uri.parse(base).resolve(raw).toString();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final c = context.colors;
-    final title = manga['title'] as String? ?? '';
-    final thumb = _thumb;
-    return AnimatedPress(
-      onTap: onTap,
-      child: Container(
-        decoration: BoxDecoration(
-          color: c.surface,
-          borderRadius: AppSpacing.brMd,
-          border: Border.all(color: c.border, width: 0.5),
-        ),
-        clipBehavior: Clip.antiAlias,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Expanded(
-              child: thumb != null && thumb.isNotEmpty
-                  ? Image(
-                      // Match source browse: custom provider + headers from
-                      // the first frame (Referer required by most CDNs).
-                      image: CustomExtendedNetworkImageProvider(
-                        thumb,
-                        headers: headers,
-                        showCloudFlareError: true,
-                      ),
-                      width: double.infinity,
-                      fit: BoxFit.cover,
-                      errorBuilder: (_, _, _) => _placeholder(c),
-                    )
-                  : _placeholder(c),
-            ),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(6, 4, 6, 6),
-              child: Text(
-                title,
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  color: c.textPrimary,
-                  fontSize: 11,
-                  fontWeight: FontWeight.w500,
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _placeholder(KomaColors c) {
-    return Container(
-      color: c.surfaceMuted,
-      child: Center(
-        child: Icon(Icons.image_outlined, size: 28, color: c.textTertiary),
-      ),
     );
   }
 }

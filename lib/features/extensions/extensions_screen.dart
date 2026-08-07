@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:collection/collection.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
 import '../../core/models/extension_repo.dart';
 import '../../core/models/extension_source.dart';
@@ -12,6 +13,7 @@ import '../../core/services/extension_manager.dart';
 import '../../core/services/keiyoushi_service.dart';
 import '../../core/utils/custom_extended_image_provider.dart';
 import '../../core/utils/language.dart';
+import '../../router/router.dart';
 import '../../theme/app_icons.dart';
 import '../../theme/app_theme.dart';
 import '../../theme/theme_provider.dart';
@@ -321,6 +323,13 @@ class _ExtensionsScreenState extends ConsumerState<ExtensionsScreen>
         backgroundColor: c.bg,
         title: Text('Extensions', style: TextStyle(color: c.textPrimary)),
         iconTheme: IconThemeData(color: c.textPrimary),
+        actions: [
+          IconButton(
+            tooltip: 'Global search',
+            icon: Icon(Icons.travel_explore, color: c.textPrimary),
+            onPressed: () => context.pushNamed(Routes.globalSearch),
+          ),
+        ],
         bottom: TabBar(
           controller: _tabs,
           indicatorColor: c.accent,
