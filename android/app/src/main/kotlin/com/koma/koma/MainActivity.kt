@@ -164,6 +164,36 @@ class MainActivity : FlutterActivity() {
                 else -> result.notImplemented()
             }
         }
+        MethodChannel(
+            flutterEngine.dartExecutor.binaryMessenger,
+            "com.koma.koma/webview",
+        ).setMethodCallHandler { call, result ->
+            when (call.method) {
+                "openWebView" -> {
+                    try {
+                        val url = call.argument<String>("url")
+                            ?: throw IllegalArgumentException("missing url")
+                        val sourceId = call.argument<String>("sourceId")
+                        val title = call.argument<String>("title")
+                        val memo = call.argument<String>("memo")
+                        startActivity(
+                            SourceWebViewActivity.intent(
+                                this,
+                                url,
+                                sourceId,
+                                title,
+                                memo,
+                            ),
+                        )
+                        result.success(null)
+                    } catch (e: Throwable) {
+                        Log.e("SourceWebView", "openWebView failed", e)
+                        result.error("WEBVIEW_FAILED", e.message, null)
+                    }
+                }
+                else -> result.notImplemented()
+            }
+        }
     }
 
     private fun coerceByteArray(raw: Any?): ByteArray? = when (raw) {

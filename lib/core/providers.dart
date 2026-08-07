@@ -128,7 +128,8 @@ class DownloadManagerNotifier extends Notifier<DownloadQueueSnapshot>
         autoStart: autoStart,
       );
 
-  Future<void> startDownloads() => manager.startDownloads();
+  Future<void> startDownloads({bool retryErrors = true}) =>
+      manager.startDownloads(retryErrors: retryErrors);
   Future<void> pauseDownloads() => manager.pauseDownloads();
   Future<void> clearQueue() => manager.clearQueue();
   Future<void> cancelQueuedDownloads(List<ChapterDownload> downloads) =>

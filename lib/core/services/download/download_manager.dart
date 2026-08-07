@@ -92,8 +92,8 @@ class DownloadManager extends ChangeNotifier {
     // Previous UI runner may have been killed mid-job.
     await _store.setRunner('none');
     notifyListeners();
-    if (autoStart && !_paused && _queue.isNotEmpty) {
-      await startDownloads();
+    if (autoStart && !_paused && _queue.any((d) => d.status == DownloadState.queue)) {
+      await startDownloads(retryErrors: false);
     }
   }
 
@@ -154,21 +154,28 @@ class DownloadManager extends ChangeNotifier {
     await _persist();
     notifyListeners();
     if (autoStart) {
-      await startDownloads();
+      await startDownloads(retryErrors: false);
     }
   }
 
-  Future<void> startDownloads() async {
+  /// Start/resume the queue. [retryErrors] maps ERROR→QUEUE (Resume/Retry only).
+  /// Restore and enqueue must not reset ERROR — that re-fired AllAnime WebView
+  /// forever and raced the reader's runWebView (30s timeouts).
+  Future<void> startDownloads({bool retryErrors = true}) async {
     _paused = false;
     await _store.setPaused(false);
     for (final d in _queue) {
-      if (d.status != DownloadState.downloaded) {
+      if (d.status == DownloadState.downloading) {
+        d.status = DownloadState.queue;
+      } else if (retryErrors && d.status == DownloadState.error) {
         d.status = DownloadState.queue;
       }
     }
     await _persist();
     notifyListeners();
-    if (_running || _queue.isEmpty) return;
+    if (_running || !_queue.any((d) => d.status == DownloadState.queue)) {
+      return;
+    }
     // Claim the runner BEFORE WorkManager can race us. Do not schedule WM
     // here — spawning a second FlutterEngine mid-download looks like a crash.
     // WM is scheduled only when the app backgrounds ([scheduleBackgroundIfNeeded]).
