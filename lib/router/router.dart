@@ -6,6 +6,7 @@ import '../core/models/manga.dart';
 import '../features/discover/discover_screen.dart';
 import '../features/downloads/download_queue_screen.dart';
 import '../features/extensions/extensions_screen.dart';
+import '../features/extensions/global_search_screen.dart';
 import '../features/extensions/manga_detail_screen.dart';
 import '../features/extensions/sources_screen.dart';
 import '../features/history/history_screen.dart';
@@ -35,6 +36,7 @@ abstract final class Routes {
   static const extensions = 'extensions';
   static const sources = 'sources';
   static const downloadQueue = 'downloadQueue';
+  static const globalSearch = 'globalSearch';
 }
 
 // ── Typed argument records for detail routes ─────────────────────────
@@ -239,6 +241,15 @@ final GoRouter appRouter = GoRouter(
       name: Routes.sources,
       parentNavigatorKey: rootNavigatorKey,
       builder: (context, state) => const SourcesScreen(),
+    ),
+    GoRoute(
+      path: '/global-search',
+      name: Routes.globalSearch,
+      parentNavigatorKey: rootNavigatorKey,
+      builder: (context, state) {
+        final q = state.extra is String ? state.extra as String : null;
+        return GlobalSearchScreen(initialQuery: q);
+      },
     ),
     GoRoute(
       path: '/download-queue',
