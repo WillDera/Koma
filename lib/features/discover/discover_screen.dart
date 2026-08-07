@@ -9,7 +9,10 @@ import '../../theme/app_theme.dart';
 import '../../theme/theme_provider.dart';
 import '../../theme/tokens/app_spacing.dart';
 import '../../widgets/animated_press.dart';
+import '../../widgets/catalog_card_layout.dart';
+import '../../widgets/catalog_cover_card.dart';
 import '../../widgets/empty_state.dart';
+import '../../widgets/library_book_card.dart';
 import '../../widgets/library_header.dart';
 import '../../widgets/one_hand_spacer.dart';
 import '../../widgets/screen_chrome.dart';
@@ -31,7 +34,6 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
   List<SourceSearchResult> _results = [];
   bool _searching = false;
   bool _loaded = false;
-  bool _gridView = false;
   _DiscoverSection _section = _DiscoverSection.books;
   final ValueNotifier<double> _scrollProgress = ValueNotifier<double>(0);
   final Map<String, double> _downloading = {};
@@ -310,15 +312,15 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
     final c = context.colors;
     final titleSize = _oneHand ? 64.0 : 32.0;
     final mangaState = ref.watch(globalSearchProvider);
+    final library = ref.watch(libraryProvider);
     final mangaItemCount = mangaState.mangaHitCount;
     final mangaBusy = mangaState.searching;
     final hasMangaUi =
-        mangaState.query
-            .trim()
-            .isNotEmpty &&
-            (mangaState.items.isNotEmpty || mangaBusy);
+        mangaState.query.trim().isNotEmpty &&
+        (mangaState.items.isNotEmpty || mangaBusy);
     // Book wait only — manga has its own progressive spinner/progress bar.
     final searching = _searching;
+    final gridView = library.isGridView;
 
     return ScreenBackdrop(
       child: SafeArea(
@@ -350,7 +352,7 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
                     PanelStat(value: '${_results.length}', label: 'Books'),
                     PanelStat(value: '$mangaItemCount', label: 'Manga'),
                     PanelStat(
-                      value: _gridView ? 'Grid' : 'List',
+                      value: gridView ? 'Grid' : 'List',
                       label: 'View',
                     ),
                   ],
@@ -435,20 +437,22 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
                   section: _section,
                   bookCount: _results.length,
                   mangaCount: mangaItemCount,
-                  gridView: _gridView,
+                  gridView: gridView,
                   onSectionChanged: (section) => setState(() {
                     _section = section;
                   }),
-                  onLayoutChanged: () => setState(() {
-                    _gridView = !_gridView;
-                  }),
+                  onLayoutChanged: () =>
+                      ref.read(libraryProvider.notifier).toggleLayout(),
                 ),
               ),
               if (_section == _DiscoverSection.books)
                 _DiscoverBookResults(
                   key: const ValueKey('discover-books'),
                   results: _results,
-                  gridView: _gridView,
+                  gridView: gridView,
+                  cardVariant: library.cardVariant,
+                  gridColumns: library.gridColumns,
+                  showSourcePills: library.showSourcePills,
                   downloading: _downloading,
                   onTap: (result) => _showResultOptions(context, result),
                 )
@@ -532,6 +536,9 @@ class _DiscoverControls extends StatelessWidget {
 class _DiscoverBookResults extends StatelessWidget {
   final List<SourceSearchResult> results;
   final bool gridView;
+  final LibraryCardVariant cardVariant;
+  final int gridColumns;
+  final bool showSourcePills;
   final Map<String, double> downloading;
   final ValueChanged<SourceSearchResult> onTap;
 
@@ -539,6 +546,9 @@ class _DiscoverBookResults extends StatelessWidget {
     super.key,
     required this.results,
     required this.gridView,
+    required this.cardVariant,
+    required this.gridColumns,
+    required this.showSourcePills,
     required this.downloading,
     required this.onTap,
   });
@@ -558,24 +568,33 @@ class _DiscoverBookResults extends StatelessWidget {
       );
     }
     if (gridView) {
+      final variant = CatalogCardLayout.gridVariant(cardVariant);
       return SliverPadding(
-        padding: const EdgeInsets.symmetric(horizontal: 20),
+        padding: CatalogCardLayout.paddingFor(variant),
         sliver: SliverGrid(
-          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-            crossAxisCount: 2,
-            mainAxisSpacing: 8,
-            crossAxisSpacing: 8,
-            childAspectRatio: 0.65,
+          gridDelegate: CatalogCardLayout.gridDelegate(
+            columns: gridColumns,
+            variant: variant,
           ),
           delegate: SliverChildBuilderDelegate(
-            (_, i) => StaggeredEntrance(
-              index: i + 1,
-              child: _GridResultCard(
-                result: results[i],
-                downloadProgress: downloading[results[i].title],
-                onTap: () => onTap(results[i]),
-              ),
-            ),
+            (_, i) {
+              final result = results[i];
+              return StaggeredEntrance(
+                index: i + 1,
+                child: CatalogCoverCard(
+                  title: result.title,
+                  subtitle: result.author,
+                  imageProvider: result.poster != null
+                      ? cachedCover(result.poster!)
+                      : null,
+                  badge: result.sourceName,
+                  showBadge: showSourcePills,
+                  variant: variant,
+                  downloadProgress: downloading[result.title],
+                  onTap: () => onTap(result),
+                ),
+              );
+            },
             childCount: results.length,
           ),
         ),
@@ -588,301 +607,26 @@ class _DiscoverBookResults extends StatelessWidget {
           (_, index) {
             if (index.isOdd) return const SizedBox(height: 8);
             final i = index ~/ 2;
+            final result = results[i];
             return StaggeredEntrance(
               index: i + 1,
-              child: _ResultCard(
-                result: results[i],
-                downloadProgress: downloading[results[i].title],
-                onTap: () => onTap(results[i]),
+              child: CatalogCoverCard(
+                title: result.title,
+                subtitle: result.author,
+                imageProvider: result.poster != null
+                    ? cachedCover(result.poster!)
+                    : null,
+                badge: result.sourceName,
+                showBadge: showSourcePills,
+                variant: LibraryCardVariant.list,
+                downloadProgress: downloading[result.title],
+                onTap: () => onTap(result),
               ),
             );
           },
           childCount: results.length * 2 - 1,
         ),
       ),
-    );
-  }
-}
-
-class _ResultCard extends StatelessWidget {
-  final SourceSearchResult result;
-  final VoidCallback onTap;
-  final double? downloadProgress;
-  const _ResultCard({
-    required this.result,
-    required this.onTap,
-    this.downloadProgress,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final c = context.colors;
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
-      child: AnimatedPress(
-        onTap: downloadProgress != null ? null : onTap,
-        child: Container(
-          clipBehavior: Clip.antiAlias,
-          decoration: BoxDecoration(
-            color: c.surface,
-            borderRadius: AppSpacing.brLg,
-            border: Border.all(color: c.border, width: 0.5),
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Padding(
-                padding: const EdgeInsets.all(12),
-                child: Row(
-                  children: [
-                    ClipRRect(
-                      borderRadius: BorderRadius.circular(6),
-                      child: result.poster != null
-                          ? Image(
-                              image: cachedCover(result.poster!),
-                              width: 48,
-                              height: 64,
-                              fit: BoxFit.cover,
-                              errorBuilder: (_, _, _) => _posterPlaceholder(c),
-                            )
-                          : _posterPlaceholder(c),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            result.title,
-                            maxLines: 2,
-                            overflow: TextOverflow.ellipsis,
-                            style: TextStyle(
-                              color: c.textPrimary,
-                              fontSize: 15,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                          if (result.author != null) ...[
-                            const SizedBox(height: 2),
-                            Text(
-                              result.author!,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: TextStyle(
-                                color: c.textSecondary,
-                                fontSize: 13,
-                              ),
-                            ),
-                          ],
-                          const SizedBox(height: 4),
-                          Row(
-                            children: [
-                              if (result.extension != null)
-                                _extensionBadge(c, result.extension!),
-                              if (result.extension != null)
-                                const SizedBox(width: 6),
-                              Text(
-                                result.sourceName,
-                                style: TextStyle(
-                                  color: c.accent,
-                                  fontSize: 11,
-                                  fontWeight: FontWeight.w500,
-                                ),
-                              ),
-                              if (result.size != null) ...[
-                                const SizedBox(width: 8),
-                                Text(
-                                  result.size!,
-                                  style: TextStyle(
-                                    color: c.textTertiary,
-                                    fontSize: 11,
-                                  ),
-                                ),
-                              ],
-                            ],
-                          ),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(width: 4),
-                    Icon(Icons.chevron_right, size: 16, color: c.textTertiary),
-                  ],
-                ),
-              ),
-              if (downloadProgress != null)
-                ClipRRect(
-                  borderRadius: const BorderRadius.vertical(
-                    bottom: Radius.circular(18),
-                  ),
-                  child: LinearProgressIndicator(
-                    value: downloadProgress,
-                    minHeight: 3,
-                    backgroundColor: c.surfaceMuted,
-                  ),
-                ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _extensionBadge(KomaColors c, String ext) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
-      decoration: BoxDecoration(
-        color: c.accentMuted,
-        borderRadius: BorderRadius.circular(3),
-      ),
-      child: Text(
-        ext.toUpperCase(),
-        style: TextStyle(
-          color: c.accent,
-          fontSize: 9,
-          fontWeight: FontWeight.w600,
-        ),
-      ),
-    );
-  }
-
-  Widget _posterPlaceholder(KomaColors c) {
-    return Container(
-      width: 48,
-      height: 64,
-      color: c.surfaceMuted,
-      child: Icon(Icons.book, size: 24, color: c.textTertiary),
-    );
-  }
-}
-
-class _GridResultCard extends StatelessWidget {
-  final SourceSearchResult result;
-  final VoidCallback onTap;
-  final double? downloadProgress;
-  const _GridResultCard({
-    required this.result,
-    required this.onTap,
-    this.downloadProgress,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final c = context.colors;
-    return AnimatedPress(
-      onTap: downloadProgress != null ? null : onTap,
-      child: Container(
-        decoration: BoxDecoration(
-          color: c.surface,
-          borderRadius: AppSpacing.brLg,
-          border: Border.all(color: c.border, width: 0.5),
-        ),
-        clipBehavior: Clip.antiAlias,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Expanded(
-              child: ClipRRect(
-                borderRadius: const BorderRadius.vertical(
-                  top: Radius.circular(18),
-                ),
-                child: result.poster != null
-                    ? Image(
-                        image: cachedCover(result.poster!),
-                        width: double.infinity,
-                        fit: BoxFit.cover,
-                        errorBuilder: (_, _, _) => _posterPlaceholder(c),
-                      )
-                    : _posterPlaceholder(c),
-              ),
-            ),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(8, 6, 8, 8),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    result.title,
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      color: c.textPrimary,
-                      fontSize: 13,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                  if (result.author != null)
-                    Padding(
-                      padding: const EdgeInsets.only(top: 2),
-                      child: Text(
-                        result.author!,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(color: c.textSecondary, fontSize: 11),
-                      ),
-                    ),
-                  const SizedBox(height: 4),
-                  Row(
-                    children: [
-                      if (result.extension != null)
-                        _extensionBadge(c, result.extension!),
-                      const SizedBox(width: 6),
-                      Text(
-                        result.sourceName,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          color: c.accent,
-                          fontSize: 10,
-                          fontWeight: FontWeight.w500,
-                        ),
-                      ),
-                    ],
-                  ),
-                  if (result.size != null)
-                    Padding(
-                      padding: const EdgeInsets.only(top: 1),
-                      child: Text(
-                        result.size!,
-                        style: TextStyle(color: c.textTertiary, fontSize: 10),
-                      ),
-                    ),
-                ],
-              ),
-            ),
-            if (downloadProgress != null)
-              LinearProgressIndicator(
-                value: downloadProgress,
-                minHeight: 3,
-                backgroundColor: c.surfaceMuted,
-              ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _extensionBadge(KomaColors c, String ext) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
-      decoration: BoxDecoration(
-        color: c.accentMuted,
-        borderRadius: BorderRadius.circular(3),
-      ),
-      child: Text(
-        ext.toUpperCase(),
-        style: TextStyle(
-          color: c.accent,
-          fontSize: 9,
-          fontWeight: FontWeight.w600,
-        ),
-      ),
-    );
-  }
-
-  Widget _posterPlaceholder(KomaColors c) {
-    return Container(
-      color: c.surfaceMuted,
-      child: Center(child: Icon(Icons.book, size: 32, color: c.textTertiary)),
     );
   }
 }
