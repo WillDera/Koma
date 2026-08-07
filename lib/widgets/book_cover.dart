@@ -20,12 +20,18 @@ class BookCover extends StatelessWidget {
   final BorderRadius? borderRadius;
   final BoxFit fit;
 
+  /// When true, fill the parent (no intrinsic AspectRatio / fixed size).
+  /// Use inside Expanded / Positioned.fill grid cells so title rows never
+  /// overflow the SliverGrid cell.
+  final bool expand;
+
   const BookCover({
     super.key,
     required this.book,
     this.variant = BookCoverVariant.grid,
     this.borderRadius,
     this.fit = BoxFit.cover,
+    this.expand = false,
   });
 
   @override
@@ -45,12 +51,17 @@ class BookCover extends StatelessWidget {
         ? Image.file(
             File(book.coverPath!),
             fit: fit,
+            width: expand ? double.infinity : null,
+            height: expand ? double.infinity : null,
             errorBuilder: (_, _, _) => _placeholder(c),
           )
         : _placeholder(c);
 
     final child = ClipRRect(borderRadius: radius, child: image);
 
+    if (expand) {
+      return SizedBox.expand(child: child);
+    }
     if (variant == BookCoverVariant.grid || variant == BookCoverVariant.hero) {
       return AspectRatio(
         aspectRatio: AppSpacing.coverAspectRatio,
