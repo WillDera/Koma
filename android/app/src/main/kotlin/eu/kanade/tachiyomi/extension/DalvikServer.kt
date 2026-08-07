@@ -6,7 +6,6 @@ import android.content.pm.PackageManager
 import android.util.Base64
 import android.util.Log
 import eu.kanade.tachiyomi.network.NetworkHelper
-import eu.kanade.tachiyomi.network.defaultClient
 import eu.kanade.tachiyomi.source.ConfigurableSource
 import eu.kanade.tachiyomi.source.Source
 import eu.kanade.tachiyomi.source.SourceFactory
@@ -34,7 +33,6 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.put
 import mihon.core.common.extensions.EMPTY
-import okhttp3.OkHttpClient
 import uy.kohesive.injekt.Injekt
 import uy.kohesive.injekt.api.InjektModule
 import uy.kohesive.injekt.api.InjektRegistrar
@@ -187,11 +185,11 @@ class DalvikServer(
         Injekt.importModule(object : InjektModule {
             override fun InjektRegistrar.registerInjectables() {
                 addSingleton(app)
-                addSingletonFactory { defaultClient(context) }
+                addSingletonFactory { NetworkHelper(app) }
                 addSingletonFactory {
                     Json { ignoreUnknownKeys = true; explicitNulls = false; isLenient = true }
                 }
-                addSingletonFactory { NetworkHelper(Injekt.get<OkHttpClient>()) }
+                addSingletonFactory { Injekt.get<NetworkHelper>().client }
             }
         })
     }
@@ -356,6 +354,29 @@ class DalvikServer(
         } catch (e: Exception) {
             throw RuntimeException("Failed to create classloader for $apkPath", e)
         }
+
+        // Prove host-patched keiyoushi WebView wins over the copy inside the APK.
+        try {
+            val webViewKt = classLoader.loadClass("keiyoushi.utils.WebViewKt")
+            val fromHost = webViewKt.classLoader !== classLoader
+            Log.d(
+                TAG,
+                "WebViewKt loader=${webViewKt.classLoader} fromHost=$fromHost",
+            )
+            if (!fromHost) {
+                Log.e(TAG, "WebViewKt loaded from extension APK — SW stub will NOT apply")
+            }
+        } catch (e: Throwable) {
+            Log.e(TAG, "Failed to resolve keiyoushi.utils.WebViewKt from host", e)
+            throw RuntimeException(
+                "Host keiyoushi.utils.WebViewKt missing — ServiceWorker stub unavailable",
+                e,
+            )
+        }
+
+        // Keep host WebView symbols reachable for the dex linker / R8.
+        @Suppress("UNUSED_VARIABLE")
+        val keep = keiyoushi.utils.WebViewTimeoutException::class.java
 
         val clazz = try {
             classLoader.loadClass(resolvedClassName)
@@ -621,7 +642,7 @@ class DalvikServer(
                             memo = root.memo()
                         }
                         val pages = runBlocking {
-                            src.getPageList(chapter).map { page ->
+                            resolvePageList(src, chapter).map { page ->
                                 val headers = try {
                                     src.getImageRequestHeaders(page).toMap()
                                 } catch (_: Exception) {
@@ -909,7 +930,7 @@ class DalvikServer(
                         }
                         // Always re-fetch page list so we know the expected
                         // count — never treat a non-empty directory as done.
-                        val pages: List<Page> = runBlocking { src.getPageList(chapter) }
+                        val pages: List<Page> = runBlocking { resolvePageList(src, chapter) }
                         if (pages.isEmpty()) {
                             Log.w(TAG, "download: empty page list for $chName")
                             continue
@@ -1142,6 +1163,19 @@ class DalvikServer(
                 object : Filter.Group<Filter<*>>(name, subFilters) {}
             }
             else -> null
+        }
+    }
+
+    /**
+     * Page list entry point shared by reader RPC and downloads. Mkissa/AllManga
+     * is handled in-process — extension [HttpSource.getPageList] uses a
+     * R8-private runWebView that cannot be ClassLoader-replaced.
+     */
+    private suspend fun resolvePageList(src: HttpSource, chapter: SChapter): List<Page> {
+        return if (MkissaHostPageList.appliesTo(src)) {
+            MkissaHostPageList.fetch(src, chapter)
+        } else {
+            src.getPageList(chapter)
         }
     }
 }

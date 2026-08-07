@@ -341,13 +341,19 @@ class KeiyoushiService {
     required String url,
     String? memo,
   }) async {
+    // Allow time for AllManga WebView page capture (and optional CF solve elsewhere).
     final res = await _post({
       'method': 'getPageList',
       'sourceId': sourceId,
       'url': url,
       'memo': ?memo,
-    });
-    if (res is! List) return [];
+    }, timeout: const Duration(seconds: 90));
+    if (res is Map && res['error'] != null) {
+      throw Exception(res['error'].toString());
+    }
+    if (res is! List) {
+      throw Exception('getPageList failed: unexpected response');
+    }
     return res.cast<Map<String, dynamic>>();
   }
 
