@@ -2,6 +2,7 @@ package com.koma.koma
 
 import android.app.Application
 import android.content.SharedPreferences
+import android.webkit.CookieManager
 import eu.kanade.tachiyomi.extension.DalvikRuntimeManager
 
 /**
@@ -19,6 +20,8 @@ class KomaApplication : Application() {
 
     override fun onCreate() {
         super.onCreate()
+        // Shared with OkHttp [AndroidCookieJar] + extension runWebView.
+        runCatching { CookieManager.getInstance().setAcceptCookie(true) }
         DalvikRuntimeManager.initialize(this)
         if (isAutoUpdateEnabled()) {
             try {

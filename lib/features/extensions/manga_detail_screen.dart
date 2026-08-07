@@ -16,6 +16,7 @@ import '../../core/providers.dart';
 import '../../core/services/download/chapter_download.dart';
 import '../../core/services/download/download_manager.dart';
 import '../../core/services/keiyoushi_service.dart';
+import '../../core/services/source_webview_bridge.dart';
 import '../../core/utils/image_cache.dart';
 import '../../core/utils/image_headers.dart';
 import '../../router/router.dart';
@@ -1667,6 +1668,33 @@ class _MangaDetailScreenState extends ConsumerState<MangaDetailScreen> {
               tooltip: 'Delete downloads',
               onPressed: _confirmDeleteAllDownloads,
             ),
+          PopupMenuButton<String>(
+            icon: Icon(Icons.more_vert_rounded, color: c.textPrimary),
+            onSelected: (value) async {
+              if (value == 'webview') {
+                try {
+                  await SourceWebViewBridge.open(
+                    url: widget.url,
+                    sourceId: widget.sourceId,
+                    title: widget.title,
+                    memo: widget.memo ??
+                        detail.details?['memo'] as String?,
+                  );
+                } catch (e) {
+                  if (!mounted) return;
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: Text('WebView failed: $e')),
+                  );
+                }
+              }
+            },
+            itemBuilder: (ctx) => const [
+              PopupMenuItem(
+                value: 'webview',
+                child: Text('Open in WebView'),
+              ),
+            ],
+          ),
         ],
         flexibleSpace: Container(
           decoration: BoxDecoration(

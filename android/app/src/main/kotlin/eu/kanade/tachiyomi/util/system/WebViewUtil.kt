@@ -14,6 +14,18 @@ object WebViewUtil {
 
     const val MINIMUM_WEBVIEW_VERSION = 118
 
+    /**
+     * Prefer a Chrome-on-Android style UA (Mihon parity). Cloudflare / AllManga
+     * bind `cf_clearance` to this exact string — stub UAs break extension runWebView.
+     */
+    @SuppressLint("SetJavaScriptEnabled")
+    fun getInferredUserAgent(context: Context): String {
+        return WebView(context)
+            .getDefaultUserAgentString()
+            .replace("; Android .*?\\)".toRegex(), "; Android 10; K)")
+            .replace("Version/.* Chrome/".toRegex(), "Chrome/")
+    }
+
     fun getVersion(context: Context): String {
         val webView = WebView.getCurrentWebViewPackage() ?: return "unknown"
         val pm = context.packageManager
@@ -73,7 +85,8 @@ private fun WebView.getWebViewMajorVersion(): Int {
     }
 }
 
-private fun WebView.getDefaultUserAgentString(): String {
+// Based on https://stackoverflow.com/a/29218966
+fun WebView.getDefaultUserAgentString(): String {
     val originalUA: String = settings.userAgentString
     settings.userAgentString = null
     val defaultUserAgentString = settings.userAgentString
