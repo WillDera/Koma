@@ -1552,21 +1552,41 @@ class _BookShelf extends StatelessWidget {
     final sw = Stopwatch()..start();
     late final Widget result;
     if (provider.isGridView) {
+      // List card-style in a grid context falls back to comfortable grid.
+      final variant = provider.cardVariant == LibraryCardVariant.list
+          ? LibraryCardVariant.grid
+          : provider.cardVariant;
+      final compact = variant == LibraryCardVariant.compact;
+      final overlay = variant == LibraryCardVariant.overlay;
       result = SliverPadding(
-        padding: const EdgeInsets.symmetric(horizontal: 20),
+        padding: EdgeInsets.symmetric(horizontal: compact || overlay ? 12 : 20),
         sliver: SliverGrid(
           gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
             crossAxisCount: provider.gridColumns,
-            mainAxisSpacing: 18,
-            crossAxisSpacing: 18,
-            childAspectRatio: 0.6,
+            // Mihon: CompactGrid denser than ComfortableGrid; CoverOnly tighter.
+            mainAxisSpacing: overlay
+                ? 8
+                : compact
+                ? 10
+                : 14,
+            crossAxisSpacing: overlay
+                ? 8
+                : compact
+                ? 10
+                : 14,
+            // Cover 2:3 ≈ 0.667; title modes need taller cells (lower ratio).
+            childAspectRatio: overlay
+                ? AppSpacing.coverAspectRatio
+                : compact
+                ? 0.62
+                : 0.58,
           ),
           delegate: SliverChildBuilderDelegate(
             (ctx, i) => StaggeredEntrance(
               index: i + 1,
               child: LibraryBookCard(
                 book: books[i],
-                variant: LibraryCardVariant.grid,
+                variant: variant,
                 selected: provider.selectedIds.contains('b:${books[i].id}'),
                 selectionMode: provider.selectionMode,
                 showSourcePills: provider.showSourcePills,
@@ -1584,7 +1604,8 @@ class _BookShelf extends StatelessWidget {
       );
       BenchmarkLogger.log(
         'book_shelf_build',
-        'variant=grid count=${books.length} elapsed=${sw.elapsedMicroseconds}us',
+        'variant=${variant.name} count=${books.length} elapsed=${sw
+            .elapsedMicroseconds}us',
       );
       return result;
     }
@@ -1777,116 +1798,120 @@ class _MangaLibraryCard extends ConsumerWidget {
         onTap: onTap,
         onLongPress: onLongPress,
         scaleDown: 0.99,
-        child: AspectRatio(
-          aspectRatio: 0.65,
-          child: Stack(
-            children: [
-              Positioned.fill(
-                child: localImagePath != null
-                    ? Image.file(
-                        File(localImagePath!),
-                        width: double.infinity,
-                        fit: BoxFit.cover,
-                        errorBuilder: (_, _, _) => _placeholder(c),
-                      )
-                    : manga.imageUrl != null && manga.imageUrl!.isNotEmpty
-                    ? Image(
-                        image: cachedCover(manga.imageUrl!, headers: headers),
-                        width: double.infinity,
-                        fit: BoxFit.cover,
-                        errorBuilder: (_, _, _) => _placeholder(c),
-                      )
-                    : _placeholder(c),
-              ),
-              Positioned.fill(
-                child: DecoratedBox(
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      begin: Alignment.bottomCenter,
-                      end: Alignment.topCenter,
-                      colors: [
-                        Colors.black.withValues(alpha: 0.75),
-                        Colors.black.withValues(alpha: 0.35),
-                        Colors.transparent,
-                      ],
-                      stops: const [0.0, 0.35, 1.0],
-                    ),
-                  ),
+        child: ClipRRect(
+          borderRadius: AppSpacing.brMd,
+          child: AspectRatio(
+            aspectRatio: 0.65,
+            child: Stack(
+              fit: StackFit.expand,
+              children: [
+                Positioned.fill(
+                  child: localImagePath != null
+                      ? Image.file(
+                    File(localImagePath!),
+                    width: double.infinity,
+                    fit: BoxFit.cover,
+                    errorBuilder: (_, _, _) => _placeholder(c),
+                  )
+                      : manga.imageUrl != null && manga.imageUrl!.isNotEmpty
+                      ? Image(
+                    image: cachedCover(manga.imageUrl!, headers: headers),
+                    width: double.infinity,
+                    fit: BoxFit.cover,
+                    errorBuilder: (_, _, _) => _placeholder(c),
+                  )
+                      : _placeholder(c),
                 ),
-              ),
-              if (showSourcePills)
-                Positioned(
-                  top: 6,
-                  left: 6,
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 6,
-                      vertical: 2,
-                    ),
+                Positioned.fill(
+                  child: DecoratedBox(
                     decoration: BoxDecoration(
-                      color: Colors.black.withValues(alpha: 0.7),
-                      borderRadius: AppSpacing.brPill,
-                    ),
-                    child: Text(
-                      extensionName ?? manga.sourceId,
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 10,
-                        fontWeight: FontWeight.w600,
+                      gradient: LinearGradient(
+                        begin: Alignment.bottomCenter,
+                        end: Alignment.topCenter,
+                        colors: [
+                          Colors.black.withValues(alpha: 0.75),
+                          Colors.black.withValues(alpha: 0.35),
+                          Colors.transparent,
+                        ],
+                        stops: const [0.0, 0.35, 1.0],
                       ),
                     ),
                   ),
                 ),
-              if (newChapterCount > 0)
+                if (showSourcePills)
+                  Positioned(
+                    top: 6,
+                    left: 6,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 6,
+                        vertical: 2,
+                      ),
+                      decoration: BoxDecoration(
+                        color: Colors.black.withValues(alpha: 0.7),
+                        borderRadius: AppSpacing.brPill,
+                      ),
+                      child: Text(
+                        extensionName ?? manga.sourceId,
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 10,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                  ),
+                if (newChapterCount > 0)
+                  Positioned(
+                    top: 6,
+                    right: 6,
+                    child: _NewChapterBadge(count: newChapterCount),
+                  ),
+                if (selectionMode)
+                  Positioned(
+                    top: 8,
+                    right: 8,
+                    child: AnimatedContainer(
+                      duration: const Duration(milliseconds: 180),
+                      width: 24,
+                      height: 24,
+                      decoration: BoxDecoration(
+                        color: selected
+                            ? c.accent
+                            : Colors.black.withValues(alpha: 0.4),
+                        shape: BoxShape.circle,
+                        border: Border.all(color: Colors.white, width: 1.5),
+                      ),
+                      child: selected
+                          ? Icon(Icons.check, size: 14, color: c.onAccent)
+                          : null,
+                    ),
+                  ),
                 Positioned(
-                  top: 6,
-                  right: 6,
-                  child: _NewChapterBadge(count: newChapterCount),
-                ),
-              if (selectionMode)
-                Positioned(
-                  top: 8,
+                  left: 8,
                   right: 8,
-                  child: AnimatedContainer(
-                    duration: const Duration(milliseconds: 180),
-                    width: 24,
-                    height: 24,
-                    decoration: BoxDecoration(
-                      color: selected
-                          ? c.accent
-                          : Colors.black.withValues(alpha: 0.4),
-                      shape: BoxShape.circle,
-                      border: Border.all(color: Colors.white, width: 1.5),
+                  bottom: 8,
+                  child: Text(
+                    manga.name,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                      height: 1.3,
+                      shadows: const [
+                        Shadow(
+                          blurRadius: 4,
+                          color: Colors.black54,
+                          offset: Offset(0, 1),
+                        ),
+                      ],
                     ),
-                    child: selected
-                        ? Icon(Icons.check, size: 14, color: c.onAccent)
-                        : null,
                   ),
                 ),
-              Positioned(
-                left: 8,
-                right: 8,
-                bottom: 8,
-                child: Text(
-                  manga.name,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 12,
-                    fontWeight: FontWeight.w600,
-                    height: 1.3,
-                    shadows: const [
-                      Shadow(
-                        blurRadius: 4,
-                        color: Colors.black54,
-                        offset: Offset(0, 1),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ],
+              ],
+            ),
           ),
         ),
       );
