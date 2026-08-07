@@ -14,6 +14,8 @@ import '../../core/models/book.dart';
 import '../../core/models/manga.dart';
 import '../../core/providers.dart';
 import '../../core/services/background_task.dart';
+import '../../core/services/library_update_auto_download.dart';
+import '../../core/services/library_update_prefs.dart';
 import '../../core/services/library_update_service.dart';
 import '../../core/services/notification_service.dart';
 import '../../widgets/library_book_card.dart';
@@ -290,6 +292,8 @@ class LibraryUpdateState {
   final int lastNewChapterCount;
   final bool checking;
   final String? error;
+  final bool wifiOnly;
+  final bool chargingOnly;
 
   const LibraryUpdateState({
     this.enabled = false,
@@ -298,6 +302,8 @@ class LibraryUpdateState {
     this.lastNewChapterCount = 0,
     this.checking = false,
     this.error,
+    this.wifiOnly = LibraryUpdatePrefs.defaultWifiOnly,
+    this.chargingOnly = LibraryUpdatePrefs.defaultChargingOnly,
   });
 
   LibraryUpdateState copyWith({
@@ -307,6 +313,8 @@ class LibraryUpdateState {
     int? lastNewChapterCount,
     bool? checking,
     String? Function()? error,
+    bool? wifiOnly,
+    bool? chargingOnly,
   }) {
     return LibraryUpdateState(
       enabled: enabled ?? this.enabled,
@@ -317,6 +325,8 @@ class LibraryUpdateState {
       lastNewChapterCount: lastNewChapterCount ?? this.lastNewChapterCount,
       checking: checking ?? this.checking,
       error: error != null ? error() : this.error,
+      wifiOnly: wifiOnly ?? this.wifiOnly,
+      chargingOnly: chargingOnly ?? this.chargingOnly,
     );
   }
 }
@@ -340,9 +350,12 @@ class LibraryUpdateNotifier extends Notifier<LibraryUpdateState> {
     final enabled = prefs.getBool(_keyEnabled) ?? false;
     final intervalHours =
         prefs.getInt(_keyIntervalHours) ?? state.interval.inHours;
+    final device = await LibraryUpdatePrefs.loadDeviceConstraints();
     state = state.copyWith(
       enabled: enabled,
       interval: Duration(hours: intervalHours),
+      wifiOnly: device.wifiOnly,
+      chargingOnly: device.chargingOnly,
     );
     _reschedule();
     await _syncBackgroundTask();
@@ -365,6 +378,20 @@ class LibraryUpdateNotifier extends Notifier<LibraryUpdateState> {
     await _syncBackgroundTask();
   }
 
+  Future<void> setWifiOnly(bool value) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(LibraryUpdatePrefs.keyWifiOnly, value);
+    state = state.copyWith(wifiOnly: value);
+    await _syncBackgroundTask();
+  }
+
+  Future<void> setChargingOnly(bool value) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(LibraryUpdatePrefs.keyChargingOnly, value);
+    state = state.copyWith(chargingOnly: value);
+    await _syncBackgroundTask();
+  }
+
   void _reschedule() {
     _timer?.cancel();
     _timer = null;
@@ -376,6 +403,10 @@ class LibraryUpdateNotifier extends Notifier<LibraryUpdateState> {
   /// happening while the app is backgrounded (or killed). Android's minimum
   /// period is 15 minutes; our smallest interval is 1h so the value passes
   /// through unchanged.
+  ///
+  /// Device constraints (Wi‑Fi / charging) apply only here — manual "Check
+  /// now" and the foreground timer stay unconstrained (Mihon manual job
+  /// parity).
   Future<void> _syncBackgroundTask() async {
     if (kIsWeb || defaultTargetPlatform != TargetPlatform.android) {
       return;
@@ -387,6 +418,12 @@ class LibraryUpdateNotifier extends Notifier<LibraryUpdateState> {
           kLibraryPollTaskName,
           frequency: state.interval,
           existingWorkPolicy: ExistingPeriodicWorkPolicy.update,
+          constraints: LibraryUpdatePrefs.workConstraints(
+            LibraryUpdateDeviceConstraints(
+              wifiOnly: state.wifiOnly,
+              chargingOnly: state.chargingOnly,
+            ),
+          ),
         );
       } else {
         await Workmanager().cancelByUniqueName(kLibraryPollTaskName);
@@ -416,6 +453,12 @@ class LibraryUpdateNotifier extends Notifier<LibraryUpdateState> {
         // Foreground path: also surface a system notification. The background
         // isolate posts its own (NotificationService is self-contained).
         unawaited(NotificationService.instance.notifyNewChapters(report));
+        unawaited(
+          enqueueNewChaptersFromUpdate(
+            manager: ref.read(downloadManagerProvider.notifier).manager,
+            report: report,
+          ),
+        );
       }
       state = state.copyWith(
         checking: false,
