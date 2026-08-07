@@ -7,6 +7,8 @@ import 'download/download_manager.dart';
 import 'download/download_store.dart';
 import 'extension_manager.dart';
 import 'keiyoushi_service.dart';
+import 'library_update_auto_download.dart';
+import 'library_update_prefs.dart';
 import 'library_update_service.dart';
 import 'notification_service.dart';
 
@@ -55,6 +57,22 @@ Future<void> _pollLibraryAndNotify() async {
   if (report.totalNew > 0) {
     await NotificationService.instance.init();
     await NotificationService.instance.notifyNewChapters(report);
+
+    // Auto-queue newly discovered chapters (Mihon LibraryUpdateJob parity).
+    if (await LibraryUpdatePrefs.isDownloadNewEnabled()) {
+      await keiyoushi.init();
+      final mgr = DownloadManager(keiyoushi: keiyoushi, repositories: repos);
+      await mgr.restore(autoStart: false);
+      await enqueueNewChaptersFromUpdate(
+        manager: mgr,
+        report: report,
+        downloadNewOverride: true,
+        autoStart: false,
+      );
+      if (mgr.queue.any((d) => d.status == DownloadState.queue)) {
+        await mgr.scheduleBackgroundIfNeeded();
+      }
+    }
   }
 }
 
