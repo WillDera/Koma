@@ -16,6 +16,7 @@ import 'bridges/http_bridge.dart';
 import 'bridges/m_provider_bridge.dart';
 import 'bridges/prefs_bridge.dart';
 import 'bridges/utils_bridge.dart';
+import 'js_source_meta.dart';
 
 /// Mangayomi-compatible JS extension host.
 ///
@@ -78,6 +79,9 @@ class JsExtensionService implements ExtensionService {
 $code
 var extention = new DefaultExtension();
 ''');
+    // Mangayomi seeds SourcePreference on first SharedPreferences.get —
+    // do that eagerly so keys like original_languages resolve to [].
+    seedJsPreferenceDefaults(runtime, sourceId: source.sourceId);
 
     _runtime = runtime;
     _boundSourceKey = key;
@@ -85,14 +89,19 @@ var extention = new DefaultExtension();
 
   Map<String, dynamic> _sourceToJsJson(MSource source) {
     final id = int.tryParse(source.id) ?? int.tryParse(source.sourceId);
+    final meta = parseMangayomiSourcesHeader(source.sourceCode);
+    final baseUrl = source.baseUrl.isNotEmpty
+        ? source.baseUrl
+        : (meta['baseUrl'] ?? '');
+    final apiUrl = meta['apiUrl'] ?? '';
     return {
       'id': id ?? source.id,
       'name': source.name,
       'lang': source.lang,
-      'baseUrl': source.baseUrl,
-      'apiUrl': '',
-      'dateFormat': '',
-      'dateFormatLocale': '',
+      'baseUrl': baseUrl,
+      'apiUrl': apiUrl,
+      'dateFormat': meta['dateFormat'] ?? '',
+      'dateFormatLocale': meta['dateFormatLocale'] ?? '',
       'hasCloudflare': false,
       'isFullData': false,
       'additionalParams': '',
