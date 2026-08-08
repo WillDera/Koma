@@ -380,58 +380,114 @@ class _ExtensionsScreenState extends ConsumerState<ExtensionsScreen>
     }
   }
 
-  /// Find the index entry + repo for an installed source so its APK can be
-  /// re-downloaded and re-loaded at a newer version.
+  /// Find the index entry + repo for an installed source so it can be
+  /// re-downloaded at a newer version.
+  ///
+  /// Prefer [ExtensionSource.versionLast] (badge target) over the first
+  /// cache hit — stale `_fullIndexCache` rows often still carry the installed
+  /// version after startup already wrote a newer `versionLast`.
   ({ExtensionIndexEntry entry, ExtensionRepo repo})? _resolveUpdate(
     ExtensionSource src,
   ) {
     final pkg = _extractPkgFromApkPath(src.apkPath);
+    final candidates = <({ExtensionIndexEntry entry, ExtensionRepo repo})>[];
+
     for (final repo in _repos) {
       final entries = _fullIndexCache[repo.id];
       if (entries == null) continue;
       for (final e in entries) {
-        // Match by className first (survives repo pkg renames), then by the
-        // APK-derived package name / JS catalog id.
+        var matched = false;
         if (e.className != null &&
             e.className!.isNotEmpty &&
             e.className == src.className) {
-          return (entry: e, repo: repo);
+          matched = true;
+        } else if (pkg.isNotEmpty && e.pkg == pkg) {
+          matched = true;
+        } else if (src.isJs &&
+            e.isJs &&
+            (e.pkg == src.sourceId ||
+                e.pkg == src.id ||
+                (src.sourceCodeUrl != null &&
+                    src.sourceCodeUrl!.isNotEmpty &&
+                    e.sourceCodeUrl == src.sourceCodeUrl))) {
+          matched = true;
         }
-        if (pkg.isNotEmpty && e.pkg == pkg) return (entry: e, repo: repo);
-        if (src.isJs &&
-            (e.pkg == src.sourceId || e.pkg == src.id)) {
-          return (entry: e, repo: repo);
-        }
+        if (matched) candidates.add((entry: e, repo: repo));
       }
+    }
+    if (candidates.isEmpty) return null;
+
+    final target = src.versionLast;
+    if (target != null && target.isNotEmpty) {
+      final exact = candidates
+          .where((c) => c.entry.version == target)
+          .firstOrNull;
+      if (exact != null) return exact;
+    }
+
+    // Newest entry that is actually newer than the installed version.
+    candidates.sort(
+      (a, b) => compareVersions(b.entry.version, a.entry.version),
+    );
+    for (final c in candidates) {
+      if (compareVersions(src.version, c.entry.version) < 0) return c;
     }
     return null;
   }
 
   Future<void> _update(ExtensionSource src) async {
     final messenger = ScaffoldMessenger.of(context);
-    var resolved = _resolveUpdate(src);
-    if (resolved == null) {
-      // Badges surface from versionLast flags written at app start, before
-      // any index was cached — fetch the owning repo's index so we can
-      // resolve the entry, then retry.
-      final repo = _repos
-          .where((r) => src.repoUrl != null && r.url == src.repoUrl)
-          .firstOrNull;
-      if (repo != null && !_loadingIndex.contains(repo.id)) {
-        await _fetchIndex(repo);
-        resolved = _resolveUpdate(src);
-      }
+
+    // Mangayomi parity: update always re-fetches the index (reFresh: true)
+    // before resolving — in-memory cache can still list the old version while
+    // `versionLast` already points at the newer one from app-start checks.
+    final reposToFetch = <ExtensionRepo>[];
+    if (src.repoUrl != null && src.repoUrl!.isNotEmpty) {
+      final owned = _repos.where((r) => r.url == src.repoUrl).firstOrNull;
+      if (owned != null) reposToFetch.add(owned);
     }
+    if (reposToFetch.isEmpty) {
+      final kind = src.isJs
+          ? ExtensionRepoKind.javascript
+          : ExtensionRepoKind.mihon;
+      reposToFetch.addAll(
+        _repos.where((r) => r.enabled && r.kind == kind),
+      );
+    }
+    if (reposToFetch.isEmpty) {
+      reposToFetch.addAll(_repos.where((r) => r.enabled));
+    }
+    for (final repo in reposToFetch) {
+      if (!mounted) return;
+      await _fetchIndex(repo);
+    }
+
+    final resolved = _resolveUpdate(src);
     if (resolved == null) {
       messenger.showSnackBar(
         SnackBar(
           content: Text(
-            'No update info for ${src.name} — fetch the repo index first',
+            src.versionLast != null &&
+                    src.versionLast!.isNotEmpty &&
+                    src.versionLast != src.version
+                ? 'Could not find v${src.versionLast} for ${src.name} in the repo index'
+                : 'No update info for ${src.name} — fetch the repo index first',
           ),
         ),
       );
       return;
     }
+    if (compareVersions(src.version, resolved.entry.version) >= 0) {
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text(
+            '${src.name} is already at v${src.version} (index has v${resolved.entry.version})',
+          ),
+        ),
+      );
+      return;
+    }
+
     messenger.showSnackBar(SnackBar(content: Text('Updating ${src.name}…')));
     try {
       await _mgr.updateSource(src, resolved.entry, resolved.repo.url);
@@ -718,7 +774,13 @@ class _UntrustedTile extends StatelessWidget {
       ),
       child: Row(
         children: [
-          _buildIcon(_extractPkgFromApkPath(src.apkPath), c),
+          _buildIcon(
+            src.apkPath.isNotEmpty
+                ? _extractPkgFromApkPath(src.apkPath)
+                : (src.pkgName.isNotEmpty ? src.pkgName : src.sourceId),
+            c,
+            iconUrl: src.iconUrl,
+          ),
           const SizedBox(width: 12),
           Expanded(
             child: Column(
@@ -795,7 +857,13 @@ class _ActiveInstalledTile extends StatelessWidget {
         ),
         child: Row(
           children: [
-            _buildIcon(_extractPkgFromApkPath(src.apkPath), c),
+            _buildIcon(
+              src.apkPath.isNotEmpty
+                  ? _extractPkgFromApkPath(src.apkPath)
+                  : (src.pkgName.isNotEmpty ? src.pkgName : src.sourceId),
+              c,
+              iconUrl: src.iconUrl,
+            ),
             const SizedBox(width: 12),
             Expanded(
               child: Column(
@@ -803,6 +871,8 @@ class _ActiveInstalledTile extends StatelessWidget {
                 children: [
                   Text(
                     src.name,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
                     style: TextStyle(
                       color: c.textPrimary,
                       fontSize: 15,
@@ -810,46 +880,38 @@ class _ActiveInstalledTile extends StatelessWidget {
                     ),
                   ),
                   const SizedBox(height: 2),
-                  if (hasUpdate && src.versionLast != null)
+                  if (hasUpdate && src.versionLast != null) ...[
+                    Text(
+                      'Update available',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: c.accent,
+                        fontSize: 11,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    Text(
+                      'v${src.version} → v${src.versionLast}',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: c.accent.withValues(alpha: 0.85),
+                        fontSize: 12,
+                      ),
+                    ),
+                  ] else
                     Row(
                       children: [
-                        Text(
-                          'v${src.version} → v${src.versionLast}',
-                          style: TextStyle(
-                            color: c.accent,
-                            fontSize: 12,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                        const SizedBox(width: 6),
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 6,
-                            vertical: 1,
-                          ),
-                          decoration: BoxDecoration(
-                            color: c.accent,
-                            borderRadius: BorderRadius.circular(4),
-                          ),
+                        Flexible(
                           child: Text(
-                            'Update available',
+                            'v${src.version} · ${src.lang}',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
                             style: TextStyle(
-                              fontSize: 9,
-                              fontWeight: FontWeight.bold,
-                              color: c.bg,
+                              color: c.textSecondary,
+                              fontSize: 12,
                             ),
-                          ),
-                        ),
-                      ],
-                    )
-                  else
-                    Row(
-                      children: [
-                        Text(
-                          'v${src.version} · ${src.lang}',
-                          style: TextStyle(
-                            color: c.textSecondary,
-                            fontSize: 12,
                           ),
                         ),
                         const SizedBox(width: 6),
@@ -1753,6 +1815,7 @@ class _PkgExtensionIcon extends StatefulWidget {
 
 class _PkgExtensionIconState extends State<_PkgExtensionIcon> {
   String? _url;
+  bool _failed = false;
 
   @override
   void initState() {
@@ -1765,13 +1828,47 @@ class _PkgExtensionIconState extends State<_PkgExtensionIcon> {
     }
   }
 
+  @override
+  void didUpdateWidget(covariant _PkgExtensionIcon oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.iconUrl != widget.iconUrl || oldWidget.pkg != widget.pkg) {
+      _failed = false;
+      if (widget.iconUrl != null && widget.iconUrl!.isNotEmpty) {
+        _url = widget.iconUrl;
+      } else {
+        _url = ExtensionIconCache.iconUrlForPkg(widget.pkg);
+        _resolveFromCache();
+      }
+    }
+  }
+
   Future<void> _resolveFromCache() async {
     if (_url != null && _url!.isNotEmpty) return;
     final cached = await ExtensionIconCache.instance.cachedIconUrl(widget.pkg);
-    if (!mounted) return;
+    if (!mounted || _failed) return;
     if (cached != null && cached.isNotEmpty) {
       setState(() => _url = cached);
     }
+  }
+
+  void _markFailed() {
+    if (_failed || !mounted) return;
+    setState(() {
+      _failed = true;
+      _url = null;
+    });
+  }
+
+  Widget _placeholder(double size, KomaColors c) {
+    return SizedBox(
+      width: size,
+      height: size,
+      child: Icon(
+        Icons.extension_rounded,
+        color: c.accent,
+        size: size * 0.75,
+      ),
+    );
   }
 
   @override
@@ -1779,16 +1876,8 @@ class _PkgExtensionIconState extends State<_PkgExtensionIcon> {
     final url = _url;
     final size = widget.size;
     final c = widget.colors;
-    if (url == null || url.isEmpty) {
-      return SizedBox(
-        width: size,
-        height: size,
-        child: Icon(
-          Icons.extension_rounded,
-          color: c.accent,
-          size: size * 0.75,
-        ),
-      );
+    if (_failed || url == null || url.isEmpty) {
+      return _placeholder(size, c);
     }
     return Container(
       width: size,
@@ -1805,15 +1894,10 @@ class _PkgExtensionIconState extends State<_PkgExtensionIcon> {
           width: size,
           height: size,
           gaplessPlayback: true,
-          errorBuilder: (_, _, _) => SizedBox(
-            width: size,
-            height: size,
-            child: Icon(
-              Icons.extension_rounded,
-              color: c.accent,
-              size: size * 0.75,
-            ),
-          ),
+          errorBuilder: (_, _, _) {
+            WidgetsBinding.instance.addPostFrameCallback((_) => _markFailed());
+            return _placeholder(size, c);
+          },
         ),
       ),
     );

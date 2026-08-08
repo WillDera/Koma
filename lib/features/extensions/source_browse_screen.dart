@@ -117,10 +117,13 @@ class _SourceBrowseScreenState extends ConsumerState<SourceBrowseScreen>
           _searchActive = true;
           _searchQuery = initialQ;
         });
-        unawaited(_loadFilters());
-        unawaited(_performSearch(initialQ));
+        // Sequential: shared QuickJS must not run filters + search together.
+        await _loadFilters();
+        if (!mounted) return;
+        await _performSearch(initialQ);
       } else {
-        unawaited(_loadPage());
+        await _loadPage();
+        if (!mounted) return;
         unawaited(_loadFilters());
       }
     } catch (e) {
@@ -246,11 +249,9 @@ class _SourceBrowseScreenState extends ConsumerState<SourceBrowseScreen>
         _error = null;
       });
     } catch (e) {
+      // Filters are optional — don't replace catalogue errors with filter noise.
       if (mounted) {
-        setState(() {
-          _filtersLoaded = true;
-          _error = 'Failed to load filters: $e';
-        });
+        setState(() => _filtersLoaded = true);
       }
     }
   }

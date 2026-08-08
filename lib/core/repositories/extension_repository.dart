@@ -32,7 +32,13 @@ class ExtensionRepository {
   }
 
   Future<void> insertExtensionSource(ExtensionSource src) async {
-    await _isar.writeTxn(() => _isar.extensionSources.put(_srcFromModel(src)));
+    // Upsert on the unique sourceId index. Using put() with
+    // id = int.tryParse(logicalId) broke JS updates: non-numeric catalog ids
+    // (and wrongly-parsed numeric ones) failed to replace the existing row,
+    // so version/sourceCode never stuck after "Update".
+    await _isar.writeTxn(
+      () => _isar.extensionSources.putBySourceId(_srcFromModel(src)),
+    );
   }
 
   Future<void> deleteExtensionSource(String sourceId) async {
@@ -112,10 +118,9 @@ class ExtensionRepository {
 
   static i.ExtensionSource _srcFromModel(ExtensionSource s) =>
       i.ExtensionSource(
-        // Preserve the Isar row PK when updating (id != 0), else let
-        // Isar autoIncrement. sourceId is always set from the model's id.
-        sourceId: s.id,
-        id: int.tryParse(s.id),
+        // Logical id is sourceId (hex / mangayomi numeric string / pkg).
+        // Never treat it as the Isar autoIncrement PK — putBySourceId upserts.
+        sourceId: s.sourceId.isNotEmpty ? s.sourceId : s.id,
         name: s.name,
         version: s.version,
         versionLast: s.versionLast,

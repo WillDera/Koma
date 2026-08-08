@@ -248,16 +248,24 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> with RouteAware {
               childAspectRatio: 0.62,
             ),
             delegate: SliverChildBuilderDelegate(
-              (_, _) => Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: const [
-                  Skeleton(
-                    height: 200,
-                    borderRadius: BorderRadius.all(Radius.circular(14)),
-                  ),
-                  SizedBox(height: 8),
-                  Skeleton(height: 12, width: 100),
-                ],
+              (_, _) => LayoutBuilder(
+                builder: (context, constraints) {
+                  // Cover + 8 gap + 12 title skeleton must fit the cell height.
+                  final coverH = (constraints.maxHeight - 20).clamp(48.0, 200.0);
+                  return Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Skeleton(
+                        height: coverH,
+                        borderRadius: const BorderRadius.all(
+                          Radius.circular(14),
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      const Skeleton(height: 12, width: 100),
+                    ],
+                  );
+                },
               ),
               childCount: 6,
             ),
