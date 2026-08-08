@@ -14,10 +14,13 @@ void injectPrefsBridge(JavascriptRuntime runtime, {required String sourceId}) {
   runtime.onMessage('get', (dynamic args) {
     final list = args is List ? args : <dynamic>[];
     final key = list.isNotEmpty ? list[0].toString() : '';
-    // Mangayomi getPreferenceValue — return stored JSON or null.
-    // Sync SharedPreferences access via cached instance is async-only in
-    // flutter; return null for cold miss (extensions treat as unset).
-    return _PrefsCache.instance.get(prefix + key);
+    final stored = _PrefsCache.instance.get(prefix + key);
+    if (stored != null) return stored;
+    // MangaDex et al. pass `get(key, defaultValue)` even though mangayomi's
+    // bridge only forwards [key]; honour the default so `.length` never runs
+    // on undefined before getSourcePreferences defaults are seeded.
+    if (list.length > 1) return list[1];
+    return null;
   });
   runtime.onMessage('getString', (dynamic args) {
     final list = args is List ? args : <dynamic>[];
@@ -35,8 +38,13 @@ void injectPrefsBridge(JavascriptRuntime runtime, {required String sourceId}) {
 
   runtime.evaluate('''
 class SharedPreferences {
-    get(key) {
-        return sendMessage("get", JSON.stringify([key]));
+    get(key, defaultValue) {
+        var payload = arguments.length > 1 ? [key, defaultValue] : [key];
+        var v = sendMessage("get", JSON.stringify(payload));
+        if (v === null || v === undefined) {
+            return arguments.length > 1 ? defaultValue : null;
+        }
+        return v;
     }
     getString(key, defaultValue) {
         return sendMessage(
@@ -52,6 +60,60 @@ class SharedPreferences {
     }
 }
 ''');
+}
+
+/// Seed unset preference keys from `extention.getSourcePreferences()` defaults,
+/// matching mangayomi's [getSourcePreferenceEntry] first-access behaviour.
+void seedJsPreferenceDefaults(
+  JavascriptRuntime runtime, {
+  required String sourceId,
+}) {
+  try {
+    final res = runtime.evaluate(
+      'JSON.stringify(extention.getSourcePreferences())',
+    );
+    final raw = res.stringResult;
+    if (raw.isEmpty) return;
+    final decoded = jsonDecode(raw);
+    if (decoded is! List) return;
+    final prefix = 'js_src_pref:$sourceId:';
+    for (final item in decoded) {
+      if (item is! Map) continue;
+      final key = item['key']?.toString();
+      if (key == null || key.isEmpty) continue;
+      final fullKey = prefix + key;
+      if (_PrefsCache.instance.contains(fullKey)) continue;
+      final def = _defaultFromPreferenceMap(Map<String, dynamic>.from(item));
+      if (def == null) continue;
+      _PrefsCache.instance.putJson(fullKey, def);
+    }
+  } catch (_) {
+    // Extensions without getSourcePreferences — ignore.
+  }
+}
+
+dynamic _defaultFromPreferenceMap(Map<String, dynamic> item) {
+  final multi = item['multiSelectListPreference'];
+  if (multi is Map) {
+    return multi['values'] ?? <dynamic>[];
+  }
+  final list = item['listPreference'];
+  if (list is Map) {
+    final values = list['entryValues'];
+    final idx = (list['valueIndex'] as num?)?.toInt() ?? 0;
+    if (values is List && values.isNotEmpty) {
+      final i = idx.clamp(0, values.length - 1);
+      return values[i];
+    }
+    return '';
+  }
+  final edit = item['editTextPreference'];
+  if (edit is Map) return edit['value'];
+  final check = item['checkBoxPreference'];
+  if (check is Map) return check['value'];
+  final sw = item['switchPreferenceCompat'];
+  if (sw is Map) return sw['value'];
+  return null;
 }
 
 /// Eagerly-loaded in-memory prefs mirror so JS can call SharedPreferences
@@ -74,6 +136,8 @@ class _PrefsCache {
     _hydrated = true;
   }
 
+  bool contains(String key) => _strings.containsKey(key);
+
   dynamic get(String key) {
     final raw = _strings[key];
     if (raw == null) return null;
@@ -90,6 +154,12 @@ class _PrefsCache {
     _strings[key] = value;
     // Fire-and-forget persist.
     SharedPreferences.getInstance().then((p) => p.setString(key, value));
+  }
+
+  /// Persist a JSON-encodable default (list / bool / string) like mangayomi.
+  void putJson(String key, dynamic value) {
+    final encoded = jsonEncode(value);
+    setString(key, encoded);
   }
 }
 

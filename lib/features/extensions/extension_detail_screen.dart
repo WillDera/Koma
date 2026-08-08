@@ -47,13 +47,17 @@ class ExtensionDetailScreen extends StatelessWidget {
         child: Column(
           children: [
             const SizedBox(height: 20),
-            // Icon
+            // Icon — JS sources use stored iconUrl (no APK pkg); Mihon uses pkg cache.
             Container(
               decoration: BoxDecoration(
                 color: c.surfaceMuted,
                 borderRadius: BorderRadius.circular(10),
               ),
-              child: _buildLargeIcon(_extractPkgFromApkPath(source.apkPath), c),
+              child: _LargePkgExtensionIcon(
+                pkg: _extractPkgFromApkPath(source.apkPath),
+                colors: c,
+                iconUrl: source.iconUrl,
+              ),
             ),
             const SizedBox(height: 12),
             // Name
@@ -258,38 +262,46 @@ class ExtensionDetailScreen extends StatelessWidget {
     );
   }
 
-  Widget _buildLargeIcon(String pkg, KomaColors c) {
-    return _LargePkgExtensionIcon(pkg: pkg, colors: c);
-  }
 }
 
 /// Large (140×140) variant of the pkg-resolving icon widget for the detail
-/// screen. Resolves the icon URL via [ExtensionIconCache] (cache-first, with
-/// a deterministic CDN derivation fallback), so already-installed extensions
-/// with a stale `.../repo/icon/${pkg}.png` iconUrl self-heal. See Q5.
+/// screen. Prefers [iconUrl] (JS / index-provided), then [ExtensionIconCache]
+/// for Mihon APK pkg names.
 class _LargePkgExtensionIcon extends StatefulWidget {
   final String pkg;
   final KomaColors colors;
+  final String? iconUrl;
 
-  const _LargePkgExtensionIcon({required this.pkg, required this.colors});
+  const _LargePkgExtensionIcon({
+    required this.pkg,
+    required this.colors,
+    this.iconUrl,
+  });
 
   @override
   State<_LargePkgExtensionIcon> createState() => _LargePkgExtensionIconState();
 }
 
 class _LargePkgExtensionIconState extends State<_LargePkgExtensionIcon> {
-  String? _url = ExtensionIconCache.iconUrlForPkg('');
+  String? _url;
 
   @override
   void initState() {
     super.initState();
-    _url = ExtensionIconCache.iconUrlForPkg(widget.pkg);
+    if (widget.iconUrl != null && widget.iconUrl!.isNotEmpty) {
+      _url = widget.iconUrl;
+    } else if (widget.pkg.isNotEmpty) {
+      _url = ExtensionIconCache.iconUrlForPkg(widget.pkg);
+    }
     _resolveFromCache();
   }
 
   Future<void> _resolveFromCache() async {
+    if (widget.pkg.isEmpty) return;
     final cached = await ExtensionIconCache.instance.cachedIconUrl(widget.pkg);
     if (!mounted) return;
+    // Don't override a working JS/index iconUrl with a pkg-derived miss.
+    if (widget.iconUrl != null && widget.iconUrl!.isNotEmpty) return;
     if (cached != null && cached.isNotEmpty && cached != _url) {
       setState(() => _url = cached);
     }

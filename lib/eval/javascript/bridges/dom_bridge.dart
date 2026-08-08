@@ -4,8 +4,14 @@ import 'package:flutter_qjs/flutter_qjs.dart';
 import 'package:html/dom.dart' as html_dom;
 import 'package:html/parser.dart' as html_parser;
 
+import '../../utils/dom_extensions.dart';
+
 /// Mangayomi-style Document (`new Document(htmlString)`) + Element handles,
 /// while keeping `MDOMParser.parseFromString` for legacy helpers.
+///
+/// CSS `select` / `selectFirst` go through [DocumentExtension]/[ElementExtension]
+/// (pseudom + Cheerio pseudo-classes), matching mangayomi — not package:html
+/// `querySelector`, which throws on `:contains` etc.
 const domBridgeCode = r'''
 var __domCallbacks = {};
 var __domCallbackId = 0;
@@ -146,6 +152,9 @@ class Element {
     }
     get localName() {
         return this.getString("localName");
+    }
+    get namespaceUri() {
+        return this.getString("namespaceUri");
     }
     get getSrc() {
         return this.getString("getSrc");
@@ -317,31 +326,32 @@ Future<void> injectDomBridge(JavascriptRuntime engine) async {
     final element = state.get(key);
     if (element == null) return '';
     return switch (type) {
-      'text' => element.text,
-      'innerHtml' => element.innerHtml,
-      'outerHtml' => element.outerHtml,
-      'className' => element.className,
-      'localName' => element.localName ?? '',
-      'getSrc' => _extractAttr(element, ['src', 'data-src', 'data-lazy-src']),
-      'getImg' => _extractAttr(element, ['src', 'data-src', 'data-lazy-src']),
-      'getHref' => element.attributes['href'] ?? '',
-      'getDataSrc' => _extractAttr(element, ['data-src', 'data-lazy-src', 'src']),
-      _ => '',
-    };
+          'text' => element.text,
+          'innerHtml' => element.innerHtml,
+          'outerHtml' => element.outerHtml,
+          'className' => element.className,
+          'localName' => element.localName,
+          'namespaceUri' => element.namespaceUri,
+          'getSrc' => element.getSrc,
+          'getImg' => element.getImg,
+          'getHref' => element.getHref,
+          _ => element.getDataSrc,
+        } ??
+        '';
   });
 
   engine.onMessage('doc_select_first', (dynamic args) {
     final list = asList(args);
     final input = list[0] as String? ?? '';
     final selector = list[1] as String? ?? '';
-    return state.store(html_parser.parse(input).querySelector(selector));
+    return state.store(html_parser.parse(input).selectFirst(selector));
   });
 
   engine.onMessage('doc_select', (dynamic args) {
     final list = asList(args);
     final input = list[0] as String? ?? '';
     final selector = list[1] as String? ?? '';
-    final elements = html_parser.parse(input).querySelectorAll(selector);
+    final elements = html_parser.parse(input).select(selector) ?? [];
     return jsonEncode(elements.map(state.store).toList());
   });
 
@@ -349,39 +359,28 @@ Future<void> injectDomBridge(JavascriptRuntime engine) async {
     final list = asList(args);
     final input = list[0] as String? ?? '';
     final attr = list[1] as String? ?? '';
-    return html_parser.parse(input).documentElement?.attributes[attr] ?? '';
+    return html_parser.parse(input).attr(attr) ?? '';
   });
 
   engine.onMessage('doc_has_attr', (dynamic args) {
     final list = asList(args);
     final input = list[0] as String? ?? '';
     final attr = list[1] as String? ?? '';
-    return html_parser
-            .parse(input)
-            .documentElement
-            ?.attributes
-            .containsKey(attr) ??
-        false;
+    return html_parser.parse(input).hasAtr(attr);
   });
 
   engine.onMessage('doc_xpath_first', (dynamic args) {
     final list = asList(args);
     final input = list[0] as String? ?? '';
     final xpath = list[1] as String? ?? '';
-    return _xpathStrings(
-          html_parser.parse(input).documentElement,
-          xpath,
-        ).firstOrNull ??
-        '';
+    return html_parser.parse(input).xpathFirst(xpath) ?? '';
   });
 
   engine.onMessage('doc_xpath', (dynamic args) {
     final list = asList(args);
     final input = list[0] as String? ?? '';
     final xpath = list[1] as String? ?? '';
-    return jsonEncode(
-      _xpathStrings(html_parser.parse(input).documentElement, xpath),
-    );
+    return jsonEncode(html_parser.parse(input).xpath(xpath));
   });
 
   engine.onMessage('doc_get_elements_by', (dynamic args) {
@@ -409,14 +408,14 @@ Future<void> injectDomBridge(JavascriptRuntime engine) async {
     final list = asList(args);
     final selector = list[0] as String? ?? '';
     final key = list[1] as int? ?? 0;
-    return state.store(state.get(key)?.querySelector(selector));
+    return state.store(state.get(key)?.selectFirst(selector));
   });
 
   engine.onMessage('ele_select', (dynamic args) {
     final list = asList(args);
     final selector = list[0] as String? ?? '';
     final key = list[1] as int? ?? 0;
-    final found = state.get(key)?.querySelectorAll(selector) ?? [];
+    final found = state.get(key)?.select(selector) ?? [];
     return jsonEncode(found.map(state.store).toList());
   });
 
@@ -424,43 +423,40 @@ Future<void> injectDomBridge(JavascriptRuntime engine) async {
     final list = asList(args);
     final type = list[0] as String? ?? '';
     final key = list[1] as int? ?? 0;
-    final el = state.get(key);
-    if (el == null) return 0;
-    final siblings = el.parent?.children ?? [];
-    final idx = siblings.indexOf(el);
-    if (idx < 0) return 0;
-    final targetIdx =
-        type == 'previousElementSibling' ? idx - 1 : idx + 1;
-    if (targetIdx < 0 || targetIdx >= siblings.length) return 0;
-    return state.store(siblings[targetIdx]);
+    final ele = state.get(key);
+    final element = switch (type) {
+      'nextElementSibling' => ele?.nextElementSibling,
+      _ => ele?.previousElementSibling,
+    };
+    return state.store(element);
   });
 
   engine.onMessage('ele_attr', (dynamic args) {
     final list = asList(args);
     final attr = list[0] as String? ?? '';
     final key = list[1] as int? ?? 0;
-    return state.get(key)?.attributes[attr] ?? '';
+    return state.get(key)?.attr(attr) ?? '';
   });
 
   engine.onMessage('ele_has_attr', (dynamic args) {
     final list = asList(args);
     final attr = list[0] as String? ?? '';
     final key = list[1] as int? ?? 0;
-    return state.get(key)?.attributes.containsKey(attr) ?? false;
+    return state.get(key)?.hasAtr(attr) ?? false;
   });
 
   engine.onMessage('ele_xpathFirst', (dynamic args) {
     final list = asList(args);
     final xpath = list[0] as String? ?? '';
     final key = list[1] as int? ?? 0;
-    return _xpathStrings(state.get(key), xpath).firstOrNull ?? '';
+    return state.get(key)?.xpathFirst(xpath) ?? '';
   });
 
   engine.onMessage('ele_xpath', (dynamic args) {
     final list = asList(args);
     final xpath = list[0] as String? ?? '';
     final key = list[1] as int? ?? 0;
-    return jsonEncode(_xpathStrings(state.get(key), xpath));
+    return jsonEncode(state.get(key)?.xpath(xpath) ?? []);
   });
 
   engine.onMessage('ele_get_elements_by', (dynamic args) {
@@ -487,55 +483,4 @@ Future<void> injectDomBridge(JavascriptRuntime engine) async {
   });
 
   engine.evaluate(domBridgeCode);
-}
-
-String _extractAttr(html_dom.Element el, List<String> attrs) {
-  for (final a in attrs) {
-    final v = el.attributes[a];
-    if (v != null && v.isNotEmpty) return v;
-  }
-  return '';
-}
-
-List<String> _xpathStrings(html_dom.Element? root, String expr) {
-  if (root == null) return [];
-  try {
-    final results = <String>[];
-    final tagAttr = RegExp(
-      "^//(\\w+)(?:\\[@(\\w+)=['\"]([^'\"]*)['\"])?(?:/text\\(\\))?\$",
-    );
-    final attrOnly = RegExp(r'^//@(\w+)$');
-    final m = tagAttr.firstMatch(expr);
-    if (m != null) {
-      final tag = m.group(1)!;
-      final attrName = m.group(2);
-      final attrVal = m.group(3);
-      final getText = expr.endsWith('/text()');
-      final nodes = root.querySelectorAll(tag);
-      for (final n in nodes) {
-        if (attrName != null && n.attributes[attrName] != attrVal) continue;
-        results.add(getText ? n.text : n.outerHtml);
-      }
-      return results;
-    }
-    final am = attrOnly.firstMatch(expr);
-    if (am != null) {
-      final attrName = am.group(1)!;
-      _walkAttr(root, attrName, results);
-      return results;
-    }
-  } catch (_) {}
-  return [];
-}
-
-void _walkAttr(html_dom.Element el, String attr, List<String> out) {
-  final v = el.attributes[attr];
-  if (v != null) out.add(v);
-  for (final child in el.children) {
-    _walkAttr(child, attr, out);
-  }
-}
-
-extension _FirstOrNull<T> on List<T> {
-  T? get firstOrNull => isEmpty ? null : first;
 }
