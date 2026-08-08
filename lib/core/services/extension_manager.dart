@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:isolate';
 
+import 'package:collection/collection.dart';
 import 'package:http/http.dart' as http;
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
@@ -10,6 +11,7 @@ import 'package:path_provider/path_provider.dart';
 import '../models/extension_repo.dart';
 import '../models/extension_source.dart';
 import '../repositories/repositories.dart';
+import '../utils/language.dart';
 import 'apk_signature_service.dart';
 import 'extension_icon_cache.dart';
 import 'keiyoushi_service.dart';
@@ -682,9 +684,11 @@ class ExtensionManager {
         repoUrl: repoUrl,
         sourceCode: body,
         sourceCodeLanguage: SourceCodeLanguage.js,
+        isInstalled: true,
         isObsolete: false,
         isActive: true,
         isNsfw: entry.isNsfw,
+        updatedAt: DateTime.now(),
       ),
     );
   }
@@ -839,6 +843,7 @@ class ExtensionManager {
 
         final entries = indexByRepoUrl[repo.url] ??= await fetchIndex(repo);
         ExtensionIndexEntry? match;
+        final matches = <ExtensionIndexEntry>[];
         for (final e in entries) {
           if (src.isJs) {
             if (e.isJs &&
@@ -846,16 +851,26 @@ class ExtensionManager {
                     e.pkg == src.id ||
                     (src.sourceCodeUrl != null &&
                         e.sourceCodeUrl == src.sourceCodeUrl))) {
-              match = e;
-              break;
+              matches.add(e);
             }
             continue;
           }
           if (src.className.isNotEmpty && e.className == src.className) {
-            match = e;
-            break;
+            matches.add(e);
           }
         }
+        if (matches.isEmpty) continue;
+        final target = src.versionLast;
+        if (target != null && target.isNotEmpty) {
+          match = matches.where((e) => e.version == target).firstOrNull;
+        }
+        match ??= () {
+          matches.sort((a, b) => compareVersions(b.version, a.version));
+          for (final e in matches) {
+            if (compareVersions(src.version, e.version) < 0) return e;
+          }
+          return null;
+        }();
         if (match == null) continue;
         await updateSource(src, match, repo.url);
         updated++;
