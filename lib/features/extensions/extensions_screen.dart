@@ -418,18 +418,29 @@ class _ExtensionsScreenState extends ConsumerState<ExtensionsScreen>
     if (candidates.isEmpty) return null;
 
     final target = src.versionLast;
-    if (target != null && target.isNotEmpty) {
+    if (target != null &&
+        target.isNotEmpty &&
+        compareVersions(src.version, target) < 0) {
       final exact = candidates
           .where((c) => c.entry.version == target)
-          .firstOrNull;
-      if (exact != null) return exact;
+          .toList();
+      if (exact.isNotEmpty) {
+        // Prefer the source's own repo when multiple indexes share a pkg id.
+        final sameRepo = exact.where((c) => c.repo.url == src.repoUrl).toList();
+        return (sameRepo.isNotEmpty ? sameRepo : exact).first;
+      }
     }
 
     // Newest entry that is actually newer than the installed version.
-    candidates.sort(
-      (a, b) => compareVersions(b.entry.version, a.entry.version),
-    );
-    for (final c in candidates) {
+    // Prefer candidates from the extension's install repo.
+    final ordered = [...candidates]..sort((a, b) {
+      final byVer = compareVersions(b.entry.version, a.entry.version);
+      if (byVer != 0) return byVer;
+      final aSame = a.repo.url == src.repoUrl ? 0 : 1;
+      final bSame = b.repo.url == src.repoUrl ? 0 : 1;
+      return aSame.compareTo(bSame);
+    });
+    for (final c in ordered) {
       if (compareVersions(src.version, c.entry.version) < 0) return c;
     }
     return null;

@@ -1,5 +1,7 @@
 import 'package:isar_community/isar.dart';
 
+import '../../utils/language.dart';
+
 part 'extension_source.g.dart';
 
 /// One installed Keiyoushi/Mihon APK extension OR (future, PHASE 9) a
@@ -59,7 +61,11 @@ class ExtensionSource {
   DateTime? createdAt;
   DateTime? updatedAt;
 
-  bool get isUpdateAvailable => versionLast != null && versionLast != version;
+  bool get isUpdateAvailable {
+    final latest = versionLast;
+    if (latest == null || latest.isEmpty) return false;
+    return compareVersions(version, latest) < 0;
+  }
 
   ExtensionSource copyWith({
     Id? id,
