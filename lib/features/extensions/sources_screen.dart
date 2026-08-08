@@ -52,7 +52,7 @@ class _SourcesScreenState extends ConsumerState<SourcesScreen> {
     final sources = await repos.extensions.getInstalledExtensions();
     if (!mounted) return;
     setState(() {
-      _sources = sources;
+      _sources = sources.where((s) => s.isActive).toList();
       _loading = false;
     });
   }

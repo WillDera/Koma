@@ -5,12 +5,17 @@ class ExtensionRepo {
   final bool enabled;
   final DateTime createdAt;
 
+  /// Mihon store `signingKeyFingerprint` from `repo.json` (lowercase hex).
+  /// Empty/null → APKs from this repo require explicit user trust.
+  final String? signingKey;
+
   ExtensionRepo({
     int? id,
     required this.name,
     required this.url,
     this.enabled = true,
     DateTime? createdAt,
+    this.signingKey,
   }) : id = id ?? 0,
        createdAt = createdAt ?? DateTime.now();
 
@@ -20,6 +25,7 @@ class ExtensionRepo {
     String? url,
     bool? enabled,
     DateTime? createdAt,
+    String? Function()? signingKey,
   }) {
     return ExtensionRepo(
       id: id ?? this.id,
@@ -27,6 +33,7 @@ class ExtensionRepo {
       url: url ?? this.url,
       enabled: enabled ?? this.enabled,
       createdAt: createdAt ?? this.createdAt,
+      signingKey: signingKey != null ? signingKey() : this.signingKey,
     );
   }
 
@@ -36,6 +43,7 @@ class ExtensionRepo {
     'url': url,
     'enabled': enabled ? 1 : 0,
     'created_at': createdAt.toIso8601String(),
+    'signing_key': signingKey,
   };
 
   factory ExtensionRepo.fromJson(Map<String, dynamic> json) => ExtensionRepo(
@@ -46,5 +54,6 @@ class ExtensionRepo {
     createdAt: json['created_at'] != null
         ? DateTime.parse(json['created_at'] as String)
         : DateTime.now(),
+    signingKey: json['signing_key'] as String?,
   );
 }

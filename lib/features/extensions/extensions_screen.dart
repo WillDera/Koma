@@ -88,6 +88,10 @@ class _ExtensionsScreenState extends ConsumerState<ExtensionsScreen>
 
   Future<void> _refresh() async {
     try {
+      // Reconcile before listing so Untrusted rows show correctly.
+      try {
+        await _mgr.reconcileTrust();
+      } catch (_) {}
       final repos = await _mgr.listRepos();
       final installed = await _mgr.listInstalled();
       if (!mounted) return;
@@ -106,6 +110,38 @@ class _ExtensionsScreenState extends ConsumerState<ExtensionsScreen>
       if (!mounted) return;
       setState(() => _error = '$e');
     }
+  }
+
+  /// Mihon Untrusted dialog — Trust continues install/update; Uninstall discards.
+  Future<bool> _confirmTrust(UntrustedExtensionException e) async {
+    final c = context.colors;
+    final action = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: c.surface,
+        title: Text(
+          'Untrusted extension',
+          style: TextStyle(color: c.textPrimary),
+        ),
+        content: Text(
+          '${e.info.packageName} is not signed by a known repository. '
+          'Installing it may put your device and data at risk.',
+          style: TextStyle(color: c.textSecondary),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: Text('Uninstall', style: TextStyle(color: c.textSecondary)),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: Text('Trust', style: TextStyle(color: c.accent)),
+          ),
+        ],
+      ),
+    );
+    return action == true;
   }
 
   Future<void> _ensureRepoSeeded() async {
@@ -224,8 +260,42 @@ class _ExtensionsScreenState extends ConsumerState<ExtensionsScreen>
             const [];
       });
       await _fetchIndex(repo);
+    } on UntrustedExtensionException catch (e) {
+      if (!mounted) return;
+      final trust = await _confirmTrust(e);
+      if (!mounted) return;
+      if (trust) {
+        try {
+          final src = await _mgr.trustAndInstall(
+            e.info,
+            entry,
+            repoUrl: repo.url,
+          );
+          messenger.showSnackBar(SnackBar(content: Text('Loaded ${src.name}')));
+          await _refresh();
+          await _fetchIndex(repo);
+        } catch (err) {
+          messenger.showSnackBar(SnackBar(content: Text('Load failed: $err')));
+        }
+      } else {
+        await _mgr.discardUntrustedApk(entry);
+        messenger.showSnackBar(
+          SnackBar(content: Text('Discarded ${entry.name}')),
+        );
+      }
     } catch (e) {
       messenger.showSnackBar(SnackBar(content: Text('Load failed: $e')));
+    }
+  }
+
+  Future<void> _trustExisting(ExtensionSource src) async {
+    final messenger = ScaffoldMessenger.of(context);
+    try {
+      await _mgr.trustExistingPackage(src);
+      messenger.showSnackBar(SnackBar(content: Text('Trusted ${src.name}')));
+      await _refresh();
+    } catch (e) {
+      messenger.showSnackBar(SnackBar(content: Text('Trust failed: $e')));
     }
   }
 
@@ -300,13 +370,43 @@ class _ExtensionsScreenState extends ConsumerState<ExtensionsScreen>
         ),
       );
       await _refresh();
+    } on UntrustedExtensionException catch (e) {
+      if (!mounted) return;
+      final trust = await _confirmTrust(e);
+      if (!mounted) return;
+      if (trust) {
+        try {
+          await _mgr.trustAndUpdate(e.info, src, resolved.entry);
+          messenger.showSnackBar(
+            SnackBar(
+              content: Text(
+                'Updated ${src.name} to v${resolved.entry.version}',
+              ),
+            ),
+          );
+          await _refresh();
+        } catch (err) {
+          messenger.showSnackBar(
+            SnackBar(content: Text('Update failed: $err')),
+          );
+        }
+      } else {
+        await _mgr.discardUntrustedApk(resolved.entry);
+        await _mgr.uninstall(src);
+        messenger.showSnackBar(
+          SnackBar(content: Text('Discarded ${src.name}')),
+        );
+        await _refresh();
+      }
     } catch (e) {
       messenger.showSnackBar(SnackBar(content: Text('Update failed: $e')));
     }
   }
 
   Future<void> _updateAll() async {
-    final updatable = _installed.where((s) => s.isUpdateAvailable).toList();
+    final updatable = _installed
+        .where((s) => s.isActive && s.isUpdateAvailable)
+        .toList();
     for (final src in updatable) {
       if (!mounted) return;
       await _update(src);
@@ -363,6 +463,7 @@ class _ExtensionsScreenState extends ConsumerState<ExtensionsScreen>
                   onUninstall: _uninstall,
                   onUpdate: _update,
                   onUpdateAll: _updateAll,
+                  onTrust: _trustExisting,
                   onBrowse: (src) => Navigator.push(
                     context,
                     MaterialPageRoute(
@@ -405,6 +506,7 @@ class _InstalledTab extends StatelessWidget {
   final void Function(ExtensionSource) onUninstall;
   final void Function(ExtensionSource) onUpdate;
   final VoidCallback onUpdateAll;
+  final void Function(ExtensionSource) onTrust;
   final void Function(ExtensionSource) onBrowse;
 
   const _InstalledTab({
@@ -412,6 +514,7 @@ class _InstalledTab extends StatelessWidget {
     required this.onUninstall,
     required this.onUpdate,
     required this.onUpdateAll,
+    required this.onTrust,
     required this.onBrowse,
   });
 
@@ -426,137 +529,285 @@ class _InstalledTab extends StatelessWidget {
       );
     }
 
-    final updates = installed.where((s) => s.isUpdateAvailable).toList();
+    // One tile per APK — active first, then Untrusted section.
+    final byApk = <String, ExtensionSource>{};
+    for (final s in installed) {
+      final key = s.apkPath.isNotEmpty ? s.apkPath : s.sourceId;
+      byApk.putIfAbsent(key, () => s);
+    }
+    final unique = byApk.values.toList();
+    final untrusted = unique
+        .where((s) => s.isUntrusted || (!s.isActive && s.apkPath.isNotEmpty))
+        .toList();
+    final active = unique
+        .where((s) => s.isActive)
+        .toList();
+    final updates = active.where((s) => s.isUpdateAvailable).toList();
+
+    final children = <Widget>[];
+    if (updates.isNotEmpty) {
+      children.add(
+        _UpdateAllBanner(count: updates.length, onUpdateAll: onUpdateAll),
+      );
+    }
+    if (untrusted.isNotEmpty) {
+      children.add(
+        Padding(
+          padding: const EdgeInsets.only(top: 4, bottom: 4),
+          child: Text(
+            'Untrusted',
+            style: TextStyle(
+              color: c.accent,
+              fontSize: 13,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ),
+      );
+      for (final src in untrusted) {
+        children.add(
+          _UntrustedTile(
+            src: src,
+            onTrust: () => onTrust(src),
+            onUninstall: () => onUninstall(src),
+          ),
+        );
+      }
+    }
+    if (active.isNotEmpty && untrusted.isNotEmpty) {
+      children.add(
+        Padding(
+          padding: const EdgeInsets.only(top: 12, bottom: 4),
+          child: Text(
+            'Loaded',
+            style: TextStyle(
+              color: c.textSecondary,
+              fontSize: 13,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ),
+      );
+    }
+    for (final src in active) {
+      children.add(
+        _ActiveInstalledTile(
+          src: src,
+          onBrowse: () => onBrowse(src),
+          onUpdate: () => onUpdate(src),
+          onUninstall: () => onUninstall(src),
+        ),
+      );
+    }
 
     return ListView.separated(
       padding: const EdgeInsets.all(16),
-      itemCount: installed.length + (updates.isNotEmpty ? 1 : 0),
+      itemCount: children.length,
       separatorBuilder: (_, _) => const SizedBox(height: 8),
-      itemBuilder: (_, i) {
-        if (updates.isNotEmpty && i == 0) {
-          return _UpdateAllBanner(
-            count: updates.length,
-            onUpdateAll: onUpdateAll,
-          );
-        }
-        final src = installed[i - (updates.isNotEmpty ? 1 : 0)];
-        final hasUpdate = src.isUpdateAvailable;
-        return AnimatedPress(
-          onTap: () => onBrowse(src),
-          child: Container(
-            padding: const EdgeInsets.all(14),
-            decoration: BoxDecoration(
-              color: hasUpdate
-                  ? c.accentMuted.withValues(alpha: 0.35)
-                  : c.surface,
-              borderRadius: AppSpacing.brMd,
-              border: Border.all(
-                color: hasUpdate ? c.accent.withValues(alpha: 0.6) : c.border,
-              ),
-            ),
-            child: Row(
+      itemBuilder: (_, i) => children[i],
+    );
+  }
+}
+
+class _UntrustedTile extends StatelessWidget {
+  final ExtensionSource src;
+  final VoidCallback onTrust;
+  final VoidCallback onUninstall;
+
+  const _UntrustedTile({
+    required this.src,
+    required this.onTrust,
+    required this.onUninstall,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.colors;
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: c.accentMuted.withValues(alpha: 0.25),
+        borderRadius: AppSpacing.brMd,
+        border: Border.all(color: c.accent.withValues(alpha: 0.5)),
+      ),
+      child: Row(
+        children: [
+          _buildIcon(_extractPkgFromApkPath(src.apkPath), c),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                _buildIcon(_extractPkgFromApkPath(src.apkPath), c),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        src.name,
-                        style: TextStyle(
-                          color: c.textPrimary,
-                          fontSize: 15,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                      const SizedBox(height: 2),
-                      if (hasUpdate && src.versionLast != null)
-                        Row(
-                          children: [
-                            Text(
-                              'v${src.version} → v${src.versionLast}',
-                              style: TextStyle(
-                                color: c.accent,
-                                fontSize: 12,
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                            const SizedBox(width: 6),
-                            Container(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 6,
-                                vertical: 1,
-                              ),
-                              decoration: BoxDecoration(
-                                color: c.accent,
-                                borderRadius: BorderRadius.circular(4),
-                              ),
-                              child: Text(
-                                'Update available',
-                                style: TextStyle(
-                                  fontSize: 9,
-                                  fontWeight: FontWeight.bold,
-                                  color: c.bg,
-                                ),
-                              ),
-                            ),
-                          ],
-                        )
-                      else
-                        Text(
-                          'v${src.version} · ${src.lang}',
-                          style: TextStyle(
-                            color: c.textSecondary,
-                            fontSize: 12,
-                          ),
-                        ),
-                    ],
+                Text(
+                  src.name,
+                  style: TextStyle(
+                    color: c.textPrimary,
+                    fontSize: 15,
+                    fontWeight: FontWeight.w600,
                   ),
                 ),
-                if (hasUpdate) ...[
-                  TextButton(
-                    onPressed: () => onUpdate(src),
-                    style: TextButton.styleFrom(
-                      backgroundColor: c.accent.withValues(alpha: 0.12),
-                      padding: const EdgeInsets.symmetric(horizontal: 10),
-                      minimumSize: const Size(0, 32),
-                    ),
-                    child: Text(
-                      'Update',
-                      style: TextStyle(color: c.accent, fontSize: 12),
-                    ),
-                  ),
-                  const SizedBox(width: 4),
-                ],
-                IconButton(
-                  icon: Icon(
-                    Icons.info_outline,
-                    color: c.textSecondary,
-                    size: 20,
-                  ),
-                  onPressed: () => Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (_) => ExtensionDetailScreen(
-                        source: src,
-                        onUninstall: () => onUninstall(src),
-                      ),
-                    ),
-                  ),
-                  tooltip: 'Info',
-                ),
-                const SizedBox(width: 4),
-                IconButton(
-                  icon: Icon(Icons.delete_outline, color: c.textSecondary),
-                  onPressed: () => onUninstall(src),
-                  tooltip: 'Unload',
+                const SizedBox(height: 2),
+                Text(
+                  'Untrusted · v${src.version}',
+                  style: TextStyle(color: c.accent, fontSize: 12),
                 ),
               ],
             ),
           ),
-        );
-      },
+          TextButton(
+            onPressed: onTrust,
+            style: TextButton.styleFrom(
+              backgroundColor: c.accent.withValues(alpha: 0.12),
+              padding: const EdgeInsets.symmetric(horizontal: 10),
+              minimumSize: const Size(0, 32),
+            ),
+            child: Text(
+              'Trust',
+              style: TextStyle(color: c.accent, fontSize: 12),
+            ),
+          ),
+          IconButton(
+            icon: Icon(Icons.delete_outline, color: c.textSecondary),
+            onPressed: onUninstall,
+            tooltip: 'Uninstall',
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ActiveInstalledTile extends StatelessWidget {
+  final ExtensionSource src;
+  final VoidCallback onBrowse;
+  final VoidCallback onUpdate;
+  final VoidCallback onUninstall;
+
+  const _ActiveInstalledTile({
+    required this.src,
+    required this.onBrowse,
+    required this.onUpdate,
+    required this.onUninstall,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.colors;
+    final hasUpdate = src.isUpdateAvailable;
+    return AnimatedPress(
+      onTap: onBrowse,
+      child: Container(
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: hasUpdate
+              ? c.accentMuted.withValues(alpha: 0.35)
+              : c.surface,
+          borderRadius: AppSpacing.brMd,
+          border: Border.all(
+            color: hasUpdate ? c.accent.withValues(alpha: 0.6) : c.border,
+          ),
+        ),
+        child: Row(
+          children: [
+            _buildIcon(_extractPkgFromApkPath(src.apkPath), c),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    src.name,
+                    style: TextStyle(
+                      color: c.textPrimary,
+                      fontSize: 15,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  if (hasUpdate && src.versionLast != null)
+                    Row(
+                      children: [
+                        Text(
+                          'v${src.version} → v${src.versionLast}',
+                          style: TextStyle(
+                            color: c.accent,
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                        const SizedBox(width: 6),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 6,
+                            vertical: 1,
+                          ),
+                          decoration: BoxDecoration(
+                            color: c.accent,
+                            borderRadius: BorderRadius.circular(4),
+                          ),
+                          child: Text(
+                            'Update available',
+                            style: TextStyle(
+                              fontSize: 9,
+                              fontWeight: FontWeight.bold,
+                              color: c.bg,
+                            ),
+                          ),
+                        ),
+                      ],
+                    )
+                  else
+                    Text(
+                      'v${src.version} · ${src.lang}',
+                      style: TextStyle(
+                        color: c.textSecondary,
+                        fontSize: 12,
+                      ),
+                    ),
+                ],
+              ),
+            ),
+            if (hasUpdate) ...[
+              TextButton(
+                onPressed: onUpdate,
+                style: TextButton.styleFrom(
+                  backgroundColor: c.accent.withValues(alpha: 0.12),
+                  padding: const EdgeInsets.symmetric(horizontal: 10),
+                  minimumSize: const Size(0, 32),
+                ),
+                child: Text(
+                  'Update',
+                  style: TextStyle(color: c.accent, fontSize: 12),
+                ),
+              ),
+              const SizedBox(width: 4),
+            ],
+            IconButton(
+              icon: Icon(
+                Icons.info_outline,
+                color: c.textSecondary,
+                size: 20,
+              ),
+              onPressed: () => Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => ExtensionDetailScreen(
+                    source: src,
+                    onUninstall: onUninstall,
+                  ),
+                ),
+              ),
+              tooltip: 'Info',
+            ),
+            const SizedBox(width: 4),
+            IconButton(
+              icon: Icon(Icons.delete_outline, color: c.textSecondary),
+              onPressed: onUninstall,
+              tooltip: 'Unload',
+            ),
+          ],
+        ),
+      ),
     );
   }
 }

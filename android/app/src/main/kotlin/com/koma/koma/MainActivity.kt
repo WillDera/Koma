@@ -2,6 +2,8 @@ package com.koma.koma
 
 import android.content.ContentValues
 import android.content.Intent
+import android.content.pm.PackageInfo
+import android.content.pm.PackageManager
 import android.graphics.Typeface
 import android.media.MediaScannerConnection
 import android.net.Uri
@@ -10,6 +12,7 @@ import android.os.Environment
 import android.provider.MediaStore
 import android.util.Log
 import androidx.core.content.FileProvider
+import androidx.core.content.pm.PackageInfoCompat
 import eu.kanade.tachiyomi.extension.DalvikRuntimeManager
 import eu.kanade.tachiyomi.extension.DalvikServer
 import io.flutter.embedding.android.FlutterActivity
@@ -17,6 +20,7 @@ import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
 import java.io.File
 import java.io.FileOutputStream
+import java.security.MessageDigest
 
 class MainActivity : FlutterActivity() {
 
@@ -51,10 +55,24 @@ class MainActivity : FlutterActivity() {
             flutterEngine.dartExecutor.binaryMessenger,
             "com.koma.koma/system",
         ).setMethodCallHandler { call, result ->
-            if (call.method == "getSystemTypeface") {
-                result.success(resolveSystemTypeface())
-            } else {
-                result.notImplemented()
+            when (call.method) {
+                "getSystemTypeface" -> result.success(resolveSystemTypeface())
+                "getApkSigningInfo" -> {
+                    Thread {
+                        try {
+                            val apkPath = call.argument<String>("apkPath")
+                                ?: throw IllegalArgumentException("missing apkPath")
+                            val info = inspectApkSigning(apkPath)
+                            runOnUiThread { result.success(info) }
+                        } catch (e: Throwable) {
+                            Log.e("ApkSign", "getApkSigningInfo failed", e)
+                            runOnUiThread {
+                                result.error("APK_SIGN", e.message, null)
+                            }
+                        }
+                    }.start()
+                }
+                else -> result.notImplemented()
             }
         }
         MethodChannel(
@@ -304,6 +322,62 @@ class MainActivity : FlutterActivity() {
             .trim()
             .trimStart('.')
         return cleaned.ifEmpty { "koma_image.jpg" }.take(200)
+    }
+
+    /**
+     * Mihon [ExtensionLoader.getSignatures] parity for private APK archives.
+     * Returns packageName, versionName, versionCode, and SHA-256 signature digests.
+     */
+    private fun inspectApkSigning(apkPath: String): Map<String, Any?> {
+        val file = File(apkPath)
+        if (!file.exists()) throw IllegalArgumentException("apk not found: $apkPath")
+
+        val flags = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            PackageManager.GET_SIGNING_CERTIFICATES
+        } else {
+            @Suppress("DEPRECATION")
+            PackageManager.GET_SIGNATURES
+        }
+        val pkgInfo: PackageInfo = packageManager.getPackageArchiveInfo(apkPath, flags)
+            ?: throw IllegalStateException("failed to parse APK: $apkPath")
+
+        val signatures = mutableListOf<String>()
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            val signingInfo = pkgInfo.signingInfo
+            val certs = when {
+                signingInfo == null -> emptyArray()
+                signingInfo.hasMultipleSigners() -> signingInfo.apkContentsSigners
+                else -> signingInfo.signingCertificateHistory
+            }
+            for (sig in certs) {
+                signatures += sha256Hex(sig.toByteArray())
+            }
+        } else {
+            @Suppress("DEPRECATION")
+            for (sig in pkgInfo.signatures.orEmpty()) {
+                signatures += sha256Hex(sig.toByteArray())
+            }
+        }
+
+        return mapOf(
+            "packageName" to (pkgInfo.packageName ?: ""),
+            "versionName" to (pkgInfo.versionName ?: ""),
+            "versionCode" to PackageInfoCompat.getLongVersionCode(pkgInfo),
+            "signatures" to signatures,
+        )
+    }
+
+    private fun sha256Hex(bytes: ByteArray): String {
+        val digest = MessageDigest.getInstance("SHA-256").digest(bytes)
+        val chars = CharArray(digest.size * 2)
+        val hex = "0123456789abcdef"
+        var j = 0
+        for (b in digest) {
+            val v = b.toInt() and 0xff
+            chars[j++] = hex[v ushr 4]
+            chars[j++] = hex[v and 0x0f]
+        }
+        return String(chars)
     }
 
     private fun resolveSystemTypeface(): String {

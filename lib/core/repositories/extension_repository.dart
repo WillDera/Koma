@@ -96,6 +96,9 @@ class ExtensionRepository {
     baseUrl: s.baseUrl,
     sourceCodeUrl: s.sourceCodeUrl,
     repoUrl: s.repoUrl,
+    pkgName: s.pkgName,
+    versionCode: s.versionCode,
+    signatureHash: s.signatureHash,
     isInstalled: s.isInstalled,
     isActive: s.isActive,
     isNsfw: s.isNsfw,
@@ -121,6 +124,9 @@ class ExtensionRepository {
         baseUrl: s.baseUrl,
         sourceCodeUrl: s.sourceCodeUrl,
         repoUrl: s.repoUrl,
+        pkgName: s.pkgName,
+        versionCode: s.versionCode,
+        signatureHash: s.signatureHash,
         isInstalled: s.isInstalled,
         isActive: s.isActive,
         isNsfw: s.isNsfw,
@@ -137,6 +143,7 @@ class ExtensionRepository {
     url: r.url,
     enabled: r.enabled,
     createdAt: r.createdAt,
+    signingKey: r.signingKey,
   );
 
   static i.ExtensionRepo _repoFromModel(ExtensionRepo r) => i.ExtensionRepo(
@@ -145,5 +152,6 @@ class ExtensionRepository {
     url: r.url,
     enabled: r.enabled,
     createdAt: r.createdAt,
+    signingKey: r.signingKey,
   );
 }
