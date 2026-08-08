@@ -1,3 +1,5 @@
+import '../utils/language.dart';
+
 /// `sourceCodeLanguage` values.
 ///
 /// Installed sources persist [mihon] or [js]. Catalog index entries may also
@@ -44,10 +46,13 @@ class ExtensionSource {
   final DateTime createdAt;
   final DateTime updatedAt;
 
-  /// True when a newer version is available in the repo index. `versionLast`
-  /// is written by [checkForUpdates] on app start / index fetch.
-  bool get isUpdateAvailable =>
-      versionLast != null && versionLast!.isNotEmpty && versionLast != version;
+  /// True when a newer version is available in the source's repo index.
+  /// `versionLast` is written by [checkForUpdates] on app start / index fetch.
+  bool get isUpdateAvailable {
+    final latest = versionLast;
+    if (latest == null || latest.isEmpty) return false;
+    return compareVersions(version, latest) < 0;
+  }
 
   /// Mihon Untrusted: inactive install awaiting trust, with signing metadata.
   bool get isUntrusted =>

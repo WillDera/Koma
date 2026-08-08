@@ -760,55 +760,65 @@ class ExtensionManager {
     if (freshEntries.isEmpty) return;
 
     final installed = await listInstalled();
+    // Only compare against sources installed from this repo — JS catalogs often
+    // share pkg ids across forks (e.g. MangaFire 0.2.20 on entityJY vs 0.1.25
+    // on kodjodevf). Cross-repo matches must not downgrade versionLast.
+    final scoped = installed
+        .where((s) => s.repoUrl == null || s.repoUrl!.isEmpty || s.repoUrl == repoUrl)
+        .toList();
+    if (scoped.isEmpty) return;
+
+    // Per installed source: highest version in this index that matches it.
+    final bestBySourceId = <String, String>{};
+
+    void consider(ExtensionSource match, String entryVersion) {
+      if (match.sourceId.isEmpty) return;
+      final current = bestBySourceId[match.sourceId];
+      if (current == null || compareVersions(current, entryVersion) < 0) {
+        bestBySourceId[match.sourceId] = entryVersion;
+      }
+    }
 
     for (final entry in freshEntries) {
       if (entry.isJs) {
-        final match = installed.firstWhere(
-          (isrc) =>
-              isrc.isJs &&
-              (isrc.sourceId == entry.pkg ||
-                  isrc.id == entry.pkg ||
-                  (isrc.sourceCodeUrl != null &&
-                      isrc.sourceCodeUrl == entry.sourceCodeUrl)),
-          orElse: () => ExtensionSource(
-            id: '',
-            sourceId: '',
-            name: '',
-            version: '',
-            lang: '',
-            apkPath: '',
-            className: '',
-          ),
-        );
-        if (match.id.isEmpty) continue;
-        if (match.version == entry.version) continue;
-        await _repos.extensions.insertExtensionSource(
-          match.copyWith(versionLast: entry.version),
-        );
+        for (final isrc in scoped) {
+          if (!isrc.isJs) continue;
+          final hit = isrc.sourceId == entry.pkg ||
+              isrc.id == entry.pkg ||
+              (isrc.sourceCodeUrl != null &&
+                  isrc.sourceCodeUrl!.isNotEmpty &&
+                  isrc.sourceCodeUrl == entry.sourceCodeUrl);
+          if (hit) consider(isrc, entry.version);
+        }
         continue;
       }
 
       for (final s in entry.sources) {
         final className = s['className'] as String? ?? '';
         if (className.isEmpty) continue;
+        for (final isrc in scoped) {
+          if (isrc.className == className) consider(isrc, entry.version);
+        }
+      }
+    }
 
-        final match = installed.firstWhere(
-          (isrc) => isrc.className == className,
-          orElse: () => ExtensionSource(
-            id: '',
-            sourceId: '',
-            name: '',
-            version: '',
-            lang: '',
-            apkPath: '',
-            className: '',
-          ),
-        );
-        if (match.id.isEmpty) continue;
-        if (match.version == entry.version) continue;
+    for (final src in scoped) {
+      final best = bestBySourceId[src.sourceId];
+      if (best == null) continue;
 
+      if (compareVersions(src.version, best) < 0) {
+        // Index has a strictly newer version.
+        if (src.versionLast == best) continue;
         await _repos.extensions.insertExtensionSource(
-          match.copyWith(versionLast: entry.version),
+          src.copyWith(versionLast: best),
+        );
+      } else if (src.versionLast != null &&
+          src.versionLast!.isNotEmpty &&
+          src.versionLast != src.version &&
+          compareVersions(src.version, src.versionLast!) >= 0) {
+        // Clear stale badges (e.g. older fork version previously written).
+        await _repos.extensions.insertExtensionSource(
+          src.copyWith(versionLast: src.version),
         );
       }
     }
@@ -842,7 +852,6 @@ class ExtensionManager {
         if (repo == null) continue;
 
         final entries = indexByRepoUrl[repo.url] ??= await fetchIndex(repo);
-        ExtensionIndexEntry? match;
         final matches = <ExtensionIndexEntry>[];
         for (final e in entries) {
           if (src.isJs) {
@@ -860,8 +869,18 @@ class ExtensionManager {
           }
         }
         if (matches.isEmpty) continue;
+        // [entries] are already from [repo]; skip if this isn't the install repo
+        // when the source has one (avoid installing an older fork).
+        if (src.repoUrl != null &&
+            src.repoUrl!.isNotEmpty &&
+            repo.url != src.repoUrl) {
+          continue;
+        }
         final target = src.versionLast;
-        if (target != null && target.isNotEmpty) {
+        ExtensionIndexEntry? match;
+        if (target != null &&
+            target.isNotEmpty &&
+            compareVersions(src.version, target) < 0) {
           match = matches.where((e) => e.version == target).firstOrNull;
         }
         match ??= () {
