@@ -725,6 +725,7 @@ class ExtensionManager {
       className: entry.className,
     );
     final newSourceId = (desc['sourceId'] as String?) ?? '';
+    final nativeId = (desc['id'] as String?) ?? '';
     final nativeBaseUrl = (desc['baseUrl'] as String?) ?? '';
 
     // The new APK can report a different sourceId (keiyoushi rotates IDs on
@@ -736,7 +737,7 @@ class ExtensionManager {
     }
     await _repos.extensions.insertExtensionSource(
       src.copyWith(
-        id: newSourceId,
+        id: nativeId.isNotEmpty ? nativeId : newSourceId,
         sourceId: newSourceId,
         apkPath: newApkPath,
         version: entry.version,
@@ -1065,7 +1066,7 @@ class ExtensionManager {
       // JS sources have no APK — skip Dalvik loadExtension.
       if (src.isJs || src.apkPath.isEmpty) continue;
       if (!File(src.apkPath).existsSync()) {
-        await _repos.extensions.deleteExtensionSource(src.id);
+        await _repos.extensions.deleteExtensionSource(src.sourceId);
         continue;
       }
       try {
@@ -1078,7 +1079,7 @@ class ExtensionManager {
         if (nativeId.isEmpty) continue;
 
         if (src.id != nativeId || src.sourceId != newSourceId) {
-          await _repos.extensions.deleteExtensionSource(src.id);
+          await _repos.extensions.deleteExtensionSource(src.sourceId);
           await _repos.extensions.insertExtensionSource(
             src.copyWith(id: nativeId, sourceId: newSourceId),
           );

@@ -145,7 +145,10 @@ class LibraryNotifier extends Notifier<LibraryState> {
       final extNames = <String, String>{};
       final extensions = await repos.extensions.getInstalledExtensions();
       for (final ext in extensions) {
-        extNames[ext.id] = ext.name;
+        if (ext.name.isEmpty) continue;
+        // Manga.sourceId may be the bridge hex id OR Mihon Source.id.
+        if (ext.sourceId.isNotEmpty) extNames[ext.sourceId] = ext.name;
+        if (ext.id.isNotEmpty) extNames[ext.id] = ext.name;
       }
       state = state.copyWith(
         books: books,
