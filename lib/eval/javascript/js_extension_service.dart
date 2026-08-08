@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import '../extension_service.dart';
@@ -17,28 +18,49 @@ class JsExtensionService implements ExtensionService {
   final JsRuntime _runtime;
   String? _boundSourceKey;
 
+  /// Serialize calls — shared QuickJS engine is not re-entrant across
+  /// concurrent getPopular / getFilterList / etc.
+  Future<void> _chain = Future.value();
+
   JsExtensionService({JsRuntime? runtime}) : _runtime = runtime ?? JsRuntime();
 
   @override
   String get type => 'js';
 
+  Future<T> _serialized<T>(Future<T> Function() run) {
+    final done = Completer<T>();
+    _chain = _chain.then((_) async {
+      try {
+        done.complete(await run());
+      } catch (e, st) {
+        done.completeError(e, st);
+      }
+    });
+    return done.future;
+  }
+
   Future<void> _init(MSource source) async {
     await _runtime.init();
-    final key =
-        '${source.id}|${source.sourceId}|${source.sourceCode?.hashCode ?? 0}';
+    final code = source.sourceCode ?? '';
+    if (code.trim().isEmpty) {
+      throw StateError(
+        'JS extension ${source.name} has empty sourceCode — reinstall it',
+      );
+    }
+    final key = '${source.id}|${source.sourceId}|${code.hashCode}';
     if (_boundSourceKey == key) return;
 
     final sourceJson = jsonEncode(_sourceToJsJson(source));
     _runtime.evaluate(buildMProviderStub(sourceJson));
     _runtime.evaluate('''
-${source.sourceCode ?? ''}
+$code
 var extention = new DefaultExtension();
 ''');
     _boundSourceKey = key;
   }
 
   Map<String, dynamic> _sourceToJsJson(MSource source) => {
-    'id': source.id,
+    'id': int.tryParse(source.id) ?? source.id,
     'name': source.name,
     'lang': source.lang,
     'baseUrl': source.baseUrl,
@@ -52,12 +74,30 @@ var extention = new DefaultExtension();
     'notes': '',
   };
 
-  Future<T> _extensionCallAsync<T>(MSource source, String call) async {
-    await _init(source);
-    final promised = await _runtime.handlePromise(
-      await _runtime.evaluateAsync('jsonStringify(() => extention.$call)'),
-    );
-    return jsonDecode(promised.stringResult) as T;
+  Future<T> _extensionCallAsync<T>(MSource source, String call) {
+    return _serialized(() async {
+      await _init(source);
+      final promised = await _runtime
+          .handlePromise(
+            await _runtime.evaluateAsync(
+              'jsonStringify(() => extention.$call)',
+            ),
+          )
+          .timeout(
+            const Duration(seconds: 60),
+            onTimeout: () => throw TimeoutException(
+              'JS call timed out: $call (${source.name})',
+            ),
+          );
+      if (promised.isError) {
+        throw StateError('JS error in $call: ${promised.stringResult}');
+      }
+      final raw = promised.stringResult;
+      if (raw.isEmpty) {
+        throw StateError('JS call returned empty: $call (${source.name})');
+      }
+      return jsonDecode(raw) as T;
+    });
   }
 
   T _extensionCallSync<T>(String call, T def) {
@@ -123,14 +163,16 @@ var extention = new DefaultExtension();
   }
 
   @override
-  Future<FilterList> getFilterList(MSource source) async {
-    await _init(source);
-    try {
-      final raw = _extensionCallSync<List>('getFilterList()', <dynamic>[]);
-      return FilterList.fromJson(raw);
-    } catch (_) {
-      return const FilterList();
-    }
+  Future<FilterList> getFilterList(MSource source) {
+    return _serialized(() async {
+      await _init(source);
+      try {
+        final raw = _extensionCallSync<List>('getFilterList()', <dynamic>[]);
+        return FilterList.fromJson(raw);
+      } catch (_) {
+        return const FilterList();
+      }
+    });
   }
 
   @override

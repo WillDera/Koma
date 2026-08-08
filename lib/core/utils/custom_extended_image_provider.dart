@@ -453,7 +453,18 @@ class CustomExtendedNetworkImageProvider
         return null;
       }
 
-      return Uint8List.fromList(bytes);
+      final payload = Uint8List.fromList(bytes);
+      // Cloudflare / CDN often return 200 with HTML, SVG text, or other
+      // non-bitmap bodies. Feed those to Flutter's ImageDecoder and you get
+      // "Invalid image data" / HWUI unimplemented spam — reject early.
+      if (!_looksLikeBitmap(payload)) {
+        if (kDebugMode) {
+          print('NetworkImage payload is not a decodeable bitmap: $resolved');
+        }
+        return null;
+      }
+
+      return payload;
     } on OperationCanceledError catch (_) {
       if (kDebugMode) {
         print('User cancel request $url.');
@@ -648,4 +659,42 @@ class CustomExtendedNetworkImageProvider
   @override
   WebHtmlElementStrategy get webHtmlElementStrategy =>
       WebHtmlElementStrategy.fallback;
+}
+
+/// True when [bytes] start with a common raster magic header Flutter can decode.
+/// Rejects HTML/Cloudflare error bodies and SVG text returned as "image/png".
+bool _looksLikeBitmap(Uint8List bytes) {
+  if (bytes.length < 4) return false;
+  // PNG
+  if (bytes[0] == 0x89 &&
+      bytes[1] == 0x50 &&
+      bytes[2] == 0x4E &&
+      bytes[3] == 0x47) {
+    return true;
+  }
+  // JPEG
+  if (bytes[0] == 0xFF && bytes[1] == 0xD8 && bytes[2] == 0xFF) {
+    return true;
+  }
+  // GIF
+  if (bytes[0] == 0x47 && bytes[1] == 0x49 && bytes[2] == 0x46) {
+    return true;
+  }
+  // BMP
+  if (bytes[0] == 0x42 && bytes[1] == 0x4D) {
+    return true;
+  }
+  // WEBP: RIFF....WEBP
+  if (bytes.length >= 12 &&
+      bytes[0] == 0x52 &&
+      bytes[1] == 0x49 &&
+      bytes[2] == 0x46 &&
+      bytes[3] == 0x46 &&
+      bytes[8] == 0x57 &&
+      bytes[9] == 0x45 &&
+      bytes[10] == 0x42 &&
+      bytes[11] == 0x50) {
+    return true;
+  }
+  return false;
 }

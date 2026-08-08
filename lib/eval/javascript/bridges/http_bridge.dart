@@ -1,4 +1,3 @@
-import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -8,39 +7,19 @@ import 'package:http_interceptor/http_interceptor.dart';
 
 import '../../../../core/services/http/m_client.dart';
 
-/// Legacy JS-facing MClient.init().fetch callback bridge (status field).
-const httpBridgeCode = '''
-var __httpCallbacks = {};
-var __httpCallbackId = 0;
-
-globalThis.MClient = {
-  init: function() {
-    return {
-      fetch: function(url, options) {
-        var id = __httpCallbackId++;
-        return new Promise(function(resolve, reject) {
-          __httpCallbacks[id] = { resolve: resolve, reject: reject };
-          sendMessage('HttpFetch', JSON.stringify({
-            url: url,
-            options: options || {},
-            callbackId: id
-          }));
-        });
-      },
-      close: function() {}
-    };
-  }
-};
-''';
-
-/// Mangayomi-compatible Client used by DefaultExtension sources
+/// Mangayomi-faithful `Client` used by DefaultExtension sources
 /// (`new Client().get(url)` → `{body, statusCode, headers}`).
+///
+/// Must use `sendMessage` / `onMessage` (mangayomi `eval/javascript/http.dart`).
+/// Bridging through MClient.fetch + `evaluate(resolve(...))` hangs getPopular
+/// for large HTML bodies and leaves the browse screen loading forever.
 const mangayomiClientCode = '''
 class Client {
     constructor(reqcopyWith) {
         this.reqcopyWith = reqcopyWith;
     }
     async head(url, headers) {
+        headers = headers;
         const result = await sendMessage(
             "http_head",
             JSON.stringify([null, this.reqcopyWith, url, headers])
@@ -48,6 +27,7 @@ class Client {
         return JSON.parse(result);
     }
     async get(url, headers) {
+        headers = headers;
         const result = await sendMessage(
             "http_get",
             JSON.stringify([null, this.reqcopyWith, url, headers])
@@ -55,6 +35,7 @@ class Client {
         return JSON.parse(result);
     }
     async post(url, headers, body) {
+        headers = headers;
         const result = await sendMessage(
             "http_post",
             JSON.stringify([null, this.reqcopyWith, url, headers, body])
@@ -62,6 +43,7 @@ class Client {
         return JSON.parse(result);
     }
     async put(url, headers, body) {
+        headers = headers;
         const result = await sendMessage(
             "http_put",
             JSON.stringify([null, this.reqcopyWith, url, headers, body])
@@ -69,6 +51,7 @@ class Client {
         return JSON.parse(result);
     }
     async delete(url, headers, body) {
+        headers = headers;
         const result = await sendMessage(
             "http_delete",
             JSON.stringify([null, this.reqcopyWith, url, headers, body])
@@ -76,6 +59,7 @@ class Client {
         return JSON.parse(result);
     }
     async patch(url, headers, body) {
+        headers = headers;
         const result = await sendMessage(
             "http_patch",
             JSON.stringify([null, this.reqcopyWith, url, headers, body])
@@ -86,48 +70,47 @@ class Client {
 ''';
 
 Future<void> injectHttpBridge(QuickJsRuntime2 engine) async {
-  engine.setupBridge('HttpFetch', (args) {
-    final url = args['url'] as String? ?? '';
-    final callbackId = args['callbackId'] as int? ?? 0;
-    final options = args['options'] as Map? ?? {};
-    final headers = Map<String, String>.from(
-      (options['headers'] as Map?)?.map(
-            (k, v) => MapEntry(k.toString(), v.toString()),
-          ) ??
-          {},
-    );
-    final method = (options['method'] as String? ?? 'GET').toUpperCase();
-    final body = options['body'] as String?;
-
-    unawaited(_doHttpFetch(engine, url, method, headers, body, callbackId));
-  });
+  List<dynamic> asList(dynamic args) {
+    if (args is List) return args;
+    if (args is String) {
+      try {
+        final decoded = jsonDecode(args);
+        if (decoded is List) return decoded;
+      } catch (_) {}
+    }
+    return <dynamic>[];
+  }
 
   engine.onMessage('http_head', (dynamic args) async {
-    return await _toHttpResponse(_client(args), 'HEAD', args as List);
+    final list = asList(args);
+    return await _toHttpResponse(_client(list), 'HEAD', list);
   });
   engine.onMessage('http_get', (dynamic args) async {
-    return await _toHttpResponse(_client(args), 'GET', args as List);
+    final list = asList(args);
+    return await _toHttpResponse(_client(list), 'GET', list);
   });
   engine.onMessage('http_post', (dynamic args) async {
-    return await _toHttpResponse(_client(args), 'POST', args as List);
+    final list = asList(args);
+    return await _toHttpResponse(_client(list), 'POST', list);
   });
   engine.onMessage('http_put', (dynamic args) async {
-    return await _toHttpResponse(_client(args), 'PUT', args as List);
+    final list = asList(args);
+    return await _toHttpResponse(_client(list), 'PUT', list);
   });
   engine.onMessage('http_delete', (dynamic args) async {
-    return await _toHttpResponse(_client(args), 'DELETE', args as List);
+    final list = asList(args);
+    return await _toHttpResponse(_client(list), 'DELETE', list);
   });
   engine.onMessage('http_patch', (dynamic args) async {
-    return await _toHttpResponse(_client(args), 'PATCH', args as List);
+    final list = asList(args);
+    return await _toHttpResponse(_client(list), 'PATCH', list);
   });
 
-  engine.evaluate(httpBridgeCode);
   engine.evaluate(mangayomiClientCode);
 }
 
-InterceptedClient _client(dynamic args) {
-  final list = args is List ? args : <dynamic>[];
-  final reqcopyWith = list.length > 1 ? list[1] as Map? : null;
+InterceptedClient _client(List args) {
+  final reqcopyWith = args.length > 1 ? args[1] as Map? : null;
   return MClient.init(
     reqcopyWith: reqcopyWith?.map((k, v) => MapEntry(k.toString(), v)),
   );
@@ -192,50 +175,4 @@ Future<String> _toHttpResponse(
       'url': response.request?.url.toString(),
     },
   });
-}
-
-Future<void> _doHttpFetch(
-  QuickJsRuntime2 engine,
-  String url,
-  String method,
-  Map<String, String> headers,
-  String? body,
-  int callbackId,
-) async {
-  try {
-    final client = MClient.init();
-    http.Response response;
-    final uri = Uri.parse(url);
-    switch (method) {
-      case 'POST':
-        response = await client.post(uri, headers: headers, body: body);
-        break;
-      case 'PUT':
-        response = await client.put(uri, headers: headers, body: body);
-        break;
-      case 'PATCH':
-        response = await client.patch(uri, headers: headers, body: body);
-        break;
-      case 'DELETE':
-        response = await client.delete(uri, headers: headers);
-        break;
-      case 'HEAD':
-        response = await client.head(uri, headers: headers);
-        break;
-      default:
-        response = await client.get(uri, headers: headers);
-    }
-
-    final result = jsonEncode({
-      'status': response.statusCode,
-      'statusCode': response.statusCode,
-      'headers': response.headers,
-      'body': response.body,
-    });
-
-    engine.evaluate('__httpCallbacks[$callbackId].resolve($result)');
-  } catch (e) {
-    final errMsg = e.toString().replaceAll('"', '\\"').replaceAll("'", "\\'");
-    engine.evaluate('__httpCallbacks[$callbackId].reject("$errMsg")');
-  }
 }
