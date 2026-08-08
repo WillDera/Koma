@@ -1,5 +1,7 @@
 import 'dart:convert';
+
 import 'package:flutter_qjs/flutter_qjs.dart';
+
 import 'bridges/utils_bridge.dart';
 import 'bridges/m_provider_bridge.dart';
 
@@ -9,9 +11,12 @@ class JsRuntime {
 
   bool get isInitialized => _initialized;
 
+  QuickJsRuntime2? get engine => _engine;
+
   Future<void> init() async {
     if (_initialized) return;
-    _engine = QuickJsRuntime2();
+    _engine = QuickJsRuntime2(stackSize: 1024 * 1024 * 4);
+    _engine!.enableHandlePromises();
     await _injectBridges();
     _initialized = true;
   }
@@ -28,6 +33,30 @@ class JsRuntime {
       throw JSError(result.stringResult);
     }
     return result.rawResult;
+  }
+
+  JsEvalResult evaluateRaw(String code) {
+    final engine = _engine;
+    if (engine == null) {
+      throw StateError('JsRuntime not initialized');
+    }
+    return engine.evaluate(code);
+  }
+
+  Future<JsEvalResult> evaluateAsync(String code) async {
+    final engine = _engine;
+    if (engine == null) {
+      throw StateError('JsRuntime not initialized');
+    }
+    return engine.evaluateAsync(code);
+  }
+
+  Future<JsEvalResult> handlePromise(JsEvalResult value) async {
+    final engine = _engine;
+    if (engine == null) {
+      throw StateError('JsRuntime not initialized');
+    }
+    return engine.handlePromise(value);
   }
 
   String? evaluateString(String code) {
@@ -52,66 +81,6 @@ class JsRuntime {
 
   void injectCode(String code) {
     evaluate(code);
-  }
-
-  List<Map<String, dynamic>> evaluateMangaList(
-    String sourceCode,
-    String functionCall,
-  ) {
-    final wrapped =
-        '''
-$sourceCode
-var __result = $functionCall;
-JSON.stringify(__result);
-''';
-
-    final result = evaluateString(wrapped);
-    if (result == null || result.isEmpty) return [];
-
-    try {
-      final decoded = jsonDecode(result);
-      if (decoded is List) {
-        return decoded.cast<Map<String, dynamic>>();
-      }
-      if (decoded is Map && decoded.containsKey('mangas')) {
-        return (decoded['mangas'] as List).cast<Map<String, dynamic>>();
-      }
-    } catch (_) {}
-    return [];
-  }
-
-  Map<String, dynamic>? evaluateDetail(String sourceCode, String functionCall) {
-    final wrapped =
-        '''
-$sourceCode
-var __result = $functionCall;
-JSON.stringify(__result);
-''';
-
-    final result = evaluateString(wrapped);
-    if (result == null || result.isEmpty) return null;
-    try {
-      return jsonDecode(result) as Map<String, dynamic>?;
-    } catch (_) {
-      return null;
-    }
-  }
-
-  List<dynamic> evaluateList(String sourceCode, String functionCall) {
-    final wrapped =
-        '''
-$sourceCode
-var __result = $functionCall;
-JSON.stringify(__result);
-''';
-
-    final result = evaluateString(wrapped);
-    if (result == null || result.isEmpty) return [];
-    try {
-      final decoded = jsonDecode(result);
-      if (decoded is List) return decoded;
-    } catch (_) {}
-    return [];
   }
 
   void dispose() {

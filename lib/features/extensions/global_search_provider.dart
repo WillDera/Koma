@@ -2,6 +2,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/models/extension_source.dart';
 import '../../core/providers.dart';
+import '../../eval/models/m_source.dart';
 
 /// Mihon Global Search source filter chips (Pinned / All).
 enum GlobalSearchSourceFilter { pinned, all }
@@ -153,16 +154,16 @@ class GlobalSearchNotifier extends Notifier<GlobalSearchState> {
       return;
     }
 
-    final keiyoushi = ref.read(keiyoushiServiceProvider);
+    final service = ref.read(extensionServiceProvider);
     var completed = 0;
 
     Future<void> runOne(int index) async {
       final src = sources[index];
       try {
-        final page = await keiyoushi.searchManga(
-          sourceId: src.sourceId,
-          query: query,
-          page: 1,
+        final results = await service.search(
+          MSource.fromExtensionSource(src),
+          1,
+          query,
         );
         if (gen != _generation) return;
         _updateItem(
@@ -170,7 +171,7 @@ class GlobalSearchNotifier extends Notifier<GlobalSearchState> {
           GlobalSearchSourceItem(
             source: src,
             kind: GlobalSearchItemKind.success,
-            mangas: page.mangas,
+            mangas: [for (final m in results) m.toJson()],
           ),
         );
       } catch (e) {

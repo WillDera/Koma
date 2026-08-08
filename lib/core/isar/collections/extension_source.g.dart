@@ -57,34 +57,39 @@ const ExtensionSourceSchema = CollectionSchema(
       name: r'signatureHash',
       type: IsarType.string,
     ),
-    r'sourceCodeLanguage': PropertySchema(
+    r'sourceCode': PropertySchema(
       id: 16,
+      name: r'sourceCode',
+      type: IsarType.string,
+    ),
+    r'sourceCodeLanguage': PropertySchema(
+      id: 17,
       name: r'sourceCodeLanguage',
       type: IsarType.string,
     ),
     r'sourceCodeUrl': PropertySchema(
-      id: 17,
+      id: 18,
       name: r'sourceCodeUrl',
       type: IsarType.string,
     ),
     r'sourceId': PropertySchema(
-      id: 18,
+      id: 19,
       name: r'sourceId',
       type: IsarType.string,
     ),
     r'updatedAt': PropertySchema(
-      id: 19,
+      id: 20,
       name: r'updatedAt',
       type: IsarType.dateTime,
     ),
-    r'version': PropertySchema(id: 20, name: r'version', type: IsarType.string),
+    r'version': PropertySchema(id: 21, name: r'version', type: IsarType.string),
     r'versionCode': PropertySchema(
-      id: 21,
+      id: 22,
       name: r'versionCode',
       type: IsarType.long,
     ),
     r'versionLast': PropertySchema(
-      id: 22,
+      id: 23,
       name: r'versionLast',
       type: IsarType.string,
     ),
@@ -149,6 +154,7 @@ int _extensionSourceEstimateSize(
     }
   }
   bytesCount += 3 + object.signatureHash.length * 3;
+  bytesCount += 3 + object.sourceCode.length * 3;
   bytesCount += 3 + object.sourceCodeLanguage.length * 3;
   {
     final value = object.sourceCodeUrl;
@@ -189,13 +195,14 @@ void _extensionSourceSerialize(
   writer.writeString(offsets[13], object.pkgName);
   writer.writeString(offsets[14], object.repoUrl);
   writer.writeString(offsets[15], object.signatureHash);
-  writer.writeString(offsets[16], object.sourceCodeLanguage);
-  writer.writeString(offsets[17], object.sourceCodeUrl);
-  writer.writeString(offsets[18], object.sourceId);
-  writer.writeDateTime(offsets[19], object.updatedAt);
-  writer.writeString(offsets[20], object.version);
-  writer.writeLong(offsets[21], object.versionCode);
-  writer.writeString(offsets[22], object.versionLast);
+  writer.writeString(offsets[16], object.sourceCode);
+  writer.writeString(offsets[17], object.sourceCodeLanguage);
+  writer.writeString(offsets[18], object.sourceCodeUrl);
+  writer.writeString(offsets[19], object.sourceId);
+  writer.writeDateTime(offsets[20], object.updatedAt);
+  writer.writeString(offsets[21], object.version);
+  writer.writeLong(offsets[22], object.versionCode);
+  writer.writeString(offsets[23], object.versionLast);
 }
 
 ExtensionSource _extensionSourceDeserialize(
@@ -221,13 +228,14 @@ ExtensionSource _extensionSourceDeserialize(
     pkgName: reader.readStringOrNull(offsets[13]) ?? '',
     repoUrl: reader.readStringOrNull(offsets[14]),
     signatureHash: reader.readStringOrNull(offsets[15]) ?? '',
-    sourceCodeLanguage: reader.readStringOrNull(offsets[16]) ?? 'mihon',
-    sourceCodeUrl: reader.readStringOrNull(offsets[17]),
-    sourceId: reader.readString(offsets[18]),
-    updatedAt: reader.readDateTimeOrNull(offsets[19]),
-    version: reader.readString(offsets[20]),
-    versionCode: reader.readLongOrNull(offsets[21]) ?? 0,
-    versionLast: reader.readStringOrNull(offsets[22]),
+    sourceCode: reader.readStringOrNull(offsets[16]) ?? '',
+    sourceCodeLanguage: reader.readStringOrNull(offsets[17]) ?? 'mihon',
+    sourceCodeUrl: reader.readStringOrNull(offsets[18]),
+    sourceId: reader.readString(offsets[19]),
+    updatedAt: reader.readDateTimeOrNull(offsets[20]),
+    version: reader.readString(offsets[21]),
+    versionCode: reader.readLongOrNull(offsets[22]) ?? 0,
+    versionLast: reader.readStringOrNull(offsets[23]),
   );
   return object;
 }
@@ -272,18 +280,20 @@ P _extensionSourceDeserializeProp<P>(
     case 15:
       return (reader.readStringOrNull(offset) ?? '') as P;
     case 16:
-      return (reader.readStringOrNull(offset) ?? 'mihon') as P;
+      return (reader.readStringOrNull(offset) ?? '') as P;
     case 17:
-      return (reader.readStringOrNull(offset)) as P;
+      return (reader.readStringOrNull(offset) ?? 'mihon') as P;
     case 18:
-      return (reader.readString(offset)) as P;
+      return (reader.readStringOrNull(offset)) as P;
     case 19:
-      return (reader.readDateTimeOrNull(offset)) as P;
-    case 20:
       return (reader.readString(offset)) as P;
+    case 20:
+      return (reader.readDateTimeOrNull(offset)) as P;
     case 21:
-      return (reader.readLongOrNull(offset) ?? 0) as P;
+      return (reader.readString(offset)) as P;
     case 22:
+      return (reader.readLongOrNull(offset) ?? 0) as P;
+    case 23:
       return (reader.readStringOrNull(offset)) as P;
     default:
       throw IsarError('Unknown property with id $propertyId');
@@ -2022,6 +2032,147 @@ extension ExtensionSourceQueryFilter
   }
 
   QueryBuilder<ExtensionSource, ExtensionSource, QAfterFilterCondition>
+  sourceCodeEqualTo(String value, {bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.equalTo(
+          property: r'sourceCode',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<ExtensionSource, ExtensionSource, QAfterFilterCondition>
+  sourceCodeGreaterThan(
+    String value, {
+    bool include = false,
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.greaterThan(
+          include: include,
+          property: r'sourceCode',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<ExtensionSource, ExtensionSource, QAfterFilterCondition>
+  sourceCodeLessThan(
+    String value, {
+    bool include = false,
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.lessThan(
+          include: include,
+          property: r'sourceCode',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<ExtensionSource, ExtensionSource, QAfterFilterCondition>
+  sourceCodeBetween(
+    String lower,
+    String upper, {
+    bool includeLower = true,
+    bool includeUpper = true,
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.between(
+          property: r'sourceCode',
+          lower: lower,
+          includeLower: includeLower,
+          upper: upper,
+          includeUpper: includeUpper,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<ExtensionSource, ExtensionSource, QAfterFilterCondition>
+  sourceCodeStartsWith(String value, {bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.startsWith(
+          property: r'sourceCode',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<ExtensionSource, ExtensionSource, QAfterFilterCondition>
+  sourceCodeEndsWith(String value, {bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.endsWith(
+          property: r'sourceCode',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<ExtensionSource, ExtensionSource, QAfterFilterCondition>
+  sourceCodeContains(String value, {bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.contains(
+          property: r'sourceCode',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<ExtensionSource, ExtensionSource, QAfterFilterCondition>
+  sourceCodeMatches(String pattern, {bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.matches(
+          property: r'sourceCode',
+          wildcard: pattern,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<ExtensionSource, ExtensionSource, QAfterFilterCondition>
+  sourceCodeIsEmpty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.equalTo(property: r'sourceCode', value: ''),
+      );
+    });
+  }
+
+  QueryBuilder<ExtensionSource, ExtensionSource, QAfterFilterCondition>
+  sourceCodeIsNotEmpty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.greaterThan(property: r'sourceCode', value: ''),
+      );
+    });
+  }
+
+  QueryBuilder<ExtensionSource, ExtensionSource, QAfterFilterCondition>
   sourceCodeLanguageEqualTo(String value, {bool caseSensitive = true}) {
     return QueryBuilder.apply(this, (query) {
       return query.addFilterCondition(
@@ -3116,6 +3267,20 @@ extension ExtensionSourceQuerySortBy
   }
 
   QueryBuilder<ExtensionSource, ExtensionSource, QAfterSortBy>
+  sortBySourceCode() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'sourceCode', Sort.asc);
+    });
+  }
+
+  QueryBuilder<ExtensionSource, ExtensionSource, QAfterSortBy>
+  sortBySourceCodeDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'sourceCode', Sort.desc);
+    });
+  }
+
+  QueryBuilder<ExtensionSource, ExtensionSource, QAfterSortBy>
   sortBySourceCodeLanguage() {
     return QueryBuilder.apply(this, (query) {
       return query.addSortBy(r'sourceCodeLanguage', Sort.asc);
@@ -3444,6 +3609,20 @@ extension ExtensionSourceQuerySortThenBy
   }
 
   QueryBuilder<ExtensionSource, ExtensionSource, QAfterSortBy>
+  thenBySourceCode() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'sourceCode', Sort.asc);
+    });
+  }
+
+  QueryBuilder<ExtensionSource, ExtensionSource, QAfterSortBy>
+  thenBySourceCodeDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'sourceCode', Sort.desc);
+    });
+  }
+
+  QueryBuilder<ExtensionSource, ExtensionSource, QAfterSortBy>
   thenBySourceCodeLanguage() {
     return QueryBuilder.apply(this, (query) {
       return query.addSortBy(r'sourceCodeLanguage', Sort.asc);
@@ -3665,6 +3844,13 @@ extension ExtensionSourceQueryWhereDistinct
   }
 
   QueryBuilder<ExtensionSource, ExtensionSource, QDistinct>
+  distinctBySourceCode({bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addDistinctBy(r'sourceCode', caseSensitive: caseSensitive);
+    });
+  }
+
+  QueryBuilder<ExtensionSource, ExtensionSource, QDistinct>
   distinctBySourceCodeLanguage({bool caseSensitive = true}) {
     return QueryBuilder.apply(this, (query) {
       return query.addDistinctBy(
@@ -3826,6 +4012,12 @@ extension ExtensionSourceQueryProperty
   signatureHashProperty() {
     return QueryBuilder.apply(this, (query) {
       return query.addPropertyName(r'signatureHash');
+    });
+  }
+
+  QueryBuilder<ExtensionSource, String, QQueryOperations> sourceCodeProperty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addPropertyName(r'sourceCode');
     });
   }
 

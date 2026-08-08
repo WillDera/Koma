@@ -5,24 +5,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../../core/providers.dart';
 import '../../core/models/manga.dart';
 import '../../core/models/manga_chapter.dart';
-import '../../core/repositories/repositories.dart';
-import '../../eval/models/m_source.dart';
-
-/// Resolve the hex sourceId used by the DalvikServer cache from any source
-/// identifier (hex sourceId or old Mihon numeric ID). Callers that only have
-/// [Manga.sourceId] (the old numeric ID) use this to get the correct ID.
-Future<String> _resolveSourceId(Repositories repos, String sourceId) async {
-  final installed = await repos.extensions.getInstalledExtensions();
-  // First try a direct match (hex sourceId or already correct)
-  for (final ext in installed) {
-    if (ext.sourceId == sourceId) return sourceId;
-  }
-  // Fallback: look up by old Mihon numeric ID (stored in ext.id)
-  for (final ext in installed) {
-    if (ext.id == sourceId) return ext.sourceId;
-  }
-  return sourceId;
-}
+import '../../core/services/extension_source_resolve.dart';
 
 /// Stream of [Manga?] for a given manga ID. Backed by Isar's watchObject —
 /// re-emits every time the manga row is written via put(). fireImmediately=true
@@ -66,17 +49,7 @@ final updateMangaDetailProvider =
       );
       if (params.isInit && existingChapters.isNotEmpty) return;
 
-      // Translate the old Mihon numeric ID to our hex sourceId from the cache
-      final extSourceId = await _resolveSourceId(repos, manga.sourceId);
-
-      final source = MSource(
-        id: extSourceId,
-        sourceId: extSourceId,
-        name: '',
-        lang: 'en',
-        baseUrl: '',
-        sourceType: SourceType.mihon,
-      );
+      final source = await resolveExtensionMSource(repos, manga.sourceId);
       final result = await service.getMangaDetail(
         source,
         manga.url,

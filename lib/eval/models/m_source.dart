@@ -55,15 +55,22 @@ class MSource {
     sourceType: json['sourceType'] == 'js' ? SourceType.js : SourceType.mihon,
   );
 
-  factory MSource.fromExtensionSource(dynamic ext) => MSource(
-    id: ext.id as String,
-    sourceId: (ext.sourceId as String?) ?? ext.id as String,
-    name: ext.name as String,
-    lang: (ext.lang as String?) ?? 'en',
-    baseUrl: (ext.baseUrl as String?) ?? '',
-    version: (ext.version as String?) ?? '1.0',
-    apkPath: ext.apkPath as String?,
-    className: ext.className as String?,
-    sourceType: SourceType.mihon,
-  );
+  /// Build from [ExtensionSource] (or any duck-typed object with the same fields).
+  factory MSource.fromExtensionSource(dynamic ext) {
+    final lang = ext.sourceCodeLanguage as String?;
+    final isJs = lang == 'js' || lang == 'javascript';
+    final code = ext.sourceCode as String?;
+    return MSource(
+      id: ext.id as String,
+      sourceId: (ext.sourceId as String?) ?? ext.id as String,
+      name: ext.name as String,
+      lang: (ext.lang as String?) ?? 'en',
+      baseUrl: (ext.baseUrl as String?) ?? '',
+      version: (ext.version as String?) ?? '1.0',
+      sourceCode: (code != null && code.isNotEmpty) ? code : null,
+      apkPath: ext.apkPath as String?,
+      className: ext.className as String?,
+      sourceType: isJs ? SourceType.js : SourceType.mihon,
+    );
+  }
 }

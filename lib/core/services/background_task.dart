@@ -1,5 +1,6 @@
 import 'package:workmanager/workmanager.dart';
 
+import '../../eval/dispatch_service.dart';
 import '../isar/isar.dart';
 import '../repositories/repositories.dart';
 import 'download/chapter_download.dart';
@@ -47,10 +48,11 @@ Future<void> _pollLibraryAndNotify() async {
   final isar = await openIsar();
   final repos = Repositories(isar);
   final keiyoushi = KeiyoushiService();
+  final dispatch = ExtensionDispatchService(keiyoushiService: keiyoushi);
   final extensionManager = ExtensionManager(repos, keiyoushi);
   final service = LibraryUpdateService(
     repos,
-    keiyoushi,
+    dispatch,
     extensionManager: extensionManager,
   );
   final report = await service.checkForNewChapters();
@@ -61,7 +63,11 @@ Future<void> _pollLibraryAndNotify() async {
     // Auto-queue newly discovered chapters (Mihon LibraryUpdateJob parity).
     if (await LibraryUpdatePrefs.isDownloadNewEnabled()) {
       await keiyoushi.init();
-      final mgr = DownloadManager(keiyoushi: keiyoushi, repositories: repos);
+      final mgr = DownloadManager(
+        keiyoushi: keiyoushi,
+        extensionService: dispatch,
+        repositories: repos,
+      );
       await mgr.restore(autoStart: false);
       await enqueueNewChaptersFromUpdate(
         manager: mgr,
@@ -87,7 +93,12 @@ Future<void> _drainDownloadQueue() async {
   final repos = Repositories(isar);
   final keiyoushi = KeiyoushiService();
   await keiyoushi.init();
-  final mgr = DownloadManager(keiyoushi: keiyoushi, repositories: repos);
+  final dispatch = ExtensionDispatchService(keiyoushiService: keiyoushi);
+  final mgr = DownloadManager(
+    keiyoushi: keiyoushi,
+    extensionService: dispatch,
+    repositories: repos,
+  );
   await mgr.restore(autoStart: false);
   if (mgr.queue.isEmpty || await store.isPaused()) return;
 

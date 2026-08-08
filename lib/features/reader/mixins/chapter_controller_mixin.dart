@@ -5,10 +5,20 @@ import '../../../core/models/manga_page.dart';
 import '../managers/chapter_preload_manager.dart';
 import '../models/page_data.dart';
 
+/// Optional chapter navigator used by alternate reader shells.
+///
+/// [fetchPages] must return network/local page images for a chapter (wire to
+/// [ExtensionDispatchService.getPageList] so JS and Mihon both work). The
+/// legacy [keiyoushiService] duck-type is kept only for older call sites.
 class ChapterControllerMixin {
   MangaChapter? currentChapter;
   List<MangaChapter> chapters = [];
   String sourceId = '';
+
+  /// Preferred: `Future<List<Map<String, dynamic>>> Function(MangaChapter)`.
+  Future<List<Map<String, dynamic>>> Function(MangaChapter chapter)? fetchPages;
+
+  /// Legacy duck-typed KeiyoushiService.getPageList(sourceId:, chapterUrl:).
   dynamic keiyoushiService;
 
   final ChapterPreloadManager _preloadManager = ChapterPreloadManager();
@@ -54,17 +64,25 @@ class ChapterControllerMixin {
 
   Future<List<PageData>> _fetchChapterPages(MangaChapter chapter) async {
     try {
-      final pageList = await keiyoushiService.getPageList(
-        sourceId: sourceId,
-        chapterUrl: chapter.url,
-      );
+      late final List<Map<String, dynamic>> pageList;
+      final fetch = fetchPages;
+      if (fetch != null) {
+        pageList = await fetch(chapter);
+      } else {
+        pageList = await keiyoushiService.getPageList(
+          sourceId: sourceId,
+          chapterUrl: chapter.url,
+        ) as List<Map<String, dynamic>>;
+      }
 
       return pageList
           .map((p) {
             final pd = PageData.page(
               mangaPage: MangaPage(
-                index: p['index'] as int,
-                imageUrl: p['url'] as String,
+                index: p['index'] as int? ?? 0,
+                imageUrl: (p['url'] as String?) ??
+                    (p['imageUrl'] as String?) ??
+                    '',
                 chapterUrl: chapter.url,
               ),
               chapter: chapter,

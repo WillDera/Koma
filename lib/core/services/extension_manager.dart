@@ -15,16 +15,45 @@ import 'extension_icon_cache.dart';
 import 'keiyoushi_service.dart';
 import 'trust_extension.dart';
 
+export '../models/extension_source.dart' show SourceCodeLanguage;
 export 'trust_extension.dart' show UntrustedExtensionException;
 export 'apk_signature_service.dart' show ApkSigningInfo;
+
+/// Thrown when catalog entry language is Dart-eval or otherwise unsupported.
+/// Item 5 scope is Mihon APK + mangayomi JS only.
+class UnsupportedExtensionLanguageException implements Exception {
+  final String language;
+  final String? name;
+
+  const UnsupportedExtensionLanguageException(this.language, {this.name});
+
+  @override
+  String toString() {
+    final label = name == null || name!.isEmpty ? '' : ' ($name)';
+    return 'Unsupported extension language "$language"$label — '
+        'Koma installs Mihon APKs and JavaScript sources only '
+        '(Dart-eval / LNReader are out of scope).';
+  }
+}
 
 class ExtensionIndexEntry {
   final String pkg;
   final String name;
+
+  /// Mihon APK relative/absolute URL only. Never holds JS [sourceCodeUrl].
   final String apkUrl;
+
+  /// Mangayomi native index `sourceCodeUrl` (JS/Dart script). Null for Mihon.
+  final String? sourceCodeUrl;
+
+  /// Catalog language: [SourceCodeLanguage.mihon], [SourceCodeLanguage.js],
+  /// [SourceCodeLanguage.dart], or [SourceCodeLanguage.unsupported].
+  final String sourceCodeLanguage;
+
   final String version;
   final String lang;
   final String contentWarning;
+  final bool isNsfw;
   final String? baseUrl;
   final String? iconUrl;
   final List<Map<String, dynamic>> sources;
@@ -33,13 +62,20 @@ class ExtensionIndexEntry {
     required this.pkg,
     required this.name,
     required this.apkUrl,
+    this.sourceCodeUrl,
+    this.sourceCodeLanguage = SourceCodeLanguage.mihon,
     required this.version,
     required this.lang,
     this.contentWarning = 'CONTENT_WARNING_SAFE',
+    this.isNsfw = false,
     this.baseUrl,
     this.iconUrl,
     required this.sources,
   });
+
+  bool get isJs => SourceCodeLanguage.isJs(sourceCodeLanguage);
+  bool get isMihon => SourceCodeLanguage.isMihon(sourceCodeLanguage);
+  bool get isDart => sourceCodeLanguage == SourceCodeLanguage.dart;
 
   String? get className {
     if (sources.isEmpty) return null;
@@ -48,39 +84,59 @@ class ExtensionIndexEntry {
     return null;
   }
 
+  /// Map mangayomi `sourceCodeLanguage` (int index or string) → catalog token.
+  /// Enum order: dart=0, javascript=1, mihon=2, lnreader=3.
+  static String parseSourceCodeLanguage(dynamic raw) {
+    if (raw is int) {
+      switch (raw) {
+        case 0:
+          return SourceCodeLanguage.dart;
+        case 1:
+          return SourceCodeLanguage.js;
+        case 2:
+          return SourceCodeLanguage.mihon;
+        default:
+          return SourceCodeLanguage.unsupported;
+      }
+    }
+    if (raw is String) {
+      switch (raw.toLowerCase().trim()) {
+        case 'js':
+        case 'javascript':
+          return SourceCodeLanguage.js;
+        case 'dart':
+          return SourceCodeLanguage.dart;
+        case 'mihon':
+          return SourceCodeLanguage.mihon;
+        default:
+          return SourceCodeLanguage.unsupported;
+      }
+    }
+    // Mangayomi Source.fromJson defaults missing language to dart (index 0).
+    return SourceCodeLanguage.dart;
+  }
+
+  static bool _looksLikeMihon(Map<String, dynamic> j) {
+    return j.containsKey('apk') ||
+        j.containsKey('pkg') ||
+        j.containsKey('packageName') ||
+        j.containsKey('sources');
+  }
+
   factory ExtensionIndexEntry.fromJson(Map<String, dynamic> j) {
     final sources = (j['sources'] as List? ?? const [])
         .cast<Map>()
         .map((e) => Map<String, dynamic>.from(e))
         .toList(growable: false);
 
-    String pkg;
-    String name;
-    String apkUrl;
-    String version;
-    String lang;
-    String contentWarning;
-    String? baseUrl;
-    String? iconUrl;
-
     final hasPackageName = j['packageName'] != null || j['pkg'] != null;
     final hasSourceCodeUrl = j['sourceCodeUrl'] != null;
     final hasId = j['id'] != null;
 
-    if (hasSourceCodeUrl || (hasId && !hasPackageName)) {
-      pkg = j['id']?.toString() ?? '';
-      name = (j['name'] as String?) ?? (pkg.isEmpty ? 'Unknown' : pkg);
-      apkUrl = j['sourceCodeUrl'] as String? ?? '';
-      version = j['version'] as String? ?? '0';
-      lang = j['lang'] as String? ?? 'en';
-      contentWarning = (j['isNsfw'] as bool? ?? false)
-          ? 'CONTENT_WARNING_NSFW'
-          : 'CONTENT_WARNING_SAFE';
-      baseUrl = j['baseUrl'] as String?;
-      iconUrl = j['iconUrl'] as String?;
-    } else {
-      pkg = j['packageName'] as String? ?? j['pkg'] as String? ?? '';
-      name = j['name'] as String? ?? pkg ?? 'Unknown';
+    // Mihon/Keiyoushi shape first — never put JS URLs into apkUrl.
+    if (_looksLikeMihon(j)) {
+      final pkg = j['packageName'] as String? ?? j['pkg'] as String? ?? '';
+      final name = j['name'] as String? ?? (pkg.isEmpty ? 'Unknown' : pkg);
 
       String apk;
       if (j['resources'] is Map) {
@@ -89,10 +145,11 @@ class ExtensionIndexEntry {
       } else {
         apk = j['apk'] as String? ?? '';
       }
-      apkUrl = apk;
 
-      version = j['versionName'] as String? ?? j['version'] as String? ?? '0';
+      final version =
+          j['versionName'] as String? ?? j['version'] as String? ?? '0';
 
+      final String lang;
       if (sources.isNotEmpty) {
         lang =
             sources.first['language'] as String? ??
@@ -102,28 +159,75 @@ class ExtensionIndexEntry {
         lang = j['lang'] as String? ?? 'en';
       }
 
-      contentWarning = j['contentWarning'] as String? ?? 'CONTENT_WARNING_SAFE';
+      final contentWarning =
+          j['contentWarning'] as String? ?? 'CONTENT_WARNING_SAFE';
+      final nsfw = j['nsfw'] == 1 ||
+          j['isNsfw'] == true ||
+          contentWarning == 'CONTENT_WARNING_NSFW' ||
+          contentWarning == 'CONTENT_WARNING_MIXED';
 
-      baseUrl =
+      final baseUrl =
           j['baseUrl'] as String? ??
           (sources.isNotEmpty
               ? (sources.first['baseUrl'] as String?) ??
                     (sources.first['homeUrl'] as String?)
               : null);
-      iconUrl = j['resources'] is Map
+      final iconUrl = j['resources'] is Map
           ? (j['resources'] as Map)['iconUrl'] as String?
-          : null;
+          : (j['iconUrl'] as String?);
+
+      return ExtensionIndexEntry(
+        pkg: pkg,
+        name: name,
+        apkUrl: apk,
+        sourceCodeUrl: null,
+        sourceCodeLanguage: SourceCodeLanguage.mihon,
+        version: version,
+        lang: lang,
+        contentWarning: contentWarning,
+        isNsfw: nsfw,
+        baseUrl: baseUrl,
+        iconUrl: iconUrl,
+        sources: sources,
+      );
     }
 
+    // Mangayomi native (JS / Dart-eval) — id + sourceCodeUrl, no package/apk.
+    if (hasSourceCodeUrl || (hasId && !hasPackageName)) {
+      final pkg = j['id']?.toString() ?? '';
+      final name = (j['name'] as String?) ?? (pkg.isEmpty ? 'Unknown' : pkg);
+      final isNsfw = j['isNsfw'] == true || j['nsfw'] == 1;
+      return ExtensionIndexEntry(
+        pkg: pkg,
+        name: name,
+        apkUrl: '',
+        sourceCodeUrl: j['sourceCodeUrl'] as String?,
+        sourceCodeLanguage: parseSourceCodeLanguage(j['sourceCodeLanguage']),
+        version: j['version'] as String? ?? '0',
+        lang: j['lang'] as String? ?? 'en',
+        contentWarning:
+            isNsfw ? 'CONTENT_WARNING_NSFW' : 'CONTENT_WARNING_SAFE',
+        isNsfw: isNsfw,
+        baseUrl: j['baseUrl'] as String?,
+        iconUrl: j['iconUrl'] as String?,
+        sources: sources,
+      );
+    }
+
+    // Fallback: treat as Mihon-like with whatever fields exist.
+    final pkg = j['packageName'] as String? ?? j['pkg'] as String? ?? '';
     return ExtensionIndexEntry(
       pkg: pkg,
-      name: name,
-      apkUrl: apkUrl,
-      version: version,
-      lang: lang,
-      contentWarning: contentWarning,
-      baseUrl: baseUrl,
-      iconUrl: iconUrl,
+      name: j['name'] as String? ?? (pkg.isEmpty ? 'Unknown' : pkg),
+      apkUrl: j['apk'] as String? ?? '',
+      sourceCodeUrl: null,
+      sourceCodeLanguage: SourceCodeLanguage.mihon,
+      version: j['versionName'] as String? ?? j['version'] as String? ?? '0',
+      lang: j['lang'] as String? ?? 'en',
+      contentWarning: j['contentWarning'] as String? ?? 'CONTENT_WARNING_SAFE',
+      isNsfw: false,
+      baseUrl: j['baseUrl'] as String?,
+      iconUrl: j['iconUrl'] as String?,
       sources: sources,
     );
   }
@@ -144,17 +248,72 @@ class ExtensionManager {
   Future<List<ExtensionRepo>> listRepos() =>
       _repos.extensions.getExtensionRepos();
 
-  Future<void> addRepo({required String name, required String url}) async {
-    final signingKey = await _fetchSigningKeyForIndex(url);
-    final repo = ExtensionRepo(name: name, url: url, signingKey: signingKey);
+  Future<void> addRepo({
+    required String name,
+    required String url,
+    String? kind,
+  }) async {
+    var resolvedKind = kind;
+    if (resolvedKind == null || !ExtensionRepoKind.isKnown(resolvedKind)) {
+      resolvedKind = await _detectRepoKind(url);
+    }
+
+    String? signingKey;
+    if (resolvedKind == ExtensionRepoKind.javascript) {
+      // Mangayomi JS indexes have no Mihon repo.json signing key — try/ignore.
+      try {
+        signingKey = await _fetchSigningKeyForIndex(url);
+      } catch (_) {
+        signingKey = null;
+      }
+    } else {
+      signingKey = await _fetchSigningKeyForIndex(url);
+    }
+
+    final repo = ExtensionRepo(
+      name: name,
+      url: url,
+      signingKey: signingKey,
+      kind: resolvedKind,
+    );
     await _repos.extensions.insertExtensionRepo(repo);
     await _refreshTrustFingerprints();
+  }
+
+  /// Inspect the first index entries to classify mihon vs javascript.
+  Future<String> _detectRepoKind(String indexUrl) async {
+    try {
+      final res = await _http.get(Uri.parse(indexUrl));
+      if (res.statusCode != 200) return ExtensionRepoKind.mihon;
+      final entries = await Isolate.run(() => _parseIndexBody(res.body));
+      if (entries.isEmpty) return ExtensionRepoKind.mihon;
+      // Sample a few rows in case the first is an outlier.
+      final sample = entries.take(5);
+      var jsish = 0;
+      var mihonish = 0;
+      for (final e in sample) {
+        if (e.isMihon && e.apkUrl.isNotEmpty) {
+          mihonish++;
+        } else if (e.sourceCodeUrl != null && e.sourceCodeUrl!.isNotEmpty) {
+          jsish++;
+        } else if (e.isJs || e.isDart) {
+          jsish++;
+        } else if (e.isMihon) {
+          mihonish++;
+        }
+      }
+      if (jsish > mihonish) return ExtensionRepoKind.javascript;
+      return ExtensionRepoKind.mihon;
+    } catch (_) {
+      return ExtensionRepoKind.mihon;
+    }
   }
 
   /// Refresh `signingKey` on all repos from sibling `repo.json` (Mihon store meta).
   Future<void> refreshRepoSigningKeys() async {
     final repos = await listRepos();
     for (final repo in repos) {
+      if (repo.isJavascript) continue;
       final key = await _fetchSigningKeyForIndex(repo.url);
       if (key == repo.signingKey) continue;
       await _repos.extensions.insertExtensionRepo(
@@ -231,6 +390,17 @@ class ExtensionManager {
     ExtensionIndexEntry entry, {
     required String repoUrl,
   }) async {
+    if (entry.isDart ||
+        entry.sourceCodeLanguage == SourceCodeLanguage.unsupported) {
+      throw UnsupportedExtensionLanguageException(
+        entry.sourceCodeLanguage,
+        name: entry.name,
+      );
+    }
+    if (entry.isJs) {
+      return installJs(entry, repoUrl: repoUrl);
+    }
+
     final dir = await _extensionsDir();
     final apkPath = p.join(dir.path, '${entry.pkg}.apk');
     final baseUrl = repoUrl.replaceFirst(RegExp(r'/[^/]*$'), '');
@@ -260,6 +430,55 @@ class ExtensionManager {
       resolved: resolved,
       signing: signing,
     );
+  }
+
+  /// Fetch JS `sourceCodeUrl` text and persist — no Dalvik, no APK trust gate.
+  Future<ExtensionSource> installJs(
+    ExtensionIndexEntry entry, {
+    required String repoUrl,
+  }) async {
+    final url = entry.sourceCodeUrl;
+    if (url == null || url.isEmpty) {
+      throw StateError(
+        'JavaScript extension missing sourceCodeUrl: ${entry.name}',
+      );
+    }
+    final id = entry.pkg;
+    if (id.isEmpty) {
+      throw StateError('JavaScript extension missing id: ${entry.name}');
+    }
+
+    final res = await _http.get(Uri.parse(url));
+    if (res.statusCode != 200) {
+      throw HttpException(
+        'JS source download failed: ${res.statusCode} at $url',
+      );
+    }
+    final body = res.body;
+    if (body.trim().isEmpty) {
+      throw StateError('JS source body empty at $url');
+    }
+
+    final src = ExtensionSource(
+      id: id,
+      sourceId: id,
+      name: entry.name,
+      version: entry.version,
+      lang: entry.lang,
+      apkPath: '',
+      className: '',
+      iconUrl: entry.iconUrl,
+      baseUrl: entry.baseUrl,
+      sourceCodeUrl: url,
+      repoUrl: repoUrl,
+      sourceCode: body,
+      sourceCodeLanguage: SourceCodeLanguage.js,
+      isInstalled: true,
+      isActive: true,
+      isNsfw: entry.isNsfw,
+    );
+    await _repos.extensions.insertExtensionSource(src);
+    return src;
   }
 
   /// After the user confirms Trust on an [UntrustedExtensionException], call
@@ -327,10 +546,13 @@ class ExtensionManager {
           : entry.baseUrl ?? firstSource?['baseUrl'] as String?,
       sourceCodeUrl: sourceCodeUrl,
       repoUrl: repoUrl,
+      sourceCode: '',
+      sourceCodeLanguage: SourceCodeLanguage.mihon,
       pkgName: signing.packageName,
       versionCode: signing.versionCode,
       signatureHash: signing.primarySignature ?? '',
       isActive: true,
+      isNsfw: entry.isNsfw,
     );
     await _repos.extensions.insertExtensionSource(src);
     return src;
@@ -347,6 +569,11 @@ class ExtensionManager {
   }
 
   Future<void> uninstall(ExtensionSource src) async {
+    if (src.isJs) {
+      await _repos.extensions.deleteExtensionSource(src.sourceId);
+      return;
+    }
+
     final installed = await listInstalled();
     for (final s in installed) {
       if (s.apkPath == src.apkPath) {
@@ -367,6 +594,18 @@ class ExtensionManager {
     ExtensionIndexEntry entry,
     String repoUrl,
   ) async {
+    if (entry.isDart ||
+        entry.sourceCodeLanguage == SourceCodeLanguage.unsupported) {
+      throw UnsupportedExtensionLanguageException(
+        entry.sourceCodeLanguage,
+        name: entry.name,
+      );
+    }
+    if (entry.isJs || src.isJs) {
+      await _updateJsSource(src, entry, repoUrl);
+      return;
+    }
+
     await _keiyoushi.unloadExtension(src.sourceId);
 
     final dir = await _extensionsDir();
@@ -397,6 +636,56 @@ class ExtensionManager {
       entry: entry,
       newApkPath: newApkPath,
       signing: signing,
+    );
+  }
+
+  Future<void> _updateJsSource(
+    ExtensionSource src,
+    ExtensionIndexEntry entry,
+    String repoUrl,
+  ) async {
+    final url = entry.sourceCodeUrl;
+    if (url == null || url.isEmpty) {
+      throw StateError(
+        'JavaScript extension missing sourceCodeUrl: ${entry.name}',
+      );
+    }
+    final res = await _http.get(Uri.parse(url));
+    if (res.statusCode != 200) {
+      throw HttpException(
+        'JS source download failed: ${res.statusCode} at $url',
+      );
+    }
+    final body = res.body;
+    if (body.trim().isEmpty) {
+      throw StateError('JS source body empty at $url');
+    }
+
+    final id = entry.pkg.isNotEmpty ? entry.pkg : src.sourceId;
+    if (src.sourceId.isNotEmpty && src.sourceId != id) {
+      await _repos.extensions.deleteExtensionSource(src.sourceId);
+    }
+
+    await _repos.extensions.insertExtensionSource(
+      src.copyWith(
+        id: id,
+        sourceId: id,
+        name: entry.name,
+        version: entry.version,
+        versionLast: entry.version,
+        lang: entry.lang,
+        apkPath: '',
+        className: '',
+        iconUrl: entry.iconUrl ?? src.iconUrl,
+        baseUrl: entry.baseUrl ?? src.baseUrl,
+        sourceCodeUrl: url,
+        repoUrl: repoUrl,
+        sourceCode: body,
+        sourceCodeLanguage: SourceCodeLanguage.js,
+        isObsolete: false,
+        isActive: true,
+        isNsfw: entry.isNsfw,
+      ),
     );
   }
 
@@ -469,6 +758,32 @@ class ExtensionManager {
     final installed = await listInstalled();
 
     for (final entry in freshEntries) {
+      if (entry.isJs) {
+        final match = installed.firstWhere(
+          (isrc) =>
+              isrc.isJs &&
+              (isrc.sourceId == entry.pkg ||
+                  isrc.id == entry.pkg ||
+                  (isrc.sourceCodeUrl != null &&
+                      isrc.sourceCodeUrl == entry.sourceCodeUrl)),
+          orElse: () => ExtensionSource(
+            id: '',
+            sourceId: '',
+            name: '',
+            version: '',
+            lang: '',
+            apkPath: '',
+            className: '',
+          ),
+        );
+        if (match.id.isEmpty) continue;
+        if (match.version == entry.version) continue;
+        await _repos.extensions.insertExtensionSource(
+          match.copyWith(versionLast: entry.version),
+        );
+        continue;
+      }
+
       for (final s in entry.sources) {
         final className = s['className'] as String? ?? '';
         if (className.isEmpty) continue;
@@ -525,6 +840,17 @@ class ExtensionManager {
         final entries = indexByRepoUrl[repo.url] ??= await fetchIndex(repo);
         ExtensionIndexEntry? match;
         for (final e in entries) {
+          if (src.isJs) {
+            if (e.isJs &&
+                (e.pkg == src.sourceId ||
+                    e.pkg == src.id ||
+                    (src.sourceCodeUrl != null &&
+                        e.sourceCodeUrl == src.sourceCodeUrl))) {
+              match = e;
+              break;
+            }
+            continue;
+          }
           if (src.className.isNotEmpty && e.className == src.className) {
             match = e;
             break;
@@ -547,19 +873,31 @@ class ExtensionManager {
     if (freshEntries.isEmpty) return;
 
     final knownClassNames = <String>{};
+    final knownJsIds = <String>{};
     for (final entry in freshEntries) {
+      if (entry.isJs && entry.pkg.isNotEmpty) {
+        knownJsIds.add(entry.pkg);
+      }
       for (final s in entry.sources) {
         final className = s['className'] as String? ?? '';
         if (className.isNotEmpty) knownClassNames.add(className);
       }
     }
-    if (knownClassNames.isEmpty) return;
+    if (knownClassNames.isEmpty && knownJsIds.isEmpty) return;
 
     final installed = await listInstalled();
     final toUpdate = <ExtensionSource>[];
     for (final src in installed) {
       if (src.repoUrl != repoUrl) continue;
-      final isNowObsolete = !knownClassNames.contains(src.className);
+      final bool isNowObsolete;
+      if (src.isJs) {
+        if (knownJsIds.isEmpty) continue;
+        isNowObsolete = !knownJsIds.contains(src.sourceId) &&
+            !knownJsIds.contains(src.id);
+      } else {
+        if (knownClassNames.isEmpty) continue;
+        isNowObsolete = !knownClassNames.contains(src.className);
+      }
       if (src.isObsolete != isNowObsolete) {
         toUpdate.add(
           src.copyWith(isObsolete: isNowObsolete),
@@ -690,6 +1028,8 @@ class ExtensionManager {
     final installed = await listInstalled();
     for (final src in installed) {
       if (!src.isActive) continue;
+      // JS sources have no APK — skip Dalvik loadExtension.
+      if (src.isJs || src.apkPath.isEmpty) continue;
       if (!File(src.apkPath).existsSync()) {
         await _repos.extensions.deleteExtensionSource(src.id);
         continue;
