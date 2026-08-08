@@ -613,6 +613,7 @@ class _ExtensionsScreenState extends ConsumerState<ExtensionsScreen>
               children: [
                 _InstalledTab(
                   installed: _installed,
+                  repos: _repos,
                   onUninstall: _uninstall,
                   onUpdate: _update,
                   onUpdateAll: _updateAll,
@@ -656,6 +657,7 @@ class _ExtensionsScreenState extends ConsumerState<ExtensionsScreen>
 // ─── Installed tab ──────────────────────────────────────────────────────
 class _InstalledTab extends StatelessWidget {
   final List<ExtensionSource> installed;
+  final List<ExtensionRepo> repos;
   final void Function(ExtensionSource) onUninstall;
   final void Function(ExtensionSource) onUpdate;
   final VoidCallback onUpdateAll;
@@ -664,12 +666,23 @@ class _InstalledTab extends StatelessWidget {
 
   const _InstalledTab({
     required this.installed,
+    required this.repos,
     required this.onUninstall,
     required this.onUpdate,
     required this.onUpdateAll,
     required this.onTrust,
     required this.onBrowse,
   });
+
+  String _repoLabel(ExtensionSource src) {
+    final url = src.repoUrl;
+    if (url != null && url.isNotEmpty) {
+      for (final r in repos) {
+        if (r.url == url) return r.name;
+      }
+    }
+    return src.isJs ? 'JavaScript' : 'Mihon';
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -746,6 +759,7 @@ class _InstalledTab extends StatelessWidget {
       children.add(
         _ActiveInstalledTile(
           src: src,
+          repoLabel: _repoLabel(src),
           onBrowse: () => onBrowse(src),
           onUpdate: () => onUpdate(src),
           onUninstall: () => onUninstall(src),
@@ -838,12 +852,14 @@ class _UntrustedTile extends StatelessWidget {
 
 class _ActiveInstalledTile extends StatelessWidget {
   final ExtensionSource src;
+  final String repoLabel;
   final VoidCallback onBrowse;
   final VoidCallback onUpdate;
   final VoidCallback onUninstall;
 
   const _ActiveInstalledTile({
     required this.src,
+    required this.repoLabel,
     required this.onBrowse,
     required this.onUpdate,
     required this.onUninstall,
@@ -936,7 +952,7 @@ class _ActiveInstalledTile extends StatelessWidget {
                             borderRadius: BorderRadius.circular(4),
                           ),
                           child: Text(
-                            src.isJs ? 'JS' : 'Mihon',
+                            repoLabel,
                             style: TextStyle(
                               fontSize: 9,
                               fontWeight: FontWeight.w600,
@@ -1087,8 +1103,8 @@ class _AvailableTabState extends State<_AvailableTab> {
   String _query = '';
   Timer? _searchDebounce;
 
-  /// Repo ids whose not-installed section is collapsed. Empty = all expanded.
-  final Set<int> _collapsedRepos = {};
+  /// Repo ids whose not-installed section is expanded. Empty = all collapsed.
+  final Set<int> _expandedRepos = {};
   List<_AvailableRow>? _cachedRows;
   int _rowsCacheKey = 0;
 
@@ -1137,7 +1153,7 @@ class _AvailableTabState extends State<_AvailableTab> {
       widget.repos.length,
       widget.indexCache.length,
       widget.installed.length,
-      _collapsedRepos.length,
+      _expandedRepos.length,
       showNsfw,
       showObsolete,
     );
@@ -1205,7 +1221,7 @@ class _AvailableTabState extends State<_AvailableTab> {
         final repo = widget.repos.firstWhere((r) => r.id == repoId);
         final group = groups[repoId]!
           ..sort((a, b) => a.entry.name.compareTo(b.entry.name));
-        final expanded = !_collapsedRepos.contains(repoId);
+        final expanded = _expandedRepos.contains(repoId);
         rows.add(
           _AvailableRow.repoHeader(
             repoId: repoId,
@@ -1224,8 +1240,8 @@ class _AvailableTabState extends State<_AvailableTab> {
       }
     }
 
-    appendKindSection('Mihon (APK)', ExtensionRepoKind.mihon);
-    appendKindSection('JavaScript', ExtensionRepoKind.javascript);
+    appendKindSection('Catalogue · Mihon', ExtensionRepoKind.mihon);
+    appendKindSection('Catalogue · JavaScript', ExtensionRepoKind.javascript);
 
     if (rows.isEmpty && allEntries.isNotEmpty) {
       rows.add(
@@ -1271,15 +1287,30 @@ class _AvailableTabState extends State<_AvailableTab> {
       children: [
         if (hasAnyFetched)
           Padding(
-            padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+            padding: const EdgeInsets.fromLTRB(20, 16, 20, 4),
             child: TextField(
               controller: _searchCtrl,
+              style: TextStyle(
+                color: c.textPrimary,
+                fontSize: 15,
+                letterSpacing: 0.2,
+              ),
+              cursorColor: c.accent,
               decoration: InputDecoration(
-                hintText: 'Search extensions…',
-                prefixIcon: const Icon(Icons.search, size: 20),
+                hintText: 'Find a source…',
+                hintStyle: TextStyle(
+                  color: c.textTertiary,
+                  fontSize: 15,
+                  letterSpacing: 0.2,
+                ),
+                prefixIcon: Icon(
+                  Icons.search,
+                  size: 20,
+                  color: c.textTertiary,
+                ),
                 suffixIcon: _query.isNotEmpty || _searchCtrl.text.isNotEmpty
                     ? IconButton(
-                        icon: const Icon(Icons.clear, size: 18),
+                        icon: Icon(Icons.close, size: 18, color: c.textTertiary),
                         onPressed: () {
                           _searchDebounce?.cancel();
                           _searchCtrl.clear();
@@ -1288,12 +1319,19 @@ class _AvailableTabState extends State<_AvailableTab> {
                       )
                     : null,
                 isDense: true,
+                filled: true,
+                fillColor: c.bgElevated,
                 contentPadding: const EdgeInsets.symmetric(
-                  horizontal: 12,
-                  vertical: 10,
+                  horizontal: 14,
+                  vertical: 14,
                 ),
-                border: OutlineInputBorder(
-                  borderRadius: AppSpacing.brMd,
+                enabledBorder: UnderlineInputBorder(
+                  borderSide: BorderSide(color: c.borderStrong),
+                ),
+                focusedBorder: UnderlineInputBorder(
+                  borderSide: BorderSide(color: c.accent, width: 1.5),
+                ),
+                border: UnderlineInputBorder(
                   borderSide: BorderSide(color: c.border),
                 ),
               ),
@@ -1302,7 +1340,7 @@ class _AvailableTabState extends State<_AvailableTab> {
         Expanded(
           child: !hasAnyFetched
               ? ListView(
-                  padding: const EdgeInsets.all(16),
+                  padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
                   children: [
                     for (final repo in widget.repos) ...[
                       _RepoHeader(
@@ -1312,12 +1350,13 @@ class _AvailableTabState extends State<_AvailableTab> {
                       ),
                       const SizedBox(height: 8),
                       Padding(
-                        padding: const EdgeInsets.only(bottom: 16),
+                        padding: const EdgeInsets.only(bottom: 20),
                         child: Text(
-                          'Tap "Fetch" to load extensions from this repo.',
+                          'Fetch this catalogue to browse its sources.',
                           style: TextStyle(
                             color: c.textSecondary,
                             fontSize: 12,
+                            height: 1.4,
                           ),
                         ),
                       ),
@@ -1326,7 +1365,7 @@ class _AvailableTabState extends State<_AvailableTab> {
                 )
               : RepaintBoundary(
                   child: ListView.builder(
-                    padding: const EdgeInsets.all(16),
+                    padding: const EdgeInsets.fromLTRB(16, 8, 16, 28),
                     itemCount: rows.length,
                     itemBuilder: (context, index) {
                       final row = rows[index];
@@ -1334,16 +1373,30 @@ class _AvailableTabState extends State<_AvailableTab> {
                         case _AvailableRowKind.section:
                           return Padding(
                             padding: EdgeInsets.only(
-                              bottom: 8,
-                              top: index == 0 ? 0 : 8,
+                              left: 4,
+                              right: 4,
+                              bottom: 10,
+                              top: index == 0 ? 8 : 20,
                             ),
-                            child: Text(
-                              row.title!,
-                              style: TextStyle(
-                                fontWeight: FontWeight.bold,
-                                fontSize: 13,
-                                color: c.textPrimary,
-                              ),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  row.title!.toUpperCase(),
+                                  style: TextStyle(
+                                    fontWeight: FontWeight.w700,
+                                    fontSize: 11,
+                                    letterSpacing: 1.6,
+                                    color: c.textSecondary,
+                                  ),
+                                ),
+                                const SizedBox(height: 6),
+                                Container(
+                                  height: 2,
+                                  width: 36,
+                                  color: c.accent,
+                                ),
+                              ],
                             ),
                           );
                         case _AvailableRowKind.repoHeader:
@@ -1355,9 +1408,9 @@ class _AvailableTabState extends State<_AvailableTab> {
                               final id = row.repoId!;
                               setState(() {
                                 if (row.expanded) {
-                                  _collapsedRepos.add(id);
+                                  _expandedRepos.remove(id);
                                 } else {
-                                  _collapsedRepos.remove(id);
+                                  _expandedRepos.add(id);
                                 }
                               });
                             },
@@ -1365,7 +1418,11 @@ class _AvailableTabState extends State<_AvailableTab> {
                         case _AvailableRowKind.entry:
                           final er = row.entry!;
                           return Padding(
-                            padding: const EdgeInsets.only(bottom: 6),
+                            padding: const EdgeInsets.only(
+                              left: 8,
+                              right: 0,
+                              bottom: 4,
+                            ),
                             child: _ExtensionRow(
                               entry: er.entry,
                               installed: row.installed,
@@ -1377,13 +1434,13 @@ class _AvailableTabState extends State<_AvailableTab> {
                           );
                         case _AvailableRowKind.emptyMessage:
                           return Padding(
-                            padding: const EdgeInsets.only(top: 40),
+                            padding: const EdgeInsets.only(top: 48),
                             child: Center(
                               child: Column(
                                 children: [
                                   Icon(
                                     Icons.search_off,
-                                    size: 48,
+                                    size: 40,
                                     color: c.textTertiary,
                                   ),
                                   const SizedBox(height: 12),
@@ -1409,6 +1466,7 @@ class _AvailableTabState extends State<_AvailableTab> {
   }
 }
 
+
 enum _AvailableRowKind { section, repoHeader, entry, emptyMessage }
 
 class _AvailableRow {
@@ -1431,7 +1489,7 @@ class _AvailableRow {
     this.installedVersion,
     this.repoId,
     this.count = 0,
-    this.expanded = true,
+    this.expanded = false,
   });
 
   const _AvailableRow.section(String title)
@@ -1551,12 +1609,11 @@ class _ExtensionRow extends StatelessWidget {
     final c = context.colors;
     final isNsfw = entry.isNsfw;
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 11),
       decoration: BoxDecoration(
-        color: hasUpdate ? c.accent.withAlpha(15) : c.surface,
-        borderRadius: AppSpacing.brMd,
-        border: Border.all(
-          color: hasUpdate ? c.accent.withAlpha(51) : c.border,
+        color: hasUpdate ? c.accentMuted.withValues(alpha: 0.4) : c.surface,
+        border: Border(
+          bottom: BorderSide(color: c.border.withValues(alpha: 0.85)),
         ),
       ),
       child: Row(
@@ -1932,49 +1989,72 @@ class _RepoGroupHeader extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final c = context.colors;
-    return InkWell(
-      onTap: onToggle,
-      child: Padding(
-        padding: const EdgeInsets.only(left: 4, bottom: 8, top: 8),
-        child: Row(
-          children: [
-            Icon(
-              expanded ? Icons.expand_more : Icons.chevron_right,
-              size: 18,
-              color: c.textSecondary,
-            ),
-            const SizedBox(width: 4),
-            Icon(Icons.cloud_outlined, size: 14, color: c.accent),
-            const SizedBox(width: 6),
-            Expanded(
-              child: Text(
-                repoName,
-                style: TextStyle(
-                  fontWeight: FontWeight.bold,
-                  fontSize: 13,
-                  color: c.textPrimary,
-                ),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 6, top: 4),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: onToggle,
+          borderRadius: BorderRadius.circular(2),
+          child: Ink(
+            decoration: BoxDecoration(
+              color: c.bgElevated,
+              border: Border(
+                left: BorderSide(color: c.accent, width: 2.5),
+                bottom: BorderSide(color: c.border),
               ),
             ),
-            const SizedBox(width: 6),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
-              decoration: BoxDecoration(
-                color: c.surfaceMuted,
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: Text(
-                '$count',
-                style: TextStyle(
-                  fontSize: 11,
-                  fontWeight: FontWeight.w600,
-                  color: c.textSecondary,
-                ),
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(12, 12, 12, 12),
+              child: Row(
+                children: [
+                  AnimatedRotation(
+                    turns: expanded ? 0.25 : 0,
+                    duration: const Duration(milliseconds: 180),
+                    child: Icon(
+                      Icons.chevron_right,
+                      size: 18,
+                      color: c.textSecondary,
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      repoName,
+                      style: TextStyle(
+                        fontWeight: FontWeight.w600,
+                        fontSize: 14,
+                        letterSpacing: 0.15,
+                        color: c.textPrimary,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Text(
+                    '$count',
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                      fontFeatures: const [FontFeature.tabularFigures()],
+                      color: c.textTertiary,
+                    ),
+                  ),
+                  const SizedBox(width: 4),
+                  Text(
+                    expanded ? 'hide' : 'open',
+                    style: TextStyle(
+                      fontSize: 10,
+                      letterSpacing: 0.8,
+                      fontWeight: FontWeight.w600,
+                      color: c.accent,
+                    ),
+                  ),
+                ],
               ),
             ),
-          ],
+          ),
         ),
       ),
     );
