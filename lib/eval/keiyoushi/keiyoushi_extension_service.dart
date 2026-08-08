@@ -115,8 +115,20 @@ class KeiyoushiExtensionService implements ExtensionService {
     final result = await _keiyoushi.getPageList(
       sourceId: source.sourceId,
       url: chapter.url,
+      memo: chapter.memo,
     );
-    return [MPages.fromList(result)];
+    // Dalvik returns `imageUrl`; normalize to MPage.`url`.
+    final normalized = <Map<String, dynamic>>[
+      for (var i = 0; i < result.length; i++)
+        {
+          'index': result[i]['index'] ?? i,
+          'url': (result[i]['url'] as String?) ??
+              (result[i]['imageUrl'] as String?) ??
+              '',
+          if (result[i]['headers'] != null) 'headers': result[i]['headers'],
+        },
+    ];
+    return [MPages.fromList(normalized)];
   }
 
   @override

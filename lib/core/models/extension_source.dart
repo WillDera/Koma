@@ -1,3 +1,18 @@
+/// `sourceCodeLanguage` values.
+///
+/// Installed sources persist [mihon] or [js]. Catalog index entries may also
+/// use [dart] / [unsupported] (rejected at install).
+class SourceCodeLanguage {
+  static const mihon = 'mihon';
+  static const js = 'js';
+  static const dart = 'dart';
+  static const unsupported = 'unsupported';
+
+  static bool isJs(String? v) => v == js || v == 'javascript';
+  static bool isMihon(String? v) => v == mihon;
+  static bool isInstallable(String? v) => isJs(v) || isMihon(v);
+}
+
 class ExtensionSource {
   final String id;
   final String sourceId;
@@ -11,6 +26,13 @@ class ExtensionSource {
   final String? baseUrl;
   final String? sourceCodeUrl;
   final String? repoUrl;
+
+  /// JS body for [SourceCodeLanguage.js]; empty for Mihon APKs.
+  final String sourceCode;
+
+  /// [SourceCodeLanguage.mihon] or [SourceCodeLanguage.js].
+  final String sourceCodeLanguage;
+
   final String pkgName;
   final int versionCode;
   final String signatureHash;
@@ -32,7 +54,10 @@ class ExtensionSource {
       isInstalled &&
       !isActive &&
       pkgName.isNotEmpty &&
-      signatureHash.isNotEmpty;
+      signatureHash.isNotEmpty &&
+      !isJs;
+
+  bool get isJs => SourceCodeLanguage.isJs(sourceCodeLanguage);
 
   ExtensionSource({
     required this.id,
@@ -47,6 +72,8 @@ class ExtensionSource {
     this.baseUrl,
     this.sourceCodeUrl,
     this.repoUrl,
+    this.sourceCode = '',
+    this.sourceCodeLanguage = SourceCodeLanguage.mihon,
     this.pkgName = '',
     this.versionCode = 0,
     this.signatureHash = '',
@@ -73,6 +100,8 @@ class ExtensionSource {
     String? baseUrl,
     String? sourceCodeUrl,
     String? repoUrl,
+    String? sourceCode,
+    String? sourceCodeLanguage,
     String? pkgName,
     int? versionCode,
     String? signatureHash,
@@ -97,6 +126,8 @@ class ExtensionSource {
       baseUrl: baseUrl ?? this.baseUrl,
       sourceCodeUrl: sourceCodeUrl ?? this.sourceCodeUrl,
       repoUrl: repoUrl ?? this.repoUrl,
+      sourceCode: sourceCode ?? this.sourceCode,
+      sourceCodeLanguage: sourceCodeLanguage ?? this.sourceCodeLanguage,
       pkgName: pkgName ?? this.pkgName,
       versionCode: versionCode ?? this.versionCode,
       signatureHash: signatureHash ?? this.signatureHash,
@@ -123,6 +154,8 @@ class ExtensionSource {
     'base_url': baseUrl,
     'source_code_url': sourceCodeUrl,
     'repo_url': repoUrl,
+    'source_code': sourceCode,
+    'source_code_language': sourceCodeLanguage,
     'pkg_name': pkgName,
     'version_code': versionCode,
     'signature_hash': signatureHash,
@@ -149,6 +182,9 @@ class ExtensionSource {
         baseUrl: json['base_url'] as String?,
         sourceCodeUrl: json['source_code_url'] as String?,
         repoUrl: json['repo_url'] as String?,
+        sourceCode: json['source_code'] as String? ?? '',
+        sourceCodeLanguage:
+            json['source_code_language'] as String? ?? SourceCodeLanguage.mihon,
         pkgName: json['pkg_name'] as String? ?? '',
         versionCode: (json['version_code'] as num?)?.toInt() ?? 0,
         signatureHash: json['signature_hash'] as String? ?? '',

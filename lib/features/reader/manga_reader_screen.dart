@@ -2,11 +2,14 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:crypto/crypto.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:http/http.dart' as http;
+import 'package:path/path.dart' as p;
+import 'package:path_provider/path_provider.dart';
 import 'package:scrollable_positioned_list/scrollable_positioned_list.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
@@ -16,8 +19,12 @@ import '../../core/models/manga_page.dart';
 import '../../core/providers.dart';
 import '../../core/repositories/repositories.dart';
 import '../../core/services/extension_manager.dart';
+import '../../core/services/extension_source_resolve.dart';
 import '../../core/services/keiyoushi_service.dart';
 import '../../core/services/media_export_service.dart';
+import '../../eval/dispatch_service.dart';
+import '../../eval/models/m_chapter.dart';
+import '../../eval/models/m_source.dart';
 import '../../features/snippets/bookmarks_provider.dart';
 import '../../router/router.dart';
 import '../../theme/app_theme.dart';
@@ -59,7 +66,9 @@ class MangaReaderScreen extends ConsumerStatefulWidget {
 
 class _MangaReaderScreenState extends ConsumerState<MangaReaderScreen>
     with WidgetsBindingObserver, ReaderMemoryManagement {
-  final _service = KeiyoushiService();
+  late final KeiyoushiService _keiyoushi;
+  late final ExtensionDispatchService _dispatch;
+  MSource? _mSource;
   Repositories? _repos;
   ExtensionManager? _extensionManager;
   bool _loading = true;
@@ -97,6 +106,8 @@ class _MangaReaderScreenState extends ConsumerState<MangaReaderScreen>
   @override
   void initState() {
     super.initState();
+    _keiyoushi = ref.read(keiyoushiServiceProvider);
+    _dispatch = ref.read(extensionServiceProvider);
     _repos = ref.read(repositoriesProvider);
     _extensionManager = ref.read(extensionManagerProvider);
     WidgetsBinding.instance.addObserver(this);
@@ -108,6 +119,14 @@ class _MangaReaderScreenState extends ConsumerState<MangaReaderScreen>
     await _loadSettings();
     _applyOrientation();
     _applyWakelock();
+    try {
+      _mSource = await resolveExtensionMSource(
+        ref.read(repositoriesProvider),
+        widget.sourceId,
+      );
+    } catch (_) {
+      _mSource = null;
+    }
     if (widget.mangaId != null && _repos != null) {
       final ch = await _repos!.manga.getMangaChapterByUrl(
         widget.mangaId!,
@@ -249,13 +268,30 @@ class _MangaReaderScreenState extends ConsumerState<MangaReaderScreen>
   /// getPageList.
   Future<List<PageData>> _pagesForChapter(MangaChapter chapter) async {
     final sourceId = await _resolveSourceId();
+    final source = _mSource ??
+        await resolveExtensionMSource(
+          ref.read(repositoriesProvider),
+          sourceId,
+        );
+    _mSource = source;
 
+    // Local pages: Mihon via Dalvik; JS via the same on-disk layout the
+    // download manager writes under applicationSupport/manga/...
     try {
-      final local = await _service.getLocalPages(
-        sourceId: sourceId,
-        mangaUrl: widget.mangaUrl,
-        chapterUrl: chapter.url,
-      );
+      List<String> local = const [];
+      if (source.isJs) {
+        local = await _listLocalJsPages(
+          sourceId: sourceId,
+          mangaUrl: widget.mangaUrl,
+          chapterUrl: chapter.url,
+        );
+      } else {
+        local = await _keiyoushi.getLocalPages(
+          sourceId: sourceId,
+          mangaUrl: widget.mangaUrl,
+          chapterUrl: chapter.url,
+        );
+      }
       if (local.isNotEmpty) {
         // Heal the DB flag if files exist but isDownloaded was never set.
         if (!chapter.isDownloaded && chapter.id > 0 && _repos != null) {
@@ -281,28 +317,55 @@ class _MangaReaderScreenState extends ConsumerState<MangaReaderScreen>
       // Fall through to network page list.
     }
 
-    final raw = await _service.getPageList(
-      sourceId: sourceId,
-      url: chapter.url,
-      memo: chapter.memo,
+    final pagesWrapped = await _dispatch.getPageList(
+      source,
+      MChapter(
+        url: chapter.url,
+        name: chapter.name,
+        memo: chapter.memo,
+      ),
     );
-    return raw.asMap().entries.map((e) {
-      final imgUrl = e.value['imageUrl'] as String?;
-      final rawHeaders = e.value['headers'] as Map?;
-      final headers = rawHeaders?.map(
-        (k, v) => MapEntry(k.toString(), v.toString()),
-      );
+    final flat = [
+      for (final group in pagesWrapped)
+        for (final p in group.pages) p,
+    ];
+    return flat.asMap().entries.map((e) {
+      final page = e.value;
       return PageData.page(
         mangaPage: MangaPage(
           index: e.key,
-          imageUrl: imgUrl ?? (e.value['url'] as String? ?? ''),
-          headers: headers,
+          imageUrl: page.url,
+          headers: page.headers,
           chapterUrl: chapter.url,
         ),
         chapter: chapter,
         pageIndex: e.key,
       );
     }).toList();
+  }
+
+  Future<List<String>> _listLocalJsPages({
+    required String sourceId,
+    required String mangaUrl,
+    required String chapterUrl,
+  }) async {
+    final supportDir = await getApplicationSupportDirectory();
+    final mangaKey =
+        sha256.convert(utf8.encode(mangaUrl)).toString().substring(0, 16);
+    final chKey =
+        sha256.convert(utf8.encode(chapterUrl)).toString().substring(0, 16);
+    final dir = Directory(
+      '${supportDir.path}/manga/$sourceId/$mangaKey/$chKey',
+    );
+    if (!await dir.exists()) return const [];
+    final files = await dir.list().where((e) => e is File).cast<File>().toList();
+    files.retainWhere((f) => f.path.toLowerCase().endsWith('.jpg'));
+    files.sort((a, b) {
+      int idx(File f) =>
+          int.tryParse(p.basenameWithoutExtension(f.path)) ?? 1 << 30;
+      return idx(a).compareTo(idx(b));
+    });
+    return [for (final f in files) f.path];
   }
 
   Future<void> _load() async {

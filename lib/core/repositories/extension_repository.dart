@@ -96,6 +96,8 @@ class ExtensionRepository {
     baseUrl: s.baseUrl,
     sourceCodeUrl: s.sourceCodeUrl,
     repoUrl: s.repoUrl,
+    sourceCode: s.sourceCode,
+    sourceCodeLanguage: s.sourceCodeLanguage,
     pkgName: s.pkgName,
     versionCode: s.versionCode,
     signatureHash: s.signatureHash,
@@ -124,6 +126,7 @@ class ExtensionRepository {
         baseUrl: s.baseUrl,
         sourceCodeUrl: s.sourceCodeUrl,
         repoUrl: s.repoUrl,
+        sourceCode: s.sourceCode,
         pkgName: s.pkgName,
         versionCode: s.versionCode,
         signatureHash: s.signatureHash,
@@ -132,7 +135,7 @@ class ExtensionRepository {
         isNsfw: s.isNsfw,
         isPinned: s.isPinned,
         isObsolete: s.isObsolete,
-        sourceCodeLanguage: 'mihon',
+        sourceCodeLanguage: s.sourceCodeLanguage,
         createdAt: s.createdAt,
         updatedAt: s.updatedAt,
       );
@@ -144,6 +147,7 @@ class ExtensionRepository {
     enabled: r.enabled,
     createdAt: r.createdAt,
     signingKey: r.signingKey,
+    kind: r.kind,
   );
 
   static i.ExtensionRepo _repoFromModel(ExtensionRepo r) => i.ExtensionRepo(
@@ -153,5 +157,6 @@ class ExtensionRepository {
     enabled: r.enabled,
     createdAt: r.createdAt,
     signingKey: r.signingKey,
+    kind: r.kind,
   );
 }

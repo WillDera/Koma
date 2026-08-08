@@ -32,6 +32,9 @@ class ExtensionSource {
   String? sourceCodeUrl;
   String? repoUrl;
 
+  /// JS source body (mangayomi). Empty for Mihon APKs.
+  String sourceCode;
+
   /// Package name from the APK (trust key). Empty until inspected.
   String pkgName;
 
@@ -71,6 +74,7 @@ class ExtensionSource {
     String? baseUrl,
     String? sourceCodeUrl,
     String? repoUrl,
+    String? sourceCode,
     String? pkgName,
     int? versionCode,
     String? signatureHash,
@@ -96,6 +100,7 @@ class ExtensionSource {
       baseUrl: baseUrl ?? this.baseUrl,
       sourceCodeUrl: sourceCodeUrl ?? this.sourceCodeUrl,
       repoUrl: repoUrl ?? this.repoUrl,
+      sourceCode: sourceCode ?? this.sourceCode,
       pkgName: pkgName ?? this.pkgName,
       versionCode: versionCode ?? this.versionCode,
       signatureHash: signatureHash ?? this.signatureHash,
@@ -123,6 +128,7 @@ class ExtensionSource {
     this.baseUrl,
     this.sourceCodeUrl,
     this.repoUrl,
+    this.sourceCode = '',
     this.pkgName = '',
     this.versionCode = 0,
     this.signatureHash = '',
@@ -149,6 +155,7 @@ class ExtensionSource {
     'base_url': baseUrl,
     'source_code_url': sourceCodeUrl,
     'repo_url': repoUrl,
+    'source_code': sourceCode,
     'pkg_name': pkgName,
     'version_code': versionCode,
     'signature_hash': signatureHash,
@@ -176,6 +183,7 @@ class ExtensionSource {
         baseUrl: json['base_url'] as String?,
         sourceCodeUrl: json['source_code_url'] as String?,
         repoUrl: json['repo_url'] as String?,
+        sourceCode: json['source_code'] as String? ?? '',
         pkgName: json['pkg_name'] as String? ?? '',
         versionCode: (json['version_code'] as num?)?.toInt() ?? 0,
         signatureHash: json['signature_hash'] as String? ?? '',

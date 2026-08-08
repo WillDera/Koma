@@ -15,7 +15,10 @@ import '../../core/models/manga_chapter.dart';
 import '../../core/providers.dart';
 import '../../core/services/download/chapter_download.dart';
 import '../../core/services/download/download_manager.dart';
+import '../../core/services/extension_source_resolve.dart';
 import '../../core/services/keiyoushi_service.dart';
+import '../../eval/dispatch_service.dart';
+import '../../eval/models/m_chapter.dart';
 import '../../core/services/source_webview_bridge.dart';
 import '../../core/utils/image_cache.dart';
 import '../../core/utils/image_headers.dart';
@@ -84,9 +87,11 @@ class MangaDetailScreen extends ConsumerStatefulWidget {
 }
 
 class _MangaDetailScreenState extends ConsumerState<MangaDetailScreen> {
-  /// Shared process-scoped service — never construct a fresh [KeiyoushiService]
-  /// here (its init path hits getDalvikPort / a TCP probe).
-  KeiyoushiService get _service => ref.read(keiyoushiServiceProvider);
+  /// Shared process-scoped services — never construct a fresh KeiyoushiService
+  /// (its init path hits getDalvikPort / a TCP probe).
+  KeiyoushiService get _keiyoushi => ref.read(keiyoushiServiceProvider);
+  ExtensionDispatchService get _dispatch =>
+      ref.read(extensionServiceProvider);
   int? _mangaId;
   String? _localThumbnail;
   bool _inLibrary = false;
@@ -550,28 +555,35 @@ class _MangaDetailScreenState extends ConsumerState<MangaDetailScreen> {
     }
     if (!mounted || expectedGen != _loadGen || !_isCurrentBinding) return;
     try {
-      final result = await _service.getMangaUpdate(
-        sourceId: widget.sourceId,
-        url: widget.url,
+      final repos = ref.read(repositoriesProvider);
+      final mSource = await resolveExtensionMSource(
+        repos,
+        widget.sourceId,
+        name: widget.title,
+      );
+      if (!mounted || expectedGen != _loadGen || !_isCurrentBinding) return;
+
+      final detail = await _dispatch.getMangaDetail(
+        mSource,
+        widget.url,
         memo: widget.memo ?? widget.manga?.memo,
         title: widget.title.isNotEmpty
             ? widget.title
             : (ref.read(mangaDetailProvider).details?['title'] as String?),
-        thumbnailUrl:
-            ref.read(mangaDetailProvider).details?['thumbnail_url'] as String?,
-        author: ref.read(mangaDetailProvider).details?['author'] as String?,
-        artist: ref.read(mangaDetailProvider).details?['artist'] as String?,
-        description:
-            ref.read(mangaDetailProvider).details?['description'] as String?,
-        genre: ref.read(mangaDetailProvider).details?['genre'] as String?,
       );
       if (!mounted || expectedGen != _loadGen || !_isCurrentBinding) return;
-      var details = Map<String, dynamic>.from(result.details);
-      var chapters = result.chapters;
 
-      if (chapters.isEmpty) {
+      final mmanga = detail.manga;
+      var details = <String, dynamic>{
+        if (mmanga != null) ...mmanga.toJson(),
+      };
+      var chapters = detail.chapters
+          .map((MChapter ch) => ch.toJson())
+          .toList();
+
+      if (chapters.isEmpty && !mSource.isJs) {
         try {
-          final fallback = await _service.getChapterList(
+          final fallback = await _keiyoushi.getChapterList(
             sourceId: widget.sourceId,
             url: widget.url,
             memo: widget.memo ?? widget.manga?.memo,
@@ -1448,11 +1460,15 @@ class _MangaDetailScreenState extends ConsumerState<MangaDetailScreen> {
   }) async {
     if (chapterUrls.isEmpty) return;
     try {
-      await _service.deleteChapters(
-        sourceId: widget.sourceId,
-        mangaUrl: widget.url,
-        chapterUrls: chapterUrls,
-      );
+      final repos = ref.read(repositoriesProvider);
+      final ext = await findInstalledExtension(repos, widget.sourceId);
+      if (ext == null || !ext.isJs) {
+        await _keiyoushi.deleteChapters(
+          sourceId: widget.sourceId,
+          mangaUrl: widget.url,
+          chapterUrls: chapterUrls,
+        );
+      }
       if (!mounted) return;
       await _clearLocalDownloadFlags(chapterUrls);
       if (!mounted) return;

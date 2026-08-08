@@ -40,6 +40,11 @@ Set<String> _installedPkgs(List<ExtensionSource> installed) {
   for (final s in installed) {
     final pkg = _extractPkgFromApkPath(s.apkPath);
     if (pkg.isNotEmpty) set.add(pkg);
+    // JS installs store the catalog id on sourceId/id (no APK path).
+    if (s.isJs) {
+      if (s.sourceId.isNotEmpty) set.add(s.sourceId);
+      if (s.id.isNotEmpty) set.add(s.id);
+    }
   }
   return set;
 }
@@ -149,6 +154,7 @@ class _ExtensionsScreenState extends ConsumerState<ExtensionsScreen>
     await _mgr.addRepo(
       name: _keiyoushiDefaultRepoName,
       url: _keiyoushiDefaultRepoUrl,
+      kind: ExtensionRepoKind.mihon,
     );
     await _refresh();
   }
@@ -187,54 +193,97 @@ class _ExtensionsScreenState extends ConsumerState<ExtensionsScreen>
   Future<void> _addRepoDialog() async {
     final nameCtl = TextEditingController();
     final urlCtl = TextEditingController();
+    var kind = ExtensionRepoKind.mihon;
     final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) {
         final c = ctx.colors;
-        return AlertDialog(
-          backgroundColor: c.surface,
-          title: Text('Add repo', style: TextStyle(color: c.textPrimary)),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              TextField(
-                controller: nameCtl,
-                decoration: const InputDecoration(
-                  labelText: 'Name',
-                  hintText: 'My sources',
-                ),
+        return StatefulBuilder(
+          builder: (ctx, setLocal) {
+            return AlertDialog(
+              backgroundColor: c.surface,
+              title: Text('Add repo', style: TextStyle(color: c.textPrimary)),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  TextField(
+                    controller: nameCtl,
+                    decoration: const InputDecoration(
+                      labelText: 'Name',
+                      hintText: 'My sources',
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: urlCtl,
+                    decoration: const InputDecoration(
+                      labelText: 'index.json URL',
+                      hintText: _keiyoushiDefaultRepoUrl,
+                    ),
+                    keyboardType: TextInputType.url,
+                  ),
+                  const SizedBox(height: 16),
+                  Text(
+                    'Ecosystem',
+                    style: TextStyle(
+                      color: c.textSecondary,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Wrap(
+                    spacing: 8,
+                    children: [
+                      ChoiceChip(
+                        label: const Text('Mihon (APK)'),
+                        selected: kind == ExtensionRepoKind.mihon,
+                        onSelected: (_) =>
+                            setLocal(() => kind = ExtensionRepoKind.mihon),
+                      ),
+                      ChoiceChip(
+                        label: const Text('JavaScript'),
+                        selected: kind == ExtensionRepoKind.javascript,
+                        onSelected: (_) =>
+                            setLocal(() => kind = ExtensionRepoKind.javascript),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    'Leave blank URL schema defaults — kind is also auto-detected from the index when unsure.',
+                    style: TextStyle(color: c.textTertiary, fontSize: 11),
+                  ),
+                ],
               ),
-              const SizedBox(height: 12),
-              TextField(
-                controller: urlCtl,
-                decoration: const InputDecoration(
-                  labelText: 'index.json URL',
-                  hintText: _keiyoushiDefaultRepoUrl,
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.of(ctx).pop(false),
+                  child: const Text('Cancel'),
                 ),
-                keyboardType: TextInputType.url,
-              ),
-            ],
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(ctx).pop(false),
-              child: const Text('Cancel'),
-            ),
-            FilledButton(
-              onPressed: () {
-                if (nameCtl.text.trim().isEmpty || urlCtl.text.trim().isEmpty) {
-                  return;
-                }
-                Navigator.of(ctx).pop(true);
-              },
-              child: const Text('Add'),
-            ),
-          ],
+                FilledButton(
+                  onPressed: () {
+                    if (nameCtl.text.trim().isEmpty ||
+                        urlCtl.text.trim().isEmpty) {
+                      return;
+                    }
+                    Navigator.of(ctx).pop(true);
+                  },
+                  child: const Text('Add'),
+                ),
+              ],
+            );
+          },
         );
       },
     );
     if (ok == true) {
-      await _mgr.addRepo(name: nameCtl.text.trim(), url: urlCtl.text.trim());
+      await _mgr.addRepo(
+        name: nameCtl.text.trim(),
+        url: urlCtl.text.trim(),
+        kind: kind,
+      );
       await _refresh();
     }
   }
@@ -260,7 +309,23 @@ class _ExtensionsScreenState extends ConsumerState<ExtensionsScreen>
             const [];
       });
       await _fetchIndex(repo);
+    } on UnsupportedExtensionLanguageException catch (e) {
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text(
+            'Dart-eval is unsupported'
+            '${e.name != null && e.name!.isNotEmpty ? ' (${e.name})' : ''}',
+          ),
+        ),
+      );
     } on UntrustedExtensionException catch (e) {
+      // JS installs never go through APK trust — skip the dialog path.
+      if (entry.isJs) {
+        messenger.showSnackBar(
+          SnackBar(content: Text('Load failed for JS source ${entry.name}')),
+        );
+        return;
+      }
       if (!mounted) return;
       final trust = await _confirmTrust(e);
       if (!mounted) return;
@@ -326,11 +391,17 @@ class _ExtensionsScreenState extends ConsumerState<ExtensionsScreen>
       if (entries == null) continue;
       for (final e in entries) {
         // Match by className first (survives repo pkg renames), then by the
-        // APK-derived package name.
-        if (e.className != null && e.className == src.className) {
+        // APK-derived package name / JS catalog id.
+        if (e.className != null &&
+            e.className!.isNotEmpty &&
+            e.className == src.className) {
           return (entry: e, repo: repo);
         }
-        if (e.pkg == pkg) return (entry: e, repo: repo);
+        if (pkg.isNotEmpty && e.pkg == pkg) return (entry: e, repo: repo);
+        if (src.isJs &&
+            (e.pkg == src.sourceId || e.pkg == src.id)) {
+          return (entry: e, repo: repo);
+        }
       }
     }
     return null;
@@ -370,7 +441,22 @@ class _ExtensionsScreenState extends ConsumerState<ExtensionsScreen>
         ),
       );
       await _refresh();
+    } on UnsupportedExtensionLanguageException catch (e) {
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text(
+            'Dart-eval is unsupported'
+            '${e.name != null && e.name!.isNotEmpty ? ' (${e.name})' : ''}',
+          ),
+        ),
+      );
     } on UntrustedExtensionException catch (e) {
+      if (src.isJs || resolved.entry.isJs) {
+        messenger.showSnackBar(
+          SnackBar(content: Text('Update failed for JS source ${src.name}')),
+        );
+        return;
+      }
       if (!mounted) return;
       final trust = await _confirmTrust(e);
       if (!mounted) return;
@@ -757,12 +843,35 @@ class _ActiveInstalledTile extends StatelessWidget {
                       ],
                     )
                   else
-                    Text(
-                      'v${src.version} · ${src.lang}',
-                      style: TextStyle(
-                        color: c.textSecondary,
-                        fontSize: 12,
-                      ),
+                    Row(
+                      children: [
+                        Text(
+                          'v${src.version} · ${src.lang}',
+                          style: TextStyle(
+                            color: c.textSecondary,
+                            fontSize: 12,
+                          ),
+                        ),
+                        const SizedBox(width: 6),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 5,
+                            vertical: 1,
+                          ),
+                          decoration: BoxDecoration(
+                            color: c.border.withValues(alpha: 0.5),
+                            borderRadius: BorderRadius.circular(4),
+                          ),
+                          child: Text(
+                            src.isJs ? 'JS' : 'Mihon',
+                            style: TextStyle(
+                              fontSize: 9,
+                              fontWeight: FontWeight.w600,
+                              color: c.textSecondary,
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
                 ],
               ),
@@ -992,7 +1101,7 @@ class _AvailableTabState extends State<_AvailableTab> {
     for (final er in filtered) {
       if (!_allowedLanguages.contains(er.entry.lang.toLowerCase())) continue;
       final entry = er.entry;
-      if (entry.sources.isEmpty) continue;
+      if (entry.sources.isEmpty && !entry.isJs) continue;
       if (!showNsfw && entry.isNsfw) continue;
       if (!showObsolete && entry.isObsolete) continue;
       notInstalledEntries.add(er);
@@ -1000,9 +1109,16 @@ class _AvailableTabState extends State<_AvailableTab> {
 
     final rows = <_AvailableRow>[];
 
-    if (notInstalledEntries.isNotEmpty) {
+    void appendKindSection(String title, String kind) {
+      final kindEntries = notInstalledEntries
+          .where((er) => er.repo.kind == kind)
+          .toList(growable: false);
+      if (kindEntries.isEmpty) return;
+
+      rows.add(_AvailableRow.section(title));
+
       final groups = <int, List<_EntryWithRepo>>{};
-      for (final er in notInstalledEntries) {
+      for (final er in kindEntries) {
         groups.putIfAbsent(er.repo.id, () => []).add(er);
       }
       final sortedIds = groups.keys.toList()
@@ -1034,6 +1150,9 @@ class _AvailableTabState extends State<_AvailableTab> {
         }
       }
     }
+
+    appendKindSection('Mihon (APK)', ExtensionRepoKind.mihon);
+    appendKindSection('JavaScript', ExtensionRepoKind.javascript);
 
     if (rows.isEmpty && allEntries.isNotEmpty) {
       rows.add(
@@ -1282,9 +1401,6 @@ class _EntryWithRepo {
 }
 
 extension on ExtensionIndexEntry {
-  bool get isNsfw =>
-      contentWarning == 'CONTENT_WARNING_NSFW' ||
-      contentWarning == 'CONTENT_WARNING_MIXED';
   bool get isObsolete => false;
 }
 

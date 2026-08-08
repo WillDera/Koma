@@ -442,7 +442,7 @@ class LibraryUpdateNotifier extends Notifier<LibraryUpdateState> {
     try {
       final service = LibraryUpdateService(
         ref.read(repositoriesProvider),
-        ref.read(keiyoushiServiceProvider),
+        ref.read(extensionServiceProvider),
         extensionManager: ref.read(extensionManagerProvider),
       );
       final report = await service.checkForNewChapters();

@@ -48,6 +48,12 @@ final keiyoushiServiceProvider = Provider<KeiyoushiService>(
   (ref) => KeiyoushiService(),
 );
 
+final extensionServiceProvider = Provider<ExtensionDispatchService>(
+  (ref) => ExtensionDispatchService(
+    keiyoushiService: ref.watch(keiyoushiServiceProvider),
+  ),
+);
+
 /// Snapshot of the global chapter download queue for Riverpod rebuilds.
 class DownloadQueueSnapshot {
   const DownloadQueueSnapshot({
@@ -73,6 +79,7 @@ class DownloadManagerNotifier extends Notifier<DownloadQueueSnapshot>
   DownloadQueueSnapshot build() {
     manager = DownloadManager(
       keiyoushi: ref.watch(keiyoushiServiceProvider),
+      extensionService: ref.watch(extensionServiceProvider),
       repositories: ref.watch(repositoriesProvider),
     );
     void onChange() {
@@ -142,12 +149,6 @@ final downloadManagerProvider =
     NotifierProvider<DownloadManagerNotifier, DownloadQueueSnapshot>(
       DownloadManagerNotifier.new,
     );
-
-final extensionServiceProvider = Provider<ExtensionDispatchService>(
-  (ref) => ExtensionDispatchService(
-    keiyoushiService: ref.watch(keiyoushiServiceProvider),
-  ),
-);
 
 final extensionManagerProvider = Provider<ExtensionManager>(
   (ref) => ExtensionManager(
