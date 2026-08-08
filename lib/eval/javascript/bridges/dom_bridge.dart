@@ -55,13 +55,16 @@ class Document {
         return this.selectFirst(selector);
     }
     select(selector) {
-        let elements = [];
-        JSON.parse(
-            sendMessage("doc_select", JSON.stringify([this.html, selector]))
-        ).forEach((key) => {
-            elements.push(new Element(key));
-        });
-        return elements;
+        try {
+            const raw = sendMessage(
+                "doc_select",
+                JSON.stringify([this.html, selector])
+            );
+            const keys = JSON.parse(raw || "[]") || [];
+            return keys.map((key) => new Element(key));
+        } catch (e) {
+            return [];
+        }
     }
     querySelectorAll(selector) {
         return this.select(selector);
@@ -227,13 +230,16 @@ class Element {
         return this.selectFirst(selector);
     }
     select(selector) {
-        let elements = [];
-        JSON.parse(
-            sendMessage("ele_select", JSON.stringify([selector, this.key]))
-        ).forEach((key) => {
-            elements.push(new Element(key));
-        });
-        return elements;
+        try {
+            const raw = sendMessage(
+                "ele_select",
+                JSON.stringify([selector, this.key])
+            );
+            const keys = JSON.parse(raw || "[]") || [];
+            return keys.map((key) => new Element(key));
+        } catch (e) {
+            return [];
+        }
     }
     querySelectorAll(selector) {
         return this.select(selector);
@@ -273,7 +279,7 @@ class _DomBridgeState {
   }
 }
 
-Future<void> injectDomBridge(QuickJsRuntime2 engine) async {
+Future<void> injectDomBridge(JavascriptRuntime engine) async {
   final state = _DomBridgeState();
 
   List<dynamic> asList(dynamic args) => args is List ? args : <dynamic>[];

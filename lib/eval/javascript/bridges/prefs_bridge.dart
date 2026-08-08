@@ -1,109 +1,97 @@
-import 'dart:async';
 import 'dart:convert';
+
 import 'package:flutter_qjs/flutter_qjs.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-const prefsBridgeCode = '''
-var __prefsCallbacks = {};
-var __prefsCallbackId = 0;
+/// Mangayomi-faithful [SharedPreferences] for JS extensions
+/// (`new SharedPreferences().get(key)` — **synchronous** sendMessage returns).
+///
+/// The previous async `getInstance()` + callback Promise API hung getPopular
+/// when scripts expected mangayomi's sync prefs surface.
+void injectPrefsBridge(JavascriptRuntime runtime, {required String sourceId}) {
+  final prefix = 'js_src_pref:$sourceId:';
 
-globalThis.SharedPreferences = {
-  getInstance: function() {
-    var id = __prefsCallbackId++;
-    return new Promise(function(resolve, reject) {
-      __prefsCallbacks[id] = { resolve: resolve, reject: reject };
-      sendMessage('PrefsGetInstance', JSON.stringify({ callbackId: id }));
-    });
-  }
-};
+  runtime.onMessage('get', (dynamic args) {
+    final list = args is List ? args : <dynamic>[];
+    final key = list.isNotEmpty ? list[0].toString() : '';
+    // Mangayomi getPreferenceValue — return stored JSON or null.
+    // Sync SharedPreferences access via cached instance is async-only in
+    // flutter; return null for cold miss (extensions treat as unset).
+    return _PrefsCache.instance.get(prefix + key);
+  });
+  runtime.onMessage('getString', (dynamic args) {
+    final list = args is List ? args : <dynamic>[];
+    final key = list.isNotEmpty ? list[0].toString() : '';
+    final def = list.length > 1 ? list[1]?.toString() ?? '' : '';
+    return _PrefsCache.instance.getString(prefix + key, def);
+  });
+  runtime.onMessage('setString', (dynamic args) {
+    final list = args is List ? args : <dynamic>[];
+    final key = list.isNotEmpty ? list[0].toString() : '';
+    final value = list.length > 1 ? list[1]?.toString() ?? '' : '';
+    _PrefsCache.instance.setString(prefix + key, value);
+    return null;
+  });
 
-function _prefsWrap(prefs) {
-  return {
-    getString: function(key) {
-      var id = __prefsCallbackId++;
-      return new Promise(function(resolve, reject) {
-        __prefsCallbacks[id] = { resolve: resolve, reject: reject };
-        sendMessage('PrefsGetString', JSON.stringify({ key: key, callbackId: id }));
-      });
-    },
-    putString: function(key, value) {
-      var id = __prefsCallbackId++;
-      return new Promise(function(resolve, reject) {
-        __prefsCallbacks[id] = { resolve: resolve, reject: reject };
-        sendMessage('PrefsPutString', JSON.stringify({ key: key, value: value, callbackId: id }));
-      });
-    },
-    remove: function(key) {
-      var id = __prefsCallbackId++;
-      return new Promise(function(resolve, reject) {
-        __prefsCallbacks[id] = { resolve: resolve, reject: reject };
-        sendMessage('PrefsRemove', JSON.stringify({ key: key, callbackId: id }));
-      });
+  runtime.evaluate('''
+class SharedPreferences {
+    get(key) {
+        return sendMessage("get", JSON.stringify([key]));
     }
-  };
+    getString(key, defaultValue) {
+        return sendMessage(
+            "getString",
+            JSON.stringify([key, defaultValue])
+        );
+    }
+    setString(key, defaultValue) {
+        return sendMessage(
+            "setString",
+            JSON.stringify([key, defaultValue])
+        );
+    }
 }
-''';
-
-Future<void> injectPrefsBridge(QuickJsRuntime2 engine) async {
-  engine.setupBridge('PrefsGetInstance', (args) {
-    final callbackId = args['callbackId'] as int? ?? 0;
-    unawaited(_prefsGetInstance(engine, callbackId));
-  });
-
-  engine.setupBridge('PrefsGetString', (args) {
-    final key = args['key'] as String? ?? '';
-    final callbackId = args['callbackId'] as int? ?? 0;
-    unawaited(_prefsGetString(engine, key, callbackId));
-  });
-
-  engine.setupBridge('PrefsPutString', (args) {
-    final key = args['key'] as String? ?? '';
-    final value = args['value'] as String? ?? '';
-    final callbackId = args['callbackId'] as int? ?? 0;
-    unawaited(_prefsPutString(engine, key, value, callbackId));
-  });
-
-  engine.setupBridge('PrefsRemove', (args) {
-    final key = args['key'] as String? ?? '';
-    final callbackId = args['callbackId'] as int? ?? 0;
-    unawaited(_prefsRemove(engine, key, callbackId));
-  });
-
-  engine.evaluate(prefsBridgeCode);
+''');
 }
 
-Future<void> _prefsGetInstance(QuickJsRuntime2 engine, int callbackId) async {
-  engine.evaluate('__prefsCallbacks[$callbackId].resolve(__prefsWrap({}))');
+/// Eagerly-loaded in-memory prefs mirror so JS can call SharedPreferences
+/// synchronously like mangayomi (Isar/shared_prefs is async underneath).
+class _PrefsCache {
+  _PrefsCache._();
+  static final instance = _PrefsCache._();
+
+  final Map<String, String> _strings = {};
+  bool _hydrated = false;
+
+  Future<void> hydrate() async {
+    if (_hydrated) return;
+    final prefs = await SharedPreferences.getInstance();
+    for (final key in prefs.getKeys()) {
+      if (!key.startsWith('js_src_pref:')) continue;
+      final v = prefs.getString(key);
+      if (v != null) _strings[key] = v;
+    }
+    _hydrated = true;
+  }
+
+  dynamic get(String key) {
+    final raw = _strings[key];
+    if (raw == null) return null;
+    try {
+      return jsonDecode(raw);
+    } catch (_) {
+      return raw;
+    }
+  }
+
+  String getString(String key, String def) => _strings[key] ?? def;
+
+  void setString(String key, String value) {
+    _strings[key] = value;
+    // Fire-and-forget persist.
+    SharedPreferences.getInstance().then((p) => p.setString(key, value));
+  }
 }
 
-Future<void> _prefsGetString(
-  QuickJsRuntime2 engine,
-  String key,
-  int callbackId,
-) async {
-  final prefs = await SharedPreferences.getInstance();
-  final value = prefs.getString(key);
-  final result = jsonEncode(value);
-  engine.evaluate('__prefsCallbacks[$callbackId].resolve($result)');
-}
-
-Future<void> _prefsPutString(
-  QuickJsRuntime2 engine,
-  String key,
-  String value,
-  int callbackId,
-) async {
-  final prefs = await SharedPreferences.getInstance();
-  await prefs.setString(key, value);
-  engine.evaluate('__prefsCallbacks[$callbackId].resolve(null)');
-}
-
-Future<void> _prefsRemove(
-  QuickJsRuntime2 engine,
-  String key,
-  int callbackId,
-) async {
-  final prefs = await SharedPreferences.getInstance();
-  await prefs.remove(key);
-  engine.evaluate('__prefsCallbacks[$callbackId].resolve(null)');
-}
+/// Call before evaluating extension code so sync prefs read fresh values.
+Future<void> hydrateJsPrefsCache() => _PrefsCache.instance.hydrate();

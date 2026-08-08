@@ -29,7 +29,8 @@ class MChapter {
   };
 
   factory MChapter.fromJson(Map<String, dynamic> json) => MChapter(
-    url: json['url'] as String? ?? '',
+    // Mangayomi uses `url`; some sources also emit `link`.
+    url: json['url'] as String? ?? json['link'] as String? ?? '',
     name: json['name'] as String? ?? '',
     scanlator: json['scanlator'] as String?,
     dateUpload: _dateUploadFromJson(json),

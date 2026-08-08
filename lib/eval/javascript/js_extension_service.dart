@@ -1,6 +1,8 @@
 import 'dart:async';
 import 'dart:convert';
 
+import 'package:flutter_qjs/flutter_qjs.dart';
+
 import '../extension_service.dart';
 import '../models/m_source.dart';
 import '../models/m_manga.dart';
@@ -8,21 +10,25 @@ import '../models/m_chapter.dart';
 import '../models/m_pages.dart';
 import '../models/filter_list.dart';
 import '../models/source_preference.dart';
+import 'bridges/crypto_bridge.dart';
+import 'bridges/dom_bridge.dart';
+import 'bridges/http_bridge.dart';
 import 'bridges/m_provider_bridge.dart';
-import 'js_runtime.dart';
+import 'bridges/prefs_bridge.dart';
+import 'bridges/utils_bridge.dart';
 
-/// Mangayomi-compatible JS extension host: injects MProvider + evaluates
-/// `source.sourceCode`, then `var extention = new DefaultExtension();`,
-/// calling methods via `jsonStringify(() => extention.$call)` + handlePromise.
+/// Mangayomi-compatible JS extension host.
+///
+/// Architecture mirrors `mangayomi/lib/eval/javascript/service.dart`:
+/// - Fresh [getJavascriptRuntime] per bound source (no shared dirty engine)
+/// - Init order: Http → Dom → Utils → Crypto → SharedPreferences → MProvider
+/// - Calls via `jsonStringify(() => extention.$call)` + [handlePromise]
 class JsExtensionService implements ExtensionService {
-  final JsRuntime _runtime;
+  JavascriptRuntime? _runtime;
   String? _boundSourceKey;
 
-  /// Serialize calls — shared QuickJS engine is not re-entrant across
-  /// concurrent getPopular / getFilterList / etc.
+  /// Serialize calls on the active runtime (QuickJS is not re-entrant).
   Future<void> _chain = Future.value();
-
-  JsExtensionService({JsRuntime? runtime}) : _runtime = runtime ?? JsRuntime();
 
   @override
   String get type => 'js';
@@ -40,7 +46,6 @@ class JsExtensionService implements ExtensionService {
   }
 
   Future<void> _init(MSource source) async {
-    await _runtime.init();
     final code = source.sourceCode ?? '';
     if (code.trim().isEmpty) {
       throw StateError(
@@ -48,41 +53,62 @@ class JsExtensionService implements ExtensionService {
       );
     }
     final key = '${source.id}|${source.sourceId}|${code.hashCode}';
-    if (_boundSourceKey == key) return;
+    if (_boundSourceKey == key && _runtime != null) return;
+
+    // Tear down previous source's engine (mangayomi: one runtime per Source).
+    try {
+      _runtime?.dispose();
+    } catch (_) {}
+    _runtime = null;
+    _boundSourceKey = null;
+
+    await hydrateJsPrefsCache();
+
+    // Same factory mangayomi uses for JS manga extensions.
+    final runtime = getJavascriptRuntime();
+    await injectHttpBridge(runtime);
+    await injectDomBridge(runtime);
+    await injectUtilsBridge(runtime);
+    await injectCryptoBridge(runtime);
+    injectPrefsBridge(runtime, sourceId: source.sourceId);
 
     final sourceJson = jsonEncode(_sourceToJsJson(source));
-    _runtime.evaluate(buildMProviderStub(sourceJson));
-    _runtime.evaluate('''
+    runtime.evaluate(buildMProviderStub(sourceJson));
+    runtime.evaluate('''
 $code
 var extention = new DefaultExtension();
 ''');
+
+    _runtime = runtime;
     _boundSourceKey = key;
   }
 
-  Map<String, dynamic> _sourceToJsJson(MSource source) => {
-    'id': int.tryParse(source.id) ?? source.id,
-    'name': source.name,
-    'lang': source.lang,
-    'baseUrl': source.baseUrl,
-    'version': source.version,
-    'apiUrl': '',
-    'dateFormat': '',
-    'dateFormatLocale': '',
-    'hasCloudflare': false,
-    'isFullData': false,
-    'additionalParams': '',
-    'notes': '',
-  };
+  Map<String, dynamic> _sourceToJsJson(MSource source) {
+    final id = int.tryParse(source.id) ?? int.tryParse(source.sourceId);
+    return {
+      'id': id ?? source.id,
+      'name': source.name,
+      'lang': source.lang,
+      'baseUrl': source.baseUrl,
+      'apiUrl': '',
+      'dateFormat': '',
+      'dateFormatLocale': '',
+      'hasCloudflare': false,
+      'isFullData': false,
+      'additionalParams': '',
+      'notes': '',
+    };
+  }
 
   Future<T> _extensionCallAsync<T>(MSource source, String call) {
     return _serialized(() async {
       await _init(source);
-      final promised = await _runtime
-          .handlePromise(
-            await _runtime.evaluateAsync(
-              'jsonStringify(() => extention.$call)',
-            ),
-          )
+      final runtime = _runtime!;
+      final evaled = await runtime.evaluateAsync(
+        'jsonStringify(() => extention.$call)',
+      );
+      final promised = await runtime
+          .handlePromise(evaled)
           .timeout(
             const Duration(seconds: 60),
             onTimeout: () => throw TimeoutException(
@@ -101,8 +127,10 @@ var extention = new DefaultExtension();
   }
 
   T _extensionCallSync<T>(String call, T def) {
+    final runtime = _runtime;
+    if (runtime == null) return def;
     try {
-      final res = _runtime.evaluateRaw('JSON.stringify(extention.$call)');
+      final res = runtime.evaluate('JSON.stringify(extention.$call)');
       return jsonDecode(res.stringResult) as T;
     } catch (_) {
       return def;
@@ -197,9 +225,14 @@ var extention = new DefaultExtension();
     String query, {
     FilterList? filters,
   }) async {
-    final filtersJson = jsonEncode(
-      filters?.filters.map((f) => f.toJson()).toList() ?? <dynamic>[],
-    );
+    // Mangayomi passes filter objects with type_name/state/values — extensions
+    // (e.g. Webtoons) look up filters by `type` id and read `.state`/`.values`.
+    // Keiyoushi-shaped `toJson()` breaks that; use mangayomi shape.
+    var effective = filters;
+    if (effective == null || effective.filters.isEmpty) {
+      effective = await getFilterList(source);
+    }
+    final filtersJson = jsonEncode(effective.toJsJson());
     final raw = await _extensionCallAsync(
       source,
       'search(${jsonEncode(query)},$page,$filtersJson)',
@@ -229,30 +262,14 @@ var extention = new DefaultExtension();
     String? memo,
     String? title,
   }) async {
-    // Prefer mangayomi shape: chapters embedded in getDetail.
-    try {
-      final detail = await _extensionCallAsync(
-        source,
-        'getDetail(${jsonEncode(url)})',
-      );
-      if (detail is Map) {
-        final chapters = detail['chapters'] ?? detail['episodes'];
-        if (chapters is List && chapters.isNotEmpty) {
-          return _parseChapters(chapters);
-        }
-      }
-    } catch (_) {}
-
-    // Fallback: dedicated getChapterList if the extension implements it.
-    try {
-      final raw = await _extensionCallAsync(
-        source,
-        'getChapterList(${jsonEncode(url)})',
-      );
-      return _parseChapters(raw);
-    } catch (_) {
-      return [];
-    }
+    // Mangayomi JS has no getChapterList — chapters come from getDetail only.
+    final raw = await _extensionCallAsync(
+      source,
+      'getDetail(${jsonEncode(url)})',
+    );
+    if (raw is! Map) return [];
+    final map = Map<String, dynamic>.from(raw);
+    return _parseChapters(map['chapters'] ?? map['episodes']);
   }
 
   @override
@@ -272,16 +289,7 @@ var extention = new DefaultExtension();
     final map = Map<String, dynamic>.from(raw);
     final manga = MManga.fromJson(map);
     final chapters = _parseChapters(map['chapters'] ?? map['episodes']);
-    if (chapters.isNotEmpty) {
-      return (manga: manga, chapters: chapters);
-    }
-    final viaList = await getChapterList(
-      source,
-      url,
-      memo: memo,
-      title: title,
-    );
-    return (manga: manga, chapters: viaList);
+    return (manga: manga, chapters: chapters);
   }
 
   @override
@@ -313,7 +321,7 @@ var extention = new DefaultExtension();
   ) async {
     await _init(source);
     try {
-      _runtime.evaluate(
+      _runtime?.evaluate(
         'extention.saveSourcePreference(${jsonEncode(pref.key)}, ${jsonEncode(pref.defaultValue)})',
       );
     } catch (_) {}
