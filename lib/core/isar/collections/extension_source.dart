@@ -4,19 +4,19 @@ import '../../utils/language.dart';
 
 part 'extension_source.g.dart';
 
-/// One installed Keiyoushi/Mihon APK extension OR (future, PHASE 9) a
-/// JS extension. The `id` is the native bridge's MD5-based ID for Mihon
-/// sources, or a synthetic ID we mint for JS sources.
+/// One installed Keiyoushi/Mihon APK extension OR a JS extension.
 @collection
 @Name('ExtensionSource')
 class ExtensionSource {
   Id? id;
 
-  /// Native bridge MD5 ID (Mihon) or synthetic ID (JS). Stored as String
-  /// in the existing schema; we use Isar.autoIncrement for the row PK and
-  /// keep [sourceId] as the stable logical identifier.
+  /// Bridge cache key (hex for Mihon APKs, catalog pkg id for JS).
   @Index(unique: true, replace: true)
   String sourceId;
+
+  /// Mihon `Source.id` as string (long numeric). Empty for JS.
+  /// Persisted so library pills can resolve manga that still store this id.
+  String nativeId;
 
   String name;
   String version;
@@ -52,10 +52,7 @@ class ExtensionSource {
   bool isPinned;
   bool isObsolete;
 
-  /// `mihon` for the native Keiyoushi bridge, `js` for the flutter_qjs
-  /// runtime. Added in PHASE 1a (not in the existing Drift schema) so
-  /// the unified ExtensionService in PHASE 10 can dispatch correctly.
-  /// Default `mihon` matches the existing data.
+  /// `mihon` for the native Keiyoushi bridge, `js` for flutter_qjs.
   String sourceCodeLanguage;
 
   DateTime? createdAt;
@@ -70,6 +67,7 @@ class ExtensionSource {
   ExtensionSource copyWith({
     Id? id,
     String? sourceId,
+    String? nativeId,
     String? name,
     String? version,
     String? versionLast,
@@ -96,6 +94,7 @@ class ExtensionSource {
     return ExtensionSource(
       id: id ?? this.id,
       sourceId: sourceId ?? this.sourceId,
+      nativeId: nativeId ?? this.nativeId,
       name: name ?? this.name,
       version: version ?? this.version,
       versionLast: versionLast ?? this.versionLast,
@@ -124,6 +123,7 @@ class ExtensionSource {
   ExtensionSource({
     this.id = Isar.autoIncrement,
     required this.sourceId,
+    this.nativeId = '',
     required this.name,
     required this.version,
     this.versionLast,
@@ -151,6 +151,7 @@ class ExtensionSource {
   Map<String, dynamic> toJson() => {
     'id': id,
     'source_id': sourceId,
+    'native_id': nativeId,
     'name': name,
     'version': version,
     'version_last': versionLast,
@@ -178,7 +179,8 @@ class ExtensionSource {
   factory ExtensionSource.fromJson(Map<String, dynamic> json) =>
       ExtensionSource(
         id: json['id'] as int?,
-        sourceId: json['source_id'] as String? ?? json['id'] as String? ?? '',
+        sourceId: json['source_id'] as String? ?? '',
+        nativeId: json['native_id'] as String? ?? '',
         name: json['name'] as String? ?? '',
         version: json['version'] as String? ?? '',
         versionLast: json['version_last'] as String?,

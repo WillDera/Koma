@@ -90,8 +90,10 @@ class ExtensionRepository {
   // ── Conversions ────────────────────────────────────────────────────
 
   static ExtensionSource _srcToModel(i.ExtensionSource s) => ExtensionSource(
-    id: s.sourceId,
-    sourceId: s.sourceId, // logical ID is what callers expect
+    // Prefer Mihon Source.id when present so resolveSourceId / library pills
+    // match manga rows that still store the long numeric id.
+    id: s.nativeId.isNotEmpty ? s.nativeId : s.sourceId,
+    sourceId: s.sourceId,
     name: s.name,
     version: s.version,
     versionLast: s.versionLast,
@@ -121,6 +123,7 @@ class ExtensionRepository {
         // Logical id is sourceId (hex / mangayomi numeric string / pkg).
         // Never treat it as the Isar autoIncrement PK — putBySourceId upserts.
         sourceId: s.sourceId.isNotEmpty ? s.sourceId : s.id,
+        nativeId: (s.id.isNotEmpty && s.id != s.sourceId) ? s.id : '',
         name: s.name,
         version: s.version,
         versionLast: s.versionLast,

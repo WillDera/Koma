@@ -50,46 +50,51 @@ const ExtensionSourceSchema = CollectionSchema(
     ),
     r'lang': PropertySchema(id: 11, name: r'lang', type: IsarType.string),
     r'name': PropertySchema(id: 12, name: r'name', type: IsarType.string),
-    r'pkgName': PropertySchema(id: 13, name: r'pkgName', type: IsarType.string),
-    r'repoUrl': PropertySchema(id: 14, name: r'repoUrl', type: IsarType.string),
+    r'nativeId': PropertySchema(
+      id: 13,
+      name: r'nativeId',
+      type: IsarType.string,
+    ),
+    r'pkgName': PropertySchema(id: 14, name: r'pkgName', type: IsarType.string),
+    r'repoUrl': PropertySchema(id: 15, name: r'repoUrl', type: IsarType.string),
     r'signatureHash': PropertySchema(
-      id: 15,
+      id: 16,
       name: r'signatureHash',
       type: IsarType.string,
     ),
     r'sourceCode': PropertySchema(
-      id: 16,
+      id: 17,
       name: r'sourceCode',
       type: IsarType.string,
     ),
     r'sourceCodeLanguage': PropertySchema(
-      id: 17,
+      id: 18,
       name: r'sourceCodeLanguage',
       type: IsarType.string,
     ),
     r'sourceCodeUrl': PropertySchema(
-      id: 18,
+      id: 19,
       name: r'sourceCodeUrl',
       type: IsarType.string,
     ),
     r'sourceId': PropertySchema(
-      id: 19,
+      id: 20,
       name: r'sourceId',
       type: IsarType.string,
     ),
     r'updatedAt': PropertySchema(
-      id: 20,
+      id: 21,
       name: r'updatedAt',
       type: IsarType.dateTime,
     ),
-    r'version': PropertySchema(id: 21, name: r'version', type: IsarType.string),
+    r'version': PropertySchema(id: 22, name: r'version', type: IsarType.string),
     r'versionCode': PropertySchema(
-      id: 22,
+      id: 23,
       name: r'versionCode',
       type: IsarType.long,
     ),
     r'versionLast': PropertySchema(
-      id: 23,
+      id: 24,
       name: r'versionLast',
       type: IsarType.string,
     ),
@@ -146,6 +151,7 @@ int _extensionSourceEstimateSize(
   }
   bytesCount += 3 + object.lang.length * 3;
   bytesCount += 3 + object.name.length * 3;
+  bytesCount += 3 + object.nativeId.length * 3;
   bytesCount += 3 + object.pkgName.length * 3;
   {
     final value = object.repoUrl;
@@ -192,17 +198,18 @@ void _extensionSourceSerialize(
   writer.writeBool(offsets[10], object.isUpdateAvailable);
   writer.writeString(offsets[11], object.lang);
   writer.writeString(offsets[12], object.name);
-  writer.writeString(offsets[13], object.pkgName);
-  writer.writeString(offsets[14], object.repoUrl);
-  writer.writeString(offsets[15], object.signatureHash);
-  writer.writeString(offsets[16], object.sourceCode);
-  writer.writeString(offsets[17], object.sourceCodeLanguage);
-  writer.writeString(offsets[18], object.sourceCodeUrl);
-  writer.writeString(offsets[19], object.sourceId);
-  writer.writeDateTime(offsets[20], object.updatedAt);
-  writer.writeString(offsets[21], object.version);
-  writer.writeLong(offsets[22], object.versionCode);
-  writer.writeString(offsets[23], object.versionLast);
+  writer.writeString(offsets[13], object.nativeId);
+  writer.writeString(offsets[14], object.pkgName);
+  writer.writeString(offsets[15], object.repoUrl);
+  writer.writeString(offsets[16], object.signatureHash);
+  writer.writeString(offsets[17], object.sourceCode);
+  writer.writeString(offsets[18], object.sourceCodeLanguage);
+  writer.writeString(offsets[19], object.sourceCodeUrl);
+  writer.writeString(offsets[20], object.sourceId);
+  writer.writeDateTime(offsets[21], object.updatedAt);
+  writer.writeString(offsets[22], object.version);
+  writer.writeLong(offsets[23], object.versionCode);
+  writer.writeString(offsets[24], object.versionLast);
 }
 
 ExtensionSource _extensionSourceDeserialize(
@@ -225,17 +232,18 @@ ExtensionSource _extensionSourceDeserialize(
     isPinned: reader.readBoolOrNull(offsets[9]) ?? false,
     lang: reader.readString(offsets[11]),
     name: reader.readString(offsets[12]),
-    pkgName: reader.readStringOrNull(offsets[13]) ?? '',
-    repoUrl: reader.readStringOrNull(offsets[14]),
-    signatureHash: reader.readStringOrNull(offsets[15]) ?? '',
-    sourceCode: reader.readStringOrNull(offsets[16]) ?? '',
-    sourceCodeLanguage: reader.readStringOrNull(offsets[17]) ?? 'mihon',
-    sourceCodeUrl: reader.readStringOrNull(offsets[18]),
-    sourceId: reader.readString(offsets[19]),
-    updatedAt: reader.readDateTimeOrNull(offsets[20]),
-    version: reader.readString(offsets[21]),
-    versionCode: reader.readLongOrNull(offsets[22]) ?? 0,
-    versionLast: reader.readStringOrNull(offsets[23]),
+    nativeId: reader.readStringOrNull(offsets[13]) ?? '',
+    pkgName: reader.readStringOrNull(offsets[14]) ?? '',
+    repoUrl: reader.readStringOrNull(offsets[15]),
+    signatureHash: reader.readStringOrNull(offsets[16]) ?? '',
+    sourceCode: reader.readStringOrNull(offsets[17]) ?? '',
+    sourceCodeLanguage: reader.readStringOrNull(offsets[18]) ?? 'mihon',
+    sourceCodeUrl: reader.readStringOrNull(offsets[19]),
+    sourceId: reader.readString(offsets[20]),
+    updatedAt: reader.readDateTimeOrNull(offsets[21]),
+    version: reader.readString(offsets[22]),
+    versionCode: reader.readLongOrNull(offsets[23]) ?? 0,
+    versionLast: reader.readStringOrNull(offsets[24]),
   );
   return object;
 }
@@ -276,24 +284,26 @@ P _extensionSourceDeserializeProp<P>(
     case 13:
       return (reader.readStringOrNull(offset) ?? '') as P;
     case 14:
-      return (reader.readStringOrNull(offset)) as P;
-    case 15:
       return (reader.readStringOrNull(offset) ?? '') as P;
+    case 15:
+      return (reader.readStringOrNull(offset)) as P;
     case 16:
       return (reader.readStringOrNull(offset) ?? '') as P;
     case 17:
-      return (reader.readStringOrNull(offset) ?? 'mihon') as P;
+      return (reader.readStringOrNull(offset) ?? '') as P;
     case 18:
-      return (reader.readStringOrNull(offset)) as P;
+      return (reader.readStringOrNull(offset) ?? 'mihon') as P;
     case 19:
-      return (reader.readString(offset)) as P;
+      return (reader.readStringOrNull(offset)) as P;
     case 20:
-      return (reader.readDateTimeOrNull(offset)) as P;
-    case 21:
       return (reader.readString(offset)) as P;
+    case 21:
+      return (reader.readDateTimeOrNull(offset)) as P;
     case 22:
-      return (reader.readLongOrNull(offset) ?? 0) as P;
+      return (reader.readString(offset)) as P;
     case 23:
+      return (reader.readLongOrNull(offset) ?? 0) as P;
+    case 24:
       return (reader.readStringOrNull(offset)) as P;
     default:
       throw IsarError('Unknown property with id $propertyId');
@@ -1586,6 +1596,147 @@ extension ExtensionSourceQueryFilter
     return QueryBuilder.apply(this, (query) {
       return query.addFilterCondition(
         FilterCondition.greaterThan(property: r'name', value: ''),
+      );
+    });
+  }
+
+  QueryBuilder<ExtensionSource, ExtensionSource, QAfterFilterCondition>
+  nativeIdEqualTo(String value, {bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.equalTo(
+          property: r'nativeId',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<ExtensionSource, ExtensionSource, QAfterFilterCondition>
+  nativeIdGreaterThan(
+    String value, {
+    bool include = false,
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.greaterThan(
+          include: include,
+          property: r'nativeId',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<ExtensionSource, ExtensionSource, QAfterFilterCondition>
+  nativeIdLessThan(
+    String value, {
+    bool include = false,
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.lessThan(
+          include: include,
+          property: r'nativeId',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<ExtensionSource, ExtensionSource, QAfterFilterCondition>
+  nativeIdBetween(
+    String lower,
+    String upper, {
+    bool includeLower = true,
+    bool includeUpper = true,
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.between(
+          property: r'nativeId',
+          lower: lower,
+          includeLower: includeLower,
+          upper: upper,
+          includeUpper: includeUpper,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<ExtensionSource, ExtensionSource, QAfterFilterCondition>
+  nativeIdStartsWith(String value, {bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.startsWith(
+          property: r'nativeId',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<ExtensionSource, ExtensionSource, QAfterFilterCondition>
+  nativeIdEndsWith(String value, {bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.endsWith(
+          property: r'nativeId',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<ExtensionSource, ExtensionSource, QAfterFilterCondition>
+  nativeIdContains(String value, {bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.contains(
+          property: r'nativeId',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<ExtensionSource, ExtensionSource, QAfterFilterCondition>
+  nativeIdMatches(String pattern, {bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.matches(
+          property: r'nativeId',
+          wildcard: pattern,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<ExtensionSource, ExtensionSource, QAfterFilterCondition>
+  nativeIdIsEmpty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.equalTo(property: r'nativeId', value: ''),
+      );
+    });
+  }
+
+  QueryBuilder<ExtensionSource, ExtensionSource, QAfterFilterCondition>
+  nativeIdIsNotEmpty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.greaterThan(property: r'nativeId', value: ''),
       );
     });
   }
@@ -3226,6 +3377,20 @@ extension ExtensionSourceQuerySortBy
     });
   }
 
+  QueryBuilder<ExtensionSource, ExtensionSource, QAfterSortBy>
+  sortByNativeId() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'nativeId', Sort.asc);
+    });
+  }
+
+  QueryBuilder<ExtensionSource, ExtensionSource, QAfterSortBy>
+  sortByNativeIdDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'nativeId', Sort.desc);
+    });
+  }
+
   QueryBuilder<ExtensionSource, ExtensionSource, QAfterSortBy> sortByPkgName() {
     return QueryBuilder.apply(this, (query) {
       return query.addSortBy(r'pkgName', Sort.asc);
@@ -3568,6 +3733,20 @@ extension ExtensionSourceQuerySortThenBy
     });
   }
 
+  QueryBuilder<ExtensionSource, ExtensionSource, QAfterSortBy>
+  thenByNativeId() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'nativeId', Sort.asc);
+    });
+  }
+
+  QueryBuilder<ExtensionSource, ExtensionSource, QAfterSortBy>
+  thenByNativeIdDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'nativeId', Sort.desc);
+    });
+  }
+
   QueryBuilder<ExtensionSource, ExtensionSource, QAfterSortBy> thenByPkgName() {
     return QueryBuilder.apply(this, (query) {
       return query.addSortBy(r'pkgName', Sort.asc);
@@ -3817,6 +3996,14 @@ extension ExtensionSourceQueryWhereDistinct
     });
   }
 
+  QueryBuilder<ExtensionSource, ExtensionSource, QDistinct> distinctByNativeId({
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addDistinctBy(r'nativeId', caseSensitive: caseSensitive);
+    });
+  }
+
   QueryBuilder<ExtensionSource, ExtensionSource, QDistinct> distinctByPkgName({
     bool caseSensitive = true,
   }) {
@@ -3993,6 +4180,12 @@ extension ExtensionSourceQueryProperty
   QueryBuilder<ExtensionSource, String, QQueryOperations> nameProperty() {
     return QueryBuilder.apply(this, (query) {
       return query.addPropertyName(r'name');
+    });
+  }
+
+  QueryBuilder<ExtensionSource, String, QQueryOperations> nativeIdProperty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addPropertyName(r'nativeId');
     });
   }
 
