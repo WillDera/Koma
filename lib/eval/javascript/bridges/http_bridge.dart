@@ -69,7 +69,7 @@ class Client {
 }
 ''';
 
-Future<void> injectHttpBridge(QuickJsRuntime2 engine) async {
+Future<void> injectHttpBridge(JavascriptRuntime runtime) async {
   List<dynamic> asList(dynamic args) {
     if (args is List) return args;
     if (args is String) {
@@ -81,32 +81,32 @@ Future<void> injectHttpBridge(QuickJsRuntime2 engine) async {
     return <dynamic>[];
   }
 
-  engine.onMessage('http_head', (dynamic args) async {
+  runtime.onMessage('http_head', (dynamic args) async {
     final list = asList(args);
     return await _toHttpResponse(_client(list), 'HEAD', list);
   });
-  engine.onMessage('http_get', (dynamic args) async {
+  runtime.onMessage('http_get', (dynamic args) async {
     final list = asList(args);
     return await _toHttpResponse(_client(list), 'GET', list);
   });
-  engine.onMessage('http_post', (dynamic args) async {
+  runtime.onMessage('http_post', (dynamic args) async {
     final list = asList(args);
     return await _toHttpResponse(_client(list), 'POST', list);
   });
-  engine.onMessage('http_put', (dynamic args) async {
+  runtime.onMessage('http_put', (dynamic args) async {
     final list = asList(args);
     return await _toHttpResponse(_client(list), 'PUT', list);
   });
-  engine.onMessage('http_delete', (dynamic args) async {
+  runtime.onMessage('http_delete', (dynamic args) async {
     final list = asList(args);
     return await _toHttpResponse(_client(list), 'DELETE', list);
   });
-  engine.onMessage('http_patch', (dynamic args) async {
+  runtime.onMessage('http_patch', (dynamic args) async {
     final list = asList(args);
     return await _toHttpResponse(_client(list), 'PATCH', list);
   });
 
-  engine.evaluate(mangayomiClientCode);
+  runtime.evaluate(mangayomiClientCode);
 }
 
 InterceptedClient _client(List args) {
