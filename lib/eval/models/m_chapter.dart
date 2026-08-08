@@ -1,3 +1,5 @@
+import '../../core/services/keiyoushi_service.dart';
+
 class MChapter {
   final String url;
   final String name;
@@ -5,12 +7,16 @@ class MChapter {
   final int dateUpload;
   final int chapterNumber;
 
+  /// Opaque source memo (e.g. AllAnime `mangaId`) — round-tripped to getPageList.
+  final String? memo;
+
   const MChapter({
     required this.url,
     required this.name,
     this.scanlator,
     this.dateUpload = 0,
     this.chapterNumber = 0,
+    this.memo,
   });
 
   Map<String, dynamic> toJson() => {
@@ -19,15 +25,28 @@ class MChapter {
     'scanlator': scanlator,
     'date_upload': dateUpload,
     'chapter_number': chapterNumber,
+    'memo': memo,
   };
 
   factory MChapter.fromJson(Map<String, dynamic> json) => MChapter(
     url: json['url'] as String? ?? '',
     name: json['name'] as String? ?? '',
     scanlator: json['scanlator'] as String?,
-    dateUpload: json['date_upload'] as int? ?? 0,
-    chapterNumber: json['chapter_number'] as int? ?? 0,
+    dateUpload: _dateUploadFromJson(json),
+    chapterNumber: json['chapter_number'] as int? ??
+        (json['chapterNumber'] is num
+            ? (json['chapterNumber'] as num).toInt()
+            : 0),
+    memo: coerceMemoJson(json['memo']),
   );
+
+  static int _dateUploadFromJson(Map<String, dynamic> json) {
+    final raw = json['date_upload'] ?? json['dateUpload'];
+    if (raw is int) return raw;
+    if (raw is num) return raw.toInt();
+    if (raw is String) return int.tryParse(raw) ?? 0;
+    return 0;
+  }
 
   factory MChapter.fromMap(Map<String, dynamic> map) => MChapter.fromJson(map);
 

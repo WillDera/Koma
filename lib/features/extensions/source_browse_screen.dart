@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/models/manga.dart';
 import '../../core/providers.dart';
+import '../../core/services/extension_source_resolve.dart';
 import '../../core/utils/image_headers.dart';
 import '../../eval/dispatch_service.dart';
 import '../../eval/models/filter_list.dart';
@@ -44,7 +45,7 @@ class SourceBrowseScreen extends ConsumerStatefulWidget {
 class _SourceBrowseScreenState extends ConsumerState<SourceBrowseScreen>
     with SingleTickerProviderStateMixin {
   late final ExtensionDispatchService _service;
-  late final MSource _source;
+  MSource? _source;
   final _scrollCtrl = ScrollController();
 
   late final TabController _tabCtrl;
@@ -55,6 +56,7 @@ class _SourceBrowseScreenState extends ConsumerState<SourceBrowseScreen>
   int _page = 1;
   String? _error;
   String _tab = 'popular';
+  bool _booting = true;
 
   bool _searchActive = false;
   String _searchQuery = '';
@@ -72,14 +74,6 @@ class _SourceBrowseScreenState extends ConsumerState<SourceBrowseScreen>
     super.initState();
     _searchCtrl = TextEditingController(text: widget.initialQuery ?? '');
     _service = ref.read(extensionServiceProvider);
-    _source = MSource(
-      id: widget.sourceId,
-      sourceId: widget.sourceId,
-      name: widget.sourceName,
-      lang: 'en',
-      baseUrl: widget.baseUrl ?? '',
-      sourceType: SourceType.mihon,
-    );
     _tabCtrl = TabController(
       length: 2,
       vsync: this,
@@ -102,18 +96,48 @@ class _SourceBrowseScreenState extends ConsumerState<SourceBrowseScreen>
         }
       }
     });
-    final initialQ = widget.initialQuery?.trim() ?? '';
-    if (initialQ.isNotEmpty) {
-      _searchActive = true;
-      _searchQuery = initialQ;
-      _loadFilters();
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) _performSearch(initialQ);
+    unawaited(_bootstrap());
+  }
+
+  Future<void> _bootstrap() async {
+    try {
+      final source = await resolveExtensionMSource(
+        ref.read(repositoriesProvider),
+        widget.sourceId,
+        name: widget.sourceName,
+        baseUrl: widget.baseUrl,
+      );
+      if (!mounted) return;
+      _source = source;
+      setState(() => _booting = false);
+
+      final initialQ = widget.initialQuery?.trim() ?? '';
+      if (initialQ.isNotEmpty) {
+        setState(() {
+          _searchActive = true;
+          _searchQuery = initialQ;
+        });
+        unawaited(_loadFilters());
+        unawaited(_performSearch(initialQ));
+      } else {
+        unawaited(_loadPage());
+        unawaited(_loadFilters());
+      }
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _booting = false;
+        _error = '$e';
       });
-    } else {
-      _loadPage();
-      _loadFilters();
     }
+  }
+
+  MSource get _requireSource {
+    final s = _source;
+    if (s == null) {
+      throw StateError('Source not ready');
+    }
+    return s;
   }
 
   @override
@@ -173,12 +197,13 @@ class _SourceBrowseScreenState extends ConsumerState<SourceBrowseScreen>
   }
 
   Future<void> _loadPage() async {
-    if (_loading) return;
+    if (_loading || _source == null) return;
     setState(() => _loading = true);
     try {
+      final source = _requireSource;
       final result = switch (_tab) {
-        'latest' => await _service.getLatestUpdates(_page, source: _source),
-        _ => await _service.getPopular(_page, source: _source),
+        'latest' => await _service.getLatestUpdates(_page, source: source),
+        _ => await _service.getPopular(_page, source: source),
       };
       if (!mounted) return;
       setState(() {
@@ -206,8 +231,9 @@ class _SourceBrowseScreenState extends ConsumerState<SourceBrowseScreen>
   }
 
   Future<void> _loadFilters() async {
+    if (_source == null) return;
     try {
-      final fl = await _service.getFilterList(_source);
+      final fl = await _service.getFilterList(_requireSource);
       if (!mounted) return;
       final values = <String, dynamic>{};
       for (final f in fl.filters) {
@@ -279,6 +305,7 @@ class _SourceBrowseScreenState extends ConsumerState<SourceBrowseScreen>
   }
 
   Future<void> _performSearch(String query) async {
+    if (_source == null) return;
     final hasFilters = _filters.isNotEmpty;
     if (query.isEmpty && !hasFilters) {
       _mangas = [];
@@ -294,7 +321,7 @@ class _SourceBrowseScreenState extends ConsumerState<SourceBrowseScreen>
     try {
       final filterList = _buildFilterList();
       final mangas = await _service.search(
-        _source,
+        _requireSource,
         1,
         query,
         filters: filterList,
@@ -527,8 +554,9 @@ class _SourceBrowseScreenState extends ConsumerState<SourceBrowseScreen>
   @override
   Widget build(BuildContext context) {
     final c = context.colors;
+    final baseUrl = _source?.baseUrl ?? widget.baseUrl ?? '';
     final headers = ref.watch(
-      imageHeadersProvider(_source.baseUrl.isNotEmpty ? _source.baseUrl : null),
+      imageHeadersProvider(baseUrl.isNotEmpty ? baseUrl : null),
     );
     return Scaffold(
       backgroundColor: c.bg,
@@ -562,12 +590,12 @@ class _SourceBrowseScreenState extends ConsumerState<SourceBrowseScreen>
                   ? Icons.arrow_upward_rounded
                   : Icons.arrow_downward_rounded,
             ),
-            onPressed: _toggleSort,
+            onPressed: _booting ? null : _toggleSort,
             tooltip: _tab == 'popular' ? 'Sort: Popular' : 'Sort: Latest',
           ),
           IconButton(
             icon: Icon(_searchActive ? Icons.close : Icons.search),
-            onPressed: _toggleSearch,
+            onPressed: _booting ? null : _toggleSearch,
           ),
         ],
         bottom: _searchActive
@@ -583,7 +611,9 @@ class _SourceBrowseScreenState extends ConsumerState<SourceBrowseScreen>
                 ],
               ),
       ),
-      body: _searchActive
+      body: _booting
+          ? const Center(child: CircularProgressIndicator())
+          : _searchActive
           ? _buildSearchBody(c, headers)
           : _mangas.isEmpty && !_loading && _error == null
           ? ListView(

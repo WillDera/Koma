@@ -1,11 +1,17 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 
+import 'package:crypto/crypto.dart';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
+import 'package:path_provider/path_provider.dart';
 import 'package:workmanager/workmanager.dart';
 
+import '../../../eval/dispatch_service.dart';
+import '../../../eval/models/m_chapter.dart';
 import '../../repositories/repositories.dart';
+import '../extension_source_resolve.dart';
 import '../keiyoushi_service.dart';
 import '../notification_service.dart';
 import 'chapter_download.dart';
@@ -33,20 +39,30 @@ class DownloadAbortController {
   }
 }
 
+String _urlKey(String url) =>
+    sha256.convert(utf8.encode(url)).toString().substring(0, 16);
+
 /// Mihon-faithful chapter download queue (DownloadManager + Downloader).
 ///
 /// One chapter at a time (per-source concurrency deferred). WorkManager
 /// one-off drains the same [DownloadStore] when the UI runner is idle.
+///
+/// Mihon APKs stream through [KeiyoushiService.downloadChapters]; JS sources
+/// resolve page lists via [ExtensionDispatchService] and save JPGs locally.
 class DownloadManager extends ChangeNotifier {
   DownloadManager({
     required KeiyoushiService keiyoushi,
+    ExtensionDispatchService? extensionService,
     Repositories? repositories,
     DownloadStore? store,
   })  : _keiyoushi = keiyoushi,
+        _dispatch = extensionService ??
+            ExtensionDispatchService(keiyoushiService: keiyoushi),
         _repos = repositories,
         _store = store ?? DownloadStore();
 
   final KeiyoushiService _keiyoushi;
+  final ExtensionDispatchService _dispatch;
   final Repositories? _repos;
   final DownloadStore _store;
 
@@ -61,9 +77,8 @@ class DownloadManager extends ChangeNotifier {
   List<ChapterDownload> get queue => List.unmodifiable(_queue);
   bool get isRunning => _running;
   bool get isPaused => _paused;
-  int get pendingCount => _queue
-      .where((d) => d.status != DownloadState.downloaded)
-      .length;
+  int get pendingCount =>
+      _queue.where((d) => d.status != DownloadState.downloaded).length;
 
   ChapterDownload? getQueuedOrNull(String chapterKey) {
     for (final d in _queue) {
@@ -89,10 +104,11 @@ class DownloadManager extends ChangeNotifier {
       }
       if (d.order >= _orderCounter) _orderCounter = d.order + 1;
     }
-    // Previous UI runner may have been killed mid-job.
     await _store.setRunner('none');
     notifyListeners();
-    if (autoStart && !_paused && _queue.any((d) => d.status == DownloadState.queue)) {
+    if (autoStart &&
+        !_paused &&
+        _queue.any((d) => d.status == DownloadState.queue)) {
       await startDownloads(retryErrors: false);
     }
   }
@@ -127,8 +143,6 @@ class DownloadManager extends ChangeNotifier {
           chapterMemo = coerceMemoJson(existing?.memo) ?? '';
         }
       }
-      // AllAnime non-legacy: manga.url is the raw id. Persist mangaId in
-      // chapter memo at enqueue so getPageList works without a hydrate race.
       if (!_chapterMemoLooksReady(chapterMemo) && !mangaUrl.contains('/')) {
         chapterMemo = jsonEncode({'mangaId': mangaUrl});
       }
@@ -158,9 +172,6 @@ class DownloadManager extends ChangeNotifier {
     }
   }
 
-  /// Start/resume the queue. [retryErrors] maps ERROR→QUEUE (Resume/Retry only).
-  /// Restore and enqueue must not reset ERROR — that re-fired AllAnime WebView
-  /// forever and raced the reader's runWebView (30s timeouts).
   Future<void> startDownloads({bool retryErrors = true}) async {
     _paused = false;
     await _store.setPaused(false);
@@ -176,20 +187,13 @@ class DownloadManager extends ChangeNotifier {
     if (_running || !_queue.any((d) => d.status == DownloadState.queue)) {
       return;
     }
-    // Claim the runner BEFORE WorkManager can race us. Do not schedule WM
-    // here — spawning a second FlutterEngine mid-download looks like a crash.
-    // WM is scheduled only when the app backgrounds ([scheduleBackgroundIfNeeded]).
     await _store.setRunner('ui');
     unawaited(runUntilIdle(runner: 'ui'));
   }
 
-  /// Runs the download loop until the queue is idle or paused.
-  /// Used by WorkManager background drain (awaited) and by [startDownloads].
   Future<void> runUntilIdle({required String runner}) =>
       _runLoop(runner: runner);
 
-  /// Schedule a WorkManager drain when the app is backgrounded and there is
-  /// still queued work the UI isolate may not finish.
   Future<void> scheduleBackgroundIfNeeded() async {
     if (_paused) return;
     final hasQueued = _queue.any((d) => d.status == DownloadState.queue);
@@ -279,10 +283,6 @@ class DownloadManager extends ChangeNotifier {
       while (!_paused) {
         ChapterDownload? next;
         for (final d in _queue) {
-          // Mihon Downloader: only QUEUE/DOWNLOADING are active. ERROR items
-          // stay until startDownloads() / retry resets them to QUEUE — otherwise
-          // a permanent getPageList failure (e.g. "Refresh Chapter List") spins
-          // forever.
           if (d.status == DownloadState.queue) {
             next = d;
             break;
@@ -328,51 +328,55 @@ class DownloadManager extends ChangeNotifier {
     final abort = DownloadAbortController();
     _activeAbort = abort;
     try {
-      // AllAnime and similar sources require chapter.memo (e.g. mangaId).
-      // Stale/empty memo → "Refresh Chapter List"; hydrate once before pages.
       if (!_chapterMemoLooksReady(download.chapterMemo)) {
         await _ensureChapterMemo(download);
       }
-      final result = await _keiyoushi.downloadChapters(
-        sourceId: download.sourceId,
-        mangaUrl: download.mangaUrl,
-        chapters: [
-          {
-            'url': download.chapterUrl,
-            'name': download.chapterName,
-            'memo': download.chapterMemo,
+
+      final isJs = await _isJsSource(download.sourceId);
+      final bool ok;
+      if (isJs) {
+        ok = await _downloadOneJs(download, abort);
+      } else {
+        final result = await _keiyoushi.downloadChapters(
+          sourceId: download.sourceId,
+          mangaUrl: download.mangaUrl,
+          chapters: [
+            {
+              'url': download.chapterUrl,
+              'name': download.chapterName,
+              'memo': download.chapterMemo,
+            },
+          ],
+          abort: abort,
+          onProgress: (chapterUrl, done, total) {
+            if (chapterUrl != download.chapterUrl) return;
+            download.pagesDone = done;
+            download.pagesTotal = total;
+            notifyListeners();
+            unawaited(
+              NotificationService.instance.notifyDownloadProgress(
+                mangaTitle: download.mangaTitle,
+                chapterName: download.chapterName,
+                done: done,
+                total: total,
+                pending: pendingCount,
+              ),
+            );
+            unawaited(_persist());
           },
-        ],
-        abort: abort,
-        onProgress: (chapterUrl, done, total) {
-          if (chapterUrl != download.chapterUrl) return;
-          download.pagesDone = done;
-          download.pagesTotal = total;
-          notifyListeners();
-          unawaited(
-            NotificationService.instance.notifyDownloadProgress(
-              mangaTitle: download.mangaTitle,
-              chapterName: download.chapterName,
-              done: done,
-              total: total,
-              pending: pendingCount,
-            ),
-          );
-          unawaited(_persist());
-        },
-      );
+        );
+        ok = result.containsKey(download.chapterUrl);
+      }
+
       if (abort.isAborted || _paused) {
         download.status = DownloadState.queue;
         await _persist();
         notifyListeners();
         return;
       }
-      final ok = result.containsKey(download.chapterUrl);
       if (ok) {
         download.status = DownloadState.downloaded;
         await _markDownloaded(download);
-        // Notify while still in queue so listeners can mark the chapter done
-        // before the item disappears.
         await _persist();
         notifyListeners();
         _queue.remove(download);
@@ -408,6 +412,89 @@ class DownloadManager extends ChangeNotifier {
     }
   }
 
+  Future<bool> _isJsSource(String sourceId) async {
+    final repos = _repos;
+    if (repos == null) return false;
+    final ext = await findInstalledExtension(repos, sourceId);
+    return ext?.isJs ?? false;
+  }
+
+  /// JS path: dispatch getPageList + HTTP-save JPGs under the Mihon layout.
+  Future<bool> _downloadOneJs(
+    ChapterDownload download,
+    DownloadAbortController abort,
+  ) async {
+    final repos = _repos;
+    if (repos == null) return false;
+
+    final source = await resolveExtensionMSource(repos, download.sourceId);
+    final pagesWrapped = await _dispatch.getPageList(
+      source,
+      MChapter(
+        url: download.chapterUrl,
+        name: download.chapterName,
+        memo: download.chapterMemo.isNotEmpty ? download.chapterMemo : null,
+      ),
+    );
+    final pages = [
+      for (final group in pagesWrapped)
+        for (final p in group.pages)
+          if (p.url.trim().isNotEmpty) p,
+    ];
+    if (pages.isEmpty) return false;
+
+    download.pagesTotal = pages.length;
+    download.pagesDone = 0;
+    notifyListeners();
+
+    final supportDir = await getApplicationSupportDirectory();
+    final mangaKey = _urlKey(download.mangaUrl);
+    final chKey = _urlKey(download.chapterUrl);
+    final chDir = Directory(
+      '${supportDir.path}/manga/${download.sourceId}/$mangaKey/$chKey',
+    );
+    await chDir.create(recursive: true);
+
+    final client = http.Client();
+    abort.attach(client);
+    try {
+      for (var i = 0; i < pages.length; i++) {
+        if (abort.isAborted || _paused) return false;
+        final page = pages[i];
+        final file = File('${chDir.path}/${page.index}.jpg');
+        if (!await file.exists() || await file.length() == 0) {
+          final req = http.Request('GET', Uri.parse(page.url));
+          if (page.headers != null) {
+            req.headers.addAll(page.headers!);
+          }
+          final streamed = await client.send(req).timeout(
+                const Duration(seconds: 60),
+              );
+          if (streamed.statusCode < 200 || streamed.statusCode >= 300) {
+            throw Exception('JS page download HTTP ${streamed.statusCode}');
+          }
+          final bytes = await streamed.stream.toBytes();
+          await file.writeAsBytes(bytes, flush: true);
+        }
+        download.pagesDone = i + 1;
+        notifyListeners();
+        unawaited(
+          NotificationService.instance.notifyDownloadProgress(
+            mangaTitle: download.mangaTitle,
+            chapterName: download.chapterName,
+            done: download.pagesDone,
+            total: download.pagesTotal,
+            pending: pendingCount,
+          ),
+        );
+        unawaited(_persist());
+      }
+      return !abort.isAborted && !_paused;
+    } finally {
+      client.close();
+    }
+  }
+
   Future<void> _markDownloaded(ChapterDownload download) async {
     final repos = _repos;
     if (repos == null) return;
@@ -422,14 +509,11 @@ class DownloadManager extends ChangeNotifier {
         }
       }
       if (download.chapterId != null) {
-        await repos.manga
-            .markMangaChapterDownloaded(download.chapterId!, true);
+        await repos.manga.markMangaChapterDownloaded(download.chapterId!, true);
       }
     } catch (_) {}
   }
 
-  /// True when chapter memo is usable for getPageList.
-  /// AllAnime requires `mangaId` inside the memo object.
   bool _chapterMemoLooksReady(String memo) {
     final t = memo.trim();
     if (t.isEmpty || t == '{}') return false;
@@ -440,18 +524,14 @@ class DownloadManager extends ChangeNotifier {
         return id != null && '$id'.isNotEmpty;
       }
     } catch (_) {
-      // Opaque memo string — leave as-is for non-JSON sources.
       return true;
     }
     return true;
   }
 
-  /// Re-fetch chapter list so source memos (mangaId/slug) are fresh, then
-  /// fall back to synthesizing mangaId from a non-legacy manga URL.
   Future<void> _ensureChapterMemo(ChapterDownload download) async {
     await _hydrateChapterMemo(download);
     if (_chapterMemoLooksReady(download.chapterMemo)) return;
-    // AllAnime non-legacy: manga.url is the raw id (no leading '/').
     if (!download.mangaUrl.contains('/')) {
       download.chapterMemo = jsonEncode({'mangaId': download.mangaUrl});
       await _persist();
@@ -459,9 +539,28 @@ class DownloadManager extends ChangeNotifier {
     }
   }
 
-  /// Re-fetch chapter list so source memos (mangaId/slug) are fresh.
   Future<void> _hydrateChapterMemo(ChapterDownload download) async {
+    final repos = _repos;
     try {
+      if (repos != null) {
+        final source = await resolveExtensionMSource(repos, download.sourceId);
+        final list = await _dispatch.getChapterList(
+          source,
+          download.mangaUrl,
+          memo: download.mangaMemo.isNotEmpty ? download.mangaMemo : null,
+        );
+        for (final ch in list) {
+          if (ch.url != download.chapterUrl) continue;
+          final memo = coerceMemoJson(ch.memo);
+          if (memo != null && memo.isNotEmpty) {
+            download.chapterMemo = memo;
+            await _persist();
+            notifyListeners();
+          }
+          break;
+        }
+        return;
+      }
       final list = await _keiyoushi.getChapterList(
         sourceId: download.sourceId,
         url: download.mangaUrl,
@@ -478,9 +577,7 @@ class DownloadManager extends ChangeNotifier {
         }
         break;
       }
-    } catch (_) {
-      // Best-effort: download still proceeds and may surface the source error.
-    }
+    } catch (_) {}
   }
 
   Future<void> _persist() => _store.save(_queue);

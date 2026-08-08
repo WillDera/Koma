@@ -2,8 +2,9 @@ import '../../core/models/manga.dart';
 import '../../core/models/manga_chapter.dart';
 import '../../core/repositories/repositories.dart';
 import '../../core/services/extension_manager.dart';
-import '../../core/services/keiyoushi_service.dart';
+import '../../core/services/extension_source_resolve.dart';
 import '../../core/services/library_update_prefs.dart';
+import '../../eval/dispatch_service.dart';
 
 /// One manga that gained newly merged chapters during a poll.
 class LibraryUpdateAddition {
@@ -48,14 +49,14 @@ class LibraryUpdateReport {
 /// restrictions (completed / unread / not-started). Categories deferred.
 class LibraryUpdateService {
   final Repositories _repos;
-  final KeiyoushiService _keiyoushi;
+  final ExtensionDispatchService _dispatch;
   final ExtensionManager? _extensionManager;
 
   LibraryUpdateService(
     this._repos,
-    this._keiyoushi, {
-    ExtensionManager? extensionManager,
-  }) : _extensionManager = extensionManager;
+    this._dispatch, {
+    this._extensionManager,
+  });
 
   Future<String> _resolveSourceId(String sourceId) async {
     final mgr = _extensionManager;
@@ -102,9 +103,14 @@ class LibraryUpdateService {
         if (await _shouldSkip(manga, r)) continue;
 
         final sourceId = await _resolveSourceId(manga.sourceId);
-        final raw = await _keiyoushi.getChapterList(
-          sourceId: sourceId,
-          url: manga.url,
+        final source = await resolveExtensionMSource(
+          _repos,
+          sourceId,
+          name: manga.name,
+        );
+        final raw = await _dispatch.getChapterList(
+          source,
+          manga.url,
           memo: manga.memo,
           title: manga.name,
         );
@@ -113,18 +119,18 @@ class LibraryUpdateService {
         final incoming = <MangaChapter>[];
         for (var i = 0; i < raw.length; i++) {
           final ch = raw[i];
-          final url = (ch['url'] as String? ?? '').trim();
+          final url = ch.url.trim();
           if (url.isEmpty) continue;
           incoming.add(
             MangaChapter(
               id: 0,
               mangaId: manga.id,
-              name: ch['name'] as String? ?? '',
+              name: ch.name,
               url: url,
-              scanlator: ch['scanlator'] as String?,
-              dateUpload: ch['date_upload'] as int? ?? 0,
+              scanlator: ch.scanlator,
+              dateUpload: ch.dateUpload,
               index: i,
-              memo: ch['memo'] as String?,
+              memo: ch.memo,
             ),
           );
         }
