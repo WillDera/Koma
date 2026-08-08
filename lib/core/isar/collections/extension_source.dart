@@ -32,6 +32,15 @@ class ExtensionSource {
   String? sourceCodeUrl;
   String? repoUrl;
 
+  /// Package name from the APK (trust key). Empty until inspected.
+  String pkgName;
+
+  /// Package versionCode from the APK.
+  int versionCode;
+
+  /// Primary (last) SHA-256 signing fingerprint. Empty until inspected.
+  String signatureHash;
+
   bool isInstalled;
   bool isActive;
   bool isNsfw;
@@ -62,6 +71,9 @@ class ExtensionSource {
     String? baseUrl,
     String? sourceCodeUrl,
     String? repoUrl,
+    String? pkgName,
+    int? versionCode,
+    String? signatureHash,
     bool? isInstalled,
     bool? isActive,
     bool? isNsfw,
@@ -84,6 +96,9 @@ class ExtensionSource {
       baseUrl: baseUrl ?? this.baseUrl,
       sourceCodeUrl: sourceCodeUrl ?? this.sourceCodeUrl,
       repoUrl: repoUrl ?? this.repoUrl,
+      pkgName: pkgName ?? this.pkgName,
+      versionCode: versionCode ?? this.versionCode,
+      signatureHash: signatureHash ?? this.signatureHash,
       isInstalled: isInstalled ?? this.isInstalled,
       isActive: isActive ?? this.isActive,
       isNsfw: isNsfw ?? this.isNsfw,
@@ -108,6 +123,9 @@ class ExtensionSource {
     this.baseUrl,
     this.sourceCodeUrl,
     this.repoUrl,
+    this.pkgName = '',
+    this.versionCode = 0,
+    this.signatureHash = '',
     this.isInstalled = true,
     this.isActive = true,
     this.isNsfw = false,
@@ -131,6 +149,9 @@ class ExtensionSource {
     'base_url': baseUrl,
     'source_code_url': sourceCodeUrl,
     'repo_url': repoUrl,
+    'pkg_name': pkgName,
+    'version_code': versionCode,
+    'signature_hash': signatureHash,
     'is_installed': isInstalled ? 1 : 0,
     'is_active': isActive ? 1 : 0,
     'is_nsfw': isNsfw ? 1 : 0,
@@ -155,6 +176,9 @@ class ExtensionSource {
         baseUrl: json['base_url'] as String?,
         sourceCodeUrl: json['source_code_url'] as String?,
         repoUrl: json['repo_url'] as String?,
+        pkgName: json['pkg_name'] as String? ?? '',
+        versionCode: (json['version_code'] as num?)?.toInt() ?? 0,
+        signatureHash: json['signature_hash'] as String? ?? '',
         isInstalled: (json['is_installed'] as int? ?? 0) == 1,
         isActive: (json['is_active'] as int? ?? 1) == 1,
         isNsfw: (json['is_nsfw'] as int? ?? 0) == 1,

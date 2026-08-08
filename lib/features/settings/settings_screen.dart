@@ -9,6 +9,8 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../../core/models/source.dart';
 import '../../core/providers.dart';
 import '../../core/services/export_service.dart';
+import '../../core/services/extension_manager.dart';
+import '../../core/services/keiyoushi_service.dart';
 import '../../core/services/library_update_prefs.dart';
 import '../../core/services/metadata_enrichment_service.dart';
 import '../../core/services/source_service.dart';
@@ -47,7 +49,7 @@ class SettingsScreen extends StatelessWidget {
             const OneHandSpacer(),
             const LibraryHeader(
               title: 'Settings',
-              subtitle: 'Version 2.30.5',
+              subtitle: 'Version 2.31.0',
               padding: EdgeInsets.fromLTRB(24, 20, 20, 12),
             ),
             const StaggeredEntrance(
@@ -1464,7 +1466,59 @@ class _SourcesSectionState extends ConsumerState<_SourcesSection> {
             onChanged: tn.setShowObsoleteExtensions,
           ),
         ),
+        SettingsRow(
+          icon: Icons.security_outlined,
+          title: 'Revoke all trusted extensions',
+          subtitle:
+              'Clear user-trusted sideloads. Repo-signed packages stay trusted.',
+          onTap: () => _revokeTrustedExtensions(context),
+        ),
       ],
+    );
+  }
+
+  Future<void> _revokeTrustedExtensions(BuildContext context) async {
+    final c = context.colors;
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: c.surface,
+        title: Text(
+          'Revoke trusted extensions?',
+          style: TextStyle(color: c.textPrimary),
+        ),
+        content: Text(
+          'This clears extensions you explicitly trusted. Packages signed by '
+          'a known repository remain usable.',
+          style: TextStyle(color: c.textSecondary),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: Text('Cancel', style: TextStyle(color: c.textSecondary)),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: Text('Revoke', style: TextStyle(color: c.accent)),
+          ),
+        ],
+      ),
+    );
+    if (ok != true || !context.mounted) return;
+    final mgr = ExtensionManager(
+      ref.read(repositoriesProvider),
+      KeiyoushiService(),
+    );
+    final changed = await mgr.revokeAllTrusted();
+    if (!context.mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          changed > 0
+              ? 'Revoked trust · $changed extension${changed == 1 ? '' : 's'} rechecked'
+              : 'Revoked all user-trusted extensions',
+        ),
+      ),
     );
   }
 
@@ -1949,7 +2003,7 @@ class _AboutSection extends StatelessWidget {
         SettingsRow(
           icon: Icons.info_outline,
           title: 'Koma',
-          subtitle: 'Version 2.30.5 · build 2.30.5+248',
+          subtitle: 'Version 2.31.0 · build 2.31.0+249',
         ),
         SettingsRow(
           icon: Icons.favorite_outline,
