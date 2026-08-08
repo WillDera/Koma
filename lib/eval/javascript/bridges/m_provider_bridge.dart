@@ -29,9 +29,6 @@ class MProvider {
     async getPageList() {
         throw new Error("getPageList not implemented");
     }
-    async getChapterList(url) {
-        throw new Error("getChapterList not implemented");
-    }
     async getVideoList(url) {
         throw new Error("getVideoList not implemented");
     }

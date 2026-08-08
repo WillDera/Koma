@@ -113,7 +113,7 @@ function unpackJsAndCombine(scriptBlock) {
 }
 ''';
 
-Future<void> injectCryptoBridge(QuickJsRuntime2 engine) async {
+Future<void> injectCryptoBridge(JavascriptRuntime engine) async {
   engine.setupBridge('CryptoAESEncrypt', (args) {
     final message = args['message'] as String? ?? '';
     final key = args['key'] as String? ?? '';
@@ -158,7 +158,7 @@ Future<void> injectCryptoBridge(QuickJsRuntime2 engine) async {
 }
 
 Future<void> _aesEncrypt(
-  QuickJsRuntime2 engine,
+  JavascriptRuntime engine,
   String message,
   String key,
   int callbackId,
@@ -180,7 +180,7 @@ Future<void> _aesEncrypt(
 }
 
 Future<void> _aesDecrypt(
-  QuickJsRuntime2 engine,
+  JavascriptRuntime engine,
   String ciphertext,
   String key,
   int callbackId,
@@ -876,7 +876,7 @@ class AesCrypt {
 }
 
 Future<void> _cryptoHandler(
-  QuickJsRuntime2 engine,
+  JavascriptRuntime engine,
   String text,
   String iv,
   String key,
@@ -899,7 +899,7 @@ Future<void> _cryptoHandler(
 }
 
 Future<void> _decryptAESGCM(
-  QuickJsRuntime2 engine,
+  JavascriptRuntime engine,
   String encrypted,
   String keyHex,
   String ivHex,
@@ -925,7 +925,7 @@ Future<void> _decryptAESGCM(
 }
 
 void _unpackJsAndCombine(
-  QuickJsRuntime2 engine,
+  JavascriptRuntime engine,
   String scriptBlock,
   int callbackId,
 ) {

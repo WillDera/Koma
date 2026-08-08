@@ -217,7 +217,10 @@ class _SourceBrowseScreenState extends ConsumerState<SourceBrowseScreen>
       });
     } catch (e) {
       if (!mounted) return;
-      setState(() => _error = '$e');
+      setState(() {
+        _error = '$e';
+        _hasNext = false;
+      });
     } finally {
       if (mounted) setState(() => _loading = false);
     }
@@ -343,7 +346,7 @@ class _SourceBrowseScreenState extends ConsumerState<SourceBrowseScreen>
   }
 
   FilterList? _buildFilterList() {
-    if (_filterValues.isEmpty) return null;
+    if (_filters.isEmpty) return null;
     final built = <Filter>[];
     for (final f in _filters) {
       final builtFilter = _buildFilterFromValue(f, _filterValues);
@@ -358,40 +361,52 @@ class _SourceBrowseScreenState extends ConsumerState<SourceBrowseScreen>
     switch (f.type) {
       case FilterType.text:
         return Filter(
-          key: f.name,
+          key: f.key,
           name: f.name,
           type: f.type,
           value: value as String? ?? '',
+          filterTypeId: f.filterTypeId,
+          typeName: f.typeName,
         );
       case FilterType.check:
         return Filter(
-          key: f.name,
+          key: f.key,
           name: f.name,
           type: f.type,
           value: value as bool? ?? false,
+          options: f.options,
+          filterTypeId: f.filterTypeId,
+          typeName: f.typeName,
         );
       case FilterType.triState:
         return Filter(
-          key: f.name,
-          name: f.name,
-          type: f.type,
-          value: value as int? ?? 0,
-        );
-      case FilterType.select:
-        return Filter(
-          key: f.name,
+          key: f.key,
           name: f.name,
           type: f.type,
           value: value as int? ?? 0,
           options: f.options,
+          filterTypeId: f.filterTypeId,
+          typeName: f.typeName,
+        );
+      case FilterType.select:
+        return Filter(
+          key: f.key,
+          name: f.name,
+          type: f.type,
+          value: value as int? ?? 0,
+          options: f.options,
+          filterTypeId: f.filterTypeId,
+          typeName: f.typeName,
         );
       case FilterType.sort:
         return Filter(
-          key: f.name,
+          key: f.key,
           name: f.name,
           type: f.type,
           value: value,
           options: f.options,
+          filterTypeId: f.filterTypeId,
+          typeName: f.typeName,
         );
       case FilterType.group:
         final subValuesList = value as List<Map<String, dynamic>>? ?? [];
@@ -405,14 +420,22 @@ class _SourceBrowseScreenState extends ConsumerState<SourceBrowseScreen>
           if (builtSub != null) subFilters.add(builtSub);
         }
         return Filter(
-          key: f.name,
+          key: f.key,
           name: f.name,
           type: f.type,
           subFilters: subFilters,
+          filterTypeId: f.filterTypeId,
+          typeName: f.typeName,
         );
       case FilterType.header:
       case FilterType.separator:
-        return null;
+        return Filter(
+          key: f.key,
+          name: f.name,
+          type: f.type,
+          filterTypeId: f.filterTypeId,
+          typeName: f.typeName,
+        );
     }
   }
 
@@ -616,17 +639,27 @@ class _SourceBrowseScreenState extends ConsumerState<SourceBrowseScreen>
           ? const Center(child: CircularProgressIndicator())
           : _searchActive
           ? _buildSearchBody(c, headers)
-          : _mangas.isEmpty && !_loading && _error == null
+          : _error != null && _mangas.isEmpty && !_loading
           ? ListView(
               children: [
-                if (_error != null)
-                  Padding(
-                    padding: const EdgeInsets.all(16),
-                    child: Text(
-                      _error!,
-                      style: TextStyle(color: c.accent, fontSize: 12),
-                    ),
+                Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Text(
+                    _error!,
+                    style: TextStyle(color: c.accent, fontSize: 13),
                   ),
+                ),
+                Center(
+                  child: TextButton(
+                    onPressed: _refresh,
+                    child: const Text('Retry'),
+                  ),
+                ),
+              ],
+            )
+          : _mangas.isEmpty && !_loading
+          ? ListView(
+              children: [
                 const SizedBox(height: 120),
                 const Center(child: Text('Nothing found')),
               ],
@@ -635,7 +668,7 @@ class _SourceBrowseScreenState extends ConsumerState<SourceBrowseScreen>
               mangas: _mangas,
               headers: headers,
               controller: _scrollCtrl,
-              hasNext: _hasNext,
+              hasNext: _hasNext && _error == null,
               onRefresh: _refresh,
             ),
     );
