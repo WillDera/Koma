@@ -3,6 +3,7 @@ import '../models/m_source.dart';
 import '../models/m_manga.dart';
 import '../models/m_chapter.dart';
 import '../models/m_pages.dart';
+import '../models/manga_browse_page.dart';
 import '../models/filter_list.dart';
 import '../models/source_preference.dart';
 import '../../core/services/keiyoushi_service.dart';
@@ -15,17 +16,29 @@ class KeiyoushiExtensionService implements ExtensionService {
   @override
   String get type => 'mihon';
 
+  MangaBrowsePage _toBrowsePage(
+    ({List<Map<String, dynamic>> mangas, bool hasNextPage}) result,
+  ) {
+    return MangaBrowsePage(
+      list: result.mangas.map((m) => MManga.fromMap(m)).toList(),
+      hasNextPage: result.hasNextPage,
+    );
+  }
+
   @override
-  Future<List<MManga>> getPopular(int page, {required MSource source}) async {
+  Future<MangaBrowsePage> getPopular(
+    int page, {
+    required MSource source,
+  }) async {
     final result = await _keiyoushi.getPopularManga(
       sourceId: source.sourceId,
       page: page,
     );
-    return result.mangas.map((m) => MManga.fromMap(m)).toList();
+    return _toBrowsePage(result);
   }
 
   @override
-  Future<List<MManga>> getLatestUpdates(
+  Future<MangaBrowsePage> getLatestUpdates(
     int page, {
     required MSource source,
   }) async {
@@ -33,7 +46,7 @@ class KeiyoushiExtensionService implements ExtensionService {
       sourceId: source.sourceId,
       page: page,
     );
-    return result.mangas.map((m) => MManga.fromMap(m)).toList();
+    return _toBrowsePage(result);
   }
 
   @override
@@ -43,7 +56,7 @@ class KeiyoushiExtensionService implements ExtensionService {
   }
 
   @override
-  Future<List<MManga>> search(
+  Future<MangaBrowsePage> search(
     MSource source,
     int page,
     String query, {
@@ -55,7 +68,7 @@ class KeiyoushiExtensionService implements ExtensionService {
       page: page,
       filters: filters?.toJson(),
     );
-    return result.mangas.map((m) => MManga.fromMap(m)).toList();
+    return _toBrowsePage(result);
   }
 
   @override

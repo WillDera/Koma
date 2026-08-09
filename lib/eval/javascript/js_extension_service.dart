@@ -8,6 +8,7 @@ import '../models/m_source.dart';
 import '../models/m_manga.dart';
 import '../models/m_chapter.dart';
 import '../models/m_pages.dart';
+import '../models/manga_browse_page.dart';
 import '../models/filter_list.dart';
 import '../models/source_preference.dart';
 import 'bridges/crypto_bridge.dart';
@@ -93,16 +94,26 @@ var extention = new DefaultExtension();
     final baseUrl = source.baseUrl.isNotEmpty
         ? source.baseUrl
         : (meta['baseUrl'] ?? '');
-    final apiUrl = meta['apiUrl'] ?? '';
+    final apiUrl = (source.apiUrl != null && source.apiUrl!.isNotEmpty)
+        ? source.apiUrl!
+        : (meta['apiUrl'] ?? '');
+    final hasCloudflare = source.hasCloudflare || meta['hasCloudflare'] == 'true';
+    final dateFormat = (source.dateFormat != null && source.dateFormat!.isNotEmpty)
+        ? source.dateFormat!
+        : (meta['dateFormat'] ?? '');
+    final dateFormatLocale =
+        (source.dateFormatLocale != null && source.dateFormatLocale!.isNotEmpty)
+        ? source.dateFormatLocale!
+        : (meta['dateFormatLocale'] ?? '');
     return {
       'id': id ?? source.id,
       'name': source.name,
       'lang': source.lang,
       'baseUrl': baseUrl,
       'apiUrl': apiUrl,
-      'dateFormat': meta['dateFormat'] ?? '',
-      'dateFormatLocale': meta['dateFormatLocale'] ?? '',
-      'hasCloudflare': false,
+      'dateFormat': dateFormat,
+      'dateFormatLocale': dateFormatLocale,
+      'hasCloudflare': hasCloudflare,
       'isFullData': false,
       'additionalParams': '',
       'notes': '',
@@ -146,19 +157,25 @@ var extention = new DefaultExtension();
     }
   }
 
-  List<MManga> _parseMangaList(dynamic raw) {
+  MangaBrowsePage _parseMangaBrowsePage(dynamic raw) {
     final List<dynamic> list;
+    var hasNextPage = false;
     if (raw is Map && raw['list'] is List) {
       list = raw['list'] as List;
+      final flag = raw['hasNextPage'];
+      hasNextPage = flag == true || flag == 1 || flag == 'true';
     } else if (raw is List) {
       list = raw;
     } else {
-      return [];
+      return const MangaBrowsePage(list: []);
     }
-    return list
-        .whereType<Map>()
-        .map((e) => MManga.fromJson(Map<String, dynamic>.from(e)))
-        .toList();
+    return MangaBrowsePage(
+      list: list
+          .whereType<Map>()
+          .map((e) => MManga.fromJson(Map<String, dynamic>.from(e)))
+          .toList(),
+      hasNextPage: hasNextPage,
+    );
   }
 
   List<MChapter> _parseChapters(dynamic raw) {
@@ -213,22 +230,25 @@ var extention = new DefaultExtension();
   }
 
   @override
-  Future<List<MManga>> getPopular(int page, {required MSource source}) async {
+  Future<MangaBrowsePage> getPopular(
+    int page, {
+    required MSource source,
+  }) async {
     final raw = await _extensionCallAsync(source, 'getPopular($page)');
-    return _parseMangaList(raw);
+    return _parseMangaBrowsePage(raw);
   }
 
   @override
-  Future<List<MManga>> getLatestUpdates(
+  Future<MangaBrowsePage> getLatestUpdates(
     int page, {
     required MSource source,
   }) async {
     final raw = await _extensionCallAsync(source, 'getLatestUpdates($page)');
-    return _parseMangaList(raw);
+    return _parseMangaBrowsePage(raw);
   }
 
   @override
-  Future<List<MManga>> search(
+  Future<MangaBrowsePage> search(
     MSource source,
     int page,
     String query, {
@@ -246,7 +266,7 @@ var extention = new DefaultExtension();
       source,
       'search(${jsonEncode(query)},$page,$filtersJson)',
     );
-    return _parseMangaList(raw);
+    return _parseMangaBrowsePage(raw);
   }
 
   @override
@@ -328,11 +348,11 @@ var extention = new DefaultExtension();
     MSource source,
     SourcePreference pref,
   ) async {
-    await _init(source);
-    try {
-      _runtime?.evaluate(
-        'extention.saveSourcePreference(${jsonEncode(pref.key)}, ${jsonEncode(pref.defaultValue)})',
-      );
-    } catch (_) {}
+    await hydrateJsPrefsCache();
+    final key = pref.key;
+    if (key == null || key.isEmpty) return;
+    final value = pref.typedValue;
+    if (value == null) return;
+    setJsPreferenceValue(source.sourceId, key, value);
   }
 }

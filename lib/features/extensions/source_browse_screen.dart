@@ -204,14 +204,14 @@ class _SourceBrowseScreenState extends ConsumerState<SourceBrowseScreen>
     setState(() => _loading = true);
     try {
       final source = _requireSource;
-      final result = switch (_tab) {
+      final page = switch (_tab) {
         'latest' => await _service.getLatestUpdates(_page, source: source),
         _ => await _service.getPopular(_page, source: source),
       };
       if (!mounted) return;
       setState(() {
-        _mangas.addAll(result);
-        _hasNext = result.length >= 25;
+        _mangas.addAll(page.list);
+        _hasNext = page.hasNextPage;
         _page++;
         _error = null;
       });
@@ -324,7 +324,7 @@ class _SourceBrowseScreenState extends ConsumerState<SourceBrowseScreen>
     setState(() => _searchLoading = true);
     try {
       final filterList = _buildFilterList();
-      final mangas = await _service.search(
+      final page = await _service.search(
         _requireSource,
         1,
         query,
@@ -332,7 +332,7 @@ class _SourceBrowseScreenState extends ConsumerState<SourceBrowseScreen>
       );
       if (!mounted) return;
       setState(() {
-        _searchResults = mangas;
+        _searchResults = page.list;
         _searchLoading = false;
       });
     } catch (e) {

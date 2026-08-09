@@ -3,6 +3,7 @@ import 'models/m_source.dart';
 import 'models/m_manga.dart';
 import 'models/m_chapter.dart';
 import 'models/m_pages.dart';
+import 'models/manga_browse_page.dart';
 import 'models/filter_list.dart';
 import 'models/source_preference.dart';
 import 'keiyoushi/keiyoushi_extension_service.dart';
@@ -31,15 +32,17 @@ class ExtensionDispatchService implements ExtensionService {
       _resolve(source).getFilterList(source);
 
   @override
-  Future<List<MManga>> getPopular(int page, {required MSource source}) =>
+  Future<MangaBrowsePage> getPopular(int page, {required MSource source}) =>
       _resolve(source).getPopular(page, source: source);
 
   @override
-  Future<List<MManga>> getLatestUpdates(int page, {required MSource source}) =>
-      _resolve(source).getLatestUpdates(page, source: source);
+  Future<MangaBrowsePage> getLatestUpdates(
+    int page, {
+    required MSource source,
+  }) => _resolve(source).getLatestUpdates(page, source: source);
 
   @override
-  Future<List<MManga>> search(
+  Future<MangaBrowsePage> search(
     MSource source,
     int page,
     String query, {

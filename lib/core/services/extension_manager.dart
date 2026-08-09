@@ -12,6 +12,7 @@ import '../models/extension_repo.dart';
 import '../models/extension_source.dart';
 import '../repositories/repositories.dart';
 import '../utils/language.dart';
+import '../../eval/javascript/js_source_meta.dart';
 import 'apk_signature_service.dart';
 import 'extension_icon_cache.dart';
 import 'keiyoushi_service.dart';
@@ -58,6 +59,11 @@ class ExtensionIndexEntry {
   final bool isNsfw;
   final String? baseUrl;
   final String? iconUrl;
+  final String? apiUrl;
+  final bool hasCloudflare;
+
+  /// `manga` / `anime` / `novel`, or null when the index omitted itemType/isManga.
+  final String? itemType;
   final List<Map<String, dynamic>> sources;
 
   const ExtensionIndexEntry({
@@ -72,6 +78,9 @@ class ExtensionIndexEntry {
     this.isNsfw = false,
     this.baseUrl,
     this.iconUrl,
+    this.apiUrl,
+    this.hasCloudflare = false,
+    this.itemType,
     required this.sources,
   });
 
@@ -118,6 +127,29 @@ class ExtensionIndexEntry {
     return SourceCodeLanguage.dart;
   }
 
+  /// Map mangayomi `itemType` / legacy `isManga` → `manga`/`anime`/`novel`.
+  /// Returns null when neither field is present in the index JSON.
+  static String? parseItemType(Map<String, dynamic> j) {
+    if (!j.containsKey('itemType') && !j.containsKey('isManga')) return null;
+    final raw = j['itemType'];
+    if (raw is int && raw >= 0 && raw <= 2) {
+      return const ['manga', 'anime', 'novel'][raw];
+    }
+    if (raw is String) {
+      final s = raw.toLowerCase().trim();
+      if (s == 'manga' || s == 'anime' || s == 'novel') return s;
+      final n = int.tryParse(s);
+      if (n != null && n >= 0 && n <= 2) {
+        return const ['manga', 'anime', 'novel'][n];
+      }
+    }
+    final isManga = j['isManga'];
+    if (isManga == true) return 'manga';
+    if (isManga == false) return 'anime';
+    // itemType present but unusable — same default as Source.fromJson (0).
+    return 'manga';
+  }
+
   static bool _looksLikeMihon(Map<String, dynamic> j) {
     return j.containsKey('apk') ||
         j.containsKey('pkg') ||
@@ -134,6 +166,9 @@ class ExtensionIndexEntry {
     final hasPackageName = j['packageName'] != null || j['pkg'] != null;
     final hasSourceCodeUrl = j['sourceCodeUrl'] != null;
     final hasId = j['id'] != null;
+    final apiUrl = j['apiUrl'] as String?;
+    final hasCloudflare = j['hasCloudflare'] == true;
+    final itemType = parseItemType(j);
 
     // Mihon/Keiyoushi shape first — never put JS URLs into apkUrl.
     if (_looksLikeMihon(j)) {
@@ -190,6 +225,9 @@ class ExtensionIndexEntry {
         isNsfw: nsfw,
         baseUrl: baseUrl,
         iconUrl: iconUrl,
+        apiUrl: apiUrl,
+        hasCloudflare: hasCloudflare,
+        itemType: itemType,
         sources: sources,
       );
     }
@@ -212,6 +250,9 @@ class ExtensionIndexEntry {
         isNsfw: isNsfw,
         baseUrl: j['baseUrl'] as String?,
         iconUrl: j['iconUrl'] as String?,
+        apiUrl: apiUrl,
+        hasCloudflare: hasCloudflare,
+        itemType: itemType,
         sources: sources,
       );
     }
@@ -230,6 +271,9 @@ class ExtensionIndexEntry {
       isNsfw: false,
       baseUrl: j['baseUrl'] as String?,
       iconUrl: j['iconUrl'] as String?,
+      apiUrl: apiUrl,
+      hasCloudflare: hasCloudflare,
+      itemType: itemType,
       sources: sources,
     );
   }
@@ -461,6 +505,17 @@ class ExtensionManager {
       throw StateError('JS source body empty at $url');
     }
 
+    final header = parseMangayomiSourcesHeader(body);
+    final apiUrl = (entry.apiUrl != null && entry.apiUrl!.isNotEmpty)
+        ? entry.apiUrl
+        : (header['apiUrl']?.isNotEmpty == true ? header['apiUrl'] : null);
+    final hasCloudflare =
+        entry.hasCloudflare || header['hasCloudflare'] == 'true';
+    final headerItem = header['itemType'];
+    final itemType = (entry.itemType != null && entry.itemType!.isNotEmpty)
+        ? entry.itemType!
+        : (headerItem != null && headerItem.isNotEmpty ? headerItem : 'manga');
+
     final src = ExtensionSource(
       id: id,
       sourceId: id,
@@ -473,6 +528,9 @@ class ExtensionManager {
       baseUrl: entry.baseUrl,
       sourceCodeUrl: url,
       repoUrl: repoUrl,
+      apiUrl: apiUrl,
+      hasCloudflare: hasCloudflare,
+      itemType: itemType,
       sourceCode: body,
       sourceCodeLanguage: SourceCodeLanguage.js,
       isInstalled: true,
