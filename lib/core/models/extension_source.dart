@@ -29,6 +29,16 @@ class ExtensionSource {
   final String? sourceCodeUrl;
   final String? repoUrl;
 
+  /// Mangayomi JS API base (e.g. MangaDex). Null/empty when unused.
+  final String? apiUrl;
+
+  /// Whether the source sits behind Cloudflare (mangayomi).
+  final bool hasCloudflare;
+
+  /// Product kind: `manga` / `anime` / `novel`. Koma is manga-only UI;
+  /// field is persisted for index/JS fidelity.
+  final String itemType;
+
   /// JS body for [SourceCodeLanguage.js]; empty for Mihon APKs.
   final String sourceCode;
 
@@ -77,6 +87,9 @@ class ExtensionSource {
     this.baseUrl,
     this.sourceCodeUrl,
     this.repoUrl,
+    this.apiUrl,
+    this.hasCloudflare = false,
+    this.itemType = 'manga',
     this.sourceCode = '',
     this.sourceCodeLanguage = SourceCodeLanguage.mihon,
     this.pkgName = '',
@@ -105,6 +118,9 @@ class ExtensionSource {
     String? baseUrl,
     String? sourceCodeUrl,
     String? repoUrl,
+    String? apiUrl,
+    bool? hasCloudflare,
+    String? itemType,
     String? sourceCode,
     String? sourceCodeLanguage,
     String? pkgName,
@@ -131,6 +147,9 @@ class ExtensionSource {
       baseUrl: baseUrl ?? this.baseUrl,
       sourceCodeUrl: sourceCodeUrl ?? this.sourceCodeUrl,
       repoUrl: repoUrl ?? this.repoUrl,
+      apiUrl: apiUrl ?? this.apiUrl,
+      hasCloudflare: hasCloudflare ?? this.hasCloudflare,
+      itemType: itemType ?? this.itemType,
       sourceCode: sourceCode ?? this.sourceCode,
       sourceCodeLanguage: sourceCodeLanguage ?? this.sourceCodeLanguage,
       pkgName: pkgName ?? this.pkgName,
@@ -159,6 +178,9 @@ class ExtensionSource {
     'base_url': baseUrl,
     'source_code_url': sourceCodeUrl,
     'repo_url': repoUrl,
+    'api_url': apiUrl,
+    'has_cloudflare': hasCloudflare ? 1 : 0,
+    'item_type': itemType,
     'source_code': sourceCode,
     'source_code_language': sourceCodeLanguage,
     'pkg_name': pkgName,
@@ -187,6 +209,10 @@ class ExtensionSource {
         baseUrl: json['base_url'] as String?,
         sourceCodeUrl: json['source_code_url'] as String?,
         repoUrl: json['repo_url'] as String?,
+        apiUrl: json['api_url'] as String?,
+        hasCloudflare: (json['has_cloudflare'] as int? ?? 0) == 1 ||
+            json['has_cloudflare'] == true,
+        itemType: json['item_type'] as String? ?? 'manga',
         sourceCode: json['source_code'] as String? ?? '',
         sourceCodeLanguage:
             json['source_code_language'] as String? ?? SourceCodeLanguage.mihon,

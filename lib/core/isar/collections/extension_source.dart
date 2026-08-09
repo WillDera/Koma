@@ -34,6 +34,16 @@ class ExtensionSource {
   String? sourceCodeUrl;
   String? repoUrl;
 
+  /// Mangayomi JS API base (e.g. MangaDex). Null/empty when unused.
+  String? apiUrl;
+
+  /// Whether the source sits behind Cloudflare (mangayomi).
+  bool hasCloudflare;
+
+  /// Product kind: `manga` / `anime` / `novel`. Koma is manga-only UI;
+  /// field is persisted for index/JS fidelity.
+  String itemType;
+
   /// JS source body (mangayomi). Empty for Mihon APKs.
   String sourceCode;
 
@@ -78,6 +88,9 @@ class ExtensionSource {
     String? baseUrl,
     String? sourceCodeUrl,
     String? repoUrl,
+    String? apiUrl,
+    bool? hasCloudflare,
+    String? itemType,
     String? sourceCode,
     String? pkgName,
     int? versionCode,
@@ -105,6 +118,9 @@ class ExtensionSource {
       baseUrl: baseUrl ?? this.baseUrl,
       sourceCodeUrl: sourceCodeUrl ?? this.sourceCodeUrl,
       repoUrl: repoUrl ?? this.repoUrl,
+      apiUrl: apiUrl ?? this.apiUrl,
+      hasCloudflare: hasCloudflare ?? this.hasCloudflare,
+      itemType: itemType ?? this.itemType,
       sourceCode: sourceCode ?? this.sourceCode,
       pkgName: pkgName ?? this.pkgName,
       versionCode: versionCode ?? this.versionCode,
@@ -134,6 +150,9 @@ class ExtensionSource {
     this.baseUrl,
     this.sourceCodeUrl,
     this.repoUrl,
+    this.apiUrl,
+    this.hasCloudflare = false,
+    this.itemType = 'manga',
     this.sourceCode = '',
     this.pkgName = '',
     this.versionCode = 0,
@@ -162,6 +181,9 @@ class ExtensionSource {
     'base_url': baseUrl,
     'source_code_url': sourceCodeUrl,
     'repo_url': repoUrl,
+    'api_url': apiUrl,
+    'has_cloudflare': hasCloudflare ? 1 : 0,
+    'item_type': itemType,
     'source_code': sourceCode,
     'pkg_name': pkgName,
     'version_code': versionCode,
@@ -191,6 +213,10 @@ class ExtensionSource {
         baseUrl: json['base_url'] as String?,
         sourceCodeUrl: json['source_code_url'] as String?,
         repoUrl: json['repo_url'] as String?,
+        apiUrl: json['api_url'] as String?,
+        hasCloudflare: (json['has_cloudflare'] as int? ?? 0) == 1 ||
+            json['has_cloudflare'] == true,
+        itemType: json['item_type'] as String? ?? 'manga',
         sourceCode: json['source_code'] as String? ?? '',
         pkgName: json['pkg_name'] as String? ?? '',
         versionCode: (json['version_code'] as num?)?.toInt() ?? 0,

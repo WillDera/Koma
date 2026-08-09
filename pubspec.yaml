@@ -1,7 +1,7 @@
 name: koma
 description: "A hybrid reader + knowledge snippet manager."
 publish_to: 'none'
-version: 2.33.0+263
+version: 2.34.0+264
 
 environment:
   sdk: ^3.12.2
@@ -31,6 +31,8 @@ dependencies:
   uuid: ^4.5.1
   crypto: ^3.0.6
   encrypt: ^5.0.3
+  # Dean Edwards packer unpack (mangayomi unpackJs parity).
+  js_packer: ^0.0.6
   collection: ^1.19.1
   flutter_markdown: ^0.7.6
   google_fonts: ^8.1.0

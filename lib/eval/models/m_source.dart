@@ -12,6 +12,18 @@ class MSource {
   final String? className;
   final SourceType sourceType;
 
+  /// Mangayomi JS API base (e.g. MangaDex). Empty when unused.
+  final String? apiUrl;
+
+  /// Whether the source sits behind Cloudflare.
+  final bool hasCloudflare;
+
+  /// Date parse format injected into the JS runtime.
+  final String? dateFormat;
+
+  /// Locale for [dateFormat].
+  final String? dateFormatLocale;
+
   const MSource({
     required this.id,
     required this.sourceId,
@@ -23,6 +35,10 @@ class MSource {
     this.apkPath,
     this.className,
     this.sourceType = SourceType.mihon,
+    this.apiUrl,
+    this.hasCloudflare = false,
+    this.dateFormat,
+    this.dateFormatLocale,
   });
 
   bool get isJs => sourceType == SourceType.js;
@@ -40,6 +56,10 @@ class MSource {
     if (apkPath != null) 'apkPath': apkPath,
     if (className != null) 'className': className,
     'sourceType': sourceType.name,
+    if (apiUrl != null) 'apiUrl': apiUrl,
+    'hasCloudflare': hasCloudflare,
+    if (dateFormat != null) 'dateFormat': dateFormat,
+    if (dateFormatLocale != null) 'dateFormatLocale': dateFormatLocale,
   };
 
   factory MSource.fromJson(Map<String, dynamic> json) => MSource(
@@ -53,6 +73,10 @@ class MSource {
     apkPath: json['apkPath'] as String?,
     className: json['className'] as String?,
     sourceType: json['sourceType'] == 'js' ? SourceType.js : SourceType.mihon,
+    apiUrl: json['apiUrl'] as String?,
+    hasCloudflare: json['hasCloudflare'] == true,
+    dateFormat: json['dateFormat'] as String?,
+    dateFormatLocale: json['dateFormatLocale'] as String?,
   );
 
   /// Build from [ExtensionSource] (or any duck-typed object with the same fields).
@@ -71,6 +95,9 @@ class MSource {
       apkPath: ext.apkPath as String?,
       className: ext.className as String?,
       sourceType: isJs ? SourceType.js : SourceType.mihon,
+      apiUrl: ext.apiUrl as String?,
+      hasCloudflare: (ext.hasCloudflare as bool?) ?? false,
+      // dateFormat* come from the JS mangayomiSources header at inject time.
     );
   }
 }

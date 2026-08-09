@@ -165,7 +165,7 @@ class GlobalSearchNotifier extends Notifier<GlobalSearchState> {
     Future<void> runOne(int index) async {
       final src = sources[index];
       try {
-        final results = await service.search(
+        final page = await service.search(
           MSource.fromExtensionSource(src),
           1,
           query,
@@ -176,7 +176,7 @@ class GlobalSearchNotifier extends Notifier<GlobalSearchState> {
           GlobalSearchSourceItem(
             source: src,
             kind: GlobalSearchItemKind.success,
-            mangas: [for (final m in results) m.toJson()],
+            mangas: [for (final m in page.list) m.toJson()],
           ),
         );
       } catch (e) {
