@@ -101,7 +101,16 @@ class _MangaReaderScreenState extends ConsumerState<MangaReaderScreen>
 
   ReaderSettings _settings = ReaderSettings();
 
+  /// Bumped on dispose so late Futures from getPageList/preload abandon work.
+  int _loadSession = 0;
+
+  /// Flip before tearing down controllers so async chains stop chaining.
+  bool _leftReader = false;
+
   List<PageData> get _pages => pages;
+
+  bool _isLive(int session) =>
+      !_leftReader && mounted && session == _loadSession;
 
   @override
   void initState() {
@@ -116,7 +125,9 @@ class _MangaReaderScreenState extends ConsumerState<MangaReaderScreen>
   }
 
   Future<void> _initAsync() async {
+    final session = _loadSession;
     await _loadSettings();
+    if (!_isLive(session)) return;
     _applyOrientation();
     _applyWakelock();
     try {
@@ -127,24 +138,32 @@ class _MangaReaderScreenState extends ConsumerState<MangaReaderScreen>
     } catch (_) {
       _mSource = null;
     }
+    if (!_isLive(session)) return;
     if (widget.mangaId != null && _repos != null) {
       final ch = await _repos!.manga.getMangaChapterByUrl(
         widget.mangaId!,
         widget.chapterUrl,
       );
-      if (ch != null && mounted) {
+      if (!_isLive(session)) return;
+      if (ch != null) {
         _currentChapter = ch;
         if (!ch.isOpened) {
           await _repos!.manga.markMangaChapterOpened(ch.id);
         }
       }
+      if (!_isLive(session)) return;
       _chapters = await _repos!.manga.getMangaChapters(widget.mangaId!);
     }
-    if (mounted) _load();
+    if (_isLive(session)) _load();
   }
 
   @override
   void dispose() {
+    _leftReader = true;
+    _loadSession++;
+    _isNextChapterPreloading = false;
+    _saveTimer?.cancel();
+    _saveTimer = null;
     _flushPageProgress();
     _restoreSystemUI();
     WakelockPlus.disable();
@@ -266,13 +285,19 @@ class _MangaReaderScreenState extends ConsumerState<MangaReaderScreen>
   /// Build [PageData] for [chapter], preferring on-disk downloads (Mihon
   /// DownloadPageLoader / Mangayomi isLocale pattern) before the network
   /// getPageList.
-  Future<List<PageData>> _pagesForChapter(MangaChapter chapter) async {
+  Future<List<PageData>> _pagesForChapter(
+    MangaChapter chapter, {
+    required int session,
+  }) async {
+    if (!_isLive(session)) return const [];
     final sourceId = await _resolveSourceId();
+    if (!_isLive(session)) return const [];
     final source = _mSource ??
         await resolveExtensionMSource(
           ref.read(repositoriesProvider),
           sourceId,
         );
+    if (!_isLive(session)) return const [];
     _mSource = source;
 
     // Local pages: Mihon via Dalvik; JS via the same on-disk layout the
@@ -292,6 +317,7 @@ class _MangaReaderScreenState extends ConsumerState<MangaReaderScreen>
           chapterUrl: chapter.url,
         );
       }
+      if (!_isLive(session)) return const [];
       if (local.isNotEmpty) {
         // Heal the DB flag if files exist but isDownloaded was never set.
         if (!chapter.isDownloaded && chapter.id > 0 && _repos != null) {
@@ -317,6 +343,7 @@ class _MangaReaderScreenState extends ConsumerState<MangaReaderScreen>
       // Fall through to network page list.
     }
 
+    if (!_isLive(session)) return const [];
     final pagesWrapped = await _dispatch.getPageList(
       source,
       MChapter(
@@ -325,6 +352,7 @@ class _MangaReaderScreenState extends ConsumerState<MangaReaderScreen>
         memo: chapter.memo,
       ),
     );
+    if (!_isLive(session)) return const [];
     final flat = [
       for (final group in pagesWrapped)
         for (final p in group.pages) p,
@@ -369,6 +397,7 @@ class _MangaReaderScreenState extends ConsumerState<MangaReaderScreen>
   }
 
   Future<void> _load() async {
+    final session = _loadSession;
     try {
       final currentCh = _getCurrentChapter();
       if (currentCh == null) {
@@ -381,8 +410,8 @@ class _MangaReaderScreenState extends ConsumerState<MangaReaderScreen>
           dateUpload: 0,
           index: 0,
         );
-        final pageDataList = await _pagesForChapter(stub);
-        if (!mounted) return;
+        final pageDataList = await _pagesForChapter(stub, session: session);
+        if (!_isLive(session)) return;
         if (pageDataList.isEmpty) {
           setState(() {
             _error = 'No pages found';
@@ -394,7 +423,7 @@ class _MangaReaderScreenState extends ConsumerState<MangaReaderScreen>
         initializePreloadManager(
           pageDataList,
           onPagesUpdated: () {
-            if (mounted) setState(() {});
+            if (_isLive(session)) setState(() {});
           },
         );
         setState(() {
@@ -407,6 +436,7 @@ class _MangaReaderScreenState extends ConsumerState<MangaReaderScreen>
           _loading = false;
         });
         await _initProgress();
+        if (!_isLive(session)) return;
         _proactivePreload();
         _updateBookmarkState();
         if (widget.pageNumber != null) {
@@ -415,8 +445,9 @@ class _MangaReaderScreenState extends ConsumerState<MangaReaderScreen>
         return;
       }
 
-      final pageDataList = await _pagesForChapter(currentCh);
-      if (!mounted) return;
+      final pageDataList =
+          await _pagesForChapter(currentCh, session: session);
+      if (!_isLive(session)) return;
 
       if (pageDataList.isEmpty) {
         setState(() {
@@ -430,7 +461,7 @@ class _MangaReaderScreenState extends ConsumerState<MangaReaderScreen>
       initializePreloadManager(
         pageDataList,
         onPagesUpdated: () {
-          if (mounted) setState(() {});
+          if (_isLive(session)) setState(() {});
         },
       );
 
@@ -442,13 +473,14 @@ class _MangaReaderScreenState extends ConsumerState<MangaReaderScreen>
       });
 
       await _initProgress();
+      if (!_isLive(session)) return;
       _proactivePreload();
       _updateBookmarkState();
       if (widget.pageNumber != null) {
         _jumpToPageByNumber(widget.pageNumber!);
       }
     } catch (e) {
-      if (!mounted) return;
+      if (!_isLive(session)) return;
       setState(() {
         _error = '$e';
         _loading = false;
@@ -760,12 +792,15 @@ class _MangaReaderScreenState extends ConsumerState<MangaReaderScreen>
 
   /// Fires off next-chapter page fetching if not already in progress.
   Future<void> _triggerNextChapterPreload() async {
-    if (_isNextChapterPreloading || _isLastPageTransition) return;
+    if (_leftReader || _isNextChapterPreloading || _isLastPageTransition) {
+      return;
+    }
     if (_currentChapter == null) return;
 
+    final session = _loadSession;
     _isNextChapterPreloading = true;
     try {
-      if (!mounted) {
+      if (!_isLive(session)) {
         _isNextChapterPreloading = false;
         return;
       }
@@ -773,15 +808,16 @@ class _MangaReaderScreenState extends ConsumerState<MangaReaderScreen>
       if (nextChapter == null) {
         // No next chapter — add the end-of-manga transition
         _isNextChapterPreloading = false;
-        if (mounted) _addLastPageTransition(_currentChapter!);
+        if (_isLive(session)) _addLastPageTransition(_currentChapter!);
         return;
       }
       if (isChapterLoaded(nextChapter)) {
         _isNextChapterPreloading = false;
         return;
       }
-      final nextPages = await _pagesForChapter(nextChapter);
-      if (!mounted) {
+      final nextPages =
+          await _pagesForChapter(nextChapter, session: session);
+      if (!_isLive(session)) {
         _isNextChapterPreloading = false;
         return;
       }
@@ -793,7 +829,11 @@ class _MangaReaderScreenState extends ConsumerState<MangaReaderScreen>
 
       // Use mixin to preload with memory management
       final success = await preloadNextChapter(nextPages, _currentChapter!);
-      if (success && mounted) {
+      if (!_isLive(session)) {
+        _isNextChapterPreloading = false;
+        return;
+      }
+      if (success) {
         // Add zoom controllers for new pages
         final newPagesCount = nextPages.length + 1; // +1 for transition page
         setState(() {

@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-import '../core/utils/custom_extended_image_provider.dart';
+import '../core/utils/cached_network.dart';
 import '../theme/app_theme.dart';
 import '../theme/tokens/app_spacing.dart';
 import 'animated_press.dart';
@@ -19,6 +19,8 @@ class CatalogCoverCard extends StatelessWidget {
     this.headers,
     this.badge,
     this.showBadge = true,
+    this.inLibrary = false,
+    this.coverMaxBytes,
     this.variant = LibraryCardVariant.grid,
     this.downloadProgress,
   });
@@ -30,6 +32,10 @@ class CatalogCoverCard extends StatelessWidget {
   final Map<String, String>? headers;
   final String? badge;
   final bool showBadge;
+  /// Accent heart when this title is already in the user's library.
+  final bool inLibrary;
+  /// Decode budget for remote covers; null uses the default medium budget.
+  final int? coverMaxBytes;
   final LibraryCardVariant variant;
   final VoidCallback onTap;
   final double? downloadProgress;
@@ -61,10 +67,10 @@ class CatalogCoverCard extends StatelessWidget {
     }
     if (imageUrl != null && imageUrl!.isNotEmpty) {
       return Image(
-        image: CustomExtendedNetworkImageProvider(
+        image: coverProvider(
           imageUrl!,
           headers: headers,
-          showCloudFlareError: true,
+          maxBytes: coverMaxBytes ?? (200 << 10),
         ),
         width: double.infinity,
         fit: BoxFit.cover,
@@ -104,9 +110,22 @@ class CatalogCoverCard extends StatelessWidget {
     );
   }
 
+  Widget? _inLibraryHeart(KomaColors c) {
+    if (!inLibrary) return null;
+    return Container(
+      padding: const EdgeInsets.all(4),
+      decoration: BoxDecoration(
+        color: Colors.black.withValues(alpha: 0.55),
+        shape: BoxShape.circle,
+      ),
+      child: Icon(Icons.favorite, size: 14, color: c.accent),
+    );
+  }
+
   Widget _grid(BuildContext context) {
     final c = context.colors;
     final chip = _badgeChip();
+    final heart = _inLibraryHeart(c);
     return AnimatedPress(
       onTap: _busy ? null : onTap,
       scaleDown: 0.97,
@@ -122,6 +141,8 @@ class CatalogCoverCard extends StatelessWidget {
                   child: _coverImage(c),
                 ),
                 if (chip != null) Positioned(top: 6, left: 6, child: chip),
+                if (heart != null)
+                  Positioned(top: 6, right: 6, child: heart),
                 if (_busy)
                   Positioned(
                     left: 0,
@@ -166,6 +187,7 @@ class CatalogCoverCard extends StatelessWidget {
   Widget _compact(BuildContext context) {
     final c = context.colors;
     final chip = _badgeChip(fontSize: 9);
+    final heart = _inLibraryHeart(c);
     return AnimatedPress(
       onTap: _busy ? null : onTap,
       scaleDown: 0.97,
@@ -181,6 +203,8 @@ class CatalogCoverCard extends StatelessWidget {
                   child: _coverImage(c),
                 ),
                 if (chip != null) Positioned(top: 4, left: 4, child: chip),
+                if (heart != null)
+                  Positioned(top: 4, right: 4, child: heart),
                 if (_busy)
                   Positioned(
                     left: 0,
@@ -216,6 +240,7 @@ class CatalogCoverCard extends StatelessWidget {
   Widget _overlay(BuildContext context) {
     final c = context.colors;
     final chip = _badgeChip();
+    final heart = _inLibraryHeart(c);
     return AnimatedPress(
       onTap: _busy ? null : onTap,
       scaleDown: 0.97,
@@ -240,6 +265,8 @@ class CatalogCoverCard extends StatelessWidget {
               ),
             ),
             if (chip != null) Positioned(top: 6, left: 6, child: chip),
+            if (heart != null)
+              Positioned(top: 6, right: 6, child: heart),
             Positioned(
               left: 8,
               right: 8,
@@ -283,6 +310,7 @@ class CatalogCoverCard extends StatelessWidget {
   Widget _list(BuildContext context) {
     final c = context.colors;
     final chip = _badgeChip(fontSize: 9);
+    final heart = _inLibraryHeart(c);
     return AnimatedPress(
       onTap: _busy ? null : onTap,
       scaleDown: 0.99,
@@ -305,6 +333,8 @@ class CatalogCoverCard extends StatelessWidget {
                   ),
                 ),
                 if (chip != null) Positioned(top: 2, left: 2, child: chip),
+                if (heart != null)
+                  Positioned(top: 2, right: 2, child: heart),
               ],
             ),
             const SizedBox(width: 16),

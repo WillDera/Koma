@@ -499,8 +499,13 @@ class _SourceBrowseScreenState extends ConsumerState<SourceBrowseScreen>
     ScrollController? controller,
     bool hasNext = false,
     Future<void> Function()? onRefresh,
+    int? coverMaxBytes,
   }) {
     final library = ref.watch(libraryProvider);
+    final libraryUrls = <String>{
+      for (final m in library.mangas)
+        if (m.sourceId == widget.sourceId) m.url,
+    };
     final gridView = library.isGridView;
     final variant = gridView
         ? CatalogCardLayout.gridVariant(library.cardVariant)
@@ -536,6 +541,8 @@ class _SourceBrowseScreenState extends ConsumerState<SourceBrowseScreen>
             headers: headers,
             variant: variant,
             showBadge: false,
+            inLibrary: libraryUrls.contains(m.url),
+            coverMaxBytes: coverMaxBytes,
             onTap: _openManga(m),
           );
         },
@@ -566,6 +573,8 @@ class _SourceBrowseScreenState extends ConsumerState<SourceBrowseScreen>
             headers: headers,
             variant: LibraryCardVariant.list,
             showBadge: false,
+            inLibrary: libraryUrls.contains(m.url),
+            coverMaxBytes: coverMaxBytes,
             onTap: _openManga(m),
           );
         },
@@ -578,10 +587,20 @@ class _SourceBrowseScreenState extends ConsumerState<SourceBrowseScreen>
   @override
   Widget build(BuildContext context) {
     final c = context.colors;
-    final baseUrl = _source?.baseUrl ?? widget.baseUrl ?? '';
-    final headers = ref.watch(
-      imageHeadersProvider(baseUrl.isNotEmpty ? baseUrl : null),
+    final headersAsync = ref.watch(sourceImageHeadersProvider(widget.sourceId));
+    final coverBytesAsync =
+        ref.watch(sourceCoverMaxBytesProvider(widget.sourceId));
+    final resolvedHeaders = headersAsync.maybeWhen(
+      data: (h) => h,
+      orElse: () {
+        final baseUrl = _source?.baseUrl ?? widget.baseUrl ?? '';
+        return ref.read(
+          imageHeadersProvider(baseUrl.isNotEmpty ? baseUrl : null),
+        );
+      },
     );
+    final coverMaxBytes = coverBytesAsync.asData?.value;
+    final headers = resolvedHeaders;
     return Scaffold(
       backgroundColor: c.bg,
       appBar: AppBar(
@@ -638,7 +657,7 @@ class _SourceBrowseScreenState extends ConsumerState<SourceBrowseScreen>
       body: _booting
           ? const Center(child: CircularProgressIndicator())
           : _searchActive
-          ? _buildSearchBody(c, headers)
+          ? _buildSearchBody(c, headers, coverMaxBytes)
           : _error != null && _mangas.isEmpty && !_loading
           ? ListView(
               children: [
@@ -670,11 +689,16 @@ class _SourceBrowseScreenState extends ConsumerState<SourceBrowseScreen>
               controller: _scrollCtrl,
               hasNext: _hasNext && _error == null,
               onRefresh: _refresh,
+              coverMaxBytes: coverMaxBytes,
             ),
     );
   }
 
-  Widget _buildSearchBody(KomaColors c, Map<String, String> headers) {
+  Widget _buildSearchBody(
+    KomaColors c,
+    Map<String, String> headers,
+    int? coverMaxBytes,
+  ) {
     if (_searchLoading) {
       return const Center(child: CircularProgressIndicator(strokeWidth: 2));
     }
@@ -698,6 +722,7 @@ class _SourceBrowseScreenState extends ConsumerState<SourceBrowseScreen>
     return _catalogMangaBody(
       mangas: _searchResults,
       headers: headers,
+      coverMaxBytes: coverMaxBytes,
     );
   }
 }
