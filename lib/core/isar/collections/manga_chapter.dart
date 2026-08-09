@@ -27,6 +27,13 @@ class MangaChapter {
   int lastPageRead;
   double scrollPosition;
 
+  /// Mihon `chapterNumber` — recognized reading order key for migrate / sort.
+  /// `-1` means unrecognized (see [ChapterRecognition]).
+  double chapterNumber;
+
+  /// Mihon chapter bookmark (not ebook page bookmarks).
+  bool isBookmarked;
+
   /// Set by the native downloader / future JS downloader. Phase 7 replaced
   /// the `getDownloadedChapterKeys()` MethodChannel round-trip with a direct
   /// Isar query; this flag is now the canonical source of truth.
@@ -54,6 +61,8 @@ class MangaChapter {
     this.isRead = false,
     this.lastPageRead = 0,
     this.scrollPosition = 0.0,
+    this.chapterNumber = -1,
+    this.isBookmarked = false,
     this.isDownloaded = false,
     this.isOpened = false,
     this.readAt,
@@ -71,6 +80,8 @@ class MangaChapter {
     'is_read': isRead ? 1 : 0,
     'last_page_read': lastPageRead,
     'scroll_position': scrollPosition,
+    'chapter_number': chapterNumber,
+    'is_bookmarked': isBookmarked ? 1 : 0,
     'is_downloaded': isDownloaded ? 1 : 0,
     'is_opened': isOpened ? 1 : 0,
     'read_at': readAt?.toIso8601String(),
@@ -88,6 +99,8 @@ class MangaChapter {
     isRead: (json['is_read'] as int? ?? 0) == 1,
     lastPageRead: json['last_page_read'] as int? ?? 0,
     scrollPosition: (json['scroll_position'] as num?)?.toDouble() ?? 0.0,
+    chapterNumber: (json['chapter_number'] as num?)?.toDouble() ?? -1,
+    isBookmarked: (json['is_bookmarked'] as int? ?? 0) == 1,
     isDownloaded: (json['is_downloaded'] as int? ?? 0) == 1,
     isOpened: (json['is_opened'] as int? ?? 0) == 1,
     readAt: json['read_at'] != null

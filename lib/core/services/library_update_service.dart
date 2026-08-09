@@ -122,14 +122,16 @@ class LibraryUpdateService {
           final url = ch.url.trim();
           if (url.isEmpty) continue;
           incoming.add(
-            MangaChapter(
+            MangaChapter.withRecognition(
               id: 0,
               mangaId: manga.id,
+              mangaTitle: manga.name,
               name: ch.name,
               url: url,
               scanlator: ch.scanlator,
               dateUpload: ch.dateUpload,
               index: i,
+              sourceChapterNumber: ch.chapterNumber,
               memo: ch.memo,
             ),
           );

@@ -99,9 +99,14 @@ class GlobalSearchNotifier extends Notifier<GlobalSearchState> {
   static const _concurrency = 5;
 
   int _generation = 0;
+  String? _excludeSourceId;
 
   @override
   GlobalSearchState build() => const GlobalSearchState();
+
+  void setExcludeSourceId(String? sourceId) {
+    _excludeSourceId = sourceId;
+  }
 
   void setQuery(String query) {
     state = state.copyWith(query: query);
@@ -230,6 +235,12 @@ class GlobalSearchNotifier extends Notifier<GlobalSearchState> {
     var sources = all
         .where((s) => s.isInstalled && s.isActive && !s.isObsolete)
         .toList();
+    final exclude = _excludeSourceId;
+    if (exclude != null && exclude.isNotEmpty) {
+      sources = sources
+          .where((s) => s.sourceId != exclude && s.id != exclude)
+          .toList();
+    }
     if (state.filter == GlobalSearchSourceFilter.pinned) {
       sources = sources.where((s) => s.isPinned).toList();
     }
