@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:collection/collection.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
@@ -40,8 +41,8 @@ Set<String> _installedPkgs(List<ExtensionSource> installed) {
   for (final s in installed) {
     final pkg = _extractPkgFromApkPath(s.apkPath);
     if (pkg.isNotEmpty) set.add(pkg);
-    // JS installs store the catalog id on sourceId/id (no APK path).
-    if (s.isJs) {
+    // JS/Dart installs store the catalog id on sourceId/id (no APK path).
+    if (s.isJs || s.isDart) {
       if (s.sourceId.isNotEmpty) set.add(s.sourceId);
       if (s.id.isNotEmpty) set.add(s.id);
     }
@@ -313,16 +314,20 @@ class _ExtensionsScreenState extends ConsumerState<ExtensionsScreen>
       messenger.showSnackBar(
         SnackBar(
           content: Text(
-            'Dart-eval is unsupported'
+            'Unsupported extension language'
             '${e.name != null && e.name!.isNotEmpty ? ' (${e.name})' : ''}',
           ),
         ),
       );
     } on UntrustedExtensionException catch (e) {
-      // JS installs never go through APK trust — skip the dialog path.
-      if (entry.isJs) {
+      // JS/Dart installs never go through APK trust — skip the dialog path.
+      if (entry.isJs || entry.isDart) {
         messenger.showSnackBar(
-          SnackBar(content: Text('Load failed for JS source ${entry.name}')),
+          SnackBar(
+            content: Text(
+              'Load failed for ${entry.isDart ? 'Dart' : 'JS'} source ${entry.name}',
+            ),
+          ),
         );
         return;
       }
@@ -403,8 +408,8 @@ class _ExtensionsScreenState extends ConsumerState<ExtensionsScreen>
           matched = true;
         } else if (pkg.isNotEmpty && e.pkg == pkg) {
           matched = true;
-        } else if (src.isJs &&
-            e.isJs &&
+        } else if ((src.isJs || src.isDart) &&
+            (e.isJs || e.isDart) &&
             (e.pkg == src.sourceId ||
                 e.pkg == src.id ||
                 (src.sourceCodeUrl != null &&
@@ -458,7 +463,7 @@ class _ExtensionsScreenState extends ConsumerState<ExtensionsScreen>
       if (owned != null) reposToFetch.add(owned);
     }
     if (reposToFetch.isEmpty) {
-      final kind = src.isJs
+      final kind = (src.isJs || src.isDart)
           ? ExtensionRepoKind.javascript
           : ExtensionRepoKind.mihon;
       reposToFetch.addAll(
@@ -512,15 +517,23 @@ class _ExtensionsScreenState extends ConsumerState<ExtensionsScreen>
       messenger.showSnackBar(
         SnackBar(
           content: Text(
-            'Dart-eval is unsupported'
+            'Unsupported extension language'
             '${e.name != null && e.name!.isNotEmpty ? ' (${e.name})' : ''}',
           ),
         ),
       );
     } on UntrustedExtensionException catch (e) {
-      if (src.isJs || resolved.entry.isJs) {
+      if (src.isJs ||
+          src.isDart ||
+          resolved.entry.isJs ||
+          resolved.entry.isDart) {
         messenger.showSnackBar(
-          SnackBar(content: Text('Update failed for JS source ${src.name}')),
+          SnackBar(
+            content: Text(
+              'Update failed for ${src.isDart || resolved.entry.isDart ? 'Dart' : 'JS'} '
+              'source ${src.name}',
+            ),
+          ),
         );
         return;
       }
@@ -681,7 +694,9 @@ class _InstalledTab extends StatelessWidget {
         if (r.url == url) return r.name;
       }
     }
-    return src.isJs ? 'JavaScript' : 'Mihon';
+    return src.isDart
+        ? 'Dart'
+        : (src.isJs ? 'JavaScript' : 'Mihon');
   }
 
   @override
@@ -1190,7 +1205,7 @@ class _AvailableTabState extends State<_AvailableTab> {
     for (final er in filtered) {
       if (!_allowedLanguages.contains(er.entry.lang.toLowerCase())) continue;
       final entry = er.entry;
-      if (entry.sources.isEmpty && !entry.isJs) continue;
+      if (entry.sources.isEmpty && !entry.isJs && !entry.isDart) continue;
       if (!showNsfw && entry.isNsfw) continue;
       if (!showObsolete && entry.isObsolete) continue;
       notInstalledEntries.add(er);
@@ -1742,46 +1757,65 @@ class _ReposTab extends StatelessWidget {
             separatorBuilder: (_, _) => const SizedBox(height: 8),
             itemBuilder: (_, i) {
               final r = repos[i];
-              return Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: c.surface,
-                  borderRadius: AppSpacing.brMd,
-                  border: Border.all(color: c.border),
-                ),
-                child: Row(
-                  children: [
-                    Icon(Icons.cloud, color: c.accent),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            r.name,
-                            style: TextStyle(
-                              color: c.textPrimary,
-                              fontSize: 14,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                          Text(
-                            r.url,
-                            style: TextStyle(
-                              color: c.textSecondary,
-                              fontSize: 11,
-                            ),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ],
+              return Material(
+                color: Colors.transparent,
+                child: InkWell(
+                  onLongPress: () async {
+                    await Clipboard.setData(ClipboardData(text: r.url));
+                    if (!context.mounted) return;
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text('Copied ${r.url}'),
+                        duration: const Duration(seconds: 2),
                       ),
+                    );
+                  },
+                  borderRadius: AppSpacing.brMd,
+                  child: Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: c.surface,
+                      borderRadius: AppSpacing.brMd,
+                      border: Border.all(color: c.border),
                     ),
-                    IconButton(
-                      icon: Icon(Icons.delete_outline, color: c.textSecondary),
-                      onPressed: () => onRemove(r),
+                    child: Row(
+                      children: [
+                        Icon(Icons.cloud, color: c.accent),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                r.name,
+                                style: TextStyle(
+                                  color: c.textPrimary,
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                              Text(
+                                r.url,
+                                style: TextStyle(
+                                  color: c.textSecondary,
+                                  fontSize: 11,
+                                ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ],
+                          ),
+                        ),
+                        IconButton(
+                          icon: Icon(
+                            Icons.delete_outline,
+                            color: c.textSecondary,
+                          ),
+                          onPressed: () => onRemove(r),
+                        ),
+                      ],
                     ),
-                  ],
+                  ),
                 ),
               );
             },

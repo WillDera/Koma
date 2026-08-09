@@ -8,23 +8,29 @@ import 'models/filter_list.dart';
 import 'models/source_preference.dart';
 import 'keiyoushi/keiyoushi_extension_service.dart';
 import 'javascript/js_extension_service.dart';
+import 'dart/service.dart';
 import '../core/services/keiyoushi_service.dart';
 
 class ExtensionDispatchService implements ExtensionService {
   final KeiyoushiExtensionService _keiyoushi;
   final JsExtensionService _js;
+  final DartExtensionService _dart;
 
   ExtensionDispatchService({
     required KeiyoushiService keiyoushiService,
     JsExtensionService? jsExtensionService,
+    DartExtensionService? dartExtensionService,
   }) : _keiyoushi = KeiyoushiExtensionService(keiyoushiService),
-       _js = jsExtensionService ?? JsExtensionService();
+       _js = jsExtensionService ?? JsExtensionService(),
+       _dart = dartExtensionService ?? DartExtensionService();
 
   @override
   String get type => 'dispatch';
 
   ExtensionService _resolve(MSource source) {
-    return source.isJs ? _js : _keiyoushi;
+    if (source.isDart) return _dart;
+    if (source.isJs) return _js;
+    return _keiyoushi;
   }
 
   @override

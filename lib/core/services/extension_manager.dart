@@ -22,8 +22,7 @@ export '../models/extension_source.dart' show SourceCodeLanguage;
 export 'trust_extension.dart' show UntrustedExtensionException;
 export 'apk_signature_service.dart' show ApkSigningInfo;
 
-/// Thrown when catalog entry language is Dart-eval or otherwise unsupported.
-/// Item 5 scope is Mihon APK + mangayomi JS only.
+/// Thrown when catalog entry language is unsupported (e.g. LNReader).
 class UnsupportedExtensionLanguageException implements Exception {
   final String language;
   final String? name;
@@ -34,8 +33,8 @@ class UnsupportedExtensionLanguageException implements Exception {
   String toString() {
     final label = name == null || name!.isEmpty ? '' : ' ($name)';
     return 'Unsupported extension language "$language"$label — '
-        'Koma installs Mihon APKs and JavaScript sources only '
-        '(Dart-eval / LNReader are out of scope).';
+        'Koma installs Mihon APKs, JavaScript, and Dart (d4rt) sources '
+        '(LNReader and unknown languages are out of scope).';
   }
 }
 
@@ -436,8 +435,7 @@ class ExtensionManager {
     ExtensionIndexEntry entry, {
     required String repoUrl,
   }) async {
-    if (entry.isDart ||
-        entry.sourceCodeLanguage == SourceCodeLanguage.unsupported) {
+    if (entry.sourceCodeLanguage == SourceCodeLanguage.unsupported) {
       throw UnsupportedExtensionLanguageException(
         entry.sourceCodeLanguage,
         name: entry.name,
@@ -445,6 +443,9 @@ class ExtensionManager {
     }
     if (entry.isJs) {
       return installJs(entry, repoUrl: repoUrl);
+    }
+    if (entry.isDart) {
+      return installDart(entry, repoUrl: repoUrl);
     }
 
     final dir = await _extensionsDir();
@@ -541,6 +542,69 @@ class ExtensionManager {
     return src;
   }
 
+  /// Fetch Dart `sourceCodeUrl` text and persist — same shape as [installJs].
+  Future<ExtensionSource> installDart(
+    ExtensionIndexEntry entry, {
+    required String repoUrl,
+  }) async {
+    final url = entry.sourceCodeUrl;
+    if (url == null || url.isEmpty) {
+      throw StateError(
+        'Dart extension missing sourceCodeUrl: ${entry.name}',
+      );
+    }
+    final id = entry.pkg;
+    if (id.isEmpty) {
+      throw StateError('Dart extension missing id: ${entry.name}');
+    }
+
+    final res = await _http.get(Uri.parse(url));
+    if (res.statusCode != 200) {
+      throw HttpException(
+        'Dart source download failed: ${res.statusCode} at $url',
+      );
+    }
+    final body = res.body;
+    if (body.trim().isEmpty) {
+      throw StateError('Dart source body empty at $url');
+    }
+
+    final header = parseMangayomiSourcesHeader(body);
+    final apiUrl = (entry.apiUrl != null && entry.apiUrl!.isNotEmpty)
+        ? entry.apiUrl
+        : (header['apiUrl']?.isNotEmpty == true ? header['apiUrl'] : null);
+    final hasCloudflare =
+        entry.hasCloudflare || header['hasCloudflare'] == 'true';
+    final headerItem = header['itemType'];
+    final itemType = (entry.itemType != null && entry.itemType!.isNotEmpty)
+        ? entry.itemType!
+        : (headerItem != null && headerItem.isNotEmpty ? headerItem : 'manga');
+
+    final src = ExtensionSource(
+      id: id,
+      sourceId: id,
+      name: entry.name,
+      version: entry.version,
+      lang: entry.lang,
+      apkPath: '',
+      className: '',
+      iconUrl: entry.iconUrl,
+      baseUrl: entry.baseUrl,
+      sourceCodeUrl: url,
+      repoUrl: repoUrl,
+      apiUrl: apiUrl,
+      hasCloudflare: hasCloudflare,
+      itemType: itemType,
+      sourceCode: body,
+      sourceCodeLanguage: SourceCodeLanguage.dart,
+      isInstalled: true,
+      isActive: true,
+      isNsfw: entry.isNsfw,
+    );
+    await _repos.extensions.insertExtensionSource(src);
+    return src;
+  }
+
   /// After the user confirms Trust on an [UntrustedExtensionException], call
   /// this to persist trust and complete the pending install.
   Future<ExtensionSource> trustAndInstall(
@@ -629,7 +693,7 @@ class ExtensionManager {
   }
 
   Future<void> uninstall(ExtensionSource src) async {
-    if (src.isJs) {
+    if (src.isJs || src.isDart) {
       await _repos.extensions.deleteExtensionSource(src.sourceId);
       return;
     }
@@ -654,15 +718,21 @@ class ExtensionManager {
     ExtensionIndexEntry entry,
     String repoUrl,
   ) async {
-    if (entry.isDart ||
-        entry.sourceCodeLanguage == SourceCodeLanguage.unsupported) {
+    if (entry.sourceCodeLanguage == SourceCodeLanguage.unsupported) {
       throw UnsupportedExtensionLanguageException(
         entry.sourceCodeLanguage,
         name: entry.name,
       );
     }
-    if (entry.isJs || src.isJs) {
-      await _updateJsSource(src, entry, repoUrl);
+    if (entry.isJs || src.isJs || entry.isDart || src.isDart) {
+      await _updateScriptSource(
+        src,
+        entry,
+        repoUrl,
+        language: entry.isDart || src.isDart
+            ? SourceCodeLanguage.dart
+            : SourceCodeLanguage.js,
+      );
       return;
     }
 
@@ -699,26 +769,28 @@ class ExtensionManager {
     );
   }
 
-  Future<void> _updateJsSource(
+  Future<void> _updateScriptSource(
     ExtensionSource src,
     ExtensionIndexEntry entry,
-    String repoUrl,
-  ) async {
+    String repoUrl, {
+    required String language,
+  }) async {
     final url = entry.sourceCodeUrl;
     if (url == null || url.isEmpty) {
       throw StateError(
-        'JavaScript extension missing sourceCodeUrl: ${entry.name}',
+        '${language == SourceCodeLanguage.dart ? 'Dart' : 'JavaScript'} '
+        'extension missing sourceCodeUrl: ${entry.name}',
       );
     }
     final res = await _http.get(Uri.parse(url));
     if (res.statusCode != 200) {
       throw HttpException(
-        'JS source download failed: ${res.statusCode} at $url',
+        'Source download failed: ${res.statusCode} at $url',
       );
     }
     final body = res.body;
     if (body.trim().isEmpty) {
-      throw StateError('JS source body empty at $url');
+      throw StateError('Source body empty at $url');
     }
 
     final id = entry.pkg.isNotEmpty ? entry.pkg : src.sourceId;
@@ -741,7 +813,7 @@ class ExtensionManager {
         sourceCodeUrl: url,
         repoUrl: repoUrl,
         sourceCode: body,
-        sourceCodeLanguage: SourceCodeLanguage.js,
+        sourceCodeLanguage: language,
         isInstalled: true,
         isObsolete: false,
         isActive: true,
@@ -839,9 +911,9 @@ class ExtensionManager {
     }
 
     for (final entry in freshEntries) {
-      if (entry.isJs) {
+      if (entry.isJs || entry.isDart) {
         for (final isrc in scoped) {
-          if (!isrc.isJs) continue;
+          if (!isrc.isJs && !isrc.isDart) continue;
           final hit = isrc.sourceId == entry.pkg ||
               isrc.id == entry.pkg ||
               (isrc.sourceCodeUrl != null &&
@@ -913,8 +985,8 @@ class ExtensionManager {
         final entries = indexByRepoUrl[repo.url] ??= await fetchIndex(repo);
         final matches = <ExtensionIndexEntry>[];
         for (final e in entries) {
-          if (src.isJs) {
-            if (e.isJs &&
+          if (src.isJs || src.isDart) {
+            if ((e.isJs || e.isDart) &&
                 (e.pkg == src.sourceId ||
                     e.pkg == src.id ||
                     (src.sourceCodeUrl != null &&
@@ -966,27 +1038,27 @@ class ExtensionManager {
     if (freshEntries.isEmpty) return;
 
     final knownClassNames = <String>{};
-    final knownJsIds = <String>{};
+    final knownScriptIds = <String>{};
     for (final entry in freshEntries) {
-      if (entry.isJs && entry.pkg.isNotEmpty) {
-        knownJsIds.add(entry.pkg);
+      if ((entry.isJs || entry.isDart) && entry.pkg.isNotEmpty) {
+        knownScriptIds.add(entry.pkg);
       }
       for (final s in entry.sources) {
         final className = s['className'] as String? ?? '';
         if (className.isNotEmpty) knownClassNames.add(className);
       }
     }
-    if (knownClassNames.isEmpty && knownJsIds.isEmpty) return;
+    if (knownClassNames.isEmpty && knownScriptIds.isEmpty) return;
 
     final installed = await listInstalled();
     final toUpdate = <ExtensionSource>[];
     for (final src in installed) {
       if (src.repoUrl != repoUrl) continue;
       final bool isNowObsolete;
-      if (src.isJs) {
-        if (knownJsIds.isEmpty) continue;
-        isNowObsolete = !knownJsIds.contains(src.sourceId) &&
-            !knownJsIds.contains(src.id);
+      if (src.isJs || src.isDart) {
+        if (knownScriptIds.isEmpty) continue;
+        isNowObsolete = !knownScriptIds.contains(src.sourceId) &&
+            !knownScriptIds.contains(src.id);
       } else {
         if (knownClassNames.isEmpty) continue;
         isNowObsolete = !knownClassNames.contains(src.className);
@@ -1121,8 +1193,8 @@ class ExtensionManager {
     final installed = await listInstalled();
     for (final src in installed) {
       if (!src.isActive) continue;
-      // JS sources have no APK — skip Dalvik loadExtension.
-      if (src.isJs || src.apkPath.isEmpty) continue;
+      // JS/Dart sources have no APK — skip Dalvik loadExtension.
+      if (src.isJs || src.isDart || src.apkPath.isEmpty) continue;
       if (!File(src.apkPath).existsSync()) {
         await _repos.extensions.deleteExtensionSource(src.sourceId);
         continue;
