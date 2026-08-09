@@ -5,6 +5,8 @@ class MChapter {
   final String name;
   final String? scanlator;
   final int dateUpload;
+  /// Source chapter number. `-1` = unset (Mihon `SChapter` default) so
+  /// [ChapterRecognition] can parse from the chapter name.
   final int chapterNumber;
 
   /// Opaque source memo (e.g. AllAnime `mangaId`) — round-tripped to getPageList.
@@ -15,7 +17,7 @@ class MChapter {
     required this.name,
     this.scanlator,
     this.dateUpload = 0,
-    this.chapterNumber = 0,
+    this.chapterNumber = -1,
     this.memo,
   });
 
@@ -37,7 +39,7 @@ class MChapter {
     chapterNumber: json['chapter_number'] as int? ??
         (json['chapterNumber'] is num
             ? (json['chapterNumber'] as num).toInt()
-            : 0),
+            : -1),
     memo: coerceMemoJson(json['memo']),
   );
 

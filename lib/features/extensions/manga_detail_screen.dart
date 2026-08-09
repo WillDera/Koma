@@ -20,6 +20,7 @@ import '../../core/services/keiyoushi_service.dart';
 import '../../eval/dispatch_service.dart';
 import '../../eval/models/m_chapter.dart';
 import '../../core/services/source_webview_bridge.dart';
+import '../../core/utils/chapter_recognition.dart';
 import '../../core/utils/image_cache.dart';
 import '../../core/utils/image_headers.dart';
 import '../../router/router.dart';
@@ -30,6 +31,7 @@ import '../../theme/tokens/app_type.dart';
 import '../../widgets/animated_press.dart';
 import '../../widgets/icon_button_round.dart';
 import 'manga_detail_providers.dart';
+import 'migrate_search_screen.dart';
 
 enum _DownloadMode { all, unread, range }
 
@@ -155,72 +157,22 @@ class _MangaDetailScreenState extends ConsumerState<MangaDetailScreen> {
   }
 
   /// Build a map of chapter map → parsed chapter number.
-  /// Uses source [chapter_number] if valid (> -1), otherwise parses from [name].
+  /// Prefers persisted/source [chapter_number], else title-aware recognition.
   Map<Map<String, dynamic>, double> _chapterNumberMap(
     List<Map<String, dynamic>> chapters,
   ) {
     final map = <Map<String, dynamic>, double>{};
+    final title = ref.read(mangaDetailProvider).details?['title'] as String? ??
+        widget.title;
     for (final ch in chapters) {
       final raw = ch['chapter_number'] as num?;
-      map[ch] = raw != null && raw > -1
-          ? raw.toDouble()
-          : _parseChapterNumber(
-              ch['name'] as String? ?? '',
-              ch['chapter_number'] as num?,
-            );
+      map[ch] = ChapterRecognition.parseChapterNumber(
+        title,
+        ch['name'] as String? ?? '',
+        raw?.toDouble(),
+      );
     }
     return map;
-  }
-
-  /// Port of Mihon's [ChapterRecognition.parseChapterNumber].
-  /// Extracts the chapter number from the name when the source doesn't set it.
-  static double _parseChapterNumber(String name, num? chapterNumber) {
-    if (chapterNumber != null && (chapterNumber == -2 || chapterNumber > -1)) {
-      return chapterNumber.toDouble();
-    }
-    final cleaned = name
-        .toLowerCase()
-        .replaceAll(',', '.')
-        .replaceAll('-', '.')
-        .replaceAll(RegExp(r'\s(?=extra|special|omake)'), '');
-    final matches = _numberRegex.allMatches(cleaned).toList();
-    if (matches.isEmpty) return chapterNumber?.toDouble() ?? -1.0;
-    if (matches.length == 1) return _parseMatch(matches.first);
-    // Multiple numbers: strip volume/season/etc. tags, try "Ch.xx" first
-    final stripped = cleaned.replaceAll(
-      RegExp(r'\b(?:v|ver|vol|version|volume|season|s)[^a-z]?[0-9]+'),
-      '',
-    );
-    final basicMatch = _basicRegex.firstMatch(stripped);
-    if (basicMatch != null) return _parseMatch(basicMatch);
-    final fallback = _numberRegex.firstMatch(stripped);
-    return fallback != null ? _parseMatch(fallback) : -1.0;
-  }
-
-  static final _numberRegex = RegExp(r'([0-9]+)(\.[0-9]+)?(\.?[a-z]+)?');
-  static final _basicRegex = RegExp(
-    r'(?<=ch\.) *([0-9]+)(\.[0-9]+)?(\.?[a-z]+)?',
-  );
-
-  static double _parseMatch(RegExpMatch m) {
-    final main = double.parse(m.group(1)!);
-    final decimal = m.group(2);
-    final alpha = m.group(3);
-    if (decimal != null) return main + double.parse(decimal);
-    if (alpha != null) return main + _alphaValue(alpha);
-    return main;
-  }
-
-  static double _alphaValue(String alpha) {
-    final a = alpha.startsWith('.') ? alpha.substring(1) : alpha;
-    if (a == 'extra') return 0.99;
-    if (a == 'omake') return 0.98;
-    if (a == 'special') return 0.97;
-    if (a.length == 1) {
-      final n = a.codeUnitAt(0) - 'a'.codeUnitAt(0) + 1;
-      if (n >= 1 && n <= 9) return n / 10.0;
-    }
-    return 0.0;
   }
 
   void _showSortSheet() {
@@ -445,7 +397,7 @@ class _MangaDetailScreenState extends ConsumerState<MangaDetailScreen> {
             (c) => <String, dynamic>{
               'url': c.url,
               'name': c.name,
-              'chapter_number': c.index.toDouble(),
+              'chapter_number': c.chapterNumber,
               'scanlator': c.scanlator,
               'date_upload': c.dateUpload,
               'is_read': c.isRead,
@@ -677,31 +629,42 @@ class _MangaDetailScreenState extends ConsumerState<MangaDetailScreen> {
     };
 
     final merged = <MangaChapter>[];
+    final mangaTitle = manga.name;
     for (var i = 0; i < chapters.length; i++) {
       final ch = chapters[i];
       final url = (ch['url'] as String? ?? '').trim();
       if (url.isEmpty) continue;
+      final name = ch['name'] as String? ?? '';
+      final sourceNum = (ch['chapter_number'] as num?)?.toDouble();
+      final recognized = ChapterRecognition.parseChapterNumber(
+        mangaTitle,
+        name.isNotEmpty ? name : (existingByUrl[url]?.name ?? ''),
+        sourceNum,
+      );
       final existing = existingByUrl[url];
       if (existing != null) {
         merged.add(
           existing.copyWith(
-            name: ch['name'] as String? ?? existing.name,
+            name: name.isNotEmpty ? name : existing.name,
             scanlator: ch['scanlator'] as String? ?? existing.scanlator,
             dateUpload: ch['date_upload'] as int? ?? existing.dateUpload,
             index: i,
+            chapterNumber: recognized,
             memo: ch['memo'] as String? ?? existing.memo,
           ),
         );
       } else {
         merged.add(
-          MangaChapter(
+          MangaChapter.withRecognition(
             id: 0,
             mangaId: mangaId,
-            name: ch['name'] as String? ?? '',
+            mangaTitle: mangaTitle,
+            name: name,
             url: url,
             scanlator: ch['scanlator'] as String?,
             dateUpload: ch['date_upload'] as int? ?? 0,
             index: i,
+            sourceChapterNumber: sourceNum,
             memo: ch['memo'] as String?,
           ),
         );
@@ -766,7 +729,7 @@ class _MangaDetailScreenState extends ConsumerState<MangaDetailScreen> {
             (c) => <String, dynamic>{
               'url': c.url,
               'name': c.name,
-              'chapter_number': c.index.toDouble(),
+              'chapter_number': c.chapterNumber,
               'scanlator': c.scanlator,
               'date_upload': c.dateUpload,
               'is_read': c.isRead,
@@ -813,16 +776,22 @@ class _MangaDetailScreenState extends ConsumerState<MangaDetailScreen> {
           final chapterModels = detail.chapters.asMap().entries.map((e) {
             final url = e.value['url'] as String? ?? '';
             final local = detail.localChapters[url];
-            return MangaChapter(
+            final name = e.value['name'] as String? ?? '';
+            return MangaChapter.withRecognition(
               id: 0,
               mangaId: _mangaId!,
-              name: e.value['name'] as String? ?? '',
+              mangaTitle: _preferTitle(
+                detail.details?['title'] as String?,
+                widget.title,
+              ),
+              name: name,
               url: url,
               scanlator: e.value['scanlator'] as String?,
               dateUpload: e.value['date_upload'] as int? ?? 0,
               index: e.key,
               isRead: local?['is_read'] as bool? ?? false,
               lastPageRead: local?['last_page_read'] as int? ?? 0,
+              sourceChapterNumber: e.value['chapter_number'] as num?,
               isDownloaded: detail.downloadProgress[url] == 'done',
               isOpened: local?['is_opened'] as bool? ?? false,
               memo: e.value['memo'] as String?,
@@ -898,9 +867,10 @@ class _MangaDetailScreenState extends ConsumerState<MangaDetailScreen> {
       final chapterModels = detail.chapters.asMap().entries.map((e) {
         final url = e.value['url'] as String? ?? '';
         final local = detail.localChapters[url];
-        return MangaChapter(
+        return MangaChapter.withRecognition(
           id: 0,
           mangaId: id,
+          mangaTitle: _preferTitle(d['title'] as String?, widget.title),
           name: e.value['name'] as String? ?? '',
           url: url,
           scanlator: e.value['scanlator'] as String?,
@@ -908,6 +878,7 @@ class _MangaDetailScreenState extends ConsumerState<MangaDetailScreen> {
           index: e.key,
           isRead: local?['is_read'] as bool? ?? false,
           lastPageRead: local?['last_page_read'] as int? ?? 0,
+          sourceChapterNumber: e.value['chapter_number'] as num?,
           isDownloaded: detail.downloadProgress[url] == 'done',
           isOpened: local?['is_opened'] as bool? ?? false,
           memo: e.value['memo'] as String?,
@@ -1702,13 +1673,46 @@ class _MangaDetailScreenState extends ConsumerState<MangaDetailScreen> {
                     SnackBar(content: Text('WebView failed: $e')),
                   );
                 }
+              } else if (value == 'migrate') {
+                final mangaId = _mangaId;
+                if (mangaId == null) return;
+                final title = _preferTitle(
+                  detail.details?['title'] as String?,
+                  widget.title,
+                );
+                if (!mounted) return;
+                final target = await Navigator.of(context).push<Manga>(
+                  MaterialPageRoute(
+                    builder: (_) => MigrateSearchScreen(
+                      currentMangaId: mangaId,
+                      currentTitle: title,
+                      excludeSourceId: widget.sourceId,
+                    ),
+                  ),
+                );
+                if (target == null || !mounted) return;
+                context.pushReplacementNamed(
+                  Routes.mangaDetail,
+                  extra: (
+                    sourceId: target.sourceId,
+                    url: target.url,
+                    title: target.name,
+                    manga: target,
+                    memo: target.memo,
+                  ),
+                );
               }
             },
-            itemBuilder: (ctx) => const [
-              PopupMenuItem(
+            itemBuilder: (ctx) => [
+              const PopupMenuItem(
                 value: 'webview',
                 child: Text('Open in WebView'),
               ),
+              if (_inLibrary && _mangaId != null)
+                const PopupMenuItem(
+                  value: 'migrate',
+                  child: Text('Migrate'),
+                ),
             ],
           ),
         ],

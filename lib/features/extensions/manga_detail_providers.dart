@@ -6,6 +6,7 @@ import '../../core/providers.dart';
 import '../../core/models/manga.dart';
 import '../../core/models/manga_chapter.dart';
 import '../../core/services/extension_source_resolve.dart';
+import '../../core/utils/chapter_recognition.dart';
 
 /// Stream of [Manga?] for a given manga ID. Backed by Isar's watchObject —
 /// re-emits every time the manga row is written via put(). fireImmediately=true
@@ -95,6 +96,11 @@ final updateMangaDetailProvider =
           if (url.isEmpty) continue;
 
           final existing = existingByUrl[url];
+          final recognized = ChapterRecognition.parseChapterNumber(
+            manga.name,
+            ch.name,
+            ch.chapterNumber.toDouble(),
+          );
           if (existing != null) {
             // Update metadata on existing row, preserve read/download state
             merged.add(
@@ -103,6 +109,8 @@ final updateMangaDetailProvider =
                 scanlator: ch.scanlator ?? existing.scanlator,
                 dateUpload: ch.dateUpload,
                 index: i,
+                chapterNumber: recognized,
+                memo: ch.memo ?? existing.memo,
               ),
             );
           } else {
@@ -116,6 +124,8 @@ final updateMangaDetailProvider =
                 scanlator: ch.scanlator,
                 dateUpload: ch.dateUpload,
                 index: i,
+                chapterNumber: recognized,
+                memo: ch.memo,
               ),
             );
           }
