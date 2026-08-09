@@ -8,13 +8,14 @@ import 'package:shared_preferences/shared_preferences.dart';
 ///
 /// The previous async `getInstance()` + callback Promise API hung getPopular
 /// when scripts expected mangayomi's sync prefs surface.
+///
+/// Isar SourcePreference collection deferred — PrefsCache (SharedPreferences
+/// under the hood) is the runtime truth for typed JS prefs.
 void injectPrefsBridge(JavascriptRuntime runtime, {required String sourceId}) {
-  final prefix = 'js_src_pref:$sourceId:';
-
   runtime.onMessage('get', (dynamic args) {
     final list = args is List ? args : <dynamic>[];
     final key = list.isNotEmpty ? list[0].toString() : '';
-    final stored = _PrefsCache.instance.get(prefix + key);
+    final stored = getJsPreferenceValue(sourceId, key);
     if (stored != null) return stored;
     // MangaDex et al. pass `get(key, defaultValue)` even though mangayomi's
     // bridge only forwards [key]; honour the default so `.length` never runs
@@ -26,13 +27,13 @@ void injectPrefsBridge(JavascriptRuntime runtime, {required String sourceId}) {
     final list = args is List ? args : <dynamic>[];
     final key = list.isNotEmpty ? list[0].toString() : '';
     final def = list.length > 1 ? list[1]?.toString() ?? '' : '';
-    return _PrefsCache.instance.getString(prefix + key, def);
+    return PrefsCache.instance.getString(_prefStorageKey(sourceId, key), def);
   });
   runtime.onMessage('setString', (dynamic args) {
     final list = args is List ? args : <dynamic>[];
     final key = list.isNotEmpty ? list[0].toString() : '';
     final value = list.length > 1 ? list[1]?.toString() ?? '' : '';
-    _PrefsCache.instance.setString(prefix + key, value);
+    PrefsCache.instance.setString(_prefStorageKey(sourceId, key), value);
     return null;
   });
 
@@ -62,6 +63,21 @@ class SharedPreferences {
 ''');
 }
 
+String _prefStorageKey(String sourceId, String key) =>
+    'js_src_pref:$sourceId:$key';
+
+/// Typed read from PrefsCache (mangayomi [getPreferenceValue] counterpart for
+/// the JS path — PrefsCache already stores the resolved typed value).
+dynamic getJsPreferenceValue(String sourceId, String key) {
+  return PrefsCache.instance.get(_prefStorageKey(sourceId, key));
+}
+
+/// Typed write into PrefsCache so subsequent JS `SharedPreferences.get` sees
+/// UI updates without restart.
+void setJsPreferenceValue(String sourceId, String key, dynamic value) {
+  PrefsCache.instance.putJson(_prefStorageKey(sourceId, key), value);
+}
+
 /// Seed unset preference keys from `extention.getSourcePreferences()` defaults,
 /// matching mangayomi's [getSourcePreferenceEntry] first-access behaviour.
 void seedJsPreferenceDefaults(
@@ -76,16 +92,15 @@ void seedJsPreferenceDefaults(
     if (raw.isEmpty) return;
     final decoded = jsonDecode(raw);
     if (decoded is! List) return;
-    final prefix = 'js_src_pref:$sourceId:';
     for (final item in decoded) {
       if (item is! Map) continue;
       final key = item['key']?.toString();
       if (key == null || key.isEmpty) continue;
-      final fullKey = prefix + key;
-      if (_PrefsCache.instance.contains(fullKey)) continue;
+      final fullKey = _prefStorageKey(sourceId, key);
+      if (PrefsCache.instance.contains(fullKey)) continue;
       final def = _defaultFromPreferenceMap(Map<String, dynamic>.from(item));
       if (def == null) continue;
-      _PrefsCache.instance.putJson(fullKey, def);
+      PrefsCache.instance.putJson(fullKey, def);
     }
   } catch (_) {
     // Extensions without getSourcePreferences — ignore.
@@ -118,9 +133,9 @@ dynamic _defaultFromPreferenceMap(Map<String, dynamic> item) {
 
 /// Eagerly-loaded in-memory prefs mirror so JS can call SharedPreferences
 /// synchronously like mangayomi (Isar/shared_prefs is async underneath).
-class _PrefsCache {
-  _PrefsCache._();
-  static final instance = _PrefsCache._();
+class PrefsCache {
+  PrefsCache._();
+  static final instance = PrefsCache._();
 
   final Map<String, String> _strings = {};
   bool _hydrated = false;
@@ -164,4 +179,4 @@ class _PrefsCache {
 }
 
 /// Call before evaluating extension code so sync prefs read fresh values.
-Future<void> hydrateJsPrefsCache() => _PrefsCache.instance.hydrate();
+Future<void> hydrateJsPrefsCache() => PrefsCache.instance.hydrate();

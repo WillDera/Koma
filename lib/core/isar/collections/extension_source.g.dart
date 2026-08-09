@@ -17,84 +17,95 @@ const ExtensionSourceSchema = CollectionSchema(
   name: r'ExtensionSource',
   id: -4149751665871021609,
   properties: {
-    r'apkPath': PropertySchema(id: 0, name: r'apkPath', type: IsarType.string),
-    r'baseUrl': PropertySchema(id: 1, name: r'baseUrl', type: IsarType.string),
+    r'apiUrl': PropertySchema(id: 0, name: r'apiUrl', type: IsarType.string),
+    r'apkPath': PropertySchema(id: 1, name: r'apkPath', type: IsarType.string),
+    r'baseUrl': PropertySchema(id: 2, name: r'baseUrl', type: IsarType.string),
     r'className': PropertySchema(
-      id: 2,
+      id: 3,
       name: r'className',
       type: IsarType.string,
     ),
     r'createdAt': PropertySchema(
-      id: 3,
+      id: 4,
       name: r'createdAt',
       type: IsarType.dateTime,
     ),
-    r'iconUrl': PropertySchema(id: 4, name: r'iconUrl', type: IsarType.string),
-    r'isActive': PropertySchema(id: 5, name: r'isActive', type: IsarType.bool),
+    r'hasCloudflare': PropertySchema(
+      id: 5,
+      name: r'hasCloudflare',
+      type: IsarType.bool,
+    ),
+    r'iconUrl': PropertySchema(id: 6, name: r'iconUrl', type: IsarType.string),
+    r'isActive': PropertySchema(id: 7, name: r'isActive', type: IsarType.bool),
     r'isInstalled': PropertySchema(
-      id: 6,
+      id: 8,
       name: r'isInstalled',
       type: IsarType.bool,
     ),
-    r'isNsfw': PropertySchema(id: 7, name: r'isNsfw', type: IsarType.bool),
+    r'isNsfw': PropertySchema(id: 9, name: r'isNsfw', type: IsarType.bool),
     r'isObsolete': PropertySchema(
-      id: 8,
+      id: 10,
       name: r'isObsolete',
       type: IsarType.bool,
     ),
-    r'isPinned': PropertySchema(id: 9, name: r'isPinned', type: IsarType.bool),
+    r'isPinned': PropertySchema(id: 11, name: r'isPinned', type: IsarType.bool),
     r'isUpdateAvailable': PropertySchema(
-      id: 10,
+      id: 12,
       name: r'isUpdateAvailable',
       type: IsarType.bool,
     ),
-    r'lang': PropertySchema(id: 11, name: r'lang', type: IsarType.string),
-    r'name': PropertySchema(id: 12, name: r'name', type: IsarType.string),
-    r'nativeId': PropertySchema(
+    r'itemType': PropertySchema(
       id: 13,
+      name: r'itemType',
+      type: IsarType.string,
+    ),
+    r'lang': PropertySchema(id: 14, name: r'lang', type: IsarType.string),
+    r'name': PropertySchema(id: 15, name: r'name', type: IsarType.string),
+    r'nativeId': PropertySchema(
+      id: 16,
       name: r'nativeId',
       type: IsarType.string,
     ),
-    r'pkgName': PropertySchema(id: 14, name: r'pkgName', type: IsarType.string),
-    r'repoUrl': PropertySchema(id: 15, name: r'repoUrl', type: IsarType.string),
+    r'pkgName': PropertySchema(id: 17, name: r'pkgName', type: IsarType.string),
+    r'repoUrl': PropertySchema(id: 18, name: r'repoUrl', type: IsarType.string),
     r'signatureHash': PropertySchema(
-      id: 16,
+      id: 19,
       name: r'signatureHash',
       type: IsarType.string,
     ),
     r'sourceCode': PropertySchema(
-      id: 17,
+      id: 20,
       name: r'sourceCode',
       type: IsarType.string,
     ),
     r'sourceCodeLanguage': PropertySchema(
-      id: 18,
+      id: 21,
       name: r'sourceCodeLanguage',
       type: IsarType.string,
     ),
     r'sourceCodeUrl': PropertySchema(
-      id: 19,
+      id: 22,
       name: r'sourceCodeUrl',
       type: IsarType.string,
     ),
     r'sourceId': PropertySchema(
-      id: 20,
+      id: 23,
       name: r'sourceId',
       type: IsarType.string,
     ),
     r'updatedAt': PropertySchema(
-      id: 21,
+      id: 24,
       name: r'updatedAt',
       type: IsarType.dateTime,
     ),
-    r'version': PropertySchema(id: 22, name: r'version', type: IsarType.string),
+    r'version': PropertySchema(id: 25, name: r'version', type: IsarType.string),
     r'versionCode': PropertySchema(
-      id: 23,
+      id: 26,
       name: r'versionCode',
       type: IsarType.long,
     ),
     r'versionLast': PropertySchema(
-      id: 24,
+      id: 27,
       name: r'versionLast',
       type: IsarType.string,
     ),
@@ -135,6 +146,12 @@ int _extensionSourceEstimateSize(
   Map<Type, List<int>> allOffsets,
 ) {
   var bytesCount = offsets.last;
+  {
+    final value = object.apiUrl;
+    if (value != null) {
+      bytesCount += 3 + value.length * 3;
+    }
+  }
   bytesCount += 3 + object.apkPath.length * 3;
   {
     final value = object.baseUrl;
@@ -149,6 +166,7 @@ int _extensionSourceEstimateSize(
       bytesCount += 3 + value.length * 3;
     }
   }
+  bytesCount += 3 + object.itemType.length * 3;
   bytesCount += 3 + object.lang.length * 3;
   bytesCount += 3 + object.name.length * 3;
   bytesCount += 3 + object.nativeId.length * 3;
@@ -185,31 +203,34 @@ void _extensionSourceSerialize(
   List<int> offsets,
   Map<Type, List<int>> allOffsets,
 ) {
-  writer.writeString(offsets[0], object.apkPath);
-  writer.writeString(offsets[1], object.baseUrl);
-  writer.writeString(offsets[2], object.className);
-  writer.writeDateTime(offsets[3], object.createdAt);
-  writer.writeString(offsets[4], object.iconUrl);
-  writer.writeBool(offsets[5], object.isActive);
-  writer.writeBool(offsets[6], object.isInstalled);
-  writer.writeBool(offsets[7], object.isNsfw);
-  writer.writeBool(offsets[8], object.isObsolete);
-  writer.writeBool(offsets[9], object.isPinned);
-  writer.writeBool(offsets[10], object.isUpdateAvailable);
-  writer.writeString(offsets[11], object.lang);
-  writer.writeString(offsets[12], object.name);
-  writer.writeString(offsets[13], object.nativeId);
-  writer.writeString(offsets[14], object.pkgName);
-  writer.writeString(offsets[15], object.repoUrl);
-  writer.writeString(offsets[16], object.signatureHash);
-  writer.writeString(offsets[17], object.sourceCode);
-  writer.writeString(offsets[18], object.sourceCodeLanguage);
-  writer.writeString(offsets[19], object.sourceCodeUrl);
-  writer.writeString(offsets[20], object.sourceId);
-  writer.writeDateTime(offsets[21], object.updatedAt);
-  writer.writeString(offsets[22], object.version);
-  writer.writeLong(offsets[23], object.versionCode);
-  writer.writeString(offsets[24], object.versionLast);
+  writer.writeString(offsets[0], object.apiUrl);
+  writer.writeString(offsets[1], object.apkPath);
+  writer.writeString(offsets[2], object.baseUrl);
+  writer.writeString(offsets[3], object.className);
+  writer.writeDateTime(offsets[4], object.createdAt);
+  writer.writeBool(offsets[5], object.hasCloudflare);
+  writer.writeString(offsets[6], object.iconUrl);
+  writer.writeBool(offsets[7], object.isActive);
+  writer.writeBool(offsets[8], object.isInstalled);
+  writer.writeBool(offsets[9], object.isNsfw);
+  writer.writeBool(offsets[10], object.isObsolete);
+  writer.writeBool(offsets[11], object.isPinned);
+  writer.writeBool(offsets[12], object.isUpdateAvailable);
+  writer.writeString(offsets[13], object.itemType);
+  writer.writeString(offsets[14], object.lang);
+  writer.writeString(offsets[15], object.name);
+  writer.writeString(offsets[16], object.nativeId);
+  writer.writeString(offsets[17], object.pkgName);
+  writer.writeString(offsets[18], object.repoUrl);
+  writer.writeString(offsets[19], object.signatureHash);
+  writer.writeString(offsets[20], object.sourceCode);
+  writer.writeString(offsets[21], object.sourceCodeLanguage);
+  writer.writeString(offsets[22], object.sourceCodeUrl);
+  writer.writeString(offsets[23], object.sourceId);
+  writer.writeDateTime(offsets[24], object.updatedAt);
+  writer.writeString(offsets[25], object.version);
+  writer.writeLong(offsets[26], object.versionCode);
+  writer.writeString(offsets[27], object.versionLast);
 }
 
 ExtensionSource _extensionSourceDeserialize(
@@ -219,31 +240,34 @@ ExtensionSource _extensionSourceDeserialize(
   Map<Type, List<int>> allOffsets,
 ) {
   final object = ExtensionSource(
-    apkPath: reader.readString(offsets[0]),
-    baseUrl: reader.readStringOrNull(offsets[1]),
-    className: reader.readString(offsets[2]),
-    createdAt: reader.readDateTimeOrNull(offsets[3]),
-    iconUrl: reader.readStringOrNull(offsets[4]),
+    apiUrl: reader.readStringOrNull(offsets[0]),
+    apkPath: reader.readString(offsets[1]),
+    baseUrl: reader.readStringOrNull(offsets[2]),
+    className: reader.readString(offsets[3]),
+    createdAt: reader.readDateTimeOrNull(offsets[4]),
+    hasCloudflare: reader.readBoolOrNull(offsets[5]) ?? false,
+    iconUrl: reader.readStringOrNull(offsets[6]),
     id: id,
-    isActive: reader.readBoolOrNull(offsets[5]) ?? true,
-    isInstalled: reader.readBoolOrNull(offsets[6]) ?? true,
-    isNsfw: reader.readBoolOrNull(offsets[7]) ?? false,
-    isObsolete: reader.readBoolOrNull(offsets[8]) ?? false,
-    isPinned: reader.readBoolOrNull(offsets[9]) ?? false,
-    lang: reader.readString(offsets[11]),
-    name: reader.readString(offsets[12]),
-    nativeId: reader.readStringOrNull(offsets[13]) ?? '',
-    pkgName: reader.readStringOrNull(offsets[14]) ?? '',
-    repoUrl: reader.readStringOrNull(offsets[15]),
-    signatureHash: reader.readStringOrNull(offsets[16]) ?? '',
-    sourceCode: reader.readStringOrNull(offsets[17]) ?? '',
-    sourceCodeLanguage: reader.readStringOrNull(offsets[18]) ?? 'mihon',
-    sourceCodeUrl: reader.readStringOrNull(offsets[19]),
-    sourceId: reader.readString(offsets[20]),
-    updatedAt: reader.readDateTimeOrNull(offsets[21]),
-    version: reader.readString(offsets[22]),
-    versionCode: reader.readLongOrNull(offsets[23]) ?? 0,
-    versionLast: reader.readStringOrNull(offsets[24]),
+    isActive: reader.readBoolOrNull(offsets[7]) ?? true,
+    isInstalled: reader.readBoolOrNull(offsets[8]) ?? true,
+    isNsfw: reader.readBoolOrNull(offsets[9]) ?? false,
+    isObsolete: reader.readBoolOrNull(offsets[10]) ?? false,
+    isPinned: reader.readBoolOrNull(offsets[11]) ?? false,
+    itemType: reader.readStringOrNull(offsets[13]) ?? 'manga',
+    lang: reader.readString(offsets[14]),
+    name: reader.readString(offsets[15]),
+    nativeId: reader.readStringOrNull(offsets[16]) ?? '',
+    pkgName: reader.readStringOrNull(offsets[17]) ?? '',
+    repoUrl: reader.readStringOrNull(offsets[18]),
+    signatureHash: reader.readStringOrNull(offsets[19]) ?? '',
+    sourceCode: reader.readStringOrNull(offsets[20]) ?? '',
+    sourceCodeLanguage: reader.readStringOrNull(offsets[21]) ?? 'mihon',
+    sourceCodeUrl: reader.readStringOrNull(offsets[22]),
+    sourceId: reader.readString(offsets[23]),
+    updatedAt: reader.readDateTimeOrNull(offsets[24]),
+    version: reader.readString(offsets[25]),
+    versionCode: reader.readLongOrNull(offsets[26]) ?? 0,
+    versionLast: reader.readStringOrNull(offsets[27]),
   );
   return object;
 }
@@ -256,54 +280,60 @@ P _extensionSourceDeserializeProp<P>(
 ) {
   switch (propertyId) {
     case 0:
-      return (reader.readString(offset)) as P;
+      return (reader.readStringOrNull(offset)) as P;
     case 1:
-      return (reader.readStringOrNull(offset)) as P;
-    case 2:
       return (reader.readString(offset)) as P;
-    case 3:
-      return (reader.readDateTimeOrNull(offset)) as P;
-    case 4:
+    case 2:
       return (reader.readStringOrNull(offset)) as P;
+    case 3:
+      return (reader.readString(offset)) as P;
+    case 4:
+      return (reader.readDateTimeOrNull(offset)) as P;
     case 5:
-      return (reader.readBoolOrNull(offset) ?? true) as P;
+      return (reader.readBoolOrNull(offset) ?? false) as P;
     case 6:
-      return (reader.readBoolOrNull(offset) ?? true) as P;
+      return (reader.readStringOrNull(offset)) as P;
     case 7:
-      return (reader.readBoolOrNull(offset) ?? false) as P;
+      return (reader.readBoolOrNull(offset) ?? true) as P;
     case 8:
-      return (reader.readBoolOrNull(offset) ?? false) as P;
+      return (reader.readBoolOrNull(offset) ?? true) as P;
     case 9:
       return (reader.readBoolOrNull(offset) ?? false) as P;
     case 10:
-      return (reader.readBool(offset)) as P;
+      return (reader.readBoolOrNull(offset) ?? false) as P;
     case 11:
-      return (reader.readString(offset)) as P;
+      return (reader.readBoolOrNull(offset) ?? false) as P;
     case 12:
-      return (reader.readString(offset)) as P;
+      return (reader.readBool(offset)) as P;
     case 13:
-      return (reader.readStringOrNull(offset) ?? '') as P;
+      return (reader.readStringOrNull(offset) ?? 'manga') as P;
     case 14:
-      return (reader.readStringOrNull(offset) ?? '') as P;
+      return (reader.readString(offset)) as P;
     case 15:
-      return (reader.readStringOrNull(offset)) as P;
+      return (reader.readString(offset)) as P;
     case 16:
       return (reader.readStringOrNull(offset) ?? '') as P;
     case 17:
       return (reader.readStringOrNull(offset) ?? '') as P;
     case 18:
-      return (reader.readStringOrNull(offset) ?? 'mihon') as P;
-    case 19:
       return (reader.readStringOrNull(offset)) as P;
+    case 19:
+      return (reader.readStringOrNull(offset) ?? '') as P;
     case 20:
-      return (reader.readString(offset)) as P;
+      return (reader.readStringOrNull(offset) ?? '') as P;
     case 21:
-      return (reader.readDateTimeOrNull(offset)) as P;
+      return (reader.readStringOrNull(offset) ?? 'mihon') as P;
     case 22:
-      return (reader.readString(offset)) as P;
+      return (reader.readStringOrNull(offset)) as P;
     case 23:
-      return (reader.readLongOrNull(offset) ?? 0) as P;
+      return (reader.readString(offset)) as P;
     case 24:
+      return (reader.readDateTimeOrNull(offset)) as P;
+    case 25:
+      return (reader.readString(offset)) as P;
+    case 26:
+      return (reader.readLongOrNull(offset) ?? 0) as P;
+    case 27:
       return (reader.readStringOrNull(offset)) as P;
     default:
       throw IsarError('Unknown property with id $propertyId');
@@ -518,6 +548,165 @@ extension ExtensionSourceQueryWhere
 
 extension ExtensionSourceQueryFilter
     on QueryBuilder<ExtensionSource, ExtensionSource, QFilterCondition> {
+  QueryBuilder<ExtensionSource, ExtensionSource, QAfterFilterCondition>
+  apiUrlIsNull() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        const FilterCondition.isNull(property: r'apiUrl'),
+      );
+    });
+  }
+
+  QueryBuilder<ExtensionSource, ExtensionSource, QAfterFilterCondition>
+  apiUrlIsNotNull() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        const FilterCondition.isNotNull(property: r'apiUrl'),
+      );
+    });
+  }
+
+  QueryBuilder<ExtensionSource, ExtensionSource, QAfterFilterCondition>
+  apiUrlEqualTo(String? value, {bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.equalTo(
+          property: r'apiUrl',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<ExtensionSource, ExtensionSource, QAfterFilterCondition>
+  apiUrlGreaterThan(
+    String? value, {
+    bool include = false,
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.greaterThan(
+          include: include,
+          property: r'apiUrl',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<ExtensionSource, ExtensionSource, QAfterFilterCondition>
+  apiUrlLessThan(
+    String? value, {
+    bool include = false,
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.lessThan(
+          include: include,
+          property: r'apiUrl',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<ExtensionSource, ExtensionSource, QAfterFilterCondition>
+  apiUrlBetween(
+    String? lower,
+    String? upper, {
+    bool includeLower = true,
+    bool includeUpper = true,
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.between(
+          property: r'apiUrl',
+          lower: lower,
+          includeLower: includeLower,
+          upper: upper,
+          includeUpper: includeUpper,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<ExtensionSource, ExtensionSource, QAfterFilterCondition>
+  apiUrlStartsWith(String value, {bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.startsWith(
+          property: r'apiUrl',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<ExtensionSource, ExtensionSource, QAfterFilterCondition>
+  apiUrlEndsWith(String value, {bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.endsWith(
+          property: r'apiUrl',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<ExtensionSource, ExtensionSource, QAfterFilterCondition>
+  apiUrlContains(String value, {bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.contains(
+          property: r'apiUrl',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<ExtensionSource, ExtensionSource, QAfterFilterCondition>
+  apiUrlMatches(String pattern, {bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.matches(
+          property: r'apiUrl',
+          wildcard: pattern,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<ExtensionSource, ExtensionSource, QAfterFilterCondition>
+  apiUrlIsEmpty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.equalTo(property: r'apiUrl', value: ''),
+      );
+    });
+  }
+
+  QueryBuilder<ExtensionSource, ExtensionSource, QAfterFilterCondition>
+  apiUrlIsNotEmpty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.greaterThan(property: r'apiUrl', value: ''),
+      );
+    });
+  }
+
   QueryBuilder<ExtensionSource, ExtensionSource, QAfterFilterCondition>
   apkPathEqualTo(String value, {bool caseSensitive = true}) {
     return QueryBuilder.apply(this, (query) {
@@ -1033,6 +1222,15 @@ extension ExtensionSourceQueryFilter
   }
 
   QueryBuilder<ExtensionSource, ExtensionSource, QAfterFilterCondition>
+  hasCloudflareEqualTo(bool value) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.equalTo(property: r'hasCloudflare', value: value),
+      );
+    });
+  }
+
+  QueryBuilder<ExtensionSource, ExtensionSource, QAfterFilterCondition>
   iconUrlIsNull() {
     return QueryBuilder.apply(this, (query) {
       return query.addFilterCondition(
@@ -1314,6 +1512,147 @@ extension ExtensionSourceQueryFilter
     return QueryBuilder.apply(this, (query) {
       return query.addFilterCondition(
         FilterCondition.equalTo(property: r'isUpdateAvailable', value: value),
+      );
+    });
+  }
+
+  QueryBuilder<ExtensionSource, ExtensionSource, QAfterFilterCondition>
+  itemTypeEqualTo(String value, {bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.equalTo(
+          property: r'itemType',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<ExtensionSource, ExtensionSource, QAfterFilterCondition>
+  itemTypeGreaterThan(
+    String value, {
+    bool include = false,
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.greaterThan(
+          include: include,
+          property: r'itemType',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<ExtensionSource, ExtensionSource, QAfterFilterCondition>
+  itemTypeLessThan(
+    String value, {
+    bool include = false,
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.lessThan(
+          include: include,
+          property: r'itemType',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<ExtensionSource, ExtensionSource, QAfterFilterCondition>
+  itemTypeBetween(
+    String lower,
+    String upper, {
+    bool includeLower = true,
+    bool includeUpper = true,
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.between(
+          property: r'itemType',
+          lower: lower,
+          includeLower: includeLower,
+          upper: upper,
+          includeUpper: includeUpper,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<ExtensionSource, ExtensionSource, QAfterFilterCondition>
+  itemTypeStartsWith(String value, {bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.startsWith(
+          property: r'itemType',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<ExtensionSource, ExtensionSource, QAfterFilterCondition>
+  itemTypeEndsWith(String value, {bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.endsWith(
+          property: r'itemType',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<ExtensionSource, ExtensionSource, QAfterFilterCondition>
+  itemTypeContains(String value, {bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.contains(
+          property: r'itemType',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<ExtensionSource, ExtensionSource, QAfterFilterCondition>
+  itemTypeMatches(String pattern, {bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.matches(
+          property: r'itemType',
+          wildcard: pattern,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<ExtensionSource, ExtensionSource, QAfterFilterCondition>
+  itemTypeIsEmpty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.equalTo(property: r'itemType', value: ''),
+      );
+    });
+  }
+
+  QueryBuilder<ExtensionSource, ExtensionSource, QAfterFilterCondition>
+  itemTypeIsNotEmpty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.greaterThan(property: r'itemType', value: ''),
       );
     });
   }
@@ -3201,6 +3540,19 @@ extension ExtensionSourceQueryLinks
 
 extension ExtensionSourceQuerySortBy
     on QueryBuilder<ExtensionSource, ExtensionSource, QSortBy> {
+  QueryBuilder<ExtensionSource, ExtensionSource, QAfterSortBy> sortByApiUrl() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'apiUrl', Sort.asc);
+    });
+  }
+
+  QueryBuilder<ExtensionSource, ExtensionSource, QAfterSortBy>
+  sortByApiUrlDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'apiUrl', Sort.desc);
+    });
+  }
+
   QueryBuilder<ExtensionSource, ExtensionSource, QAfterSortBy> sortByApkPath() {
     return QueryBuilder.apply(this, (query) {
       return query.addSortBy(r'apkPath', Sort.asc);
@@ -3252,6 +3604,20 @@ extension ExtensionSourceQuerySortBy
   sortByCreatedAtDesc() {
     return QueryBuilder.apply(this, (query) {
       return query.addSortBy(r'createdAt', Sort.desc);
+    });
+  }
+
+  QueryBuilder<ExtensionSource, ExtensionSource, QAfterSortBy>
+  sortByHasCloudflare() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'hasCloudflare', Sort.asc);
+    });
+  }
+
+  QueryBuilder<ExtensionSource, ExtensionSource, QAfterSortBy>
+  sortByHasCloudflareDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'hasCloudflare', Sort.desc);
     });
   }
 
@@ -3348,6 +3714,20 @@ extension ExtensionSourceQuerySortBy
   sortByIsUpdateAvailableDesc() {
     return QueryBuilder.apply(this, (query) {
       return query.addSortBy(r'isUpdateAvailable', Sort.desc);
+    });
+  }
+
+  QueryBuilder<ExtensionSource, ExtensionSource, QAfterSortBy>
+  sortByItemType() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'itemType', Sort.asc);
+    });
+  }
+
+  QueryBuilder<ExtensionSource, ExtensionSource, QAfterSortBy>
+  sortByItemTypeDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'itemType', Sort.desc);
     });
   }
 
@@ -3545,6 +3925,19 @@ extension ExtensionSourceQuerySortBy
 
 extension ExtensionSourceQuerySortThenBy
     on QueryBuilder<ExtensionSource, ExtensionSource, QSortThenBy> {
+  QueryBuilder<ExtensionSource, ExtensionSource, QAfterSortBy> thenByApiUrl() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'apiUrl', Sort.asc);
+    });
+  }
+
+  QueryBuilder<ExtensionSource, ExtensionSource, QAfterSortBy>
+  thenByApiUrlDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'apiUrl', Sort.desc);
+    });
+  }
+
   QueryBuilder<ExtensionSource, ExtensionSource, QAfterSortBy> thenByApkPath() {
     return QueryBuilder.apply(this, (query) {
       return query.addSortBy(r'apkPath', Sort.asc);
@@ -3596,6 +3989,20 @@ extension ExtensionSourceQuerySortThenBy
   thenByCreatedAtDesc() {
     return QueryBuilder.apply(this, (query) {
       return query.addSortBy(r'createdAt', Sort.desc);
+    });
+  }
+
+  QueryBuilder<ExtensionSource, ExtensionSource, QAfterSortBy>
+  thenByHasCloudflare() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'hasCloudflare', Sort.asc);
+    });
+  }
+
+  QueryBuilder<ExtensionSource, ExtensionSource, QAfterSortBy>
+  thenByHasCloudflareDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'hasCloudflare', Sort.desc);
     });
   }
 
@@ -3704,6 +4111,20 @@ extension ExtensionSourceQuerySortThenBy
   thenByIsUpdateAvailableDesc() {
     return QueryBuilder.apply(this, (query) {
       return query.addSortBy(r'isUpdateAvailable', Sort.desc);
+    });
+  }
+
+  QueryBuilder<ExtensionSource, ExtensionSource, QAfterSortBy>
+  thenByItemType() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'itemType', Sort.asc);
+    });
+  }
+
+  QueryBuilder<ExtensionSource, ExtensionSource, QAfterSortBy>
+  thenByItemTypeDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'itemType', Sort.desc);
     });
   }
 
@@ -3901,6 +4322,14 @@ extension ExtensionSourceQuerySortThenBy
 
 extension ExtensionSourceQueryWhereDistinct
     on QueryBuilder<ExtensionSource, ExtensionSource, QDistinct> {
+  QueryBuilder<ExtensionSource, ExtensionSource, QDistinct> distinctByApiUrl({
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addDistinctBy(r'apiUrl', caseSensitive: caseSensitive);
+    });
+  }
+
   QueryBuilder<ExtensionSource, ExtensionSource, QDistinct> distinctByApkPath({
     bool caseSensitive = true,
   }) {
@@ -3928,6 +4357,13 @@ extension ExtensionSourceQueryWhereDistinct
   distinctByCreatedAt() {
     return QueryBuilder.apply(this, (query) {
       return query.addDistinctBy(r'createdAt');
+    });
+  }
+
+  QueryBuilder<ExtensionSource, ExtensionSource, QDistinct>
+  distinctByHasCloudflare() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addDistinctBy(r'hasCloudflare');
     });
   }
 
@@ -3977,6 +4413,14 @@ extension ExtensionSourceQueryWhereDistinct
   distinctByIsUpdateAvailable() {
     return QueryBuilder.apply(this, (query) {
       return query.addDistinctBy(r'isUpdateAvailable');
+    });
+  }
+
+  QueryBuilder<ExtensionSource, ExtensionSource, QDistinct> distinctByItemType({
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addDistinctBy(r'itemType', caseSensitive: caseSensitive);
     });
   }
 
@@ -4103,6 +4547,12 @@ extension ExtensionSourceQueryProperty
     });
   }
 
+  QueryBuilder<ExtensionSource, String?, QQueryOperations> apiUrlProperty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addPropertyName(r'apiUrl');
+    });
+  }
+
   QueryBuilder<ExtensionSource, String, QQueryOperations> apkPathProperty() {
     return QueryBuilder.apply(this, (query) {
       return query.addPropertyName(r'apkPath');
@@ -4125,6 +4575,13 @@ extension ExtensionSourceQueryProperty
   createdAtProperty() {
     return QueryBuilder.apply(this, (query) {
       return query.addPropertyName(r'createdAt');
+    });
+  }
+
+  QueryBuilder<ExtensionSource, bool, QQueryOperations>
+  hasCloudflareProperty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addPropertyName(r'hasCloudflare');
     });
   }
 
@@ -4168,6 +4625,12 @@ extension ExtensionSourceQueryProperty
   isUpdateAvailableProperty() {
     return QueryBuilder.apply(this, (query) {
       return query.addPropertyName(r'isUpdateAvailable');
+    });
+  }
+
+  QueryBuilder<ExtensionSource, String, QQueryOperations> itemTypeProperty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addPropertyName(r'itemType');
     });
   }
 

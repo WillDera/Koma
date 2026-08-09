@@ -6,6 +6,7 @@ import '../../core/services/source_preferences_bridge.dart';
 import '../../core/utils/custom_extended_image_provider.dart';
 import '../../core/utils/language.dart';
 import '../../theme/app_theme.dart';
+import 'js_source_preferences_screen.dart';
 import 'source_browse_screen.dart';
 
 /// Extract the package name from an installed extension's on-disk APK path,
@@ -148,7 +149,30 @@ class ExtensionDetailScreen extends StatelessWidget {
                 ),
               ),
             ],
-            if (hasApk)
+            if (source.isJs)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
+                child: SizedBox(
+                  width: double.infinity,
+                  child: OutlinedButton.icon(
+                    onPressed: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) =>
+                              JsSourcePreferencesScreen(source: source),
+                        ),
+                      );
+                    },
+                    icon: Icon(Icons.tune_rounded, color: c.accent),
+                    label: Text(
+                      'Source settings',
+                      style: TextStyle(color: c.accent),
+                    ),
+                  ),
+                ),
+              )
+            else if (hasApk)
               FutureBuilder<bool>(
                 future: SourcePreferencesBridge.isConfigurable(
                   sourceId: source.sourceId,
