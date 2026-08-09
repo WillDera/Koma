@@ -9,3 +9,4 @@ export 'models/source_preference.dart';
 export 'keiyoushi/keiyoushi_extension_service.dart';
 export 'javascript/js_extension_service.dart';
 export 'javascript/js_runtime.dart';
+export 'dart/service.dart';

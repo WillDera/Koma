@@ -3,9 +3,11 @@ import 'package:flutter/material.dart';
 import '../../core/models/extension_source.dart';
 import '../../core/services/extension_icon_cache.dart';
 import '../../core/services/source_preferences_bridge.dart';
+import '../../core/services/source_webview_bridge.dart';
 import '../../core/utils/custom_extended_image_provider.dart';
 import '../../core/utils/language.dart';
 import '../../theme/app_theme.dart';
+import 'extension_client_settings_screen.dart';
 import 'js_source_preferences_screen.dart';
 import 'source_browse_screen.dart';
 
@@ -43,6 +45,40 @@ class ExtensionDetailScreen extends StatelessWidget {
         backgroundColor: c.bg,
         title: Text('Extension Detail', style: TextStyle(color: c.textPrimary)),
         iconTheme: IconThemeData(color: c.textPrimary),
+        actions: [
+          if (source.baseUrl != null && source.baseUrl!.isNotEmpty)
+            IconButton(
+              tooltip: 'Open website',
+              icon: Icon(Icons.public, color: c.accent),
+              onPressed: () async {
+                try {
+                  await SourceWebViewBridge.open(
+                    url: source.baseUrl!,
+                    sourceId: source.sourceId,
+                    title: source.name,
+                  );
+                } catch (e) {
+                  if (!context.mounted) return;
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: Text('WebView failed: $e')),
+                  );
+                }
+              },
+            ),
+          IconButton(
+            tooltip: 'Client settings',
+            icon: Icon(Icons.settings_outlined, color: c.textPrimary),
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) =>
+                      ExtensionClientSettingsScreen(source: source),
+                ),
+              );
+            },
+          ),
+        ],
       ),
       body: SingleChildScrollView(
         child: Column(
@@ -149,6 +185,28 @@ class ExtensionDetailScreen extends StatelessWidget {
                 ),
               ),
             ],
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
+              child: SizedBox(
+                width: double.infinity,
+                child: OutlinedButton.icon(
+                  onPressed: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) =>
+                            ExtensionClientSettingsScreen(source: source),
+                      ),
+                    );
+                  },
+                  icon: Icon(Icons.settings_outlined, color: c.accent),
+                  label: Text(
+                    'Client settings',
+                    style: TextStyle(color: c.accent),
+                  ),
+                ),
+              ),
+            ),
             if (source.isJs)
               Padding(
                 padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),

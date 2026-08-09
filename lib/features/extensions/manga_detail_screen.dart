@@ -1566,6 +1566,31 @@ class _MangaDetailScreenState extends ConsumerState<MangaDetailScreen> {
     6: 'On hiatus',
   };
 
+  /// Mode of weekday from recent chapter uploads; N/A when signal is weak.
+  static String _releaseCycleFromChapters(List<Map<String, dynamic>> chapters) {
+    const names = {
+      DateTime.monday: 'Monday',
+      DateTime.tuesday: 'Tuesday',
+      DateTime.wednesday: 'Wednesday',
+      DateTime.thursday: 'Thursday',
+      DateTime.friday: 'Friday',
+      DateTime.saturday: 'Saturday',
+      DateTime.sunday: 'Sunday',
+    };
+    final counts = <int, int>{};
+    for (final ch in chapters) {
+      final date = ch['date_upload'] as int? ?? 0;
+      if (date <= 0) continue;
+      final wd = DateTime.fromMillisecondsSinceEpoch(date).weekday;
+      counts[wd] = (counts[wd] ?? 0) + 1;
+    }
+    final total = counts.values.fold<int>(0, (a, b) => a + b);
+    if (total < 3) return 'N/A';
+    final best = counts.entries.reduce((a, b) => a.value >= b.value ? a : b);
+    if (best.value / total < 0.4) return 'N/A';
+    return 'Every ${names[best.key]}';
+  }
+
   @override
   Widget build(BuildContext context) {
     final c = context.colors;
@@ -1629,6 +1654,7 @@ class _MangaDetailScreenState extends ConsumerState<MangaDetailScreen> {
         DateTime.fromMillisecondsSinceEpoch(latestDate),
       );
     }
+    final releaseCycle = _releaseCycleFromChapters(detail.chapters);
 
     return Scaffold(
       extendBodyBehindAppBar: true,
@@ -1756,6 +1782,7 @@ class _MangaDetailScreenState extends ConsumerState<MangaDetailScreen> {
                       url: widget.url,
                       sourceName: detail.sourceName,
                       lastChapterDate: lastChapterDate,
+                      releaseCycle: releaseCycle,
                       expanded: detail.expanded,
                       onExpandedChanged: (v) =>
                           ref.read(mangaDetailProvider.notifier).setExpanded(v),
@@ -1987,6 +2014,7 @@ class _MangaDetailScreenState extends ConsumerState<MangaDetailScreen> {
   }) {
     final url = ch['url'] as String? ?? '';
     final isRead = ch['is_read'] as bool? ?? false;
+    final isOpened = ch['is_opened'] as bool? ?? true;
     final lastPageRead = ch['last_page_read'] as int? ?? 0;
     final name = ch['name'] as String? ?? '';
     final chNum = ch['chapter_number'] as num?;
@@ -1994,6 +2022,7 @@ class _MangaDetailScreenState extends ConsumerState<MangaDetailScreen> {
     final dateUpload = ch['date_upload'] as int? ?? 0;
     final dlStatus = downloadProgress[url];
     final pageProg = _parsePageProgress(dlStatus);
+    final isNewUpdate = !isOpened;
 
     final dateStr = dateUpload > 0
         ? DateFormat.yMMMd().format(
@@ -2023,15 +2052,43 @@ class _MangaDetailScreenState extends ConsumerState<MangaDetailScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
-                    name,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      color: isRead ? c.textTertiary : c.textPrimary,
-                      fontSize: 14,
-                      fontWeight: FontWeight.w500,
-                    ),
+                  Row(
+                    children: [
+                      if (isNewUpdate) ...[
+                        Container(
+                          margin: const EdgeInsets.only(right: 8),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 6,
+                            vertical: 2,
+                          ),
+                          decoration: BoxDecoration(
+                            color: c.accent,
+                            borderRadius: AppSpacing.brPill,
+                          ),
+                          child: const Text(
+                            'NEW',
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontSize: 10,
+                              fontWeight: FontWeight.w700,
+                              letterSpacing: 0.4,
+                            ),
+                          ),
+                        ),
+                      ],
+                      Expanded(
+                        child: Text(
+                          name,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            color: isRead ? c.textTertiary : c.textPrimary,
+                            fontSize: 14,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
                   if (!isRead && lastPageRead > 0)
                     Padding(
@@ -2159,6 +2216,7 @@ class _Header extends StatefulWidget {
   final String url;
   final String sourceName;
   final String lastChapterDate;
+  final String releaseCycle;
   final bool expanded;
   final ValueChanged<bool> onExpandedChanged;
   /// Catalog/nav title used when remote details omit or blank the title.
@@ -2176,6 +2234,7 @@ class _Header extends StatefulWidget {
     required this.url,
     this.sourceName = '',
     this.lastChapterDate = '',
+    this.releaseCycle = 'N/A',
     required this.expanded,
     required this.onExpandedChanged,
     this.fallbackTitle = '',
@@ -2352,13 +2411,22 @@ class _HeaderState extends State<_Header> {
                   ],
                 ),
                 const SizedBox(height: 4),
-                Text(
-                  description,
-                  maxLines: widget.expanded ? null : 4,
-                  overflow: widget.expanded
-                      ? TextOverflow.visible
-                      : TextOverflow.ellipsis,
-                  style: TextStyle(color: widget.c.textSecondary, fontSize: 13),
+                AnimatedSize(
+                  duration: const Duration(milliseconds: 280),
+                  curve: Curves.easeInOutCubic,
+                  alignment: Alignment.topCenter,
+                  child: Text(
+                    description,
+                    key: ValueKey(widget.expanded),
+                    maxLines: widget.expanded ? null : 4,
+                    overflow: widget.expanded
+                        ? TextOverflow.visible
+                        : TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: widget.c.textSecondary,
+                      fontSize: 13,
+                    ),
+                  ),
                 ),
               ],
             ),
@@ -2379,83 +2447,132 @@ class _HeaderState extends State<_Header> {
                   ),
                 ),
                 const SizedBox(height: 8),
-                SingleChildScrollView(
-                  scrollDirection: Axis.horizontal,
-                  child: Row(
-                    children: genre
-                        .split(',')
-                        .map((g) => g.trim())
-                        .where((g) => g.isNotEmpty)
-                        .map(
-                          (g) => Padding(
-                            padding: const EdgeInsets.only(right: 8),
-                            child: Container(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 12,
-                                vertical: 6,
-                              ),
-                              decoration: BoxDecoration(
-                                color: widget.c.surfaceMuted,
-                                borderRadius: AppSpacing.brPill,
-                              ),
-                              child: Text(
-                                '${_genreEmoji(g)}$g',
-                                style: TextStyle(
-                                  color: widget.c.textSecondary,
-                                  fontSize: 13,
-                                ),
-                              ),
-                            ),
-                          ),
+                AnimatedSize(
+                  duration: const Duration(milliseconds: 280),
+                  curve: Curves.easeInOutCubic,
+                  alignment: Alignment.topCenter,
+                  child: widget.expanded
+                      ? LayoutBuilder(
+                          builder: (context, constraints) {
+                            final gap = 8.0;
+                            final tagW =
+                                (constraints.maxWidth - gap * 3) / 4;
+                            final tags = genre
+                                .split(',')
+                                .map((g) => g.trim())
+                                .where((g) => g.isNotEmpty)
+                                .toList();
+                            return Wrap(
+                              spacing: gap,
+                              runSpacing: gap,
+                              children: [
+                                for (final g in tags)
+                                  SizedBox(
+                                    width: tagW,
+                                    child: _tagChip(g),
+                                  ),
+                              ],
+                            );
+                          },
                         )
-                        .toList(),
-                  ),
+                      : SingleChildScrollView(
+                          scrollDirection: Axis.horizontal,
+                          child: Row(
+                            children: genre
+                                .split(',')
+                                .map((g) => g.trim())
+                                .where((g) => g.isNotEmpty)
+                                .map(
+                                  (g) => Padding(
+                                    padding: const EdgeInsets.only(right: 8),
+                                    child: _tagChip(g),
+                                  ),
+                                )
+                                .toList(),
+                          ),
+                        ),
                 ),
               ],
             ),
           ),
         ],
-        const SizedBox(height: 16),
+        const SizedBox(height: 12),
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 16),
-          child: SizedBox(
-            width: double.infinity,
-            child: AnimatedContainer(
-              duration: const Duration(milliseconds: 200),
-              curve: Curves.easeInOut,
-              child: OutlinedButton.icon(
+          child: Row(
+            children: [
+              IconButton(
+                tooltip: widget.inLibrary
+                    ? 'Remove from library'
+                    : 'Add to library',
                 onPressed: widget.inLibrary
                     ? widget.onRemoveFromLibrary
                     : widget.onAddToLibrary,
-                style: OutlinedButton.styleFrom(
-                  side: BorderSide(
-                    color: widget.inLibrary
-                        ? widget.c.accent.withValues(alpha: 0.5)
-                        : widget.c.accent,
-                  ),
+                style: IconButton.styleFrom(
+                  backgroundColor: widget.c.surfaceMuted,
+                  foregroundColor: widget.inLibrary
+                      ? widget.c.accent
+                      : widget.c.textSecondary,
                 ),
                 icon: AnimatedSwitcher(
                   duration: const Duration(milliseconds: 200),
-                  child: widget.inLibrary
-                      ? const Icon(
-                          Icons.favorite,
-                          size: 18,
-                          key: ValueKey('lib-true'),
-                        )
-                      : const Icon(
-                          Icons.favorite_border_rounded,
-                          size: 18,
-                          key: ValueKey('lib-false'),
-                        ),
-                ),
-                label: Text(
-                  widget.inLibrary ? 'Remove from library' : 'Add to library',
+                  child: Icon(
+                    widget.inLibrary
+                        ? Icons.favorite
+                        : Icons.favorite_border_rounded,
+                    key: ValueKey(widget.inLibrary),
+                    size: 22,
+                  ),
                 ),
               ),
-            ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Release cycle',
+                      style: AppType.labelCaps(
+                        fontSize: 11,
+                        color: widget.c.textTertiary,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      widget.releaseCycle,
+                      style: TextStyle(
+                        color: widget.c.textSecondary,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
           ),
         ),
       ],
+    );
+  }
+
+  Widget _tagChip(String g) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      decoration: BoxDecoration(
+        color: widget.c.surfaceMuted,
+        borderRadius: AppSpacing.brPill,
+      ),
+      child: Text(
+        '${_genreEmoji(g)}$g',
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        textAlign: TextAlign.center,
+        style: TextStyle(
+          color: widget.c.textSecondary,
+          fontSize: 13,
+        ),
+      ),
     );
   }
 
