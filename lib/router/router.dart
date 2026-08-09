@@ -137,15 +137,6 @@ final GoRouter appRouter = GoRouter(
         StatefulShellBranch(
           routes: [
             GoRoute(
-              path: '/search',
-              name: Routes.search,
-              builder: (context, state) => const SearchScreen(),
-            ),
-          ],
-        ),
-        StatefulShellBranch(
-          routes: [
-            GoRoute(
               path: '/settings',
               name: Routes.settings,
               builder: (context, state) => const SettingsScreen(),
