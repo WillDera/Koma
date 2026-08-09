@@ -110,9 +110,14 @@ class GlobalSearchFilterChip extends StatelessWidget {
 
 /// Full scrolling body used by [GlobalSearchScreen].
 class GlobalSearchResultsList extends ConsumerWidget {
-  const GlobalSearchResultsList({super.key, this.padding});
+  const GlobalSearchResultsList({super.key, this.padding, this.onMangaTap});
 
   final EdgeInsetsGeometry? padding;
+  final void Function(
+    GlobalSearchSourceItem item,
+    Map<String, dynamic> manga,
+  )?
+  onMangaTap;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -143,7 +148,13 @@ class GlobalSearchResultsList extends ConsumerWidget {
         return GlobalSearchSourceSection(
           item: item,
           onHeaderTap: () => openGlobalSearchSource(context, ref, item),
-          onMangaTap: (m) => openGlobalSearchManga(context, item, m),
+          onMangaTap: (m) {
+            if (onMangaTap != null) {
+              onMangaTap!(item, m);
+            } else {
+              openGlobalSearchManga(context, item, m);
+            }
+          },
         );
       },
     );

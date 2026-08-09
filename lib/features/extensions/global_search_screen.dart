@@ -25,16 +25,16 @@ class _GlobalSearchScreenState extends ConsumerState<GlobalSearchScreen> {
     super.initState();
     _ctrl = TextEditingController(text: widget.initialQuery ?? '');
     final q = widget.initialQuery?.trim() ?? '';
-    if (q.isNotEmpty) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (!mounted) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      // Ensure migrate-only source exclude does not leak into Global Search.
+      ref.read(globalSearchProvider.notifier).setExcludeSourceId(null);
+      if (q.isNotEmpty) {
         ref.read(globalSearchProvider.notifier).search(q);
-      });
-    } else {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) _focus.requestFocus();
-      });
-    }
+      } else {
+        _focus.requestFocus();
+      }
+    });
   }
 
   @override
