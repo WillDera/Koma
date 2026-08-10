@@ -247,8 +247,9 @@ class MProviderBridged {
       'parseDates',
       (visitor, positionalArgs, namedArgs, _) => MBridge.parseDates(
         positionalArgs[0] as List,
-        positionalArgs[1] as String,
-        positionalArgs[2] as String,
+        // Empty-string defaults — extensions call `.isNotEmpty` on these.
+        positionalArgs[1] as String? ?? '',
+        positionalArgs[2] as String? ?? '',
       ),
     );
     interpreter.registertopLevelFunction(

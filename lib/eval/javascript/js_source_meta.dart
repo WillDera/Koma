@@ -28,6 +28,15 @@ Map<String, String> parseMangayomiSourcesHeader(String? sourceCode) {
     ).firstMatch(objectBody);
     if (m != null) out[key] = m.group(1)!;
   }
+  // Numeric mangayomiSources id (Dart extensions pass this as source.id to
+  // getPreferenceValue / prefs); quoted string form also accepted.
+  final idNum = RegExp(r'"id"\s*:\s*(\d+)').firstMatch(objectBody);
+  if (idNum != null) {
+    out['id'] = idNum.group(1)!;
+  } else {
+    final idStr = RegExp(r'"id"\s*:\s*"([^"]*)"').firstMatch(objectBody);
+    if (idStr != null) out['id'] = idStr.group(1)!;
+  }
   // Booleans / bare identifiers (hasCloudflare: true, itemType: 0).
   final cf = RegExp(
     '"hasCloudflare"\\s*:\\s*(true|false)',
