@@ -70,10 +70,15 @@ class _PageCurlViewState extends State<PageCurlView>
   late PageCurlMesh _mesh;
 
   final GlobalKey _currentKey = GlobalKey();
-  final GlobalKey _nextKey = GlobalKey();
+  final GlobalKey _forwardKey = GlobalKey();
+  final GlobalKey _backwardKey = GlobalKey();
 
   ui.Image? _currentSnapshot;
   ui.Image? _nextSnapshot;
+  ui.Image? _preparedCurrent;
+  ui.Image? _preparedForward;
+  ui.Image? _preparedBackward;
+  PageCurlRenderCache? _renderCache;
 
   /// True while a turn is running: pages render as textures, not live widgets.
   bool _capturing = false;
@@ -90,6 +95,7 @@ class _PageCurlViewState extends State<PageCurlView>
       ..onTurnCompleted = _handleCompleted
       ..onTurnCancelled = _handleCancelled;
     _controller.addListener(_handleStateChange);
+    _schedulePreparation();
   }
 
   @override
@@ -100,7 +106,10 @@ class _PageCurlViewState extends State<PageCurlView>
       _mesh.config = widget.config;
     }
     if (widget.pageIndex != old.pageIndex) {
-      _releaseSnapshots();
+      if (!_capturing) {
+        _releasePreparedSnapshots();
+        _schedulePreparation();
+      }
     }
   }
 
@@ -113,14 +122,38 @@ class _PageCurlViewState extends State<PageCurlView>
 
   /// Rasterizes both pages and switches to texture rendering for the turn.
   void _beginCapture() {
-    final current = _snapshot(_currentKey);
-    final next = _snapshot(_nextKey);
+    final edge = _controller.value.edge;
+    final current = _preparedCurrent ?? _snapshot(_currentKey);
+    final next = edge == CurlEdge.right
+        ? (_preparedForward ?? _snapshot(_forwardKey))
+        : (_preparedBackward ?? _snapshot(_backwardKey));
     if (current == null) return;
+    _renderCache?.dispose();
     _currentSnapshot?.dispose();
     _nextSnapshot?.dispose();
     _currentSnapshot = current;
     _nextSnapshot = next;
+    _preparedCurrent = null;
+    if (edge == CurlEdge.right) {
+      _preparedForward = null;
+    } else {
+      _preparedBackward = null;
+    }
+    _releasePreparedSnapshots();
+    _renderCache = PageCurlRenderCache();
     setState(() => _capturing = true);
+  }
+
+  /// Pre-rasterizes all turn participants after idle layout. Most gestures can
+  /// therefore enter their first curl frame without doing GPU readback work.
+  void _schedulePreparation() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || _capturing || _controller.value.active) return;
+      _releasePreparedSnapshots();
+      _preparedCurrent = _snapshot(_currentKey);
+      _preparedForward = _snapshot(_forwardKey);
+      _preparedBackward = _snapshot(_backwardKey);
+    });
   }
 
   /// Synchronously rasterizes a subtree.
@@ -151,13 +184,25 @@ class _PageCurlViewState extends State<PageCurlView>
     // Hold the textures one frame past the swap so the live subtree has a
     // chance to lay out before they are freed — otherwise the page flickers.
     WidgetsBinding.instance.addPostFrameCallback((_) => _releaseSnapshots());
+    _schedulePreparation();
   }
 
   void _releaseSnapshots() {
+    _renderCache?.dispose();
     _currentSnapshot?.dispose();
     _nextSnapshot?.dispose();
     _currentSnapshot = null;
     _nextSnapshot = null;
+    _renderCache = null;
+  }
+
+  void _releasePreparedSnapshots() {
+    _preparedCurrent?.dispose();
+    _preparedForward?.dispose();
+    _preparedBackward?.dispose();
+    _preparedCurrent = null;
+    _preparedForward = null;
+    _preparedBackward = null;
   }
 
   @override
@@ -165,6 +210,7 @@ class _PageCurlViewState extends State<PageCurlView>
     _controller.removeListener(_handleStateChange);
     if (_ownsController) _controller.dispose();
     _releaseSnapshots();
+    _releasePreparedSnapshots();
     super.dispose();
   }
 
@@ -173,10 +219,6 @@ class _PageCurlViewState extends State<PageCurlView>
     final current = widget.pageBuilder(context, widget.pageIndex);
     final forward = widget.pageBuilder(context, widget.pageIndex + 1);
     final backward = widget.pageBuilder(context, widget.pageIndex - 1);
-
-    // Which page is revealed depends on the direction being dragged.
-    final edge = _controller.value.edge;
-    final incoming = edge == CurlEdge.right ? forward : backward;
 
     return LayoutBuilder(
       builder: (context, constraints) {
@@ -192,12 +234,15 @@ class _PageCurlViewState extends State<PageCurlView>
           child: Stack(
             fit: StackFit.expand,
             children: [
-              // The incoming page sits underneath, revealed as the sheet lifts.
-              // Kept in the tree (offstage-ish) so its snapshot is available
-              // the instant a drag starts.
+              // Both neighbours stay painted below the current page. Separate
+              // boundaries make either direction available before pointer-down.
               RepaintBoundary(
-                key: _nextKey,
-                child: incoming ?? const SizedBox.shrink(),
+                key: _backwardKey,
+                child: backward ?? const SizedBox.shrink(),
+              ),
+              RepaintBoundary(
+                key: _forwardKey,
+                child: forward ?? const SizedBox.shrink(),
               ),
 
               // The outgoing page. Hidden during the turn — the painter draws
@@ -222,6 +267,7 @@ class _PageCurlViewState extends State<PageCurlView>
                         config: widget.config,
                         currentPage: _currentSnapshot,
                         nextPage: _nextSnapshot,
+                        cache: _renderCache!,
                       ),
                     ),
                   ),

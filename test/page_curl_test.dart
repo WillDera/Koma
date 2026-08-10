@@ -154,12 +154,40 @@ void main() {
       expect(after.positions.length, greaterThan(before.positions.length));
     });
 
-    test('backside shading differs from the front', () {
+    test('backside shading differs without a second deformation', () {
       final mesh = PageCurlMesh(const PageCurlConfig(backsideDarkening: 0.3));
-      final front = deform(mesh, progress: 0.6, backside: false);
-      final frontColors = List<int>.from(front.colors);
-      final back = deform(mesh, progress: 0.6, backside: true);
-      expect(frontColors, isNot(equals(List<int>.from(back.colors))));
+      final data = deform(mesh, progress: 0.6);
+      expect(data.colors, isNot(equals(data.backsideColors)));
+      expect(data.frontIndices.length, data.backIndices.length);
+      expect(
+        data.backIndices.any((index) => index != 0),
+        isTrue,
+        reason: 'part of a mid-turn sheet should expose its reverse',
+      );
+    });
+
+    test('vertical drag position changes the fold continuously', () {
+      final mesh = PageCurlMesh(const PageCurlConfig());
+      final straight = List<double>.from(
+        deform(
+          mesh,
+          progress: 0.5,
+          drag: const Offset(-180, 0),
+          origin: 350,
+        ).positions,
+      );
+      final diagonal = List<double>.from(
+        deform(
+          mesh,
+          progress: 0.5,
+          drag: const Offset(-180, 160),
+          origin: 100,
+        ).positions,
+      );
+      expect(diagonal, isNot(equals(straight)));
+      for (final value in diagonal) {
+        expect(value.isFinite, isTrue);
+      }
     });
 
     test('silhouette is a closed non-empty outline once curling', () {
@@ -194,6 +222,33 @@ void main() {
         physics.resolve(progress: 0.9, velocity: -1200),
         CurlRelease.cancel,
       );
+    });
+
+    test('moderate release velocity projects the settle both ways', () {
+      expect(
+        physics.resolve(progress: 0.25, velocity: 300, pageWidth: 400),
+        CurlRelease.complete,
+      );
+      expect(
+        physics.resolve(progress: 0.38, velocity: -300, pageWidth: 400),
+        CurlRelease.cancel,
+      );
+    });
+
+    test('catching and reversing a curl is continuous', () {
+      final caught = physics.progressForDragFrom(
+        from: 0.58,
+        dragDistance: 0,
+        pageWidth: 400,
+      );
+      final reversed = physics.progressForDragFrom(
+        from: 0.58,
+        dragDistance: -20,
+        pageWidth: 400,
+      );
+      expect(caught, 0.58);
+      expect(reversed, lessThan(caught));
+      expect((caught - reversed).abs(), lessThan(0.06));
     });
 
     test('drag progress is clamped to 0..1', () {

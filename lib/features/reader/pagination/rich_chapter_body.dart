@@ -121,7 +121,10 @@ class RichChapterBody extends StatelessWidget {
           padding: const EdgeInsets.fromLTRB(14, 10, 12, 10),
           decoration: BoxDecoration(
             border: Border(
-              left: BorderSide(color: c.accent.withValues(alpha: 0.85), width: 3),
+              left: BorderSide(
+                color: c.accent.withValues(alpha: 0.85),
+                width: 3,
+              ),
             ),
             color: c.accent.withValues(alpha: 0.06),
             borderRadius: const BorderRadius.horizontal(
@@ -131,7 +134,8 @@ class RichChapterBody extends StatelessWidget {
           child: _textBlock(
             block,
             baseStyle.copyWith(
-              color: baseStyle.color?.withValues(alpha: 0.88) ?? c.textSecondary,
+              color:
+                  baseStyle.color?.withValues(alpha: 0.88) ?? c.textSecondary,
               fontStyle: FontStyle.italic,
             ),
             c,
@@ -227,27 +231,22 @@ class _BlockImage extends StatelessWidget {
         ? Uri.parse(path).toFilePath()
         : path;
     final file = File(filePath);
-    if (!file.existsSync()) {
-      return Container(
-        height: 72,
-        alignment: Alignment.center,
-        decoration: BoxDecoration(
-          color: c.surfaceMuted,
-          borderRadius: AppSpacing.brSm,
-        ),
-        child: Icon(Icons.broken_image_outlined, color: c.textTertiary),
-      );
-    }
+    final media = MediaQuery.of(context);
+    final decodeWidth = (media.size.width * media.devicePixelRatio).round();
     return ClipRRect(
       borderRadius: BorderRadius.circular(10),
       child: Image.file(
         file,
         fit: BoxFit.contain,
         width: double.infinity,
+        cacheWidth: decodeWidth > 0 ? decodeWidth : null,
         errorBuilder: (_, _, _) => Container(
           height: 72,
           alignment: Alignment.center,
-          color: c.surfaceMuted,
+          decoration: BoxDecoration(
+            color: c.surfaceMuted,
+            borderRadius: AppSpacing.brSm,
+          ),
           child: Icon(Icons.broken_image_outlined, color: c.textTertiary),
         ),
       ),
