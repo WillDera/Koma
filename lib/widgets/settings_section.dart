@@ -4,15 +4,16 @@ import '../theme/tokens/app_spacing.dart';
 import 'animated_press.dart';
 import 'divider_hairline.dart';
 
-/// A wrapper used for Settings screen sections. Provides consistent card
-/// styling (surface, hairline border, 18px radius) and a section header
-/// above.
+/// A wrapper used for Settings screen sections. Figma "ReadLoom" styling:
+/// flat surface card (16px radius, hairline border) with a small uppercase
+/// section header above.
 class SettingsSection extends StatelessWidget {
   final String title;
   final List<Widget> children;
   final EdgeInsets padding;
   final bool showHeader;
   final String? footer;
+  final Color? headerColor;
 
   const SettingsSection({
     super.key,
@@ -21,12 +22,12 @@ class SettingsSection extends StatelessWidget {
     this.padding = const EdgeInsets.symmetric(horizontal: 20),
     this.showHeader = true,
     this.footer,
+    this.headerColor,
   });
 
   @override
   Widget build(BuildContext context) {
     final c = context.colors;
-    final isDark = Theme.of(context).brightness == Brightness.dark;
     return Padding(
       padding: padding,
       child: Column(
@@ -38,7 +39,7 @@ class SettingsSection extends StatelessWidget {
               child: Text(
                 title.toUpperCase(),
                 style: TextStyle(
-                  color: c.textTertiary,
+                  color: headerColor ?? c.textTertiary,
                   fontSize: 11,
                   fontWeight: FontWeight.w600,
                   letterSpacing: 0.8,
@@ -47,21 +48,9 @@ class SettingsSection extends StatelessWidget {
             ),
           Container(
             decoration: BoxDecoration(
-              color: c.surface.withValues(alpha: isDark ? 0.80 : 0.94),
-              borderRadius: AppSpacing.brXl,
-              border: Border.all(
-                color: c.border.withValues(alpha: isDark ? 0.9 : 0.66),
-                width: 0.5,
-              ),
-              boxShadow: AppSpacing.shadow2(isDark: isDark),
-              gradient: LinearGradient(
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-                colors: [
-                  c.surface.withValues(alpha: 0.98),
-                  c.surfaceMuted.withValues(alpha: isDark ? 0.30 : 0.44),
-                ],
-              ),
+              color: c.surface,
+              borderRadius: AppSpacing.brLg,
+              border: Border.all(color: c.border, width: 0.5),
             ),
             child: Column(children: _withDividers(children)),
           ),
@@ -100,8 +89,8 @@ class SettingsSection extends StatelessWidget {
   }
 }
 
-/// A row inside a settings section. Various combinations of leading icon,
-/// title, subtitle, trailing widget, and onTap.
+/// A row inside a settings section. Figma menu-row styling: rounded-xl
+/// icon tile tinted with [iconColor], 14px/w500 title, 11px muted subtitle.
 class SettingsRow extends StatelessWidget {
   final IconData? icon;
   final String title;
@@ -109,6 +98,7 @@ class SettingsRow extends StatelessWidget {
   final Widget? trailing;
   final VoidCallback? onTap;
   final bool destructive;
+  final Color? iconColor;
 
   const SettingsRow({
     super.key,
@@ -118,15 +108,16 @@ class SettingsRow extends StatelessWidget {
     this.trailing,
     this.onTap,
     this.destructive = false,
+    this.iconColor,
   });
 
   @override
   Widget build(BuildContext context) {
     final c = context.colors;
     final fg = destructive ? const Color(0xFFC44C4C) : c.textPrimary;
-    final iconColor = destructive
+    final tint = destructive
         ? const Color(0xFFC44C4C)
-        : (icon != null ? c.textSecondary : null);
+        : (iconColor ?? c.accent);
 
     final row = Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
@@ -134,17 +125,15 @@ class SettingsRow extends StatelessWidget {
         children: [
           if (icon != null) ...[
             Container(
-              width: 34,
-              height: 34,
+              width: 36,
+              height: 36,
               decoration: BoxDecoration(
-                color: destructive
-                    ? const Color(0xFFC44C4C).withValues(alpha: 0.12)
-                    : c.accentMuted.withValues(alpha: 0.62),
-                borderRadius: AppSpacing.brSm,
+                color: tint.withValues(alpha: 0.13),
+                borderRadius: AppSpacing.brMd,
               ),
-              child: Icon(icon, size: 18, color: iconColor),
+              child: Icon(icon, size: 18, color: tint),
             ),
-            const SizedBox(width: 14),
+            const SizedBox(width: 12),
           ],
           Expanded(
             child: Column(
@@ -155,7 +144,7 @@ class SettingsRow extends StatelessWidget {
                   title,
                   style: TextStyle(
                     color: fg,
-                    fontSize: 15,
+                    fontSize: 14,
                     fontWeight: FontWeight.w500,
                   ),
                 ),
@@ -165,7 +154,7 @@ class SettingsRow extends StatelessWidget {
                     subtitle!,
                     style: TextStyle(
                       color: c.textSecondary,
-                      fontSize: 12,
+                      fontSize: 11,
                       height: 1.4,
                     ),
                   ),

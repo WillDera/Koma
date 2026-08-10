@@ -25,9 +25,9 @@ class AppSpacing {
   static const EdgeInsets cardLg = EdgeInsets.all(xl);
   static const EdgeInsets sheetLg = EdgeInsets.fromLTRB(xl, lg, xl, xxl);
 
-  // ─── Border radii (Figma scale: xl=12 covers/inputs, 2xl=16 cards) ────
+  // ─── Border radii (Figma: xl=12 covers/inputs/buttons, 2xl=16 sheets) ─
   static const double radiusXs = 6;
-  static const double radiusSm = 10;
+  static const double radiusSm = 8;
   static const double radiusMd = 12;
   static const double radiusLg = 16;
   static const double radiusXl = 20;

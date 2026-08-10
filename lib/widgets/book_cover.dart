@@ -41,7 +41,7 @@ class BookCover extends StatelessWidget {
         borderRadius ??
         switch (variant) {
           BookCoverVariant.grid => AppSpacing.brMd,
-          BookCoverVariant.list => AppSpacing.brSm,
+          BookCoverVariant.list => AppSpacing.brMd,
           BookCoverVariant.hero => AppSpacing.brLg,
           BookCoverVariant.compact => AppSpacing.brSm,
         };
@@ -69,7 +69,8 @@ class BookCover extends StatelessWidget {
       );
     }
     if (variant == BookCoverVariant.list) {
-      return SizedBox(width: 44, height: 64, child: child);
+      // Figma list row thumbnails: 52×74.
+      return SizedBox(width: 52, height: 74, child: child);
     }
     return SizedBox(width: 32, height: 44, child: child);
   }
