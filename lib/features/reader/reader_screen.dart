@@ -507,11 +507,17 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
       _provider?.updateScrollPosition(currentOffset);
 
       // Hide UI chrome while scrolling down, show on scroll up.
+      // Only transition chrome / SystemChrome on the edge — calling
+      // setEnabledSystemUIMode on every scroll-up tick makes flings stutter.
       final diff = currentOffset - _lastScrollOffset;
       if (diff > 8 && currentOffset > 80) {
         if (_showUI.value) {
           _showUI.value = false;
-          _hideToolbar();
+          if (_toolbarVisible) {
+            _hideToolbar();
+          } else {
+            _applySystemUiMode();
+          }
         }
         _lastScrollOffset = currentOffset;
       } else if (diff < -4 || currentOffset <= 0) {
@@ -519,7 +525,6 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
           _showUI.value = true;
           _resetUiHideTimer();
         }
-        _applySystemUiMode();
         _lastScrollOffset = currentOffset;
       }
     }
@@ -596,6 +601,7 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
   }
 
   void _hideToolbar() {
+    if (!_toolbarVisible && !_colorPickerVisible) return;
     _selectionLostTimer?.cancel();
     _selectionLostTimer = null;
     _toolbarCtrl.reverse();
@@ -777,6 +783,7 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
                           onNotification: _onScrollNotification,
                           child: SingleChildScrollView(
                             controller: _scrollController,
+                            primary: false,
                             padding: EdgeInsets.fromLTRB(
                               _horizontalPadding(themeProv.pageWidth),
                               MediaQuery.of(context).padding.top + 32,
@@ -820,87 +827,95 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
                                         ),
                                       );
                                     },
-                                    child: Column(
+                                    child: RepaintBoundary(
                                       key: ValueKey('chapter-${chapter.id}'),
-                                      crossAxisAlignment:
-                                          CrossAxisAlignment.start,
-                                      children: [
-                                        // Chapter title
-                                        Text(
-                                          chapter.title,
-                                          style:
-                                              AppType.reading(
-                                                fontSize: themeProv.fontSize,
-                                                lineHeight:
-                                                    themeProv.lineHeight,
-                                                color:
-                                                    context.colors.textTertiary,
-                                              ).copyWith(
-                                                fontStyle: FontStyle.italic,
-                                                fontWeight: FontWeight.w500,
-                                                letterSpacing: 0.1,
-                                              ),
-                                        ),
-                                        const SizedBox(height: 28),
-                                        ListenableBuilder(
-                                          listenable: Listenable.merge([
-                                            _ttsProvider!,
-                                            _focusCtrl,
-                                          ]),
-                                          builder: (_, _) {
-                                            final doc =
-                                                TextExtractor.documentCached(
-                                                  chapter.id,
-                                                  chapter.content,
-                                                );
-                                            return RichChapterBody(
-                                              document: doc,
-                                              themeProv: themeProv,
-                                              baseStyle: _readingStyle(
-                                                themeProv,
-                                              ),
-                                              brightness: Theme.of(
-                                                context,
-                                              ).brightness,
-                                              highlights: _highlights,
-                                              ttsActive:
-                                                  _ttsProvider?.isActive ??
-                                                  false,
-                                              ttsStart:
-                                                  _ttsProvider
-                                                      ?.currentSentenceOffset ??
-                                                  0,
-                                              ttsEnd:
-                                                  _ttsProvider
-                                                      ?.currentSentenceEnd ??
-                                                  0,
-                                              focusStart: _focusStart,
-                                              focusEnd: _focusEnd,
-                                              focusAlpha: _focusAlpha,
-                                              contentKey:
-                                                  'content-$_highlightVersion-${chapter.id}',
-                                              textAlign: themeProv.textAlign,
-                                              onSelectionChanged: (selection) {
-                                                final content = doc.plainText;
-                                                if (selection.end <=
-                                                    content.length) {
-                                                  _selStart = selection.start;
-                                                  _selectedText = content
-                                                      .substring(
-                                                        selection.start,
-                                                        selection.end,
-                                                      );
-                                                  _showToolbar(Offset.zero);
-                                                }
-                                              },
-                                              onSelectionCleared:
-                                                  _hideToolbarOnSelectionLost,
-                                            );
-                                          },
-                                        ),
-                                        const SizedBox(height: 80),
-                                      ],
-                                    ), // Column
+                                      child: Column(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
+                                        children: [
+                                          // Chapter title
+                                          Text(
+                                            chapter.title,
+                                            style:
+                                                AppType.reading(
+                                                  fontSize: themeProv.fontSize,
+                                                  lineHeight:
+                                                      themeProv.lineHeight,
+                                                  color: context
+                                                      .colors
+                                                      .textTertiary,
+                                                ).copyWith(
+                                                  fontStyle: FontStyle.italic,
+                                                  fontWeight: FontWeight.w500,
+                                                  letterSpacing: 0.1,
+                                                ),
+                                          ),
+                                          const SizedBox(height: 28),
+                                          ListenableBuilder(
+                                            listenable: Listenable.merge([
+                                              _ttsProvider!,
+                                              _focusCtrl,
+                                            ]),
+                                            builder: (_, _) {
+                                              final doc =
+                                                  TextExtractor.documentCached(
+                                                    chapter.id,
+                                                    chapter.content,
+                                                  );
+                                              return RichChapterBody(
+                                                document: doc,
+                                                themeProv: themeProv,
+                                                baseStyle: _readingStyle(
+                                                  themeProv,
+                                                ),
+                                                brightness: Theme.of(
+                                                  context,
+                                                ).brightness,
+                                                highlights: _highlights,
+                                                ttsActive:
+                                                    _ttsProvider?.isActive ??
+                                                    false,
+                                                ttsStart:
+                                                    _ttsProvider
+                                                        ?.currentSentenceOffset ??
+                                                    0,
+                                                ttsEnd:
+                                                    _ttsProvider
+                                                        ?.currentSentenceEnd ??
+                                                    0,
+                                                focusStart: _focusStart,
+                                                focusEnd: _focusEnd,
+                                                focusAlpha: _focusAlpha,
+                                                contentKey:
+                                                    'content-$_highlightVersion-${chapter.id}',
+                                                textAlign: themeProv.textAlign,
+                                                onSelectionChanged:
+                                                    (selection) {
+                                                      final content =
+                                                          doc.plainText;
+                                                      if (selection.end <=
+                                                          content.length) {
+                                                        _selStart =
+                                                            selection.start;
+                                                        _selectedText = content
+                                                            .substring(
+                                                              selection.start,
+                                                              selection.end,
+                                                            );
+                                                        _showToolbar(
+                                                          Offset.zero,
+                                                        );
+                                                      }
+                                                    },
+                                                onSelectionCleared:
+                                                    _hideToolbarOnSelectionLost,
+                                              );
+                                            },
+                                          ),
+                                          const SizedBox(height: 80),
+                                        ],
+                                      ),
+                                    ), // RepaintBoundary
                                   ), // AnimatedSwitcher
                                 ), // ClipRect
                               ), // ConstrainedBox

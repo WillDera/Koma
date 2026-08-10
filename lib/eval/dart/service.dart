@@ -87,22 +87,29 @@ class DartExtensionService implements ExtensionService {
 
   dart_source.MSource _toDartMSource(MSource source) {
     final meta = parseMangayomiSourcesHeader(source.sourceCode);
-    final id = int.tryParse(source.id) ?? int.tryParse(source.sourceId);
+    // Prefer persisted int id, else mangayomiSources header id. Catalog pkg
+    // strings (non-numeric) must not leave source.id null — Dart extensions
+    // call getPreferenceValue(source.id, …) and index prefs by that id.
+    final id = int.tryParse(source.id) ??
+        int.tryParse(source.sourceId) ??
+        int.tryParse(meta['id'] ?? '');
+    // Match mangayomi Source.toMSource() / JS bridge: missing meta fields
+    // must be empty strings, never null. Dart extensions commonly call
+    // `source.dateFormat.isNotEmpty` in getDetail when parsing chapter dates.
     final baseUrl = source.baseUrl.isNotEmpty
         ? source.baseUrl
         : (meta['baseUrl'] ?? '');
     final apiUrl = (source.apiUrl != null && source.apiUrl!.isNotEmpty)
         ? source.apiUrl
-        : (meta['apiUrl']?.isNotEmpty == true ? meta['apiUrl'] : null);
-    final dateFormat = (source.dateFormat != null && source.dateFormat!.isNotEmpty)
-        ? source.dateFormat
-        : (meta['dateFormat']?.isNotEmpty == true ? meta['dateFormat'] : null);
+        : (meta['apiUrl'] ?? '');
+    final dateFormat =
+        (source.dateFormat != null && source.dateFormat!.isNotEmpty)
+            ? source.dateFormat
+            : (meta['dateFormat'] ?? '');
     final dateFormatLocale =
         (source.dateFormatLocale != null && source.dateFormatLocale!.isNotEmpty)
             ? source.dateFormatLocale
-            : (meta['dateFormatLocale']?.isNotEmpty == true
-                ? meta['dateFormatLocale']
-                : null);
+            : (meta['dateFormatLocale'] ?? '');
     return dart_source.MSource(
       id: id,
       name: source.name,
