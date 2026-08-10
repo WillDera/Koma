@@ -106,6 +106,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
 
   Future<void> _search(String query) async {
     _debounce?.cancel();
+    _focusNode.unfocus();
     setState(() => _query = query);
     if (query.trim().isEmpty) {
       _searchGen++;

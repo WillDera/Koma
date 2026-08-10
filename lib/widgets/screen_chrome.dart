@@ -15,7 +15,12 @@ class ScreenBackdrop extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return ColoredBox(color: context.colors.bg, child: child);
+    // Material ancestor required by TextField / ink widgets on overlay
+    // routes that sit above the shell without a Scaffold (e.g. Search).
+    return Material(
+      color: context.colors.bg,
+      child: child,
+    );
   }
 }
 

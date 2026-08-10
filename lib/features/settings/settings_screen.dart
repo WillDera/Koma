@@ -2256,16 +2256,32 @@ class _AboutSection extends StatelessWidget {
                   height: 72,
                   decoration: BoxDecoration(
                     borderRadius: BorderRadius.circular(22),
-                    gradient: const LinearGradient(
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
-                      colors: [AppColors.figmaViolet, AppColors.figmaCyan],
-                    ),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withValues(alpha: 0.18),
+                        blurRadius: 12,
+                        offset: const Offset(0, 4),
+                      ),
+                    ],
                   ),
-                  child: const Icon(
-                    Icons.menu_book_rounded,
-                    size: 34,
-                    color: Colors.white,
+                  clipBehavior: Clip.antiAlias,
+                  child: Image.asset(
+                    'app_icons/hon.png',
+                    fit: BoxFit.cover,
+                    errorBuilder: (_, error, stackTrace) => Container(
+                      decoration: const BoxDecoration(
+                        gradient: LinearGradient(
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
+                          colors: [AppColors.figmaViolet, AppColors.figmaCyan],
+                        ),
+                      ),
+                      child: const Icon(
+                        Icons.menu_book_rounded,
+                        size: 34,
+                        color: Colors.white,
+                      ),
+                    ),
                   ),
                 ),
                 const SizedBox(height: 14),
@@ -2280,7 +2296,7 @@ class _AboutSection extends StatelessWidget {
                 ),
                 const SizedBox(height: 4),
                 Text(
-                  'Version 2.37.4 · build 2.37.4+271',
+                  'Version 2.37.5 · build 2.37.5+272',
                   style: TextStyle(color: c.textSecondary, fontSize: 13),
                 ),
                 const SizedBox(height: 10),
@@ -2375,7 +2391,7 @@ class _AboutSection extends StatelessWidget {
               icon: Icons.info_outline,
               iconColor: _muted,
               title: 'Koma',
-              subtitle: 'Version 2.37.4 · build 2.37.4+271',
+              subtitle: 'Version 2.37.5 · build 2.37.5+272',
             ),
             SettingsRow(
               icon: Icons.favorite_outline,

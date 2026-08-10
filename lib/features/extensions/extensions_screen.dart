@@ -4,7 +4,6 @@ import 'package:collection/collection.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:go_router/go_router.dart';
 
 import '../../core/models/extension_repo.dart';
 import '../../core/models/extension_source.dart';
@@ -14,7 +13,6 @@ import '../../core/services/extension_manager.dart';
 import '../../core/services/keiyoushi_service.dart';
 import '../../core/utils/custom_extended_image_provider.dart';
 import '../../core/utils/language.dart';
-import '../../router/router.dart';
 import '../../theme/app_icons.dart';
 import '../../theme/app_theme.dart';
 import '../../theme/theme_provider.dart';
@@ -74,6 +72,15 @@ class _ExtensionsScreenState extends ConsumerState<ExtensionsScreen>
   final Map<int, List<ExtensionIndexEntry>> _indexCache = {};
   final Set<int> _loadingIndex = {};
   String? _error;
+
+  /// Available-tab local filters (independent of Settings NSFW prefs).
+  bool _availShowNsfw = false;
+  String _availLang = 'all';
+  final Set<String> _availTypes = {
+    SourceCodeLanguage.mihon,
+    SourceCodeLanguage.js,
+    SourceCodeLanguage.dart,
+  };
 
   @override
   void initState() {
@@ -579,6 +586,143 @@ class _ExtensionsScreenState extends ConsumerState<ExtensionsScreen>
     }
   }
 
+  void _openAvailableFilter() {
+    var showNsfw = _availShowNsfw;
+    var lang = _availLang;
+    final types = Set<String>.from(_availTypes);
+    final c = context.colors;
+    showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: c.surface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (ctx, setSheet) {
+            Widget typeChip(String value, String label) {
+              final selected = types.contains(value);
+              return FilterChip(
+                label: Text(label),
+                selected: selected,
+                onSelected: (v) {
+                  setSheet(() {
+                    if (v) {
+                      types.add(value);
+                    } else if (types.length > 1) {
+                      types.remove(value);
+                    }
+                  });
+                },
+              );
+            }
+
+            return Padding(
+              padding: const EdgeInsets.fromLTRB(20, 12, 20, 28),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Center(
+                    child: Container(
+                      width: 36,
+                      height: 4,
+                      decoration: BoxDecoration(
+                        color: c.textTertiary,
+                        borderRadius: BorderRadius.circular(99),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  Text(
+                    'Filter available',
+                    style: TextStyle(
+                      color: c.textPrimary,
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  SwitchListTile(
+                    contentPadding: EdgeInsets.zero,
+                    title: Text(
+                      'Show NSFW',
+                      style: TextStyle(color: c.textPrimary),
+                    ),
+                    value: showNsfw,
+                    onChanged: (v) => setSheet(() => showNsfw = v),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    'Language',
+                    style: TextStyle(
+                      color: c.textTertiary,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: [
+                      for (final code in _allowedLanguages)
+                        ChoiceChip(
+                          label: Text(
+                            code == 'all'
+                                ? 'All'
+                                : completeLanguageName(code),
+                          ),
+                          selected: lang == code,
+                          onSelected: (_) => setSheet(() => lang = code),
+                        ),
+                    ],
+                  ),
+                  const SizedBox(height: 16),
+                  Text(
+                    'Type',
+                    style: TextStyle(
+                      color: c.textTertiary,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: [
+                      typeChip(SourceCodeLanguage.mihon, 'Mihon'),
+                      typeChip(SourceCodeLanguage.dart, 'Dart'),
+                      typeChip(SourceCodeLanguage.js, 'JS'),
+                    ],
+                  ),
+                  const SizedBox(height: 20),
+                  SizedBox(
+                    width: double.infinity,
+                    child: FilledButton(
+                      onPressed: () {
+                        setState(() {
+                          _availShowNsfw = showNsfw;
+                          _availLang = lang;
+                          _availTypes
+                            ..clear()
+                            ..addAll(types);
+                        });
+                        Navigator.pop(ctx);
+                      },
+                      child: const Text('Apply'),
+                    ),
+                  ),
+                ],
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final c = context.colors;
@@ -591,9 +735,9 @@ class _ExtensionsScreenState extends ConsumerState<ExtensionsScreen>
         iconTheme: IconThemeData(color: c.textPrimary),
         actions: [
           IconButton(
-            tooltip: 'Global search',
-            icon: Icon(Icons.travel_explore, color: c.textPrimary),
-            onPressed: () => context.pushNamed(Routes.globalSearch),
+            tooltip: 'Filter available extensions',
+            icon: Icon(Icons.filter_list_rounded, color: c.textPrimary),
+            onPressed: _openAvailableFilter,
           ),
         ],
         bottom: TabBar(
@@ -647,7 +791,9 @@ class _ExtensionsScreenState extends ConsumerState<ExtensionsScreen>
                   indexCache: _indexCache,
                   loading: _loadingIndex,
                   installed: _installed,
-                  showNsfw: theme.showNsfwExtensions,
+                  showNsfw: _availShowNsfw,
+                  langFilter: _availLang,
+                  typeFilters: _availTypes,
                   showObsolete: theme.showObsoleteExtensions,
                   onFetch: _fetchIndex,
                   onInstall: _install,
@@ -1089,6 +1235,8 @@ class _AvailableTab extends StatefulWidget {
   final Set<int> loading;
   final List<ExtensionSource> installed;
   final bool showNsfw;
+  final String langFilter;
+  final Set<String> typeFilters;
   final bool showObsolete;
   final void Function(ExtensionRepo) onFetch;
   final void Function(ExtensionIndexEntry, ExtensionRepo) onInstall;
@@ -1100,6 +1248,8 @@ class _AvailableTab extends StatefulWidget {
     required this.loading,
     required this.installed,
     required this.showNsfw,
+    required this.langFilter,
+    required this.typeFilters,
     required this.showObsolete,
     required this.onFetch,
     required this.onInstall,
@@ -1111,7 +1261,8 @@ class _AvailableTab extends StatefulWidget {
 }
 
 /// Languages to show in the extension browser.
-const _allowedLanguages = {'all', 'en', 'es', 'fr', 'it', 'la', 'nl'};
+const _allowedLanguages = ['all', 'en', 'es', 'fr', 'it', 'la', 'nl'];
+const _allowedLanguageSet = {'all', 'en', 'es', 'fr', 'it', 'la', 'nl'};
 
 class _AvailableTabState extends State<_AvailableTab> {
   final _searchCtrl = TextEditingController();
@@ -1171,6 +1322,8 @@ class _AvailableTabState extends State<_AvailableTab> {
       _expandedRepos.length,
       showNsfw,
       showObsolete,
+      widget.langFilter,
+      Object.hashAll(widget.typeFilters),
     );
     if (_cachedRows != null && _rowsCacheKey == key) return _cachedRows!;
     _cachedRows = _buildRows(showNsfw: showNsfw, showObsolete: showObsolete);
@@ -1203,11 +1356,20 @@ class _AvailableTabState extends State<_AvailableTab> {
     final notInstalledEntries = <_EntryWithRepo>[];
 
     for (final er in filtered) {
-      if (!_allowedLanguages.contains(er.entry.lang.toLowerCase())) continue;
       final entry = er.entry;
+      final lang = entry.lang.toLowerCase();
+      if (!_allowedLanguageSet.contains(lang)) continue;
+      if (widget.langFilter != 'all' && lang != widget.langFilter) continue;
       if (entry.sources.isEmpty && !entry.isJs && !entry.isDart) continue;
       if (!showNsfw && entry.isNsfw) continue;
       if (!showObsolete && entry.isObsolete) continue;
+      final typeOk = widget.typeFilters.isEmpty ||
+          (entry.isMihon &&
+              widget.typeFilters.contains(SourceCodeLanguage.mihon)) ||
+          (entry.isJs && widget.typeFilters.contains(SourceCodeLanguage.js)) ||
+          (entry.isDart &&
+              widget.typeFilters.contains(SourceCodeLanguage.dart));
+      if (!typeOk) continue;
       notInstalledEntries.add(er);
     }
 
