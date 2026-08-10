@@ -20,6 +20,7 @@ import '../../widgets/icon_button_round.dart';
 import '../../widgets/library_header.dart';
 import '../../widgets/loading_skeleton.dart';
 import '../../widgets/one_hand_spacer.dart';
+import '../../widgets/horizontal_tab_swipe.dart';
 import '../../widgets/screen_chrome.dart';
 import '../../widgets/segmented_control.dart';
 import '../../widgets/snippet_card.dart';
@@ -114,22 +115,35 @@ class _SnippetsScreenState extends ConsumerState<SnippetsScreen> {
     final bp = ref.watch(bookmarksProvider);
     final navClearance = MediaQuery.paddingOf(context).bottom + 84;
     return ScreenBackdrop(
-      child: Stack(
-        children: [
-          SafeArea(bottom: false, child: _body(context, p, bp)),
-          if (!p.selectionMode && _tab == 0)
-            Positioned(
-              left: leftHanded ? 20 : null,
-              right: leftHanded ? null : 20,
-              bottom: navClearance,
-              child: AethelgardFab(
-                iconData: AppIcons.add,
-                onPressed: () => _createSnippet(context),
+      child: HorizontalTabSwipe(
+        tabIndex: _tab,
+        tabCount: 2,
+        onTabChanged: _setTab,
+        child: Stack(
+          children: [
+            SafeArea(bottom: false, child: _body(context, p, bp)),
+            if (!p.selectionMode && _tab == 0)
+              Positioned(
+                left: leftHanded ? 20 : null,
+                right: leftHanded ? null : 20,
+                bottom: navClearance,
+                child: AethelgardFab(
+                  iconData: AppIcons.add,
+                  onPressed: () => _createSnippet(context),
+                ),
               ),
-            ),
-        ],
+          ],
+        ),
       ),
     );
+  }
+
+  void _setTab(int v) {
+    if (_tab == v) return;
+    setState(() => _tab = v);
+    if (v == 1) {
+      ref.read(bookmarksProvider.notifier).loadBookmarks();
+    }
   }
 
   Widget _body(BuildContext context, SnippetsState p, BookmarksState bp) {
@@ -168,12 +182,7 @@ class _SnippetsScreenState extends ConsumerState<SnippetsScreen> {
       child: SegmentedControl<int>(
         segments: const {0: 'Snippets', 1: 'Bookmarks'},
         value: _tab,
-        onChanged: (v) {
-          setState(() => _tab = v);
-          if (v == 1) {
-            ref.read(bookmarksProvider.notifier).loadBookmarks();
-          }
-        },
+        onChanged: _setTab,
       ),
     );
   }
@@ -225,6 +234,8 @@ class _SnippetsScreenState extends ConsumerState<SnippetsScreen> {
             child: TextField(
               controller: _searchCtrl,
               onChanged: (v) => setState(() => _searchQuery = v),
+              onSubmitted: (_) => FocusScope.of(context).unfocus(),
+              textInputAction: TextInputAction.search,
               decoration: InputDecoration(
                 hintText: 'Search snippets...',
                 prefixIcon: const Icon(Icons.search, size: 18),
@@ -234,6 +245,7 @@ class _SnippetsScreenState extends ConsumerState<SnippetsScreen> {
                         onPressed: () {
                           _searchCtrl.clear();
                           setState(() => _searchQuery = '');
+                          FocusScope.of(context).unfocus();
                         },
                       )
                     : null,
@@ -717,20 +729,28 @@ class _SnippetsScreenState extends ConsumerState<SnippetsScreen> {
     final repos = ref.read(repositoriesProvider);
     final chapter = await repos.manga.getMangaChapter(bookmark.chapterId);
     if (chapter == null || !context.mounted) return;
-    final book = await repos.books.getBook(bookmark.bookId);
-    if (book == null || !context.mounted) return;
+    // Bookmarks store manga ids in [Bookmark.bookId] — look up manga, not ebook.
+    final manga = await repos.manga.getMangaById(bookmark.bookId);
+    if (manga == null || !context.mounted) {
+      if (context.mounted) {
+        StashToast.show(
+          context,
+          message: 'Manga no longer in library',
+          icon: Icons.error_outline,
+        );
+      }
+      return;
+    }
     context.pushNamed(
       Routes.mangaReader,
-      extra:
-          (
-                mangaId: bookmark.bookId,
-                sourceId: book.source,
-                mangaUrl: book.sourceUrl ?? '',
-                chapterUrl: chapter.url,
-                chapterName: chapter.name,
-                pageNumber: bookmark.pageNumber,
-              )
-              as MangaReaderArgs,
+      extra: (
+        mangaId: bookmark.bookId,
+        sourceId: manga.sourceId,
+        mangaUrl: manga.url,
+        chapterUrl: chapter.url,
+        chapterName: chapter.name,
+        pageNumber: bookmark.pageNumber,
+      ),
     );
   }
 

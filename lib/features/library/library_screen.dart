@@ -40,6 +40,7 @@ import '../../widgets/loading_skeleton.dart';
 import '../../widgets/one_hand_spacer.dart';
 import '../../widgets/premium_button.dart';
 import '../../widgets/screen_chrome.dart';
+import '../../widgets/horizontal_tab_swipe.dart';
 import '../../widgets/segmented_control.dart';
 import '../../widgets/toast.dart';
 import 'library_provider.dart';
@@ -300,79 +301,91 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> with RouteAware {
 
   // ── Normal content (scrolling includes spacer → header → grid/list) ──
 
+  void _setSection(_LibrarySection section) {
+    if (_section == section) return;
+    setState(() => _section = section);
+  }
+
   Widget _combined(BuildContext context, LibraryState provider) {
-    return RefreshIndicator(
-      color: context.colors.accent,
-      backgroundColor: context.colors.surface,
-      onRefresh: () => ref.read(libraryProvider.notifier).loadBooks(),
-      child: CustomScrollView(
-        controller: _scrollCtrl,
-        physics: const AlwaysScrollableScrollPhysics(),
-        slivers: [
-          const SliverToBoxAdapter(child: OneHandSpacer()),
-          SliverToBoxAdapter(child: _header(context, provider)),
-          SliverToBoxAdapter(
-            child: _LibraryControls(
-              section: _section,
-              bookCount: provider.books.length,
-              mangaCount: provider.mangas.length,
-              onSectionChanged: (section) => setState(() => _section = section),
+    return HorizontalTabSwipe(
+      tabIndex: _section == _LibrarySection.books ? 0 : 1,
+      tabCount: 2,
+      onTabChanged: (i) => _setSection(
+        i == 0 ? _LibrarySection.books : _LibrarySection.manga,
+      ),
+      child: RefreshIndicator(
+        color: context.colors.accent,
+        backgroundColor: context.colors.surface,
+        onRefresh: () => ref.read(libraryProvider.notifier).loadBooks(),
+        child: CustomScrollView(
+          controller: _scrollCtrl,
+          physics: const AlwaysScrollableScrollPhysics(),
+          slivers: [
+            const SliverToBoxAdapter(child: OneHandSpacer()),
+            SliverToBoxAdapter(child: _header(context, provider)),
+            SliverToBoxAdapter(
+              child: _LibraryControls(
+                section: _section,
+                bookCount: provider.books.length,
+                mangaCount: provider.mangas.length,
+                onSectionChanged: _setSection,
+              ),
             ),
-          ),
-          if (_section == _LibrarySection.books)
-            _BookShelf(
-              key: const ValueKey('books-shelf'),
-              books: _visibleBooks(provider.books),
-              provider: provider,
-              notifier: ref.read(libraryProvider.notifier),
-              showSourcePills: provider.showSourcePills,
-              onOpen: (id) => openBookFromCollection(context, id),
-              onBookLongPress: _showBookActions,
-            )
-          else ...[
-            if (_mangaSearchCtrl.text.trim().isNotEmpty)
-              SliverToBoxAdapter(
-                child: Padding(
-                  padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
-                  child: ListTile(
-                    contentPadding: EdgeInsets.zero,
-                    leading: Icon(
-                      Icons.travel_explore,
-                      color: context.colors.accent,
-                    ),
-                    title: Text(
-                      'Search globally for “${_mangaSearchCtrl.text.trim()}”',
-                      style: TextStyle(
-                        color: context.colors.textPrimary,
-                        fontSize: 14,
-                        fontWeight: FontWeight.w500,
+            if (_section == _LibrarySection.books)
+              _BookShelf(
+                key: const ValueKey('books-shelf'),
+                books: _visibleBooks(provider.books),
+                provider: provider,
+                notifier: ref.read(libraryProvider.notifier),
+                showSourcePills: provider.showSourcePills,
+                onOpen: (id) => openBookFromCollection(context, id),
+                onBookLongPress: _showBookActions,
+              )
+            else ...[
+              if (_mangaSearchCtrl.text.trim().isNotEmpty)
+                SliverToBoxAdapter(
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
+                    child: ListTile(
+                      contentPadding: EdgeInsets.zero,
+                      leading: Icon(
+                        Icons.travel_explore,
+                        color: context.colors.accent,
                       ),
-                    ),
-                    trailing: Icon(
-                      Icons.chevron_right,
-                      color: context.colors.textTertiary,
-                    ),
-                    onTap: () => context.pushNamed(
-                      Routes.globalSearch,
-                      extra: _mangaSearchCtrl.text.trim(),
+                      title: Text(
+                        'Search globally for “${_mangaSearchCtrl.text.trim()}”',
+                        style: TextStyle(
+                          color: context.colors.textPrimary,
+                          fontSize: 14,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                      trailing: Icon(
+                        Icons.chevron_right,
+                        color: context.colors.textTertiary,
+                      ),
+                      onTap: () => context.pushNamed(
+                        Routes.globalSearch,
+                        extra: _mangaSearchCtrl.text.trim(),
+                      ),
                     ),
                   ),
                 ),
+              _MangaShelf(
+                key: const ValueKey('manga-shelf'),
+                mangas: _visibleMangas(provider.mangas),
+                gridView: provider.isGridView,
+                provider: provider,
+                notifier: ref.read(libraryProvider.notifier),
+                extensionNames: provider.extensionNames,
+                mangaThumbnails: _mangaThumbnails,
+                showSourcePills: provider.showSourcePills,
+                onOpen: (manga) => _openManga(context, manga),
               ),
-            _MangaShelf(
-              key: const ValueKey('manga-shelf'),
-              mangas: _visibleMangas(provider.mangas),
-              gridView: provider.isGridView,
-              provider: provider,
-              notifier: ref.read(libraryProvider.notifier),
-              extensionNames: provider.extensionNames,
-              mangaThumbnails: _mangaThumbnails,
-              showSourcePills: provider.showSourcePills,
-              onOpen: (manga) => _openManga(context, manga),
-            ),
+            ],
+            const SliverToBoxAdapter(child: SizedBox(height: 100)),
           ],
-          const SliverToBoxAdapter(child: SizedBox(height: 100)),
-        ],
+        ),
       ),
     );
   }
@@ -1106,26 +1119,36 @@ class _LibraryFilterSheet extends StatelessWidget {
               padding: const EdgeInsets.symmetric(vertical: 14),
               child: Divider(color: c.border, height: 1),
             ),
-            Row(
-              children: [
-                Expanded(
-                  child: Text(
-                    'Show source pills',
-                    style: TextStyle(
-                      color: c.textPrimary,
-                      fontSize: 15,
-                      fontWeight: FontWeight.w600,
+            AnimatedPress(
+              onTap: () => onShowSourcePillsChanged(!showSourcePills),
+              child: SizedBox(
+                height: 50,
+                child: Row(
+                  children: [
+                    Icon(
+                      Icons.label_outline_rounded,
+                      size: 21,
+                      color: c.textSecondary,
                     ),
-                  ),
+                    const SizedBox(width: 14),
+                    Expanded(
+                      child: Text(
+                        'Show source pills',
+                        style: TextStyle(
+                          color: c.textPrimary,
+                          fontSize: 15,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                    _TriStateGlyph(
+                      mode: showSourcePills
+                          ? _FilterMode.include
+                          : _FilterMode.none,
+                    ),
+                  ],
                 ),
-                Checkbox(
-                  value: showSourcePills,
-                  onChanged: (value) {
-                    if (value != null) onShowSourcePillsChanged(value);
-                  },
-                  activeColor: c.accent,
-                ),
-              ],
+              ),
             ),
             Padding(
               padding: const EdgeInsets.symmetric(vertical: 14),
