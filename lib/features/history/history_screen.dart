@@ -8,6 +8,7 @@ import '../../core/providers.dart';
 import '../../core/repositories/manga_repository.dart';
 import '../../core/utils/image_cache.dart';
 import '../../core/utils/image_headers.dart';
+import '../../router/book_navigation.dart';
 import '../../router/router.dart';
 import '../../theme/app_icons.dart';
 import '../../theme/app_theme.dart';
@@ -275,18 +276,7 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> with RouteAware {
       child: Padding(
         padding: const EdgeInsets.fromLTRB(20, 0, 20, 0),
         child: AnimatedPress(
-          onTap: () => context.pushNamed(
-            Routes.reader,
-            extra:
-                (
-                      bookId: book.id,
-                      snippetChapterId: null,
-                      snippetScrollOffset: null,
-                      snippetStartOffset: null,
-                      snippetEndOffset: null,
-                    )
-                    as ReaderArgs,
-          ),
+          onTap: () => openBookFromCollection(context, book.id),
           child: Container(
             padding: const EdgeInsets.all(12),
             decoration: BoxDecoration(

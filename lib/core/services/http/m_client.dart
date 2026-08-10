@@ -59,7 +59,11 @@ class MClient {
 
   /// Builds an [InterceptedClient] with the Cloudflare retry policy and the
   /// cookie/logging interceptors.
+  /// [source] is accepted for Dart-extension / mangayomi ABI parity
+  /// (`Client(source)`); cookie/CF behaviour is host-based and does not
+  /// currently branch on the extension source object.
   static InterceptedClient init({
+    Object? source,
     Map<String, dynamic>? reqcopyWith,
     bool showCloudFlareError = true,
   }) {

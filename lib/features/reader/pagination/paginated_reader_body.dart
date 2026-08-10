@@ -42,9 +42,15 @@ class PaginatedReaderBody extends StatefulWidget {
     this.ttsActive = false,
     this.ttsStart = 0,
     this.ttsEnd = 0,
+    this.contentListenable,
+    this.ttsActiveForBuild,
+    this.ttsStartForBuild,
+    this.ttsEndForBuild,
     this.focusStart = 0,
     this.focusEnd = 0,
     this.focusAlpha = 0,
+    this.focusAnimation,
+    this.focusAlphaForValue,
     this.overrideCharOffset,
     this.onOverrideApplied,
     this.onPositionChanged,
@@ -74,9 +80,15 @@ class PaginatedReaderBody extends StatefulWidget {
   final bool ttsActive;
   final int ttsStart;
   final int ttsEnd;
+  final Listenable? contentListenable;
+  final bool Function()? ttsActiveForBuild;
+  final int Function()? ttsStartForBuild;
+  final int Function()? ttsEndForBuild;
   final int focusStart;
   final int focusEnd;
   final double focusAlpha;
+  final Animation<double>? focusAnimation;
+  final double Function(double value)? focusAlphaForValue;
 
   /// When set, the next [_seed] opens at this chapter char offset instead of the
   /// stored resume position (snippet jump). Host clears it via
@@ -135,6 +147,8 @@ class _PaginatedReaderBodyState extends State<PaginatedReaderBody> {
   /// not measured during this window; see [_pageAt].
   bool _settling = false;
   Timer? _settleTimer;
+  int _warmGeneration = 0;
+  final Set<int> _warmingChapters = {};
 
   @override
   void initState() {
@@ -158,6 +172,8 @@ class _PaginatedReaderBodyState extends State<PaginatedReaderBody> {
       _cursor = null;
       _measuredKey = null;
       _seeded = false;
+      _warmGeneration++;
+      _warmingChapters.clear();
     }
 
     // A chapter change the host initiated (not one of our page turns).
@@ -200,7 +216,6 @@ class _PaginatedReaderBodyState extends State<PaginatedReaderBody> {
       paginatorFor: (i) {
         final chapter = widget.chapters[i];
         final doc = TextExtractor.documentCached(chapter.id, chapter.content);
-        final text = doc.plainText;
         final baseStyle = ReadingSpans.style(
           widget.themeProv,
           context.colors.textPrimary,
@@ -265,6 +280,8 @@ class _PaginatedReaderBodyState extends State<PaginatedReaderBody> {
     final offset = _seeded ? cursor.offsetAt(_position) : 0;
     cursor.updateKey(key);
     _measuredKey = key;
+    _warmGeneration++;
+    _warmingChapters.clear();
     if (_seeded) {
       _position = cursor.positionForOffset(_position.chapterIndex, offset);
     }
@@ -277,11 +294,7 @@ class _PaginatedReaderBodyState extends State<PaginatedReaderBody> {
       _position = cursor.positionForOffset(widget.chapterIndex, override);
       _seeded = true;
       widget.onOverrideApplied?.call();
-      widget.onPositionChanged?.call(
-        _position,
-        override,
-        exact: true,
-      );
+      widget.onPositionChanged?.call(_position, override, exact: true);
       return;
     }
 
@@ -345,6 +358,35 @@ class _PaginatedReaderBodyState extends State<PaginatedReaderBody> {
     return pos.pageIndex > 0;
   }
 
+  void _warmNeighborChapters(BookPageCursor cursor) {
+    if (_settling || !_seeded) return;
+    final generation = _warmGeneration;
+    for (final chapterIndex in [
+      _position.chapterIndex - 1,
+      _position.chapterIndex + 1,
+    ]) {
+      if (chapterIndex < 0 ||
+          chapterIndex >= widget.chapters.length ||
+          cursor.isPaginated(chapterIndex) ||
+          !_warmingChapters.add(chapterIndex)) {
+        continue;
+      }
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        try {
+          if (!mounted ||
+              generation != _warmGeneration ||
+              _settling ||
+              !identical(cursor, _cursor)) {
+            return;
+          }
+          cursor.pagesFor(chapterIndex);
+        } finally {
+          _warmingChapters.remove(chapterIndex);
+        }
+      });
+    }
+  }
+
   Widget? _pageAt(BookPageCursor cursor, int delta) {
     var pos = _position;
     for (var i = 0; i < delta.abs(); i++) {
@@ -365,7 +407,8 @@ class _PaginatedReaderBodyState extends State<PaginatedReaderBody> {
     final doc = TextExtractor.documentCached(chapter.id, chapter.content);
     final text = doc.plainText;
 
-    return PaginatedChapterView(
+    final isCurrentChapter = pos.chapterIndex == widget.chapterIndex;
+    Widget buildPage(double focusAlpha) => PaginatedChapterView(
       text: text,
       document: doc,
       page: page,
@@ -375,21 +418,41 @@ class _PaginatedReaderBodyState extends State<PaginatedReaderBody> {
       contentWidth: _viewport.width,
       // Highlights are per-chapter, so they only apply to pages of the chapter
       // the host loaded them for.
-      highlights: pos.chapterIndex == widget.chapterIndex
-          ? widget.highlights
-          : const [],
+      highlights: isCurrentChapter ? widget.highlights : const [],
       highlightVersion: widget.highlightVersion,
-      ttsActive: widget.ttsActive && pos.chapterIndex == widget.chapterIndex,
-      ttsStart: widget.ttsStart,
-      ttsEnd: widget.ttsEnd,
-      focusStart: pos.chapterIndex == widget.chapterIndex ? widget.focusStart : 0,
-      focusEnd: pos.chapterIndex == widget.chapterIndex ? widget.focusEnd : 0,
-      focusAlpha:
-          pos.chapterIndex == widget.chapterIndex ? widget.focusAlpha : 0,
+      ttsActive:
+          (widget.ttsActiveForBuild?.call() ?? widget.ttsActive) &&
+          isCurrentChapter,
+      ttsStart: widget.ttsStartForBuild?.call() ?? widget.ttsStart,
+      ttsEnd: widget.ttsEndForBuild?.call() ?? widget.ttsEnd,
+      focusStart: isCurrentChapter ? widget.focusStart : 0,
+      focusEnd: isCurrentChapter ? widget.focusEnd : 0,
+      focusAlpha: isCurrentChapter ? focusAlpha : 0,
       onSelected: widget.onSelected,
       onSelectionCleared: widget.onSelectionCleared,
       onSelectionCollapsed: widget.onSelectionCollapsed,
     );
+
+    final focusAnimation = widget.focusAnimation;
+    final listenables = <Listenable>[
+      if (widget.contentListenable != null) widget.contentListenable!,
+      if (isCurrentChapter &&
+          focusAnimation != null &&
+          widget.focusEnd > widget.focusStart)
+        focusAnimation,
+    ];
+    if (listenables.isNotEmpty) {
+      return AnimatedBuilder(
+        animation: Listenable.merge(listenables),
+        builder: (_, _) => buildPage(
+          isCurrentChapter && focusAnimation != null
+              ? widget.focusAlphaForValue?.call(focusAnimation.value) ??
+                    widget.focusAlpha
+              : widget.focusAlpha,
+        ),
+      );
+    }
+    return buildPage(widget.focusAlpha);
   }
 
   @override
@@ -416,6 +479,7 @@ class _PaginatedReaderBodyState extends State<PaginatedReaderBody> {
           _applyKeyChange(cursor, key);
         }
         if (!_seeded) _seed(cursor);
+        _warmNeighborChapters(cursor);
 
         // The tap handler sits *behind* the curl, not around each page: the
         // curl's gesture handler is translucent, so a detector wrapping the

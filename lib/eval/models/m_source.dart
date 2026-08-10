@@ -1,4 +1,4 @@
-enum SourceType { js, mihon }
+enum SourceType { js, mihon, dart }
 
 class MSource {
   final String id;
@@ -12,13 +12,13 @@ class MSource {
   final String? className;
   final SourceType sourceType;
 
-  /// Mangayomi JS API base (e.g. MangaDex). Empty when unused.
+  /// Mangayomi JS/Dart API base (e.g. MangaDex). Empty when unused.
   final String? apiUrl;
 
   /// Whether the source sits behind Cloudflare.
   final bool hasCloudflare;
 
-  /// Date parse format injected into the JS runtime.
+  /// Date parse format injected into the JS/Dart runtime.
   final String? dateFormat;
 
   /// Locale for [dateFormat].
@@ -43,6 +43,8 @@ class MSource {
 
   bool get isJs => sourceType == SourceType.js;
 
+  bool get isDart => sourceType == SourceType.dart;
+
   bool get isNative => sourceType == SourceType.mihon;
 
   Map<String, dynamic> toJson() => {
@@ -62,6 +64,15 @@ class MSource {
     if (dateFormatLocale != null) 'dateFormatLocale': dateFormatLocale,
   };
 
+  static SourceType _sourceTypeFromJson(dynamic raw) {
+    final s = raw?.toString();
+    return switch (s) {
+      'js' || 'javascript' => SourceType.js,
+      'dart' => SourceType.dart,
+      _ => SourceType.mihon,
+    };
+  }
+
   factory MSource.fromJson(Map<String, dynamic> json) => MSource(
     id: json['id'] as String? ?? '',
     sourceId: json['sourceId'] as String? ?? json['id'] as String? ?? '',
@@ -72,7 +83,7 @@ class MSource {
     sourceCode: json['sourceCode'] as String?,
     apkPath: json['apkPath'] as String?,
     className: json['className'] as String?,
-    sourceType: json['sourceType'] == 'js' ? SourceType.js : SourceType.mihon,
+    sourceType: _sourceTypeFromJson(json['sourceType']),
     apiUrl: json['apiUrl'] as String?,
     hasCloudflare: json['hasCloudflare'] == true,
     dateFormat: json['dateFormat'] as String?,
@@ -83,6 +94,7 @@ class MSource {
   factory MSource.fromExtensionSource(dynamic ext) {
     final lang = ext.sourceCodeLanguage as String?;
     final isJs = lang == 'js' || lang == 'javascript';
+    final isDart = lang == 'dart';
     final code = ext.sourceCode as String?;
     return MSource(
       id: ext.id as String,
@@ -94,10 +106,12 @@ class MSource {
       sourceCode: (code != null && code.isNotEmpty) ? code : null,
       apkPath: ext.apkPath as String?,
       className: ext.className as String?,
-      sourceType: isJs ? SourceType.js : SourceType.mihon,
+      sourceType: isDart
+          ? SourceType.dart
+          : (isJs ? SourceType.js : SourceType.mihon),
       apiUrl: ext.apiUrl as String?,
       hasCloudflare: (ext.hasCloudflare as bool?) ?? false,
-      // dateFormat* come from the JS mangayomiSources header at inject time.
+      // dateFormat* come from the mangayomiSources header at inject time.
     );
   }
 }
