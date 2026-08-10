@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -14,6 +16,7 @@ import '../../widgets/animated_press.dart';
 import '../../widgets/catalog_card_layout.dart';
 import '../../widgets/catalog_cover_card.dart';
 import '../../widgets/empty_state.dart';
+import '../../widgets/horizontal_tab_swipe.dart';
 import '../../widgets/icon_button_round.dart';
 import '../../widgets/library_book_card.dart';
 import '../../widgets/library_header.dart';
@@ -34,6 +37,8 @@ class DiscoverScreen extends ConsumerStatefulWidget {
 class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
   final _ctrl = TextEditingController();
   final _scrollCtrl = ScrollController();
+  final _searchFocus = FocusNode();
+  Timer? _idleUnfocus;
   List<SourceSearchResult> _results = [];
   bool _searching = false;
   bool _loaded = false;
@@ -50,9 +55,28 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
 
   @override
   void dispose() {
+    _idleUnfocus?.cancel();
+    _searchFocus.dispose();
     _ctrl.dispose();
     _scrollCtrl.dispose();
     super.dispose();
+  }
+
+  void _setSection(_DiscoverSection section) {
+    if (_section == section) return;
+    setState(() => _section = section);
+  }
+
+  void _scheduleIdleUnfocus() {
+    _idleUnfocus?.cancel();
+    _idleUnfocus = Timer(const Duration(milliseconds: 1800), () {
+      if (mounted && _searchFocus.hasFocus) _searchFocus.unfocus();
+    });
+  }
+
+  void _unfocusSearch() {
+    _idleUnfocus?.cancel();
+    _searchFocus.unfocus();
   }
 
   Future<void> _loadSources() async {
@@ -186,12 +210,12 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
   Future<void> _search() async {
     final q = _ctrl.text.trim();
     if (q.isEmpty) return;
+    _unfocusSearch();
     setState(() {
       _searching = true;
       _loaded = true;
       _results = [];
-      // Show progressive per-source manga rows immediately.
-      _section = _DiscoverSection.manga;
+      // Keep the Books/Manga tab the user started the search from.
     });
     // Manga: progressive Global Search (per-source Loading → Success/Error).
     // Do not await — UI watches [globalSearchProvider].
@@ -203,26 +227,19 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
       onError: (_) => <SourceSearchResult>[],
     );
     if (!mounted) return;
-    final mangaState = ref.read(globalSearchProvider);
     setState(() {
       _results = books;
-      if (_results.isEmpty &&
-          (mangaState.mangaHitCount > 0 || mangaState.searching)) {
-        _section = _DiscoverSection.manga;
-      } else if (_results.isNotEmpty) {
-        _section = _DiscoverSection.books;
-      }
       _searching = false;
     });
   }
 
   void _clearSearch() {
     _ctrl.clear();
+    _unfocusSearch();
     ref.read(globalSearchProvider.notifier).search('');
     setState(() {
       _results = [];
       _loaded = false;
-      _section = _DiscoverSection.books;
     });
   }
 
@@ -444,101 +461,112 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
         : (_sourceSubtitle ?? 'Find books from your sources');
 
     return ScreenBackdrop(
-      child: SafeArea(
-        bottom: false,
-        child: CustomScrollView(
-          controller: _scrollCtrl,
-          physics: const AlwaysScrollableScrollPhysics(),
-          slivers: [
-            const SliverToBoxAdapter(child: OneHandSpacer()),
-            SliverToBoxAdapter(
-              child: LibraryHeader(
-                title: 'Discover',
-                subtitle: subtitle,
-                actions: [
-                  IconButtonRound(
-                    iconData: AppIcons.filter,
-                    size: 38,
-                    variant: IconButtonVariant.tonal,
-                    iconColor: c.textSecondary,
-                    tooltip: 'Sources',
-                    onPressed: _openSourcePicker,
-                  ),
-                ],
-              ),
-            ),
-            SliverToBoxAdapter(
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(20, 4, 20, 12),
-                child: SegmentedControl<_DiscoverSection>(
-                  segments: const {
-                    _DiscoverSection.books: 'Books',
-                    _DiscoverSection.manga: 'Manga',
-                  },
-                  value: _section,
-                  onChanged: (section) => setState(() => _section = section),
-                  height: 42,
-                ),
-              ),
-            ),
-            SliverToBoxAdapter(
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(20, 0, 20, 12),
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: TextField(
-                        controller: _ctrl,
-                        decoration: InputDecoration(
-                          hintText: _section == _DiscoverSection.books
-                              ? 'Search books...'
-                              : 'Search manga...',
-                          prefixIcon: const Icon(Icons.search, size: 18),
-                          suffixIcon: _ctrl.text.isNotEmpty
-                              ? IconButton(
-                                  icon: const Icon(Icons.clear, size: 18),
-                                  onPressed: _clearSearch,
-                                )
-                              : null,
-                        ),
-                        onChanged: (_) => setState(() {}),
-                        onSubmitted: (_) => _search(),
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    AnimatedPress(
-                      onTap: searching ? null : _search,
-                      child: Container(
-                        height: 48,
-                        padding: const EdgeInsets.symmetric(horizontal: 16),
-                        alignment: Alignment.center,
-                        decoration: BoxDecoration(
-                          color: c.accent,
-                          borderRadius: AppSpacing.brMd,
-                        ),
-                        child: searching
-                            ? SizedBox(
-                                width: 18,
-                                height: 18,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2,
-                                  color: c.onAccent,
-                                ),
-                              )
-                            : Text(
-                                'Search',
-                                style: TextStyle(
-                                  color: c.onAccent,
-                                  fontSize: 13,
-                                  fontWeight: FontWeight.w600,
-                                ),
-                              ),
-                      ),
+      child: HorizontalTabSwipe(
+        tabIndex: _section == _DiscoverSection.books ? 0 : 1,
+        tabCount: 2,
+        onTabChanged: (i) => _setSection(
+          i == 0 ? _DiscoverSection.books : _DiscoverSection.manga,
+        ),
+        child: SafeArea(
+          bottom: false,
+          child: CustomScrollView(
+            controller: _scrollCtrl,
+            physics: const AlwaysScrollableScrollPhysics(),
+            slivers: [
+              const SliverToBoxAdapter(child: OneHandSpacer()),
+              SliverToBoxAdapter(
+                child: LibraryHeader(
+                  title: 'Discover',
+                  subtitle: subtitle,
+                  actions: [
+                    IconButtonRound(
+                      iconData: AppIcons.filter,
+                      size: 38,
+                      variant: IconButtonVariant.tonal,
+                      iconColor: c.textSecondary,
+                      tooltip: 'Sources',
+                      onPressed: _openSourcePicker,
                     ),
                   ],
                 ),
               ),
-            ),
+              SliverToBoxAdapter(
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(20, 4, 20, 12),
+                  child: SegmentedControl<_DiscoverSection>(
+                    segments: const {
+                      _DiscoverSection.books: 'Books',
+                      _DiscoverSection.manga: 'Manga',
+                    },
+                    value: _section,
+                    onChanged: _setSection,
+                    height: 42,
+                  ),
+                ),
+              ),
+              SliverToBoxAdapter(
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(20, 0, 20, 12),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: TextField(
+                          controller: _ctrl,
+                          focusNode: _searchFocus,
+                          decoration: InputDecoration(
+                            hintText: _section == _DiscoverSection.books
+                                ? 'Search books...'
+                                : 'Search manga...',
+                            prefixIcon: const Icon(Icons.search, size: 18),
+                            suffixIcon: _ctrl.text.isNotEmpty
+                                ? IconButton(
+                                    icon: const Icon(Icons.clear, size: 18),
+                                    onPressed: _clearSearch,
+                                  )
+                                : null,
+                          ),
+                          onChanged: (_) {
+                            setState(() {});
+                            _scheduleIdleUnfocus();
+                          },
+                          onSubmitted: (_) => _search(),
+                          textInputAction: TextInputAction.search,
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      AnimatedPress(
+                        onTap: searching ? null : _search,
+                        child: Container(
+                          height: 48,
+                          padding: const EdgeInsets.symmetric(horizontal: 16),
+                          alignment: Alignment.center,
+                          decoration: BoxDecoration(
+                            color: c.accent,
+                            borderRadius: AppSpacing.brMd,
+                          ),
+                          child: searching
+                              ? SizedBox(
+                                  width: 18,
+                                  height: 18,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                    color: c.onAccent,
+                                  ),
+                                )
+                              : Text(
+                                  'Search',
+                                  style: TextStyle(
+                                    color: c.onAccent,
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
             if (showIdle)
               const SliverToBoxAdapter(
                 child: SizedBox(
@@ -626,6 +654,7 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
             ],
             const SliverToBoxAdapter(child: SizedBox(height: 100)),
           ],
+        ),
         ),
       ),
     );
