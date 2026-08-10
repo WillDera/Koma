@@ -1,7 +1,7 @@
 name: koma
 description: "A hybrid reader + knowledge snippet manager."
 publish_to: 'none'
-version: 2.37.2+269
+version: 2.37.4+271
 
 environment:
   sdk: ^3.12.2
