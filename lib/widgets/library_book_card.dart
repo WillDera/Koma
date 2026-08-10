@@ -38,8 +38,9 @@ class LibraryBookCard extends StatelessWidget {
     return _grid(context);
   }
 
-  /// Comfortable grid — title under cover (Mihon ComfortableGrid).
-  /// Cover fills remaining cell height so 3-col never overflows.
+  /// Comfortable grid — Figma style: bare cover (accent progress bar overlaid
+  /// at the cover's bottom edge) with title + author beneath. Cover fills
+  /// remaining cell height so 3-col never overflows.
   Widget _grid(BuildContext context) {
     final c = context.colors;
     return AnimatedPress(
@@ -68,7 +69,7 @@ class LibraryBookCard extends StatelessWidget {
                         vertical: 2,
                       ),
                       decoration: BoxDecoration(
-                        color: Colors.black.withValues(alpha: 0.7),
+                        color: Colors.black.withValues(alpha: 0.65),
                         borderRadius: AppSpacing.brPill,
                       ),
                       child: Text(
@@ -83,16 +84,18 @@ class LibraryBookCard extends StatelessWidget {
                   ),
                 if (book.progress > 0 && book.progress < 1)
                   Positioned(
-                    bottom: 8,
-                    left: 8,
-                    right: 8,
+                    bottom: 0,
+                    left: 0,
+                    right: 0,
                     child: ClipRRect(
-                      borderRadius: BorderRadius.circular(2),
+                      borderRadius: const BorderRadius.vertical(
+                        bottom: Radius.circular(AppSpacing.radiusMd),
+                      ),
                       child: ThinProgressBar(
                         progress: book.progress,
-                        height: 3,
-                        color: Colors.white,
-                        trackColor: Colors.white.withValues(alpha: 0.3),
+                        height: 4,
+                        color: c.accent,
+                        trackColor: Colors.black.withValues(alpha: 0.4),
                       ),
                     ),
                   ),
@@ -108,16 +111,22 @@ class LibraryBookCard extends StatelessWidget {
           const SizedBox(height: 6),
           Text(
             book.title,
-            maxLines: 1,
+            maxLines: 2,
             overflow: TextOverflow.ellipsis,
             style: TextStyle(
               color: c.textPrimary,
-              fontSize: 13,
+              fontSize: 12,
               fontWeight: FontWeight.w600,
-              height: 1.2,
-              letterSpacing: -0.1,
+              height: 1.3,
             ),
           ),
+          if (book.author != null && book.author!.isNotEmpty)
+            Text(
+              book.author!,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(color: c.textSecondary, fontSize: 11),
+            ),
         ],
       ),
     );
@@ -130,10 +139,10 @@ class LibraryBookCard extends StatelessWidget {
       onLongPress: onLongPress,
       scaleDown: 0.99,
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        padding: const EdgeInsets.all(12),
         decoration: BoxDecoration(
-          color: selected ? c.accentMuted : Colors.transparent,
-          borderRadius: AppSpacing.brLg,
+          color: selected ? c.accentMuted : c.surface,
+          borderRadius: AppSpacing.brMd,
         ),
         child: Row(
           children: [
@@ -173,7 +182,7 @@ class LibraryBookCard extends StatelessWidget {
                   ),
               ],
             ),
-            const SizedBox(width: 16),
+            const SizedBox(width: 12),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -181,11 +190,11 @@ class LibraryBookCard extends StatelessWidget {
                 children: [
                   Text(
                     book.title,
-                    maxLines: 2,
+                    maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(
                       color: c.textPrimary,
-                      fontSize: 15,
+                      fontSize: 14,
                       fontWeight: FontWeight.w600,
                       height: 1.3,
                     ),
@@ -196,45 +205,35 @@ class LibraryBookCard extends StatelessWidget {
                       book.author!,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: TextStyle(color: c.textSecondary, fontSize: 13),
+                      style: TextStyle(color: c.textSecondary, fontSize: 12),
                     ),
                   ],
-                  const SizedBox(height: 8),
-                  if (book.progress > 0)
-                    Row(
-                      children: [
-                        Expanded(
-                          child: ThinProgressBar(
-                            progress: book.progress,
-                            height: 3,
-                            color: c.accent,
-                            trackColor: c.border,
-                          ),
-                        ),
-                        const SizedBox(width: 8),
-                        Text(
-                          '${(book.progress * 100).toInt()}%',
-                          style: TextStyle(
-                            color: c.textTertiary,
-                            fontSize: 11,
-                            fontWeight: FontWeight.w500,
-                          ),
-                        ),
-                      ],
-                    )
-                  else
-                    Text(
-                      _sourceLabel(book.source),
-                      style: TextStyle(
-                        color: c.textTertiary,
-                        fontSize: 11,
-                        fontWeight: FontWeight.w500,
-                        letterSpacing: 0.2,
-                      ),
+                  if (book.progress > 0) ...[
+                    const SizedBox(height: 8),
+                    ThinProgressBar(
+                      progress: book.progress,
+                      height: 4,
+                      color: c.accent,
+                      trackColor: c.borderStrong,
                     ),
+                  ],
                 ],
               ),
             ),
+            if (selectionMode)
+              const SizedBox.shrink()
+            else if (book.progress > 0 && book.progress < 1)
+              Padding(
+                padding: const EdgeInsets.only(left: 8),
+                child: Text(
+                  '${(book.progress * 100).toInt()}%',
+                  style: TextStyle(
+                    color: c.textTertiary,
+                    fontSize: 11,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
           ],
         ),
       ),

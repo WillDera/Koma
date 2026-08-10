@@ -14,28 +14,32 @@ abstract final class CatalogCardLayout {
     final v = gridVariant(variant);
     final tight =
         v == LibraryCardVariant.compact || v == LibraryCardVariant.overlay;
-    return EdgeInsets.symmetric(horizontal: tight ? 12 : 20);
+    // Figma Library: px-4 (16). Compact/overlay stay tighter.
+    return EdgeInsets.symmetric(horizontal: tight ? 12 : 16);
   }
 
   static double mainAxisSpacing(LibraryCardVariant variant) {
     final v = gridVariant(variant);
     if (v == LibraryCardVariant.overlay) return 8;
     if (v == LibraryCardVariant.compact) return 10;
-    return 14;
+    // Figma: gap-3 = 12.
+    return 12;
   }
 
   static double crossAxisSpacing(LibraryCardVariant variant) {
     final v = gridVariant(variant);
     if (v == LibraryCardVariant.overlay) return 8;
     if (v == LibraryCardVariant.compact) return 10;
-    return 14;
+    return 12;
   }
 
   static double childAspectRatio(LibraryCardVariant variant) {
     final v = gridVariant(variant);
     if (v == LibraryCardVariant.overlay) return AppSpacing.coverAspectRatio;
     if (v == LibraryCardVariant.compact) return 0.62;
-    return 0.58;
+    // Comfortable grid carries a 2-line title + 1-line subtitle under the
+    // 2:3 cover, so cells need extra vertical room.
+    return 0.50;
   }
 
   static SliverGridDelegateWithFixedCrossAxisCount gridDelegate({

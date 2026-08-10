@@ -13,6 +13,9 @@ class AppColors {
   static const Color lightBgElevated = Color(0xFFFFFFFF);
   static const Color lightSurface = Color(0xFFFFFFFF);
   static const Color lightSurfaceMuted = Color(0xFFE8E8F0);
+  /// Header icon button well / cover placeholder (Figma `#e8e8f0` / `#e0e0ec`).
+  static const Color lightIconWell = Color(0xFFE8E8F0);
+  static const Color lightCoverPlaceholder = Color(0xFFE0E0EC);
   static const Color lightBorder = Color(0xFFE2E2EA);
   static const Color lightBorderStrong = Color(0xFFCFCFDD);
   static const Color lightTextPrimary = Color(0xFF12121A);
@@ -27,13 +30,16 @@ class AppColors {
   static const Color darkBg = Color(0xFF0C0C11);
   static const Color darkBgElevated = Color(0xFF12121A);
   static const Color darkSurface = Color(0xFF16161F);
+  // Segment track / muted fills (#1a1a24). Icon wells / cover fill use iconWell.
   static const Color darkSurfaceMuted = Color(0xFF1A1A24);
+  static const Color darkIconWell = Color(0xFF1E1E2A);
   static const Color darkBorder = Color(0xFF24242E);
   static const Color darkBorderStrong = Color(0xFF2E2E3A);
   static const Color darkTextPrimary = Color(0xFFF0F0F8);
   static const Color darkTextSecondary = Color(0xFF8888A0);
   static const Color darkTextTertiary = Color(0xFF707088);
-  static const Color darkAccent = Color(0xFF9B7CFF);
+  // Figma keeps #7857ff in dark mode for active tabs / progress.
+  static const Color darkAccent = Color(0xFF7857FF);
   static const Color darkAccentMuted = Color(0xFF261E44);
   static const Color darkAccentText = Color(0xFF0C0C11);
   static const Color darkOnAccent = Color(0xFFFFFFFF);
@@ -43,12 +49,13 @@ class AppColors {
   static const Color amoledBgElevated = Color(0xFF0A0A0A);
   static const Color amoledSurface = Color(0xFF000000);
   static const Color amoledSurfaceMuted = Color(0xFF111111);
+  static const Color amoledIconWell = Color(0xFF1A1A1A);
   static const Color amoledBorder = Color(0xFF222222);
   static const Color amoledBorderStrong = Color(0xFF333333);
   static const Color amoledTextPrimary = Color(0xFFF0F0F8);
   static const Color amoledTextSecondary = Color(0xFF8888A0);
   static const Color amoledTextTertiary = Color(0xFF707088);
-  static const Color amoledAccent = Color(0xFF9B7CFF);
+  static const Color amoledAccent = Color(0xFF7857FF);
   static const Color amoledAccentMuted = Color(0xFF261E44);
   static const Color amoledAccentText = Color(0xFF0C0C11);
   static const Color amoledOnAccent = Color(0xFFFFFFFF);
@@ -58,6 +65,7 @@ class AppColors {
   static const Color sepiaBgElevated = Color(0xFFF8EFDD);
   static const Color sepiaSurface = Color(0xFFFCF5E4);
   static const Color sepiaSurfaceMuted = Color(0xFFE9DCC2);
+  static const Color sepiaIconWell = Color(0xFFE9DCC2);
   static const Color sepiaBorder = Color(0xFFD8C8A8);
   static const Color sepiaBorderStrong = Color(0xFFB89B6A);
   static const Color sepiaTextPrimary = Color(0xFF3F2E1A);
@@ -108,7 +116,7 @@ class AppColors {
 
   // ─── Accent presets (Settings → Accent color) ─────────────────────────
   static const Color accentIndigo = Color(0xFF7857FF);
-  static const Color accentIndigoDark = Color(0xFF9B7CFF);
+  static const Color accentIndigoDark = Color(0xFF7857FF);
   static const Color accentAmber = Color(0xFFB07D52);
   static const Color accentAmberDark = Color(0xFFD4A277);
   static const Color accentForest = Color(0xFF4F7A55);

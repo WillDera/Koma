@@ -71,11 +71,9 @@ class SegmentedControl<T extends Object> extends StatelessWidget {
                       duration: AppMotion.base,
                       curve: AppMotion.standard,
                       decoration: BoxDecoration(
-                        color: c.surface,
-                        borderRadius: AppSpacing.brPill,
-                        boxShadow: AppSpacing.shadow1(
-                          isDark: c.bg.computeLuminance() < 0.5,
-                        ),
+                        color: c.accent,
+                        // Figma active segment: rounded-lg (8).
+                        borderRadius: BorderRadius.circular(8),
                       ),
                     ),
                   ),
@@ -93,12 +91,10 @@ class SegmentedControl<T extends Object> extends StatelessWidget {
                           child: AnimatedDefaultTextStyle(
                             duration: AppMotion.base,
                             style: TextStyle(
-                              color: isSelected
-                                  ? c.textPrimary
-                                  : c.textSecondary,
+                              color: isSelected ? c.onAccent : c.textSecondary,
                               fontWeight: isSelected
                                   ? FontWeight.w600
-                                  : FontWeight.w500,
+                                  : FontWeight.w400,
                               fontSize: 13,
                               letterSpacing: 0.1,
                             ),
@@ -121,7 +117,7 @@ class SegmentedControl<T extends Object> extends StatelessWidget {
     return DecoratedBox(
       decoration: BoxDecoration(
         color: c.surfaceMuted,
-        borderRadius: AppSpacing.brPill,
+        borderRadius: AppSpacing.brMd,
       ),
       child: content,
     );

@@ -15,7 +15,6 @@ import '../../core/services/library_update_prefs.dart';
 import '../../core/services/metadata_enrichment_service.dart';
 import '../../core/services/source_service.dart';
 import '../../router/router.dart';
-import '../../theme/app_icons.dart';
 import '../../theme/app_theme.dart';
 import '../../theme/theme_provider.dart';
 import '../../theme/tokens/app_colors.dart';
@@ -49,25 +48,73 @@ class SettingsScreen extends StatelessWidget {
             const OneHandSpacer(),
             const LibraryHeader(
               title: 'Settings',
-              subtitle: 'Version 2.36.0',
-              padding: EdgeInsets.fromLTRB(24, 20, 20, 12),
+              subtitle: 'Customize your reading experience',
+              padding: EdgeInsets.fromLTRB(20, 8, 16, 12),
             ),
-            const StaggeredEntrance(
-              index: 0,
-              child: FeaturePanel(
-                icon: AppIcons.tune,
-                title: 'Tune the reading room',
-                subtitle:
-                    'Shape the app around your eyes, your thumb, your sources, and your backups.',
-                stats: [
-                  PanelStat(value: 'Local', label: 'Storage'),
-                  PanelStat(value: 'Reader', label: 'Focus'),
-                  PanelStat(value: 'Fast', label: 'Controls'),
+            const StaggeredEntrance(index: 0, child: _ThemePreviewPill()),
+            const SizedBox(height: 16),
+            const StaggeredEntrance(index: 1, child: _SettingsHub()),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _ThemePreviewPill extends ConsumerWidget {
+  const _ThemePreviewPill();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final c = context.colors;
+    final theme = ref.watch(themeProvider);
+    final modeLabel = switch (theme.themeMode) {
+      ThemeMode.light => 'Light',
+      ThemeMode.dark => 'Dark',
+      ThemeMode.system => 'Auto',
+    };
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 20),
+      child: Container(
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: c.accentMuted,
+          borderRadius: AppSpacing.brLg,
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 40,
+              height: 40,
+              decoration: BoxDecoration(
+                color: c.accent,
+                borderRadius: AppSpacing.brMd,
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    '$modeLabel theme',
+                    style: TextStyle(
+                      color: c.textPrimary,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    '${theme.readingFont.label} · ${theme.fontSize.toInt()}px · ${theme.lineHeight.toStringAsFixed(2)}× leading',
+                    style: TextStyle(
+                      color: c.textSecondary,
+                      fontSize: 11,
+                    ),
+                  ),
                 ],
               ),
             ),
-            const SizedBox(height: 8),
-            const StaggeredEntrance(index: 1, child: _SettingsHub()),
           ],
         ),
       ),
@@ -86,28 +133,38 @@ class _SettingsHub extends StatelessWidget {
       children: [
         SettingsRow(
           icon: Icons.palette_outlined,
+          iconColor: AppColors.figmaViolet,
           title: 'Appearance',
+          subtitle: 'Theme, accent, single hand mode',
           onTap: () => _open(context, 'Appearance', const _AppearanceSection()),
         ),
         SettingsRow(
           icon: Icons.text_fields_rounded,
+          iconColor: AppColors.figmaGreen,
           title: 'Typography',
+          subtitle: 'Font, size, line height, bionic reading',
           onTap: () => _open(context, 'Typography', const _TypographySection()),
         ),
         SettingsRow(
           icon: Icons.storage_outlined,
+          iconColor: AppColors.figmaAmber,
           title: 'Data',
+          subtitle: 'Export and import your library data',
           onTap: () => _open(context, 'Data', const _DataAndStatsPage()),
         ),
         SettingsRow(
-          icon: Icons.travel_explore_outlined,
+          icon: Icons.layers_outlined,
+          iconColor: AppColors.figmaCyan,
           title: 'Sources',
+          subtitle: 'Ebook sources and manga plugins',
           onTap: () =>
               _open(context, 'Sources', const _SourcesAndPluginsPage()),
         ),
         SettingsRow(
           icon: Icons.info_outline_rounded,
+          iconColor: const Color(0xFF8888A0),
           title: 'About',
+          subtitle: 'App info, version, credits',
           onTap: () => _open(context, 'About', const _AboutSection()),
         ),
       ],
@@ -143,8 +200,11 @@ class _SettingsDestinationScreen extends StatelessWidget {
             padding: const EdgeInsets.only(bottom: 32),
             children: [
               const OneHandSpacer(),
-              LibraryHeader(title: title, showBackButton: true),
-              const SizedBox(height: 4),
+              LibraryHeader(
+                title: title,
+                showBackButton: true,
+                padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+              ),
               child,
             ],
           ),
@@ -162,13 +222,13 @@ class _DataAndStatsPage extends StatelessWidget {
     return const Column(
       children: [
         _DataSection(),
-        SizedBox(height: 24),
+        SizedBox(height: 20),
         _DownloadQueueSection(),
-        SizedBox(height: 24),
+        SizedBox(height: 20),
         _LibraryUpdateSection(),
-        SizedBox(height: 24),
+        SizedBox(height: 20),
         _BookMetadataSection(),
-        SizedBox(height: 24),
+        SizedBox(height: 20),
         _StatsSection(),
       ],
     );
@@ -181,7 +241,7 @@ class _SourcesAndPluginsPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return const Column(
-      children: [_SourcesSection(), SizedBox(height: 24), _PluginsSection()],
+      children: [_SourcesSection(), SizedBox(height: 20), _PluginsSection()],
     );
   }
 }
@@ -190,6 +250,9 @@ class _SourcesAndPluginsPage extends StatelessWidget {
 class _AppearanceSection extends ConsumerWidget {
   const _AppearanceSection();
 
+  static const _pad = EdgeInsets.symmetric(horizontal: 16);
+  static const _gap = SizedBox(height: 20);
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final c = context.colors;
@@ -197,242 +260,287 @@ class _AppearanceSection extends ConsumerWidget {
     final tn = ref.read(themeProvider.notifier);
     final library = ref.watch(libraryProvider);
     final ln = ref.read(libraryProvider.notifier);
-    return SettingsSection(
-      title: 'Appearance',
+    final violet = AppColors.figmaViolet;
+
+    return Column(
       children: [
-        Padding(
-          padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                'Theme',
-                style: TextStyle(
-                  color: c.textPrimary,
-                  fontSize: 14,
-                  fontWeight: FontWeight.w500,
-                ),
+        SettingsSection(
+          title: 'Theme',
+          headerColor: violet,
+          padding: _pad,
+          children: [
+            _ThemeModePicker(
+              value: theme.themeMode,
+              onChanged: tn.setThemeMode,
+            ),
+            SettingsRow(
+              title: 'Sepia mode',
+              subtitle: 'Warm paper-like background',
+              trailing: Switch(
+                value: theme.sepiaMode,
+                activeThumbColor: c.accent,
+                onChanged: tn.setSepiaMode,
               ),
-              const SizedBox(height: 10),
-              SegmentedControl<ThemeMode>(
-                segments: const {
-                  ThemeMode.light: 'Light',
-                  ThemeMode.dark: 'Dark',
-                  ThemeMode.system: 'Auto',
-                },
-                value: theme.themeMode,
-                onChanged: tn.setThemeMode,
+            ),
+            SettingsRow(
+              title: 'AMOLED dark mode',
+              subtitle: 'True black for OLED screens',
+              trailing: Switch(
+                value: theme.amoledMode,
+                activeThumbColor: c.accent,
+                onChanged: tn.setAmoledMode,
               ),
-              const SizedBox(height: 12),
-              Material(
-                type: MaterialType.transparency,
-                child: SwitchListTile(
-                  contentPadding: EdgeInsets.zero,
-                  title: const Text('Sepia mode'),
-                  subtitle: Text(
-                    'Warm paper-like background',
-                    style: TextStyle(color: c.textSecondary, fontSize: 12),
-                  ),
-                  value: theme.sepiaMode,
-                  onChanged: tn.setSepiaMode,
-                ),
+            ),
+            SettingsRow(
+              title: 'Use device font',
+              subtitle: 'System default instead of Inter',
+              trailing: Switch(
+                value: theme.useDeviceFont,
+                activeThumbColor: c.accent,
+                onChanged: tn.setUseDeviceFont,
               ),
-              Material(
-                type: MaterialType.transparency,
-                child: SwitchListTile(
-                  contentPadding: EdgeInsets.zero,
-                  title: const Text('AMOLED dark mode'),
-                  subtitle: Text(
-                    'True black for OLED screens',
-                    style: TextStyle(color: c.textSecondary, fontSize: 12),
-                  ),
-                  value: theme.amoledMode,
-                  onChanged: tn.setAmoledMode,
-                ),
-              ),
-              Material(
-                type: MaterialType.transparency,
-                child: SwitchListTile(
-                  contentPadding: EdgeInsets.zero,
-                  title: const Text('Use device font'),
-                  subtitle: Text(
-                    'System default instead of Inter',
-                    style: TextStyle(color: c.textSecondary, fontSize: 12),
-                  ),
-                  value: theme.useDeviceFont,
-                  onChanged: tn.setUseDeviceFont,
-                ),
-              ),
-            ],
-          ),
+            ),
+          ],
         ),
-        const Padding(
-          padding: EdgeInsets.symmetric(horizontal: 16),
-          child: HairlineDivider(),
-        ),
-        Padding(
-          padding: const EdgeInsets.fromLTRB(16, 16, 16, 16),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                'Accent',
-                style: TextStyle(
-                  color: c.textPrimary,
-                  fontSize: 14,
-                  fontWeight: FontWeight.w500,
-                ),
-              ),
-              const SizedBox(height: 4),
-              Text(
-                'Used for highlights, selections, and the active state.',
-                style: TextStyle(color: c.textSecondary, fontSize: 12),
-              ),
-              const SizedBox(height: 12),
-              Row(
+        _gap,
+        SettingsSection(
+          title: 'Accent color',
+          headerColor: violet,
+          padding: _pad,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  for (final entry in const [
-                    (
-                      AccentPreset.indigo,
-                      AppColors.accentIndigo,
-                      AppColors.accentIndigoDark,
-                      'Indigo',
+                  Text(
+                    'Used for highlights, selections, and the active state.',
+                    style: TextStyle(color: c.textSecondary, fontSize: 11),
+                  ),
+                  const SizedBox(height: 14),
+                  Row(
+                    children: [
+                      for (final entry in const [
+                        (
+                          AccentPreset.indigo,
+                          AppColors.accentIndigo,
+                          AppColors.accentIndigoDark,
+                          'Indigo',
+                        ),
+                        (
+                          AccentPreset.amber,
+                          AppColors.accentAmber,
+                          AppColors.accentAmberDark,
+                          'Amber',
+                        ),
+                        (
+                          AccentPreset.forest,
+                          AppColors.accentForest,
+                          AppColors.accentForestDark,
+                          'Forest',
+                        ),
+                        (
+                          AccentPreset.aethelgard,
+                          AppColors.aethelgardPrimary,
+                          AppColors.aethelgardPrimaryDark,
+                          'Neo-Noir',
+                        ),
+                      ]) ...[
+                        _AccentSwatch(
+                          light: entry.$2,
+                          dark: entry.$3,
+                          label: entry.$4,
+                          selected:
+                              theme.customAccentHex == null &&
+                              theme.accent == entry.$1,
+                          onTap: () => tn.setAccent(entry.$1),
+                        ),
+                        const SizedBox(width: 10),
+                      ],
+                    ],
+                  ),
+                  const SizedBox(height: 16),
+                  Text(
+                    'Custom hex',
+                    style: TextStyle(
+                      color: c.textPrimary,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w500,
                     ),
-                    (
-                      AccentPreset.amber,
-                      AppColors.accentAmber,
-                      AppColors.accentAmberDark,
-                      'Amber',
-                    ),
-                    (
-                      AccentPreset.forest,
-                      AppColors.accentForest,
-                      AppColors.accentForestDark,
-                      'Forest',
-                    ),
-                    (
-                      AccentPreset.aethelgard,
-                      AppColors.aethelgardPrimary,
-                      AppColors.aethelgardPrimaryDark,
-                      'Neo-Noir',
-                    ),
-                  ]) ...[
-                    _AccentSwatch(
-                      light: entry.$2,
-                      dark: entry.$3,
-                      label: entry.$4,
-                      selected:
-                          theme.customAccentHex == null &&
-                          theme.accent == entry.$1,
-                      onTap: () => tn.setAccent(entry.$1),
-                    ),
-                    const SizedBox(width: 10),
-                  ],
+                  ),
+                  const SizedBox(height: 6),
+                  _CustomAccentInput(
+                    current: theme.customAccentHex,
+                    onSubmit: tn.setCustomAccentHex,
+                  ),
                 ],
               ),
-              const SizedBox(height: 16),
-              Text(
-                'Custom hex',
-                style: TextStyle(
-                  color: c.textPrimary,
-                  fontSize: 13,
-                  fontWeight: FontWeight.w500,
-                ),
-              ),
-              const SizedBox(height: 6),
-              _CustomAccentInput(
-                current: theme.customAccentHex,
-                onSubmit: tn.setCustomAccentHex,
-              ),
-            ],
-          ),
+            ),
+          ],
         ),
-        const Padding(
-          padding: EdgeInsets.symmetric(horizontal: 16),
-          child: HairlineDivider(),
+        _gap,
+        SettingsSection(
+          title: 'Ergonomics',
+          headerColor: violet,
+          padding: _pad,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 14, 16, 8),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Dominant hand',
+                    style: TextStyle(
+                      color: c.textPrimary,
+                      fontSize: 14,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    'Floating buttons on your preferred side for one-thumb reach.',
+                    style: TextStyle(color: c.textSecondary, fontSize: 11),
+                  ),
+                  const SizedBox(height: 10),
+                  SegmentedControl<HandMode>(
+                    segments: const {
+                      HandMode.right: 'Right',
+                      HandMode.left: 'Left',
+                    },
+                    value: theme.handMode,
+                    onChanged: tn.setHandMode,
+                  ),
+                ],
+              ),
+            ),
+            const _OneHandToggle(),
+          ],
         ),
-        Padding(
-          padding: const EdgeInsets.fromLTRB(16, 16, 16, 16),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                'Handedness',
-                style: TextStyle(
-                  color: c.textPrimary,
-                  fontSize: 14,
-                  fontWeight: FontWeight.w500,
-                ),
+        _gap,
+        SettingsSection(
+          title: 'Library',
+          headerColor: violet,
+          padding: _pad,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 14, 16, 16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Library grid',
+                    style: TextStyle(
+                      color: c.textPrimary,
+                      fontSize: 14,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  SegmentedControl<int>(
+                    segments: const {2: '2 cols', 3: '3 cols'},
+                    value: library.gridColumns,
+                    onChanged: (v) => ln.setGridColumns(v),
+                  ),
+                  const SizedBox(height: 16),
+                  Text(
+                    'Card style',
+                    style: TextStyle(
+                      color: c.textPrimary,
+                      fontSize: 14,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  SegmentedControl<LibraryCardVariant>(
+                    segments: const {
+                      LibraryCardVariant.grid: 'Grid',
+                      LibraryCardVariant.list: 'List',
+                      LibraryCardVariant.compact: 'Compact',
+                      LibraryCardVariant.overlay: 'Overlay',
+                    },
+                    value: library.cardVariant,
+                    onChanged: (v) => ln.setCardVariant(v),
+                  ),
+                ],
               ),
-              const SizedBox(height: 4),
-              Text(
-                'Floating buttons on your preferred side for one-thumb reach.',
-                style: TextStyle(color: c.textSecondary, fontSize: 12),
-              ),
-              const SizedBox(height: 10),
-              SegmentedControl<HandMode>(
-                segments: const {
-                  HandMode.right: 'Right',
-                  HandMode.left: 'Left',
-                },
-                value: theme.handMode,
-                onChanged: tn.setHandMode,
-              ),
-            ],
-          ),
+            ),
+          ],
         ),
-        const Padding(
-          padding: EdgeInsets.symmetric(horizontal: 16),
-          child: HairlineDivider(),
-        ),
-        Padding(
-          padding: const EdgeInsets.fromLTRB(16, 16, 16, 16),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                'Library grid',
-                style: TextStyle(
-                  color: c.textPrimary,
-                  fontSize: 14,
-                  fontWeight: FontWeight.w500,
-                ),
-              ),
-              const SizedBox(height: 10),
-              SegmentedControl<int>(
-                segments: const {2: '2 cols', 3: '3 cols'},
-                value: library.gridColumns,
-                onChanged: (v) => ln.setGridColumns(v),
-              ),
-              const SizedBox(height: 16),
-              Text(
-                'Card style',
-                style: TextStyle(
-                  color: c.textPrimary,
-                  fontSize: 14,
-                  fontWeight: FontWeight.w500,
-                ),
-              ),
-              const SizedBox(height: 10),
-              SegmentedControl<LibraryCardVariant>(
-                segments: const {
-                  LibraryCardVariant.grid: 'Grid',
-                  LibraryCardVariant.list: 'List',
-                  LibraryCardVariant.compact: 'Compact',
-                  LibraryCardVariant.overlay: 'Overlay',
-                },
-                value: library.cardVariant,
-                onChanged: (v) => ln.setCardVariant(v),
-              ),
-            ],
-          ),
-        ),
-        const Padding(
-          padding: EdgeInsets.symmetric(horizontal: 16),
-          child: HairlineDivider(),
-        ),
-        const _OneHandToggle(),
       ],
+    );
+  }
+}
+
+/// Figma-style 3-column Light / Dark / System theme cards.
+class _ThemeModePicker extends StatelessWidget {
+  final ThemeMode value;
+  final ValueChanged<ThemeMode> onChanged;
+
+  const _ThemeModePicker({required this.value, required this.onChanged});
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.colors;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    const options = <(ThemeMode, String, IconData)>[
+      (ThemeMode.light, 'Light', Icons.wb_sunny_outlined),
+      (ThemeMode.dark, 'Dark', Icons.dark_mode_outlined),
+      (ThemeMode.system, 'System', Icons.desktop_windows_outlined),
+    ];
+    return IntrinsicHeight(
+      child: Row(
+        children: [
+          for (var i = 0; i < options.length; i++) ...[
+            Expanded(
+              child: AnimatedPress(
+                onTap: () => onChanged(options[i].$1),
+                child: AnimatedContainer(
+                  duration: AppMotion.base,
+                  curve: AppMotion.standard,
+                  padding: const EdgeInsets.symmetric(vertical: 16),
+                  color: value == options[i].$1
+                      ? (isDark
+                            ? const Color(0xFF261E44)
+                            : const Color(0xFFEDE9FF))
+                      : Colors.transparent,
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(
+                        options[i].$3,
+                        size: 20,
+                        color: value == options[i].$1
+                            ? AppColors.figmaVioletLight
+                            : c.textSecondary,
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        options[i].$2,
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: value == options[i].$1
+                              ? FontWeight.w600
+                              : FontWeight.w400,
+                          color: value == options[i].$1
+                              ? AppColors.figmaVioletLight
+                              : c.textSecondary,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+            if (i < options.length - 1)
+              VerticalDivider(
+                width: 0.5,
+                thickness: 0.5,
+                color: c.border,
+              ),
+          ],
+        ],
+      ),
     );
   }
 }
@@ -464,33 +572,44 @@ class _AccentSwatch extends StatelessWidget {
           AnimatedContainer(
             duration: AppMotion.base,
             curve: AppMotion.standard,
-            width: 44,
-            height: 44,
+            padding: selected ? const EdgeInsets.all(3) : EdgeInsets.zero,
             decoration: BoxDecoration(
-              color: color,
-              borderRadius: AppSpacing.brMd,
-              border: Border.all(
-                color: selected ? c.textPrimary : c.border,
-                width: selected ? 2 : 1,
-              ),
+              borderRadius: BorderRadius.circular(selected ? 14 : 10),
+              border: selected
+                  ? Border.all(color: color, width: 2)
+                  : Border.all(color: Colors.transparent, width: 0),
             ),
-            child: selected
-                ? Icon(
-                    Icons.check,
-                    size: 20,
-                    color: color.computeLuminance() > 0.5
-                        ? const Color(0xFF1A1815)
-                        : Colors.white,
-                  )
-                : null,
+            child: AnimatedContainer(
+              duration: AppMotion.base,
+              curve: AppMotion.standard,
+              width: selected ? 40 : 44,
+              height: selected ? 40 : 44,
+              decoration: BoxDecoration(
+                color: color,
+                borderRadius: AppSpacing.brMd,
+                border: Border.all(
+                  color: selected ? Colors.transparent : c.border,
+                  width: selected ? 0 : 1,
+                ),
+              ),
+              child: selected
+                  ? Icon(
+                      Icons.check,
+                      size: 18,
+                      color: color.computeLuminance() > 0.5
+                          ? const Color(0xFF1A1815)
+                          : Colors.white,
+                    )
+                  : null,
+            ),
           ),
           const SizedBox(height: 4),
           Text(
             label,
             style: TextStyle(
-              color: c.textSecondary,
-              fontSize: 11,
-              fontWeight: FontWeight.w500,
+              color: selected ? color : c.textSecondary,
+              fontSize: 10,
+              fontWeight: selected ? FontWeight.w600 : FontWeight.w400,
             ),
           ),
         ],
@@ -610,35 +729,14 @@ class _OneHandToggle extends ConsumerWidget {
     final theme = ref.watch(themeProvider);
     final tn = ref.read(themeProvider.notifier);
     final c = context.colors;
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 16, 16, 16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            'One-hand mode',
-            style: TextStyle(
-              color: c.textPrimary,
-              fontSize: 14,
-              fontWeight: FontWeight.w500,
-            ),
-          ),
-          const SizedBox(height: 4),
-          Text(
-            'Pushes content toward the bottom half of the screen for easier thumb reach. Headers grow larger and shrink as you scroll.',
-            style: TextStyle(color: c.textSecondary, fontSize: 12),
-          ),
-          const SizedBox(height: 10),
-          Material(
-            type: MaterialType.transparency,
-            child: SwitchListTile(
-              contentPadding: EdgeInsets.zero,
-              title: const Text('Enable one-hand layout'),
-              value: theme.oneHandMode,
-              onChanged: tn.setOneHandMode,
-            ),
-          ),
-        ],
+    return SettingsRow(
+      title: 'Single hand mode',
+      subtitle:
+          'Pushes content toward the bottom half of the screen for easier thumb reach.',
+      trailing: Switch(
+        value: theme.oneHandMode,
+        activeThumbColor: c.accent,
+        onChanged: tn.setOneHandMode,
       ),
     );
   }
@@ -648,82 +746,116 @@ class _OneHandToggle extends ConsumerWidget {
 class _TypographySection extends ConsumerWidget {
   const _TypographySection();
 
+  static const _pad = EdgeInsets.symmetric(horizontal: 16);
+  static const _gap = SizedBox(height: 20);
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final p = ref.watch(themeProvider);
     final tn = ref.read(themeProvider.notifier);
-    return SettingsSection(
-      title: 'Typography',
+    final green = AppColors.figmaGreen;
+    return Column(
       children: [
-        SettingsRow(
-          icon: Icons.text_fields,
+        SettingsSection(
           title: 'Reading font',
-          subtitle: p.readingFont.label,
-          trailing: const Icon(Icons.chevron_right, size: 18),
-          onTap: () => _showFontPicker(context, ref, p),
-        ),
-        SettingsRow(
-          icon: Icons.format_size,
-          title: 'Font size',
-          subtitle: '${p.fontSize.toInt()}px',
-          trailing: SizedBox(
-            width: 110,
-            child: Slider(
-              value: p.fontSize,
-              min: 13,
-              max: 26,
-              divisions: 13,
-              onChanged: tn.setFontSize,
+          headerColor: green,
+          padding: _pad,
+          children: [
+            SettingsRow(
+              icon: Icons.text_fields,
+              iconColor: green,
+              title: 'Reading font',
+              subtitle: p.readingFont.label,
+              trailing: const Icon(Icons.chevron_right, size: 18),
+              onTap: () => _showFontPicker(context, ref, p),
             ),
-          ),
+          ],
         ),
-        SettingsRow(
-          icon: Icons.format_line_spacing,
-          title: 'Line height',
-          subtitle: p.lineHeight.toStringAsFixed(2),
-          trailing: SizedBox(
-            width: 110,
-            child: Slider(
-              value: p.lineHeight,
-              min: 1.2,
-              max: 2.2,
-              divisions: 10,
-              onChanged: tn.setLineHeight,
+        _gap,
+        SettingsSection(
+          title: 'Layout',
+          headerColor: green,
+          padding: _pad,
+          children: [
+            SettingsRow(
+              icon: Icons.format_size,
+              iconColor: green,
+              title: 'Font size',
+              subtitle: '${p.fontSize.toInt()}px',
+              trailing: SizedBox(
+                width: 110,
+                child: Slider(
+                  value: p.fontSize,
+                  min: 13,
+                  max: 26,
+                  divisions: 13,
+                  activeColor: green,
+                  onChanged: tn.setFontSize,
+                ),
+              ),
             ),
-          ),
-        ),
-        const HairlineDivider(indent: 16, endIndent: 16),
-        SettingsRow(
-          icon: Icons.bolt,
-          title: 'Bionic reading',
-          subtitle: 'Bold the first 40% of every word',
-          trailing: Switch(
-            value: p.bionicReading,
-            onChanged: tn.setBionicReading,
-          ),
-        ),
-        const HairlineDivider(indent: 16, endIndent: 16),
-        SettingsRow(
-          icon: Icons.format_align_left,
-          title: 'Text alignment',
-          subtitle: _alignName(p.textAlign),
-          trailing: const Icon(Icons.chevron_right, size: 18),
-          onTap: () => _showAlignPicker(context, ref, p),
-        ),
-        SettingsRow(
-          icon: Icons.width_normal,
-          title: 'Page width',
-          subtitle: '${p.pageWidth.toInt()}px',
-          trailing: SizedBox(
-            width: 110,
-            child: Slider(
-              value: p.pageWidth,
-              min: 520,
-              max: 760,
-              divisions: 12,
-              onChanged: tn.setPageWidth,
+            SettingsRow(
+              icon: Icons.format_line_spacing,
+              iconColor: green,
+              title: 'Line height',
+              subtitle: '${p.lineHeight.toStringAsFixed(2)}×',
+              trailing: SizedBox(
+                width: 110,
+                child: Slider(
+                  value: p.lineHeight,
+                  min: 1.2,
+                  max: 2.2,
+                  divisions: 10,
+                  activeColor: green,
+                  onChanged: tn.setLineHeight,
+                ),
+              ),
             ),
-          ),
+            SettingsRow(
+              icon: Icons.width_normal,
+              iconColor: green,
+              title: 'Page width',
+              subtitle: '${p.pageWidth.toInt()}px',
+              trailing: SizedBox(
+                width: 110,
+                child: Slider(
+                  value: p.pageWidth,
+                  min: 520,
+                  max: 760,
+                  divisions: 12,
+                  activeColor: green,
+                  onChanged: tn.setPageWidth,
+                ),
+              ),
+            ),
+          ],
+        ),
+        _gap,
+        SettingsSection(
+          title: 'Reading mode',
+          headerColor: green,
+          padding: _pad,
+          children: [
+            SettingsRow(
+              icon: Icons.bolt,
+              iconColor: green,
+              title: 'Bionic reading',
+              subtitle: 'Bold the first 40% of every word',
+              trailing: Switch(
+                value: p.bionicReading,
+                activeThumbColor: green,
+                onChanged: tn.setBionicReading,
+              ),
+            ),
+            SettingsRow(
+              icon: Icons.format_align_left,
+              iconColor: green,
+              title: 'Text alignment',
+              subtitle: _alignName(p.textAlign),
+              trailing: const Icon(Icons.chevron_right, size: 18),
+              onTap: () => _showAlignPicker(context, ref, p),
+            ),
+          ],
         ),
       ],
     );
@@ -972,6 +1104,8 @@ class _BookMetadataSectionState extends ConsumerState<_BookMetadataSection> {
     final progress = ref.watch(metadataEnrichmentProvider);
     return SettingsSection(
       title: 'Book metadata',
+      headerColor: AppColors.figmaAmber,
+      padding: const EdgeInsets.symmetric(horizontal: 16),
       footer:
           'Looks up author, cover, genres, and release date via Open Library (primary) and Google Books (fallback). An API key improves Google Books rate limits but is optional.',
       children: [
@@ -1019,6 +1153,8 @@ class _DownloadQueueSection extends ConsumerWidget {
     final pending = ref.watch(downloadManagerProvider).pendingCount;
     return SettingsSection(
       title: 'Downloads',
+      headerColor: AppColors.figmaAmber,
+      padding: const EdgeInsets.symmetric(horizontal: 16),
       footer:
           'Chapter downloads run in a shared queue across titles. Pause, cancel, or retry from the queue screen.',
       children: [
@@ -1048,6 +1184,8 @@ class _LibraryUpdateSection extends ConsumerWidget {
     final lastChecked = update.lastCheckedAt;
     return SettingsSection(
       title: 'Library updates',
+      headerColor: AppColors.figmaAmber,
+      padding: const EdgeInsets.symmetric(horizontal: 16),
       footer:
           'Background checks can wait for Wi‑Fi or charging. Smart-update '
           'skips titles that match the filters below. Turning on auto-download '
@@ -1246,6 +1384,45 @@ String _timeAgo(DateTime t) {
   return '${diff.inDays}d ago';
 }
 
+/// Soft tinted pill used as Export / Import trailing affordance.
+class _TintedActionChip extends StatelessWidget {
+  final String label;
+  final IconData icon;
+  final Color color;
+
+  const _TintedActionChip({
+    required this.label,
+    required this.icon,
+    required this.color,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.13),
+        borderRadius: AppSpacing.brMd,
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 14, color: color),
+          const SizedBox(width: 5),
+          Text(
+            label,
+            style: TextStyle(
+              color: color,
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 // ─── Data ────────────────────────────────────────────────────────────────
 class _DataSection extends ConsumerStatefulWidget {
   const _DataSection();
@@ -1260,13 +1437,18 @@ class _DataSectionState extends ConsumerState<_DataSection> {
 
   @override
   Widget build(BuildContext context) {
+    final amber = AppColors.figmaAmber;
+    final violet = AppColors.figmaVioletLight;
     return SettingsSection(
-      title: 'Data',
+      title: 'Backup & restore',
+      headerColor: amber,
+      padding: const EdgeInsets.symmetric(horizontal: 16),
       footer:
           'All your data lives on this device. Backups are plain JSON you can keep anywhere.',
       children: [
         SettingsRow(
           icon: Icons.file_upload_outlined,
+          iconColor: amber,
           title: 'Export',
           subtitle: 'Save books & snippets as JSON',
           trailing: _exporting
@@ -1275,11 +1457,16 @@ class _DataSectionState extends ConsumerState<_DataSection> {
                   height: 18,
                   child: CircularProgressIndicator(strokeWidth: 2),
                 )
-              : null,
+              : _TintedActionChip(
+                  label: 'Export',
+                  icon: Icons.download_outlined,
+                  color: amber,
+                ),
           onTap: _exporting ? null : _export,
         ),
         SettingsRow(
           icon: Icons.file_download_outlined,
+          iconColor: violet,
           title: 'Import',
           subtitle: 'Restore from a backup file',
           trailing: _importing
@@ -1288,7 +1475,11 @@ class _DataSectionState extends ConsumerState<_DataSection> {
                   height: 18,
                   child: CircularProgressIndicator(strokeWidth: 2),
                 )
-              : null,
+              : _TintedActionChip(
+                  label: 'Import',
+                  icon: Icons.upload_outlined,
+                  color: violet,
+                ),
           onTap: _importing ? null : _import,
         ),
       ],
@@ -1410,7 +1601,9 @@ class _SourcesSectionState extends ConsumerState<_SourcesSection> {
     if (_loading) return const SizedBox.shrink();
     if (_error != null) {
       return SettingsSection(
-        title: 'ePub Sources',
+        title: 'Ebook sources',
+        headerColor: AppColors.figmaCyan,
+        padding: const EdgeInsets.symmetric(horizontal: 16),
         children: [
           Padding(
             padding: const EdgeInsets.all(16),
@@ -1423,7 +1616,9 @@ class _SourcesSectionState extends ConsumerState<_SourcesSection> {
       );
     }
     return SettingsSection(
-      title: 'ePub Sources',
+      title: 'Ebook sources',
+      headerColor: AppColors.figmaCyan,
+      padding: const EdgeInsets.symmetric(horizontal: 16),
       footer:
           'Discover tab searches all enabled sources. Add sources with the correct tag for the scraper to use.',
       children: [
@@ -1435,7 +1630,7 @@ class _SourcesSectionState extends ConsumerState<_SourcesSection> {
             onEdit: () => _edit(s),
           ),
         ),
-        SettingsRow(icon: Icons.add, title: 'Add source', onTap: _add),
+        SettingsRow(icon: Icons.add, iconColor: AppColors.figmaCyan, title: 'Add source', onTap: _add),
         const Padding(
           padding: EdgeInsets.symmetric(horizontal: 16),
           child: HairlineDivider(),
@@ -1468,9 +1663,11 @@ class _SourcesSectionState extends ConsumerState<_SourcesSection> {
         ),
         SettingsRow(
           icon: Icons.security_outlined,
+          iconColor: const Color(0xFFEF4444),
           title: 'Revoke all trusted extensions',
           subtitle:
               'Clear user-trusted sideloads. Repo-signed packages stay trusted.',
+          destructive: true,
           onTap: () => _revokeTrustedExtensions(context),
         ),
       ],
@@ -1676,10 +1873,21 @@ class _SourceRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final c = context.colors;
+    const cyan = AppColors.figmaCyan;
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
       child: Row(
         children: [
+          Container(
+            width: 40,
+            height: 40,
+            decoration: BoxDecoration(
+              color: cyan.withValues(alpha: 0.13),
+              borderRadius: AppSpacing.brMd,
+            ),
+            child: const Icon(Icons.language, size: 18, color: cyan),
+          ),
+          const SizedBox(width: 12),
           Expanded(
             child: GestureDetector(
               onTap: onEdit,
@@ -1692,15 +1900,9 @@ class _SourceRow extends StatelessWidget {
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(
                       color: c.textPrimary,
-                      fontSize: 14,
-                      fontWeight: FontWeight.w500,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
                     ),
-                  ),
-                  Text(
-                    source.tag,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(color: c.accent, fontSize: 11),
                   ),
                   Text(
                     source.baseUrl,
@@ -1708,6 +1910,27 @@ class _SourceRow extends StatelessWidget {
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(color: c.textTertiary, fontSize: 11),
                   ),
+                  if (source.tag.isNotEmpty) ...[
+                    const SizedBox(height: 2),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 6,
+                        vertical: 2,
+                      ),
+                      decoration: BoxDecoration(
+                        color: cyan.withValues(alpha: 0.13),
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                      child: Text(
+                        source.tag.toUpperCase(),
+                        style: const TextStyle(
+                          color: cyan,
+                          fontSize: 9,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ),
+                  ],
                 ],
               ),
             ),
@@ -1786,6 +2009,8 @@ class _StatsSectionState extends ConsumerState<_StatsSection> {
     if (_loading) return const SizedBox.shrink();
     return SettingsSection(
       title: 'Stats',
+      headerColor: AppColors.figmaAmber,
+      padding: const EdgeInsets.symmetric(horizontal: 16),
       children: [
         ReadingStreakCard(
           minutesPerDay: _minutesPerDay,
@@ -1923,11 +2148,14 @@ class _PluginsSection extends ConsumerWidget {
     final updateCount = ref.watch(extensionUpdateCountProvider);
     return SettingsSection(
       title: 'Plugins',
+      headerColor: AppColors.figmaCyan,
+      padding: const EdgeInsets.symmetric(horizontal: 16),
       footer:
           'Plugins extend Koma with new sources via Keiyoushi/Mihon extension APKs. Add a repo, fetch its index, and install the ones you want.',
       children: [
         SettingsRow(
           icon: Icons.extension_outlined,
+          iconColor: AppColors.figmaCyan,
           title: 'Manage plugins',
           subtitle: updateCount > 0
               ? 'Browse, install, and remove extensions · $updateCount update${updateCount == 1 ? '' : 's'} available'
@@ -1964,6 +2192,7 @@ class _PluginsSection extends ConsumerWidget {
         ),
         SettingsRow(
           icon: Icons.code,
+          iconColor: AppColors.figmaCyan,
           title: 'Plugin SDK',
           subtitle: 'Documentation for authors',
           trailing: const Icon(Icons.chevron_right, size: 18),
@@ -1995,25 +2224,205 @@ class _PluginsSection extends ConsumerWidget {
 class _AboutSection extends StatelessWidget {
   const _AboutSection();
 
+  static const _muted = Color(0xFF8888A0);
+  static const _pad = EdgeInsets.symmetric(horizontal: 16);
+
   @override
   Widget build(BuildContext context) {
-    return SettingsSection(
-      title: 'About',
+    final c = context.colors;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    const features = <(IconData, String, Color)>[
+      (Icons.menu_book_outlined, 'EPUB reading', AppColors.figmaViolet),
+      (Icons.extension_outlined, 'Manga plugins', AppColors.figmaAmber),
+      (Icons.bolt, 'Bionic reading', Color(0xFFEF4444)),
+      (Icons.shield_outlined, 'Local-first / offline', AppColors.figmaGreen),
+    ];
+    return Column(
       children: [
-        SettingsRow(
-          icon: Icons.info_outline,
-          title: 'Koma',
-          subtitle: 'Version 2.36.0 · build 2.36.0+266',
+        Padding(
+          padding: _pad,
+          child: Container(
+            width: double.infinity,
+            padding: const EdgeInsets.fromLTRB(24, 28, 24, 24),
+            decoration: BoxDecoration(
+              color: c.surface,
+              borderRadius: AppSpacing.brLg,
+              border: Border.all(color: c.border, width: 0.5),
+            ),
+            child: Column(
+              children: [
+                Container(
+                  width: 72,
+                  height: 72,
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(22),
+                    gradient: const LinearGradient(
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                      colors: [AppColors.figmaViolet, AppColors.figmaCyan],
+                    ),
+                  ),
+                  child: const Icon(
+                    Icons.menu_book_rounded,
+                    size: 34,
+                    color: Colors.white,
+                  ),
+                ),
+                const SizedBox(height: 14),
+                Text(
+                  'Koma',
+                  style: TextStyle(
+                    color: c.textPrimary,
+                    fontSize: 22,
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: -0.4,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  'Version 2.37.2 · build 2.37.2+269',
+                  style: TextStyle(color: c.textSecondary, fontSize: 13),
+                ),
+                const SizedBox(height: 10),
+                Text(
+                  'A reader and a thinking tool. Local-first. No accounts. No tracking.',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    color: c.textSecondary,
+                    fontSize: 13,
+                    height: 1.5,
+                  ),
+                ),
+              ],
+            ),
+          ),
         ),
-        SettingsRow(
-          icon: Icons.favorite_outline,
-          title: 'A reader and a thinking tool',
-          subtitle: 'Local-first. No accounts. No tracking.',
+        const SizedBox(height: 20),
+        Padding(
+          padding: _pad,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              const Padding(
+                padding: EdgeInsets.fromLTRB(4, 8, 4, 8),
+                child: Text(
+                  'FEATURES',
+                  style: TextStyle(
+                    color: _muted,
+                    fontSize: 11,
+                    fontWeight: FontWeight.w600,
+                    letterSpacing: 0.8,
+                  ),
+                ),
+              ),
+              GridView.count(
+                crossAxisCount: 2,
+                shrinkWrap: true,
+                physics: const NeverScrollableScrollPhysics(),
+                mainAxisSpacing: 8,
+                crossAxisSpacing: 8,
+                childAspectRatio: 2.6,
+                children: [
+                  for (final f in features)
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 10,
+                        vertical: 8,
+                      ),
+                      decoration: BoxDecoration(
+                        color: c.surface,
+                        borderRadius: AppSpacing.brMd,
+                        border: Border.all(color: c.border, width: 0.5),
+                      ),
+                      child: Row(
+                        children: [
+                          Container(
+                            width: 28,
+                            height: 28,
+                            decoration: BoxDecoration(
+                              color: f.$3.withValues(alpha: 0.13),
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: Icon(f.$1, size: 14, color: f.$3),
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              f.$2,
+                              style: TextStyle(
+                                color: c.textPrimary,
+                                fontSize: 12,
+                                fontWeight: FontWeight.w500,
+                                height: 1.25,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                ],
+              ),
+            ],
+          ),
         ),
-        SettingsRow(
-          icon: Icons.book_outlined,
-          title: 'Open source licenses',
-          trailing: const Icon(Icons.chevron_right, size: 18),
+        const SizedBox(height: 20),
+        SettingsSection(
+          title: 'About',
+          headerColor: _muted,
+          padding: _pad,
+          children: [
+            SettingsRow(
+              icon: Icons.info_outline,
+              iconColor: _muted,
+              title: 'Koma',
+              subtitle: 'Version 2.37.2 · build 2.37.2+269',
+            ),
+            SettingsRow(
+              icon: Icons.favorite_outline,
+              iconColor: const Color(0xFFEF4444),
+              title: 'A reader and a thinking tool',
+              subtitle: 'Local-first. No accounts. No tracking.',
+            ),
+            SettingsRow(
+              icon: Icons.book_outlined,
+              iconColor: _muted,
+              title: 'Open source licenses',
+              trailing: const Icon(Icons.chevron_right, size: 18),
+            ),
+          ],
+        ),
+        const SizedBox(height: 20),
+        Padding(
+          padding: _pad,
+          child: Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: c.surface,
+              borderRadius: AppSpacing.brLg,
+              border: Border.all(color: c.border, width: 0.5),
+            ),
+            child: Column(
+              children: [
+                Text(
+                  'Made for readers who take their collections seriously.',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(color: c.textSecondary, fontSize: 12),
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  'Inspired by Mihon & Mangayomi',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    color: isDark
+                        ? const Color(0xFF3A3A55)
+                        : const Color(0xFFC0C0D8),
+                    fontSize: 11,
+                  ),
+                ),
+              ],
+            ),
+          ),
         ),
       ],
     );
