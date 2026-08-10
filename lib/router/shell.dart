@@ -8,8 +8,8 @@ import '../widgets/glass_pill_nav.dart';
 import '../widgets/nav_drawer.dart';
 
 /// The bottom-nav shell. Wraps go_router's [StatefulNavigationShell]
-/// (an IndexedStack of the six tab branches, each with its own Navigator
-/// and preserved state) and renders the [GlassPillNav] over it.
+/// (an IndexedStack of the five tab branches, each with its own Navigator
+/// and preserved state) and renders the [AppBottomNav] under it.
 ///
 /// Replaces the old hand-rolled Stack+IgnorePointer+AnimatedOpacity shell
 /// from app.dart. Tab switching now goes through `navigationShell.goBranch`,
@@ -42,11 +42,6 @@ class MainShell extends ConsumerWidget {
       label: 'Discover',
     ),
     NavItem(
-      icon: AppIcons.search,
-      activeIcon: AppIcons.searchActive,
-      label: 'Search',
-    ),
-    NavItem(
       icon: AppIcons.settings,
       activeIcon: AppIcons.settingsActive,
       label: 'Settings',
@@ -69,7 +64,7 @@ class MainShell extends ConsumerWidget {
       extendBody: true,
       backgroundColor: theme.bgColor,
       body: navigationShell,
-      bottomNavigationBar: GlassPillNav(
+      bottomNavigationBar: AppBottomNav(
         items: _navItems,
         currentIndex: navigationShell.currentIndex,
         onTap: _onTap,
@@ -77,7 +72,7 @@ class MainShell extends ConsumerWidget {
       drawer: NavDrawer(
         currentIndex: navigationShell.currentIndex,
         onTap: _onTap,
-        version: '2.36.0',
+        version: '2.37.2',
       ),
     );
   }

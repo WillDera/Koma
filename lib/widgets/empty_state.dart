@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../theme/app_icons.dart';
 import '../theme/app_theme.dart';
+import '../theme/tokens/app_spacing.dart';
 import 'animated_press.dart';
 import 'premium_button.dart';
 
@@ -38,23 +39,35 @@ class EmptyState extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            AppIcon(data: icon, size: 90, color: c.accent),
-            const SizedBox(height: 24),
+            Container(
+              width: 64,
+              height: 64,
+              decoration: BoxDecoration(
+                color: c.surfaceMuted,
+                borderRadius: AppSpacing.brLg,
+              ),
+              child: Center(
+                child: AppIcon(data: icon, size: 28, color: c.textSecondary),
+              ),
+            ),
+            const SizedBox(height: 16),
             Text(
               title,
               textAlign: TextAlign.center,
-              style: Theme.of(context).textTheme.titleLarge?.copyWith(
+              style: TextStyle(
                 color: c.textPrimary,
-                fontWeight: FontWeight.w600,
+                fontSize: 15,
+                fontWeight: FontWeight.w500,
               ),
             ),
             if (subtitle != null) ...[
-              const SizedBox(height: 8),
+              const SizedBox(height: 6),
               Text(
                 subtitle!,
                 textAlign: TextAlign.center,
-                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                style: TextStyle(
                   color: c.textSecondary,
+                  fontSize: 12,
                   height: 1.5,
                 ),
               ),

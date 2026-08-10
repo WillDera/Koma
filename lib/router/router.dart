@@ -151,6 +151,13 @@ final GoRouter appRouter = GoRouter(
     ),
 
     // ── Detail routes (above the shell) ──────────────────────────────
+    // Library-wide search is pushed from the Library header (not a tab).
+    GoRoute(
+      path: '/search',
+      name: Routes.search,
+      parentNavigatorKey: rootNavigatorKey,
+      builder: (context, state) => const SearchScreen(),
+    ),
     GoRoute(
       path: '/reader',
       name: Routes.reader,
