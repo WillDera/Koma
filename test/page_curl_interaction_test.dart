@@ -118,6 +118,57 @@ void main() {
     expect(h.changes, isEmpty);
   });
 
+  testWidgets('drag reversal remains continuous while held', (tester) async {
+    final h = await host(tester, page: plainPage);
+    final gesture = await tester.startGesture(
+      Offset(h.rect.right - 20, h.rect.center.dy - 120),
+    );
+    await gesture.moveBy(const Offset(-180, 90));
+    await tester.pump();
+    var renderer =
+        tester
+                .widget<CustomPaint>(
+                  find.descendant(
+                    of: find.byType(PageCurlView),
+                    matching: find.byType(CustomPaint),
+                  ),
+                )
+                .painter!
+            as PageCurlRenderer;
+    final before = renderer.state.progress;
+
+    await gesture.moveBy(const Offset(70, -35));
+    await tester.pump();
+    renderer =
+        tester
+                .widget<CustomPaint>(
+                  find.descendant(
+                    of: find.byType(PageCurlView),
+                    matching: find.byType(CustomPaint),
+                  ),
+                )
+                .painter!
+            as PageCurlRenderer;
+    final after = renderer.state.progress;
+    expect(after, lessThan(before));
+    expect((before - after).abs(), lessThan(0.25));
+    expect(after.isFinite, isTrue);
+
+    await gesture.up();
+    await tester.pumpAndSettle();
+  });
+
+  testWidgets('a fast short flick completes the turn', (tester) async {
+    final h = await host(tester, page: plainPage);
+    await tester.flingFrom(
+      Offset(h.rect.right - 20, h.rect.center.dy),
+      const Offset(-80, 0),
+      2000,
+    );
+    await tester.pumpAndSettle();
+    expect(h.changes, [1]);
+  });
+
   testWidgets('text remains selectable away from the edges', (tester) async {
     // The tap path must not cost selection: the curl only claims edge strips.
     final h = await host(tester, page: selectablePage);

@@ -2,8 +2,8 @@ import '../utils/language.dart';
 
 /// `sourceCodeLanguage` values.
 ///
-/// Installed sources persist [mihon] or [js]. Catalog index entries may also
-/// use [dart] / [unsupported] (rejected at install).
+/// Installed sources persist [mihon], [js], or [dart]. Catalog index entries
+/// may also use [unsupported] (rejected at install).
 class SourceCodeLanguage {
   static const mihon = 'mihon';
   static const js = 'js';
@@ -12,7 +12,8 @@ class SourceCodeLanguage {
 
   static bool isJs(String? v) => v == js || v == 'javascript';
   static bool isMihon(String? v) => v == mihon;
-  static bool isInstallable(String? v) => isJs(v) || isMihon(v);
+  static bool isDart(String? v) => v == dart;
+  static bool isInstallable(String? v) => isJs(v) || isMihon(v) || isDart(v);
 }
 
 class ExtensionSource {
@@ -39,10 +40,12 @@ class ExtensionSource {
   /// field is persisted for index/JS fidelity.
   final String itemType;
 
-  /// JS body for [SourceCodeLanguage.js]; empty for Mihon APKs.
+  /// JS/Dart body for [SourceCodeLanguage.js] / [SourceCodeLanguage.dart];
+  /// empty for Mihon APKs.
   final String sourceCode;
 
-  /// [SourceCodeLanguage.mihon] or [SourceCodeLanguage.js].
+  /// [SourceCodeLanguage.mihon], [SourceCodeLanguage.js], or
+  /// [SourceCodeLanguage.dart].
   final String sourceCodeLanguage;
 
   final String pkgName;
@@ -70,9 +73,12 @@ class ExtensionSource {
       !isActive &&
       pkgName.isNotEmpty &&
       signatureHash.isNotEmpty &&
-      !isJs;
+      !isJs &&
+      !isDart;
 
   bool get isJs => SourceCodeLanguage.isJs(sourceCodeLanguage);
+
+  bool get isDart => SourceCodeLanguage.isDart(sourceCodeLanguage);
 
   ExtensionSource({
     required this.id,

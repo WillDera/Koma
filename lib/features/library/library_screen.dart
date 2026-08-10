@@ -22,6 +22,7 @@ import '../../core/services/web_scraper_service.dart';
 import '../../core/utils/benchmark_logger.dart';
 import '../../core/utils/image_cache.dart';
 import '../../core/utils/image_headers.dart';
+import '../../router/book_navigation.dart';
 import '../../router/router.dart';
 import '../../theme/app_icons.dart';
 import '../../theme/app_theme.dart';
@@ -251,7 +252,10 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> with RouteAware {
               (_, _) => LayoutBuilder(
                 builder: (context, constraints) {
                   // Cover + 8 gap + 12 title skeleton must fit the cell height.
-                  final coverH = (constraints.maxHeight - 20).clamp(48.0, 200.0);
+                  final coverH = (constraints.maxHeight - 20).clamp(
+                    48.0,
+                    200.0,
+                  );
                   return Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
@@ -393,43 +397,39 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> with RouteAware {
               provider: provider,
               notifier: ref.read(libraryProvider.notifier),
               showSourcePills: provider.showSourcePills,
-              onOpen: (id) => _openReader(context, id),
+              onOpen: (id) => openBookFromCollection(context, id),
               onBookLongPress: _showBookActions,
             )
-          else
-            ...[
-              if (_mangaSearchCtrl.text
-                  .trim()
-                  .isNotEmpty)
-                SliverToBoxAdapter(
-                  child: Padding(
-                    padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
-                    child: ListTile(
-                      contentPadding: EdgeInsets.zero,
-                      leading: Icon(
-                        Icons.travel_explore,
-                        color: context.colors.accent,
+          else ...[
+            if (_mangaSearchCtrl.text.trim().isNotEmpty)
+              SliverToBoxAdapter(
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
+                  child: ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    leading: Icon(
+                      Icons.travel_explore,
+                      color: context.colors.accent,
+                    ),
+                    title: Text(
+                      'Search globally for “${_mangaSearchCtrl.text.trim()}”',
+                      style: TextStyle(
+                        color: context.colors.textPrimary,
+                        fontSize: 14,
+                        fontWeight: FontWeight.w500,
                       ),
-                      title: Text(
-                        'Search globally for “${_mangaSearchCtrl.text.trim()}”',
-                        style: TextStyle(
-                          color: context.colors.textPrimary,
-                          fontSize: 14,
-                          fontWeight: FontWeight.w500,
-                        ),
-                      ),
-                      trailing: Icon(
-                        Icons.chevron_right,
-                        color: context.colors.textTertiary,
-                      ),
-                      onTap: () =>
-                          context.pushNamed(
-                            Routes.globalSearch,
-                            extra: _mangaSearchCtrl.text.trim(),
-                          ),
+                    ),
+                    trailing: Icon(
+                      Icons.chevron_right,
+                      color: context.colors.textTertiary,
+                    ),
+                    onTap: () => context.pushNamed(
+                      Routes.globalSearch,
+                      extra: _mangaSearchCtrl.text.trim(),
                     ),
                   ),
                 ),
+              ),
             _MangaShelf(
               key: const ValueKey('manga-shelf'),
               mangas: _visibleMangas(provider.mangas),
@@ -441,7 +441,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> with RouteAware {
               showSourcePills: provider.showSourcePills,
               onOpen: (manga) => _openManga(context, manga),
             ),
-            ],
+          ],
           const SliverToBoxAdapter(child: SizedBox(height: 100)),
         ],
       ),
@@ -601,8 +601,9 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> with RouteAware {
         ),
       ],
     );
-    if (confirmed == true)
+    if (confirmed == true) {
       await ref.read(libraryProvider.notifier).deleteSelected();
+    }
   }
 
   void _showImportOptions(BuildContext context) {
@@ -679,7 +680,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> with RouteAware {
             message: '"${parsed.book.title}" is already in your library',
             icon: Icons.info_outline,
           );
-          _openReader(context, existing.id);
+          openBookReader(context, bookId: existing.id);
         }
         return;
       }
@@ -850,7 +851,10 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> with RouteAware {
                   },
                 ),
                 ListTile(
-                  leading: Icon(Icons.check_circle_outline, color: c.textPrimary),
+                  leading: Icon(
+                    Icons.check_circle_outline,
+                    color: c.textPrimary,
+                  ),
                   title: const Text('Select'),
                   onTap: () {
                     Navigator.pop(ctx);
@@ -934,21 +938,6 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> with RouteAware {
         );
       }
     }
-  }
-
-  void _openReader(BuildContext context, int bookId) {
-    context.pushNamed(
-      Routes.reader,
-      extra:
-          (
-                bookId: bookId,
-                snippetChapterId: null,
-                snippetScrollOffset: null,
-                snippetStartOffset: null,
-                snippetEndOffset: null,
-              )
-              as ReaderArgs,
-    );
   }
 
   void _openManga(BuildContext context, Manga manga) {
@@ -1593,37 +1582,33 @@ class _BookShelf extends StatelessWidget {
       );
       BenchmarkLogger.log(
         'book_shelf_build',
-        'variant=${variant.name} count=${books.length} elapsed=${sw
-            .elapsedMicroseconds}us',
+        'variant=${variant.name} count=${books.length} elapsed=${sw.elapsedMicroseconds}us',
       );
       return result;
     }
     result = SliverPadding(
       padding: const EdgeInsets.symmetric(horizontal: 20),
       sliver: SliverList(
-        delegate: SliverChildBuilderDelegate(
-          (ctx, index) {
-            if (index.isOdd) return const SizedBox(height: 4);
-            final i = index ~/ 2;
-            return StaggeredEntrance(
-              index: i + 1,
-              child: LibraryBookCard(
-                book: books[i],
-                variant: LibraryCardVariant.list,
-                selected: provider.selectedIds.contains('b:${books[i].id}'),
-                selectionMode: provider.selectionMode,
-                showSourcePills: provider.showSourcePills,
-                onTap: () => provider.selectionMode
-                    ? notifier.toggleSelection('b:${books[i].id}')
-                    : onOpen(books[i].id),
-                onLongPress: () => provider.selectionMode
-                    ? notifier.toggleSelection('b:${books[i].id}')
-                    : onBookLongPress(books[i]),
-              ),
-            );
-          },
-          childCount: books.length * 2 - 1,
-        ),
+        delegate: SliverChildBuilderDelegate((ctx, index) {
+          if (index.isOdd) return const SizedBox(height: 4);
+          final i = index ~/ 2;
+          return StaggeredEntrance(
+            index: i + 1,
+            child: LibraryBookCard(
+              book: books[i],
+              variant: LibraryCardVariant.list,
+              selected: provider.selectedIds.contains('b:${books[i].id}'),
+              selectionMode: provider.selectionMode,
+              showSourcePills: provider.showSourcePills,
+              onTap: () => provider.selectionMode
+                  ? notifier.toggleSelection('b:${books[i].id}')
+                  : onOpen(books[i].id),
+              onLongPress: () => provider.selectionMode
+                  ? notifier.toggleSelection('b:${books[i].id}')
+                  : onBookLongPress(books[i]),
+            ),
+          );
+        }, childCount: books.length * 2 - 1),
       ),
     );
     BenchmarkLogger.log(
@@ -1681,30 +1666,26 @@ class _MangaShelf extends StatelessWidget {
             columns: provider.gridColumns,
             variant: variant,
           ),
-          delegate: SliverChildBuilderDelegate(
-            (ctx, i) {
-              final manga = mangas[i];
-              return StaggeredEntrance(
-                index: i + 1,
-                child: _MangaLibraryCard(
-                  manga: manga,
-                  newChapterCount: provider.newChapters[manga.id] ?? 0,
-                  localImagePath: mangaThumbnails[manga.id],
-                  selected: provider.selectedIds.contains('m:${manga.id}'),
-                  selectionMode: provider.selectionMode,
-                  extensionName:
-                      extensionNames[manga.sourceId] ?? manga.sourceId,
-                  showSourcePills: showSourcePills,
-                  variant: variant,
-                  onTap: () => provider.selectionMode
-                      ? notifier.toggleSelection('m:${manga.id}')
-                      : onOpen(manga),
-                  onLongPress: () => notifier.toggleSelection('m:${manga.id}'),
-                ),
-              );
-            },
-            childCount: mangas.length,
-          ),
+          delegate: SliverChildBuilderDelegate((ctx, i) {
+            final manga = mangas[i];
+            return StaggeredEntrance(
+              index: i + 1,
+              child: _MangaLibraryCard(
+                manga: manga,
+                newChapterCount: provider.newChapters[manga.id] ?? 0,
+                localImagePath: mangaThumbnails[manga.id],
+                selected: provider.selectedIds.contains('m:${manga.id}'),
+                selectionMode: provider.selectionMode,
+                extensionName: extensionNames[manga.sourceId] ?? manga.sourceId,
+                showSourcePills: showSourcePills,
+                variant: variant,
+                onTap: () => provider.selectionMode
+                    ? notifier.toggleSelection('m:${manga.id}')
+                    : onOpen(manga),
+                onLongPress: () => notifier.toggleSelection('m:${manga.id}'),
+              ),
+            );
+          }, childCount: mangas.length),
         ),
       );
       BenchmarkLogger.log(
@@ -1716,30 +1697,27 @@ class _MangaShelf extends StatelessWidget {
     result = SliverPadding(
       padding: const EdgeInsets.symmetric(horizontal: 20),
       sliver: SliverList(
-        delegate: SliverChildBuilderDelegate(
-          (ctx, index) {
-            if (index.isOdd) return const SizedBox(height: 8);
-            final i = index ~/ 2;
-            final manga = mangas[i];
-            return StaggeredEntrance(
-              index: i + 1,
-              child: _MangaLibraryRow(
-                manga: manga,
-                newChapterCount: provider.newChapters[manga.id] ?? 0,
-                localImagePath: mangaThumbnails[manga.id],
-                selected: provider.selectedIds.contains('m:${manga.id}'),
-                selectionMode: provider.selectionMode,
-                extensionName: extensionNames[manga.sourceId] ?? manga.sourceId,
-                showSourcePills: showSourcePills,
-                onTap: () => provider.selectionMode
-                    ? notifier.toggleSelection('m:${manga.id}')
-                    : onOpen(manga),
-                onLongPress: () => notifier.toggleSelection('m:${manga.id}'),
-              ),
-            );
-          },
-          childCount: mangas.length * 2 - 1,
-        ),
+        delegate: SliverChildBuilderDelegate((ctx, index) {
+          if (index.isOdd) return const SizedBox(height: 8);
+          final i = index ~/ 2;
+          final manga = mangas[i];
+          return StaggeredEntrance(
+            index: i + 1,
+            child: _MangaLibraryRow(
+              manga: manga,
+              newChapterCount: provider.newChapters[manga.id] ?? 0,
+              localImagePath: mangaThumbnails[manga.id],
+              selected: provider.selectedIds.contains('m:${manga.id}'),
+              selectionMode: provider.selectionMode,
+              extensionName: extensionNames[manga.sourceId] ?? manga.sourceId,
+              showSourcePills: showSourcePills,
+              onTap: () => provider.selectionMode
+                  ? notifier.toggleSelection('m:${manga.id}')
+                  : onOpen(manga),
+              onLongPress: () => notifier.toggleSelection('m:${manga.id}'),
+            ),
+          );
+        }, childCount: mangas.length * 2 - 1),
       ),
     );
     BenchmarkLogger.log(
@@ -1796,18 +1774,18 @@ class _MangaLibraryCard extends ConsumerWidget {
                 Positioned.fill(
                   child: localImagePath != null
                       ? Image.file(
-                    File(localImagePath!),
-                    width: double.infinity,
-                    fit: BoxFit.cover,
-                    errorBuilder: (_, _, _) => _placeholder(c),
-                  )
+                          File(localImagePath!),
+                          width: double.infinity,
+                          fit: BoxFit.cover,
+                          errorBuilder: (_, _, _) => _placeholder(c),
+                        )
                       : manga.imageUrl != null && manga.imageUrl!.isNotEmpty
                       ? Image(
-                    image: cachedCover(manga.imageUrl!, headers: headers),
-                    width: double.infinity,
-                    fit: BoxFit.cover,
-                    errorBuilder: (_, _, _) => _placeholder(c),
-                  )
+                          image: cachedCover(manga.imageUrl!, headers: headers),
+                          width: double.infinity,
+                          fit: BoxFit.cover,
+                          errorBuilder: (_, _, _) => _placeholder(c),
+                        )
                       : _placeholder(c),
                 ),
                 Positioned.fill(

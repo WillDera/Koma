@@ -10,6 +10,7 @@ import '../features/extensions/global_search_screen.dart';
 import '../features/extensions/manga_detail_screen.dart';
 import '../features/extensions/sources_screen.dart';
 import '../features/history/history_screen.dart';
+import '../features/library/book_detail_screen.dart';
 import '../features/library/library_screen.dart';
 import '../features/reader/manga_reader_screen.dart';
 import '../features/reader/reader_screen.dart';
@@ -31,6 +32,7 @@ abstract final class Routes {
 
   // Detail (pushed above the shell)
   static const reader = 'reader';
+  static const bookDetail = 'bookDetail';
   static const mangaReader = 'mangaReader';
   static const mangaDetail = 'mangaDetail';
   static const extensions = 'extensions';
@@ -61,6 +63,8 @@ typedef ReaderArgs = ({
   int? snippetStartOffset,
   int? snippetEndOffset,
 });
+
+typedef BookDetailArgs = ({int bookId});
 
 typedef MangaReaderArgs = ({
   int? mangaId,
@@ -160,6 +164,15 @@ final GoRouter appRouter = GoRouter(
           snippetStartOffset: a.snippetStartOffset,
           snippetEndOffset: a.snippetEndOffset,
         );
+      },
+    ),
+    GoRoute(
+      path: '/book-detail',
+      name: Routes.bookDetail,
+      parentNavigatorKey: rootNavigatorKey,
+      builder: (context, state) {
+        final a = state.extra as BookDetailArgs;
+        return BookDetailScreen(bookId: a.bookId);
       },
     ),
     GoRoute(
