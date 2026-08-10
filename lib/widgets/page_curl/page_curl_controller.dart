@@ -89,6 +89,8 @@ class PageCurlController extends ValueNotifier<PageCurlState> {
   double _simStart = 0;
   double _pageWidth = 0;
   bool _settlingToComplete = false;
+  bool _finishing = false;
+  double _dragBaseProgress = 0;
 
   PageCurlConfig get config => _config;
 
@@ -106,8 +108,9 @@ class PageCurlController extends ValueNotifier<PageCurlState> {
   /// [origin].
   void beginDrag({required CurlEdge edge, required double origin}) {
     _stopSimulation();
+    _dragBaseProgress = value.active ? value.progress : 0.0;
     value = PageCurlState(
-      progress: value.active ? value.progress : 0.0,
+      progress: _dragBaseProgress,
       edge: edge,
       dragVector: Offset.zero,
       origin: origin,
@@ -123,7 +126,8 @@ class PageCurlController extends ValueNotifier<PageCurlState> {
     final advance = value.edge == CurlEdge.right
         ? -dragVector.dx
         : dragVector.dx;
-    final progress = _physics.progressForDrag(
+    final progress = _physics.progressForDragFrom(
+      from: _dragBaseProgress,
       dragDistance: advance,
       pageWidth: _pageWidth,
     );
@@ -139,6 +143,7 @@ class PageCurlController extends ValueNotifier<PageCurlState> {
     final outcome = _physics.resolve(
       progress: value.progress,
       velocity: advancing,
+      pageWidth: _pageWidth,
     );
     final target = outcome == CurlRelease.complete ? 1.0 : 0.0;
     _settlingToComplete = outcome == CurlRelease.complete;
@@ -179,11 +184,13 @@ class PageCurlController extends ValueNotifier<PageCurlState> {
   void _startSimulation(Simulation sim) {
     _simulation = sim;
     _simStart = 0;
+    _finishing = false;
     if (!_ticker.isActive) _ticker.start();
   }
 
   void _stopSimulation() {
     _simulation = null;
+    _finishing = false;
     if (_ticker.isActive) _ticker.stop();
   }
 
@@ -200,8 +207,14 @@ class PageCurlController extends ValueNotifier<PageCurlState> {
     final progress = sim.x(t).clamp(0.0, 1.0);
     value = value.copyWith(progress: progress);
 
-    if (sim.isDone(t)) {
-      _finish();
+    if (sim.isDone(t) && !_finishing) {
+      _finishing = true;
+      // Paint one exact endpoint frame before swapping back to live content.
+      // This removes the tiny tolerance jump at either end of the spring.
+      value = value.copyWith(progress: _settlingToComplete ? 1.0 : 0.0);
+      SchedulerBinding.instance.addPostFrameCallback((_) {
+        if (_finishing && identical(_simulation, sim)) _finish();
+      });
     }
   }
 

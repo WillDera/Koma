@@ -26,6 +26,9 @@ class ChapterPreloadManager {
   /// Callback when pages are added/removed.
   void Function()? onPagesUpdated;
 
+  /// Set in [dispose] so in-flight preload Futures bail out before mutating.
+  bool _disposed = false;
+
   /// Gets the list of pages (read-only).
   List<PageData> get pages => List.unmodifiable(_pages);
 
@@ -99,6 +102,7 @@ class ChapterPreloadManager {
     List<PageData> chapterPages,
     MangaChapter currentChapter,
   ) async {
+    if (_disposed) return false;
     if (_isPreloadingNext) {
       if (kDebugMode) {
         debugPrint('[ChapterPreload] Already preloading next, skipping');
@@ -109,6 +113,7 @@ class ChapterPreloadManager {
     _isPreloadingNext = true;
 
     try {
+      if (_disposed) return false;
       if (chapterPages.isEmpty) {
         if (kDebugMode) {
           debugPrint('[ChapterPreload] No pages in next chapter data');
@@ -133,6 +138,8 @@ class ChapterPreloadManager {
         }
         return false;
       }
+
+      if (_disposed) return false;
 
       // Create transition page
       final transitionPage = createTransitionPage(
@@ -185,6 +192,7 @@ class ChapterPreloadManager {
     List<PageData> chapterPages,
     MangaChapter currentChapter,
   ) async {
+    if (_disposed) return 0;
     if (_isPreloadingPrev) {
       if (kDebugMode) {
         debugPrint('[ChapterPreload] Already preloading prev, skipping');
@@ -195,6 +203,7 @@ class ChapterPreloadManager {
     _isPreloadingPrev = true;
 
     try {
+      if (_disposed) return 0;
       if (chapterPages.isEmpty) {
         if (kDebugMode) {
           debugPrint('[ChapterPreload] No pages in prev chapter data');
@@ -219,6 +228,8 @@ class ChapterPreloadManager {
         }
         return 0;
       }
+
+      if (_disposed) return 0;
 
       // Transition page: marks end of prev chapter → start of current chapter
       final transitionPage = PageData.transition(
@@ -269,6 +280,7 @@ class ChapterPreloadManager {
 
   /// Adds a "last chapter" transition page (end of manga).
   bool addLastChapterTransition(MangaChapter chapter) {
+    if (_disposed) return false;
     // Check if already added
     if (_pages.isNotEmpty && (_pages.last.isLastChapter)) {
       return false;
@@ -351,6 +363,9 @@ class ChapterPreloadManager {
 
   /// Disposes of all resources.
   void dispose() {
+    _disposed = true;
+    _isPreloadingNext = false;
+    _isPreloadingPrev = false;
     _pages.clear();
     _loadedChapterIds.clear();
     _chapterLoadOrder.clear();

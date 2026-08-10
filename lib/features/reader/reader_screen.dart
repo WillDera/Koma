@@ -121,6 +121,7 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
 
   /// Successful layout-settle frames at the snippet scroll target.
   int _snippetSeekSettleCount = 0;
+
   /// Total post-frame attempts (including waiting for the scroll view).
   int _snippetSeekAttempts = 0;
   static const _snippetSeekSettleFrames = 6;
@@ -145,6 +146,10 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
       }
     });
     _ttsProvider = TtsProvider()..addListener(_onTtsChanged);
+    ref.listenManual<int>(
+      readerProvider.select((state) => state.currentIndex),
+      (_, next) => _onChapterChanged(next),
+    );
     unawaited(_ttsProvider!.loadPrefs());
     Future.microtask(() => _loadAndRestore());
   }
@@ -217,13 +222,18 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
     _snippetSeekAttempts = 0;
     _lastSeenChapterIndex = -1;
     setState(() => _sessionReady = true);
+    _onChapterChanged(_provider!.currentIndex);
     _restoreScrollPosition();
   }
 
   /// Peak flash opacity during snippet-arrival animation (0→peak→0).
   double get _focusAlpha {
     if (_focusEnd <= _focusStart) return 0;
-    final t = _focusCtrl.value;
+    return _focusAlphaForValue(_focusCtrl.value);
+  }
+
+  double _focusAlphaForValue(double t) {
+    if (_focusEnd <= _focusStart) return 0;
     if (t < 0.2) return (t / 0.2) * 0.55;
     if (t < 0.5) return 0.55;
     return ((1.0 - (t - 0.5) / 0.5).clamp(0.0, 1.0)) * 0.55;
@@ -328,7 +338,7 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
     // Load highlights for this chapter.
     final ch = _provider?.chapters;
     if (ch != null && newIndex >= 0 && newIndex < ch.length) {
-      final repos = ref.watch(repositoriesProvider);
+      final repos = ref.read(repositoriesProvider);
       final targetChapterId = ch[newIndex].id;
       repos.books.getHighlightsForChapter(targetChapterId).then((hl) {
         // Stale response: user may have navigated again while this loaded.
@@ -620,68 +630,71 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
       child: Center(
         child: ConstrainedBox(
           constraints: BoxConstraints(maxWidth: themeProv.pageWidth),
-          child: AnimatedBuilder(
-            animation: _focusCtrl,
-            builder: (context, _) => PaginatedReaderBody(
-              chapters: provider.chapters,
-              chapterIndex: provider.currentIndex,
-              themeProv: themeProv,
-              highlights: _highlights,
-              highlightVersion: _highlightVersion,
-              ttsActive: _ttsProvider?.isActive ?? false,
-              ttsStart: _ttsProvider?.currentSentenceOffset ?? 0,
-              ttsEnd: _ttsProvider?.currentSentenceEnd ?? 0,
-              focusStart: _focusStart,
-              focusEnd: _focusEnd,
-              focusAlpha: _focusAlpha,
-              // Snippet jump beats stored reading progress (which is often past
-              // the clipped passage). Consumed after the first successful seed.
-              overrideCharOffset: _snippetCharConsumed
-                  ? null
-                  : widget.snippetStartOffset,
-              onOverrideApplied: () {
-                _snippetCharConsumed = true;
-              },
-              charOffsetFor: (i) => _provider?.readingOffsetFor(i),
-              pixelOffsetFor: (i) => i < provider.chapters.length
-                  ? provider.chapters[i].scrollPosition
-                  : 0,
-              // Edge taps belong to the curl (it turns pages with them), so a tap
-              // reaching us is a middle tap: manage the UI only, never jump
-              // chapters the way scroll mode's edge taps do.
-              onTap: () {
-                if (_toolbarVisible) {
-                  _hideToolbar();
-                }
-                _resetUiHideTimer();
-              },
-              onSelected: (start, end) {
-                final text = TextExtractor.extractCached(
-                  chapter.id,
-                  chapter.content,
-                );
-                if (end <= text.length) {
-                  _selStart = start;
-                  _selectedText = text.substring(start, end);
-                  _showToolbar(Offset.zero);
-                }
-              },
-              onSelectionCleared: _hideToolbarOnSelectionLost,
-              // A collapsed selection means the handles are gone: the toolbar
-              // acts on a selection that no longer exists, so it must go too.
-              // Previously this only reset the hide timer, stranding the toolbar
-              // until the user tapped it or guessed at empty space.
-              onSelectionCollapsed: _hideToolbarOnSelectionLost,
-              onChapterChanged: (index) {
-                if (index != provider.currentIndex) {
-                  _provider?.navigateToChapter(index);
-                }
-              },
-              onPositionChanged: (pos, charOffset, {required exact}) {
-                _provider?.updateReadingOffset(charOffset);
-                _armSnippetFocusIfNeeded();
-              },
-            ),
+          child: PaginatedReaderBody(
+            chapters: provider.chapters,
+            chapterIndex: provider.currentIndex,
+            themeProv: themeProv,
+            highlights: _highlights,
+            highlightVersion: _highlightVersion,
+            ttsActive: _ttsProvider?.isActive ?? false,
+            ttsStart: _ttsProvider?.currentSentenceOffset ?? 0,
+            ttsEnd: _ttsProvider?.currentSentenceEnd ?? 0,
+            contentListenable: _ttsProvider,
+            ttsActiveForBuild: () => _ttsProvider?.isActive ?? false,
+            ttsStartForBuild: () => _ttsProvider?.currentSentenceOffset ?? 0,
+            ttsEndForBuild: () => _ttsProvider?.currentSentenceEnd ?? 0,
+            focusStart: _focusStart,
+            focusEnd: _focusEnd,
+            focusAlpha: _focusAlpha,
+            focusAnimation: _focusCtrl,
+            focusAlphaForValue: _focusAlphaForValue,
+            // Snippet jump beats stored reading progress (which is often past
+            // the clipped passage). Consumed after the first successful seed.
+            overrideCharOffset: _snippetCharConsumed
+                ? null
+                : widget.snippetStartOffset,
+            onOverrideApplied: () {
+              _snippetCharConsumed = true;
+            },
+            charOffsetFor: (i) => _provider?.readingOffsetFor(i),
+            pixelOffsetFor: (i) => i < provider.chapters.length
+                ? provider.chapters[i].scrollPosition
+                : 0,
+            // Edge taps belong to the curl (it turns pages with them), so a tap
+            // reaching us is a middle tap: manage the UI only, never jump
+            // chapters the way scroll mode's edge taps do.
+            onTap: () {
+              if (_toolbarVisible) {
+                _hideToolbar();
+              }
+              _resetUiHideTimer();
+            },
+            onSelected: (start, end) {
+              final text = TextExtractor.extractCached(
+                chapter.id,
+                chapter.content,
+              );
+              if (end <= text.length) {
+                _selStart = start;
+                _selectedText = text.substring(start, end);
+                _showToolbar(Offset.zero);
+              }
+            },
+            onSelectionCleared: _hideToolbarOnSelectionLost,
+            // A collapsed selection means the handles are gone: the toolbar
+            // acts on a selection that no longer exists, so it must go too.
+            // Previously this only reset the hide timer, stranding the toolbar
+            // until the user tapped it or guessed at empty space.
+            onSelectionCollapsed: _hideToolbarOnSelectionLost,
+            onChapterChanged: (index) {
+              if (index != provider.currentIndex) {
+                _provider?.navigateToChapter(index);
+              }
+            },
+            onPositionChanged: (pos, charOffset, {required exact}) {
+              _provider?.updateReadingOffset(charOffset);
+              _armSnippetFocusIfNeeded();
+            },
           ),
         ),
       ),
@@ -700,7 +713,6 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
         body: const Center(child: CircularProgressIndicator()),
       );
     }
-    _onChapterChanged(provider.currentIndex);
     if (provider.error != null || provider.currentChapter == null) {
       return Scaffold(
         backgroundColor: themeProv.isSepia
@@ -918,7 +930,7 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
                         await _provider!.stopReadingTimer();
                       }
                       _didHandleBack = true;
-                      if (mounted) Navigator.pop(context);
+                      if (context.mounted) Navigator.pop(context);
                     },
                     onSettings: () => ReaderSettingsSheet.show(context),
                     onTtsToggle: _toggleTts,
@@ -1079,9 +1091,10 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
           (_scrollController.offset /
                   _scrollController.position.maxScrollExtent)
               .clamp(0.0, 1.0);
-      final idx = (ratio * tts.totalSentences)
-          .round()
-          .clamp(0, tts.totalSentences - 1);
+      final idx = (ratio * tts.totalSentences).round().clamp(
+        0,
+        tts.totalSentences - 1,
+      );
       if (idx > 0) {
         tts.seekToSentence(idx);
       }
@@ -1112,6 +1125,7 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
   Future<void> _saveHighlight(String color) async {
     final p = _provider!;
     if (_selectedText == null || _selectedText!.trim().isEmpty) return;
+    final focusScope = FocusScope.of(context);
     try {
       final repos = ref.watch(repositoriesProvider);
       final ch = p.currentChapter;
@@ -1190,21 +1204,23 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
         );
       }
     } finally {
-      // Cycle to the next highlight color for the next mark.
-      _advanceHighlightColor();
-      // Discard the old selection so the next long-press can create
-      // fresh selection handles.
-      // The highlight toolbar just saved — hide it, then increment the
-      // SelectableText key so the widget unmounts/remounts cleanly,
-      // discarding the old selection state.  Next long-press creates
-      // new handles.
-      _hideToolbar();
-      _selectedText = null;
-      _selStart = null;
-      setState(() => _highlightVersion++);
-      // Dismiss keyboard/selection focus so the next long-press
-      // creates a fresh set of selection handles.
-      FocusScope.of(context).unfocus();
+      if (mounted) {
+        // Cycle to the next highlight color for the next mark.
+        _advanceHighlightColor();
+        // Discard the old selection so the next long-press can create
+        // fresh selection handles.
+        // The highlight toolbar just saved — hide it, then increment the
+        // SelectableText key so the widget unmounts/remounts cleanly,
+        // discarding the old selection state.  Next long-press creates
+        // new handles.
+        _hideToolbar();
+        _selectedText = null;
+        _selStart = null;
+        setState(() => _highlightVersion++);
+        // Dismiss keyboard/selection focus so the next long-press
+        // creates a fresh set of selection handles.
+        focusScope.unfocus();
+      }
     }
   }
 
