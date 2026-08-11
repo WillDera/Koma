@@ -29,7 +29,6 @@ import '../../widgets/reading_streak_card.dart';
 import '../../widgets/screen_chrome.dart';
 import '../../widgets/segmented_control.dart';
 import '../../widgets/settings_section.dart';
-import '../../widgets/text_field.dart';
 import '../../widgets/toast.dart';
 
 class SettingsScreen extends StatelessWidget {
@@ -360,7 +359,7 @@ class _AppearanceSection extends ConsumerWidget {
                   ),
                   const SizedBox(height: 16),
                   Text(
-                    'Custom hex',
+                    'Custom color',
                     style: TextStyle(
                       color: c.textPrimary,
                       fontSize: 13,
@@ -368,8 +367,9 @@ class _AppearanceSection extends ConsumerWidget {
                     ),
                   ),
                   const SizedBox(height: 6),
-                  _CustomAccentInput(
+                  _CustomAccentPicker(
                     current: theme.customAccentHex,
+                    fallback: theme.accentColor,
                     onSubmit: tn.setCustomAccentHex,
                   ),
                 ],
@@ -481,12 +481,13 @@ class _ThemeModePicker extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final c = context.colors;
-    final isDark = Theme.of(context).brightness == Brightness.dark;
     const options = <(ThemeMode, String, IconData)>[
       (ThemeMode.light, 'Light', Icons.wb_sunny_outlined),
       (ThemeMode.dark, 'Dark', Icons.dark_mode_outlined),
       (ThemeMode.system, 'System', Icons.desktop_windows_outlined),
     ];
+    // Match SettingsSection card corners (brLg) on the end cells.
+    final endRadius = Radius.circular(AppSpacing.radiusLg);
     return IntrinsicHeight(
       child: Row(
         children: [
@@ -498,11 +499,17 @@ class _ThemeModePicker extends StatelessWidget {
                   duration: AppMotion.base,
                   curve: AppMotion.standard,
                   padding: const EdgeInsets.symmetric(vertical: 16),
-                  color: value == options[i].$1
-                      ? (isDark
-                            ? const Color(0xFF261E44)
-                            : const Color(0xFFEDE9FF))
-                      : Colors.transparent,
+                  decoration: BoxDecoration(
+                    color: value == options[i].$1
+                        ? c.accent.withValues(alpha: 0.16)
+                        : Colors.transparent,
+                    borderRadius: BorderRadius.only(
+                      topLeft: i == 0 ? endRadius : Radius.zero,
+                      topRight: i == options.length - 1
+                          ? endRadius
+                          : Radius.zero,
+                    ),
+                  ),
                   child: Column(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
@@ -510,7 +517,7 @@ class _ThemeModePicker extends StatelessWidget {
                         options[i].$3,
                         size: 20,
                         color: value == options[i].$1
-                            ? AppColors.figmaVioletLight
+                            ? c.accent
                             : c.textSecondary,
                       ),
                       const SizedBox(height: 8),
@@ -522,7 +529,7 @@ class _ThemeModePicker extends StatelessWidget {
                               ? FontWeight.w600
                               : FontWeight.w400,
                           color: value == options[i].$1
-                              ? AppColors.figmaVioletLight
+                              ? c.accent
                               : c.textSecondary,
                         ),
                       ),
@@ -617,87 +624,133 @@ class _AccentSwatch extends StatelessWidget {
   }
 }
 
-class _CustomAccentInput extends StatefulWidget {
+class _CustomAccentPicker extends StatefulWidget {
   final String? current;
+  final Color fallback;
   final ValueChanged<String?> onSubmit;
-  const _CustomAccentInput({required this.current, required this.onSubmit});
+
+  const _CustomAccentPicker({
+    required this.current,
+    required this.fallback,
+    required this.onSubmit,
+  });
 
   @override
-  State<_CustomAccentInput> createState() => _CustomAccentInputState();
+  State<_CustomAccentPicker> createState() => _CustomAccentPickerState();
 }
 
-class _CustomAccentInputState extends State<_CustomAccentInput> {
-  late final TextEditingController _ctrl;
+class _CustomAccentPickerState extends State<_CustomAccentPicker> {
+  Color? _draft;
 
   @override
   void initState() {
     super.initState();
-    _ctrl = TextEditingController(text: widget.current ?? '');
+    _draft = ThemeState.resolveHex(widget.current ?? '');
   }
 
   @override
-  void didUpdateWidget(covariant _CustomAccentInput old) {
+  void didUpdateWidget(covariant _CustomAccentPicker old) {
     super.didUpdateWidget(old);
-    final next = widget.current ?? '';
-    if (next != _ctrl.text) {
-      _ctrl.text = next;
+    if (old.current != widget.current) {
+      _draft = ThemeState.resolveHex(widget.current ?? '');
     }
   }
 
-  @override
-  void dispose() {
-    _ctrl.dispose();
-    super.dispose();
+  String _toHex(Color color) {
+    final r = ((color.r * 255.0).round() & 0xff).toRadixString(16).padLeft(2, '0');
+    final g = ((color.g * 255.0).round() & 0xff).toRadixString(16).padLeft(2, '0');
+    final b = ((color.b * 255.0).round() & 0xff).toRadixString(16).padLeft(2, '0');
+    return '#${r.toUpperCase()}${g.toUpperCase()}${b.toUpperCase()}';
+  }
+
+  Future<void> _openPicker() async {
+    final initial = _draft ??
+        ThemeState.resolveHex(widget.current ?? '') ??
+        widget.fallback;
+    final picked = await showDialog<Color>(
+      context: context,
+      builder: (ctx) => _AccentColorPickerDialog(initial: initial),
+    );
+    if (picked == null || !mounted) return;
+    setState(() => _draft = picked);
   }
 
   void _apply() {
-    final v = _ctrl.text.trim();
-    if (v.isEmpty) {
-      widget.onSubmit(null);
-    } else {
-      widget.onSubmit(v);
-    }
+    final draft = _draft;
+    if (draft == null) return;
+    widget.onSubmit(_toHex(draft));
   }
 
   @override
   Widget build(BuildContext context) {
     final c = context.colors;
-    final parsed = _parseColor(_ctrl.text);
+    final preview = _draft ??
+        ThemeState.resolveHex(widget.current ?? '') ??
+        widget.fallback;
+    final hex = _draft != null
+        ? _toHex(_draft!)
+        : (widget.current?.trim().isNotEmpty == true
+            ? widget.current!.trim()
+            : null);
+    final canApply = _draft != null;
+
     return Row(
       children: [
-        Container(
-          width: 32,
-          height: 32,
-          decoration: BoxDecoration(
-            color: parsed ?? c.surfaceMuted,
-            borderRadius: AppSpacing.brSm,
-            border: Border.all(color: c.border, width: 0.5),
+        AnimatedPress(
+          onTap: _openPicker,
+          child: Container(
+            width: 40,
+            height: 40,
+            decoration: BoxDecoration(
+              color: preview,
+              borderRadius: AppSpacing.brSm,
+              border: Border.all(color: c.border, width: 0.5),
+            ),
+            child: Icon(
+              Icons.colorize_rounded,
+              size: 18,
+              color: preview.computeLuminance() > 0.5
+                  ? const Color(0xFF1A1815)
+                  : Colors.white,
+            ),
           ),
         ),
         const SizedBox(width: 10),
         Expanded(
-          child: StashTextField(
-            controller: _ctrl,
-            hint: '#RRGGBB',
-            leadingIcon: Icons.format_color_fill,
-            showClearButton: true,
-            onSubmitted: (_) => _apply(),
-            onChanged: (_) => setState(() {}),
+          child: AnimatedPress(
+            onTap: _openPicker,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+              decoration: BoxDecoration(
+                color: c.surfaceMuted,
+                borderRadius: AppSpacing.brSm,
+                border: Border.all(color: c.border, width: 0.5),
+              ),
+              child: Text(
+                hex ?? 'Tap to pick a color',
+                style: TextStyle(
+                  color: hex != null ? c.textPrimary : c.textTertiary,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w500,
+                  fontFamily: 'monospace',
+                ),
+              ),
+            ),
           ),
         ),
         const SizedBox(width: 8),
         AnimatedPress(
-          onTap: _apply,
+          onTap: canApply ? _apply : null,
           child: Container(
             padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
             decoration: BoxDecoration(
-              color: parsed == null ? c.surfaceMuted : c.accent,
+              color: canApply ? c.accent : c.surfaceMuted,
               borderRadius: AppSpacing.brPill,
             ),
             child: Text(
               'Apply',
               style: TextStyle(
-                color: parsed == null ? c.textTertiary : c.onAccent,
+                color: canApply ? c.onAccent : c.textTertiary,
                 fontSize: 13,
                 fontWeight: FontWeight.w600,
               ),
@@ -707,17 +760,263 @@ class _CustomAccentInputState extends State<_CustomAccentInput> {
       ],
     );
   }
+}
 
-  Color? _parseColor(String hex) {
-    var v = hex.trim();
-    if (v.isEmpty) return null;
-    if (v.startsWith('#')) v = v.substring(1);
-    if (v.length == 6) v = 'FF$v';
-    if (v.length != 8) return null;
-    final i = int.tryParse(v, radix: 16);
-    if (i == null) return null;
-    return Color(i);
+class _AccentColorPickerDialog extends StatefulWidget {
+  final Color initial;
+  const _AccentColorPickerDialog({required this.initial});
+
+  @override
+  State<_AccentColorPickerDialog> createState() =>
+      _AccentColorPickerDialogState();
+}
+
+class _AccentColorPickerDialogState extends State<_AccentColorPickerDialog> {
+  late HSVColor _hsv;
+
+  @override
+  void initState() {
+    super.initState();
+    _hsv = HSVColor.fromColor(widget.initial);
   }
+
+  String _toHex(Color color) {
+    final r = ((color.r * 255.0).round() & 0xff).toRadixString(16).padLeft(2, '0');
+    final g = ((color.g * 255.0).round() & 0xff).toRadixString(16).padLeft(2, '0');
+    final b = ((color.b * 255.0).round() & 0xff).toRadixString(16).padLeft(2, '0');
+    return '#${r.toUpperCase()}${g.toUpperCase()}${b.toUpperCase()}';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.colors;
+    final color = _hsv.toColor();
+    return AlertDialog(
+      backgroundColor: c.surface,
+      title: Text('Pick accent color', style: TextStyle(color: c.textPrimary)),
+      content: SizedBox(
+        width: 280,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            AspectRatio(
+              aspectRatio: 1.2,
+              child: _SvPicker(
+                hsv: _hsv,
+                onChanged: (v) => setState(() => _hsv = v),
+              ),
+            ),
+            const SizedBox(height: 14),
+            _HueSlider(
+              hue: _hsv.hue,
+              onChanged: (h) => setState(() => _hsv = _hsv.withHue(h)),
+            ),
+            const SizedBox(height: 14),
+            Row(
+              children: [
+                Container(
+                  width: 36,
+                  height: 36,
+                  decoration: BoxDecoration(
+                    color: color,
+                    borderRadius: AppSpacing.brSm,
+                    border: Border.all(color: c.border, width: 0.5),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    _toHex(color),
+                    style: TextStyle(
+                      color: c.textPrimary,
+                      fontSize: 15,
+                      fontWeight: FontWeight.w600,
+                      fontFamily: 'monospace',
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: Text('Cancel', style: TextStyle(color: c.textSecondary)),
+        ),
+        TextButton(
+          onPressed: () => Navigator.pop(context, color),
+          child: Text('Select', style: TextStyle(color: c.accent)),
+        ),
+      ],
+    );
+  }
+}
+
+class _HueSlider extends StatelessWidget {
+  final double hue;
+  final ValueChanged<double> onChanged;
+  const _HueSlider({required this.hue, required this.onChanged});
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      height: 28,
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final w = constraints.maxWidth;
+          return GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onHorizontalDragUpdate: (d) {
+              final local = (d.localPosition.dx).clamp(0.0, w);
+              onChanged((local / w) * 360.0);
+            },
+            onTapDown: (d) {
+              final local = d.localPosition.dx.clamp(0.0, w);
+              onChanged((local / w) * 360.0);
+            },
+            child: CustomPaint(
+              size: Size(w, 28),
+              painter: _HueTrackPainter(hue: hue),
+            ),
+          );
+        },
+      ),
+    );
+  }
+}
+
+class _HueTrackPainter extends CustomPainter {
+  final double hue;
+  const _HueTrackPainter({required this.hue});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final r = RRect.fromRectAndRadius(
+      Rect.fromLTWH(0, 8, size.width, 12),
+      const Radius.circular(6),
+    );
+    final paint = Paint()
+      ..shader = const LinearGradient(
+        colors: [
+          Color(0xFFFF0000),
+          Color(0xFFFFFF00),
+          Color(0xFF00FF00),
+          Color(0xFF00FFFF),
+          Color(0xFF0000FF),
+          Color(0xFFFF00FF),
+          Color(0xFFFF0000),
+        ],
+      ).createShader(Rect.fromLTWH(0, 0, size.width, size.height));
+    canvas.drawRRect(r, paint);
+    final x = (hue / 360.0).clamp(0.0, 1.0) * size.width;
+    canvas.drawCircle(
+      Offset(x, size.height / 2),
+      10,
+      Paint()
+        ..color = Colors.white
+        ..style = PaintingStyle.fill,
+    );
+    canvas.drawCircle(
+      Offset(x, size.height / 2),
+      10,
+      Paint()
+        ..color = Colors.black26
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 1,
+    );
+  }
+
+  @override
+  bool shouldRepaint(covariant _HueTrackPainter old) => old.hue != hue;
+}
+
+class _SvPicker extends StatelessWidget {
+  final HSVColor hsv;
+  final ValueChanged<HSVColor> onChanged;
+  const _SvPicker({required this.hsv, required this.onChanged});
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final size = Size(constraints.maxWidth, constraints.maxHeight);
+        void update(Offset local) {
+          final s = (local.dx / size.width).clamp(0.0, 1.0);
+          final v = 1.0 - (local.dy / size.height).clamp(0.0, 1.0);
+          onChanged(hsv.withSaturation(s).withValue(v));
+        }
+
+        return GestureDetector(
+          onPanDown: (d) => update(d.localPosition),
+          onPanUpdate: (d) => update(d.localPosition),
+          child: CustomPaint(
+            size: size,
+            painter: _SvPainter(hsv: hsv),
+          ),
+        );
+      },
+    );
+  }
+}
+
+class _SvPainter extends CustomPainter {
+  final HSVColor hsv;
+  const _SvPainter({required this.hsv});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final rect = Offset.zero & size;
+    final rrect = RRect.fromRectAndRadius(rect, const Radius.circular(10));
+    canvas.save();
+    canvas.clipRRect(rrect);
+
+    final hueColor = HSVColor.fromAHSV(1, hsv.hue, 1, 1).toColor();
+    canvas.drawRect(rect, Paint()..color = hueColor);
+    canvas.drawRect(
+      rect,
+      Paint()
+        ..shader = LinearGradient(
+          colors: [Colors.white, Colors.white.withValues(alpha: 0)],
+        ).createShader(rect),
+    );
+    canvas.drawRect(
+      rect,
+      Paint()
+        ..shader = LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          colors: [Colors.transparent, Colors.black],
+        ).createShader(rect),
+    );
+
+    final cx = hsv.saturation * size.width;
+    final cy = (1.0 - hsv.value) * size.height;
+    canvas.drawCircle(
+      Offset(cx, cy),
+      9,
+      Paint()
+        ..color = Colors.white
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 2.5,
+    );
+    canvas.drawCircle(
+      Offset(cx, cy),
+      9,
+      Paint()
+        ..color = Colors.black38
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 1,
+    );
+    canvas.restore();
+  }
+
+  @override
+  bool shouldRepaint(covariant _SvPainter old) =>
+      old.hsv.hue != hsv.hue ||
+      old.hsv.saturation != hsv.saturation ||
+      old.hsv.value != hsv.value;
 }
 
 class _OneHandToggle extends ConsumerWidget {
@@ -2265,7 +2564,7 @@ class _AboutSection extends StatelessWidget {
                 ),
                 const SizedBox(height: 4),
                 Text(
-                  'Version 2.37.12 · build 2.37.12+279',
+                  'Version 2.37.13 · build 2.37.13+280',
                   style: TextStyle(color: c.textSecondary, fontSize: 13),
                 ),
                 const SizedBox(height: 10),
@@ -2360,7 +2659,7 @@ class _AboutSection extends StatelessWidget {
               icon: Icons.info_outline,
               iconColor: _muted,
               title: 'Koma',
-              subtitle: 'Version 2.37.12 · build 2.37.12+279',
+              subtitle: 'Version 2.37.13 · build 2.37.13+280',
             ),
             SettingsRow(
               icon: Icons.favorite_outline,
