@@ -506,13 +506,17 @@ class _ExtensionsScreenState extends ConsumerState<ExtensionsScreen>
   }
 
   void _openAvailableFilter() {
-    var showOnlyNsfw = _availShowOnlyNsfw;
+    final theme = ref.read(themeProvider);
+    var showNsfw = theme.showNsfwExtensions;
+    var showObsolete = theme.showObsoleteExtensions;
+    var showOnlyNsfw = showNsfw && _availShowOnlyNsfw;
     var lang = _availLang;
     final types = Set<String>.from(_availTypes);
     final c = context.colors;
     showModalBottomSheet<void>(
       context: context,
       backgroundColor: c.surface,
+      isScrollControlled: true,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
       ),
@@ -536,110 +540,155 @@ class _ExtensionsScreenState extends ConsumerState<ExtensionsScreen>
               );
             }
 
-            return Padding(
-              padding: const EdgeInsets.fromLTRB(20, 12, 20, 28),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Center(
-                    child: Container(
-                      width: 36,
-                      height: 4,
-                      decoration: BoxDecoration(
-                        color: c.textTertiary,
-                        borderRadius: BorderRadius.circular(99),
+            return SafeArea(
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.fromLTRB(20, 12, 20, 28),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Center(
+                      child: Container(
+                        width: 36,
+                        height: 4,
+                        decoration: BoxDecoration(
+                          color: c.textTertiary,
+                          borderRadius: BorderRadius.circular(99),
+                        ),
                       ),
                     ),
-                  ),
-                  const SizedBox(height: 16),
-                  Text(
-                    'Filter available',
-                    style: TextStyle(
-                      color: c.textPrimary,
-                      fontSize: 18,
-                      fontWeight: FontWeight.bold,
+                    const SizedBox(height: 16),
+                    Text(
+                      'Filters and Controls',
+                      style: TextStyle(
+                        color: c.textPrimary,
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                      ),
                     ),
-                  ),
-                  const SizedBox(height: 8),
-                  SwitchListTile(
-                    contentPadding: EdgeInsets.zero,
-                    title: Text(
-                      'Show only NSFW',
-                      style: TextStyle(color: c.textPrimary),
+                    const SizedBox(height: 8),
+                    SwitchListTile(
+                      contentPadding: EdgeInsets.zero,
+                      title: Text(
+                        'Show NSFW extensions',
+                        style: TextStyle(color: c.textPrimary),
+                      ),
+                      subtitle: Text(
+                        showNsfw
+                            ? 'NSFW extensions are listed'
+                            : 'NSFW extensions are hidden',
+                        style: TextStyle(color: c.textSecondary, fontSize: 12),
+                      ),
+                      value: showNsfw,
+                      onChanged: (v) => setSheet(() {
+                        showNsfw = v;
+                        if (!v) showOnlyNsfw = false;
+                      }),
                     ),
-                    subtitle: Text(
-                      showOnlyNsfw
-                          ? 'Only NSFW extensions listed'
-                          : 'NSFW and non-NSFW extensions listed',
-                      style: TextStyle(color: c.textSecondary, fontSize: 12),
-                    ),
-                    value: showOnlyNsfw,
-                    onChanged: (v) => setSheet(() => showOnlyNsfw = v),
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    'Language',
-                    style: TextStyle(
-                      color: c.textTertiary,
-                      fontSize: 12,
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  Wrap(
-                    spacing: 8,
-                    runSpacing: 8,
-                    children: [
-                      for (final code in _allowedLanguages)
-                        ChoiceChip(
-                          label: Text(
-                            code == 'all'
-                                ? 'All'
-                                : completeLanguageName(code),
-                          ),
-                          selected: lang == code,
-                          onSelected: (_) => setSheet(() => lang = code),
+                    SwitchListTile(
+                      contentPadding: EdgeInsets.zero,
+                      title: Text(
+                        'Show only NSFW',
+                        style: TextStyle(
+                          color: showNsfw ? c.textPrimary : c.textTertiary,
                         ),
-                    ],
-                  ),
-                  const SizedBox(height: 16),
-                  Text(
-                    'Type',
-                    style: TextStyle(
-                      color: c.textTertiary,
-                      fontSize: 12,
-                      fontWeight: FontWeight.w700,
+                      ),
+                      subtitle: Text(
+                        !showNsfw
+                            ? 'Turn on Show NSFW extensions first'
+                            : showOnlyNsfw
+                            ? 'Only NSFW extensions listed'
+                            : 'NSFW and non-NSFW extensions listed',
+                        style: TextStyle(color: c.textSecondary, fontSize: 12),
+                      ),
+                      value: showOnlyNsfw,
+                      onChanged: showNsfw
+                          ? (v) => setSheet(() => showOnlyNsfw = v)
+                          : null,
                     ),
-                  ),
-                  const SizedBox(height: 8),
-                  Wrap(
-                    spacing: 8,
-                    runSpacing: 8,
-                    children: [
-                      typeChip(SourceCodeLanguage.mihon, 'Mihon'),
-                      typeChip(SourceCodeLanguage.dart, 'Dart'),
-                      typeChip(SourceCodeLanguage.js, 'JS'),
-                    ],
-                  ),
-                  const SizedBox(height: 20),
-                  SizedBox(
-                    width: double.infinity,
-                    child: FilledButton(
-                      onPressed: () {
-                        setState(() {
-                          _availShowOnlyNsfw = showOnlyNsfw;
-                          _availLang = lang;
-                          _availTypes
-                            ..clear()
-                            ..addAll(types);
-                        });
-                        Navigator.pop(ctx);
-                      },
-                      child: const Text('Apply'),
+                    SwitchListTile(
+                      contentPadding: EdgeInsets.zero,
+                      title: Text(
+                        'Show obsolete extensions',
+                        style: TextStyle(color: c.textPrimary),
+                      ),
+                      subtitle: Text(
+                        showObsolete
+                            ? 'Outdated extensions are listed'
+                            : 'Outdated extensions are hidden',
+                        style: TextStyle(color: c.textSecondary, fontSize: 12),
+                      ),
+                      value: showObsolete,
+                      onChanged: (v) => setSheet(() => showObsolete = v),
                     ),
-                  ),
-                ],
+                    const SizedBox(height: 8),
+                    Text(
+                      'Language',
+                      style: TextStyle(
+                        color: c.textTertiary,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: [
+                        for (final code in _allowedLanguages)
+                          ChoiceChip(
+                            label: Text(
+                              code == 'all'
+                                  ? 'All'
+                                  : completeLanguageName(code),
+                            ),
+                            selected: lang == code,
+                            onSelected: (_) => setSheet(() => lang = code),
+                          ),
+                      ],
+                    ),
+                    const SizedBox(height: 16),
+                    Text(
+                      'Type',
+                      style: TextStyle(
+                        color: c.textTertiary,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: [
+                        typeChip(SourceCodeLanguage.mihon, 'Mihon'),
+                        typeChip(SourceCodeLanguage.dart, 'Dart'),
+                        typeChip(SourceCodeLanguage.js, 'JS'),
+                      ],
+                    ),
+                    const SizedBox(height: 20),
+                    SizedBox(
+                      width: double.infinity,
+                      child: FilledButton(
+                        onPressed: () async {
+                          final tn = ref.read(themeProvider.notifier);
+                          await tn.setShowNsfwExtensions(showNsfw);
+                          await tn.setShowObsoleteExtensions(showObsolete);
+                          if (!mounted) return;
+                          setState(() {
+                            _availShowOnlyNsfw = showNsfw && showOnlyNsfw;
+                            _availLang = lang;
+                            _availTypes
+                              ..clear()
+                              ..addAll(types);
+                          });
+                          if (ctx.mounted) Navigator.pop(ctx);
+                        },
+                        child: const Text('Apply'),
+                      ),
+                    ),
+                  ],
+                ),
               ),
             );
           },
@@ -665,7 +714,7 @@ class _ExtensionsScreenState extends ConsumerState<ExtensionsScreen>
             onPressed: _fetchAllIndexes,
           ),
           IconButton(
-            tooltip: 'Filter available extensions',
+            tooltip: 'Filters and controls',
             icon: Icon(Icons.filter_list_rounded, color: c.textPrimary),
             onPressed: _openAvailableFilter,
           ),
@@ -721,7 +770,9 @@ class _ExtensionsScreenState extends ConsumerState<ExtensionsScreen>
                   indexCache: _indexCache,
                   loading: _loadingIndex,
                   installed: _installed,
-                  showOnlyNsfw: _availShowOnlyNsfw,
+                  showNsfw: theme.showNsfwExtensions,
+                  showOnlyNsfw:
+                      theme.showNsfwExtensions && _availShowOnlyNsfw,
                   langFilter: _availLang,
                   typeFilters: _availTypes,
                   showObsolete: theme.showObsoleteExtensions,
@@ -1165,6 +1216,7 @@ class _AvailableTab extends StatefulWidget {
   final Map<int, List<ExtensionIndexEntry>> indexCache;
   final Set<int> loading;
   final List<ExtensionSource> installed;
+  final bool showNsfw;
   final bool showOnlyNsfw;
   final String langFilter;
   final Set<String> typeFilters;
@@ -1179,6 +1231,7 @@ class _AvailableTab extends StatefulWidget {
     required this.indexCache,
     required this.loading,
     required this.installed,
+    required this.showNsfw,
     required this.showOnlyNsfw,
     required this.langFilter,
     required this.typeFilters,
@@ -1244,6 +1297,7 @@ class _AvailableTabState extends State<_AvailableTab> {
   }
 
   List<_AvailableRow> _buildRowsCached({
+    required bool showNsfw,
     required bool showOnlyNsfw,
     required bool showObsolete,
   }) {
@@ -1253,6 +1307,7 @@ class _AvailableTabState extends State<_AvailableTab> {
       widget.indexCache.length,
       widget.installed.length,
       _expandedRepos.length,
+      showNsfw,
       showOnlyNsfw,
       showObsolete,
       widget.langFilter,
@@ -1261,6 +1316,7 @@ class _AvailableTabState extends State<_AvailableTab> {
     );
     if (_cachedRows != null && _rowsCacheKey == key) return _cachedRows!;
     _cachedRows = _buildRows(
+      showNsfw: showNsfw,
       showOnlyNsfw: showOnlyNsfw,
       showObsolete: showObsolete,
     );
@@ -1269,6 +1325,7 @@ class _AvailableTabState extends State<_AvailableTab> {
   }
 
   List<_AvailableRow> _buildRows({
+    required bool showNsfw,
     required bool showOnlyNsfw,
     required bool showObsolete,
   }) {
@@ -1298,8 +1355,9 @@ class _AvailableTabState extends State<_AvailableTab> {
       if (!_allowedLanguageSet.contains(lang)) continue;
       if (widget.langFilter != 'all' && lang != widget.langFilter) continue;
       if (entry.sources.isEmpty && !entry.isJs && !entry.isDart) continue;
-      // Filter: ON → NSFW only; OFF → show NSFW and non-NSFW.
-      if (showOnlyNsfw && !entry.isNsfw) continue;
+      // Show NSFW off → hide NSFW. Show only NSFW on → NSFW-only.
+      if (!showNsfw && entry.isNsfw) continue;
+      if (showNsfw && showOnlyNsfw && !entry.isNsfw) continue;
       if (!showObsolete && entry.isObsolete) continue;
       final typeOk =
           widget.typeFilters.isEmpty ||
@@ -1397,6 +1455,7 @@ class _AvailableTabState extends State<_AvailableTab> {
     }
 
     final rows = _buildRowsCached(
+      showNsfw: widget.showNsfw,
       showOnlyNsfw: widget.showOnlyNsfw,
       showObsolete: widget.showObsolete,
     );

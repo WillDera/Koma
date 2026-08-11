@@ -325,7 +325,7 @@ class _MangaDetailScreenState extends ConsumerState<MangaDetailScreen> {
                   ?.name ??
               '',
         )
-        ..setLoading(false)
+        // Keep loading true — refresh will clear it when finished/skipped.
         ..setError(null);
       if (!mounted || gen != _loadGen) return;
       // Fetch fresh data + chapters in background
@@ -387,8 +387,9 @@ class _MangaDetailScreenState extends ConsumerState<MangaDetailScreen> {
           'memo': widget.memo ?? m.memo,
       })
       ..setMangaId(m.id)
-      ..setInLibrary(m.inLibrary, m.id)
-      ..setLoading(false);
+      ..setInLibrary(m.inLibrary, m.id);
+    // Do not clear loading here — [_refreshFromSource] clears it after fetch
+    // or when cached chapters mean the network refresh is skipped.
 
     final chapters = await repos.manga.getMangaChapters(mangaId);
     if (chapters.isNotEmpty && mounted && _isCurrentBinding) {
@@ -511,6 +512,8 @@ class _MangaDetailScreenState extends ConsumerState<MangaDetailScreen> {
       }
     }
     if (!mounted || expectedGen != _loadGen || !_isCurrentBinding) return;
+    // Ensure the fetch banner is visible for the whole network round-trip
+    // (seed paths previously cleared loading before this awaited).
     ref.read(mangaDetailProvider.notifier).setLoading(true);
     try {
       final repos = ref.read(repositoriesProvider);
@@ -701,8 +704,8 @@ class _MangaDetailScreenState extends ConsumerState<MangaDetailScreen> {
         if ((widget.memo ?? manga.memo) != null)
           'memo': widget.memo ?? manga.memo,
       })
-      ..setLoading(false)
       ..setError(null);
+    // Do not touch loading — Isar stream updates must not hide the fetch banner.
     setState(() {
       _mangaId = manga.id;
       _inLibrary = manga.inLibrary;
@@ -1760,77 +1763,83 @@ class _MangaDetailScreenState extends ConsumerState<MangaDetailScreen> {
       ),
       body: detail.details != null
           ? CustomScrollView(
-              slivers: [
-                if (detail.loading)
-                  SliverToBoxAdapter(
-                    child: Material(
-                      color: c.accent.withValues(alpha: 0.14),
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 16,
-                          vertical: 10,
-                        ),
-                        child: Row(
-                          children: [
-                            SizedBox(
-                              width: 16,
-                              height: 16,
-                              child: CircularProgressIndicator(
-                                strokeWidth: 2,
-                                color: c.accent,
-                              ),
-                            ),
-                            const SizedBox(width: 12),
-                            Expanded(
-                              child: Text(
-                                detail.chapters.isEmpty
-                                    ? 'Fetching manga details and chapters…'
-                                    : 'Refreshing manga metadata…',
-                                style: TextStyle(
-                                  color: c.textPrimary,
-                                  fontSize: 13,
-                                  fontWeight: FontWeight.w500,
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
+                  slivers: [
+                    SliverToBoxAdapter(
+                      child: _Header(
+                        details: detail.details!,
+                        c: c,
+                        inLibrary: _inLibrary,
+                        onAddToLibrary: _addToLibrary,
+                        onRemoveFromLibrary: _removeFromLibrary,
+                        appBarHeight: appBarHeight,
+                        localThumbnail: _localThumbnail,
+                        sourceId: widget.sourceId,
+                        url: widget.url,
+                        sourceName: detail.sourceName,
+                        lastChapterDate: lastChapterDate,
+                        releaseCycle: releaseCycle,
+                        expanded: detail.expanded,
+                        onExpandedChanged: (v) => ref
+                            .read(mangaDetailProvider.notifier)
+                            .setExpanded(v),
+                        fallbackTitle: widget.title,
                       ),
                     ),
-                  ),
-                if (detail.error != null)
-                  SliverToBoxAdapter(
-                    child: Padding(
-                      padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
-                      child: Text(
-                        detail.error!,
-                        style: TextStyle(color: c.accent, fontSize: 13),
+                    SliverToBoxAdapter(child: const SizedBox(height: 16)),
+                    // Between Add to library (header) and Chapters.
+                    if (detail.loading)
+                      SliverToBoxAdapter(
+                        child: Padding(
+                          padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+                          child: Material(
+                            color: c.accent.withValues(alpha: 0.14),
+                            borderRadius: BorderRadius.circular(10),
+                            child: Padding(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 14,
+                                vertical: 10,
+                              ),
+                              child: Row(
+                                children: [
+                                  SizedBox(
+                                    width: 16,
+                                    height: 16,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                      color: c.accent,
+                                    ),
+                                  ),
+                                  const SizedBox(width: 12),
+                                  Expanded(
+                                    child: Text(
+                                      detail.chapters.isEmpty
+                                          ? 'Fetching manga details and chapters…'
+                                          : 'Refreshing manga metadata…',
+                                      style: TextStyle(
+                                        color: c.textPrimary,
+                                        fontSize: 13,
+                                        fontWeight: FontWeight.w500,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ),
                       ),
-                    ),
-                  ),
-                SliverToBoxAdapter(
-                    child: _Header(
-                      details: detail.details!,
-                      c: c,
-                      inLibrary: _inLibrary,
-                      onAddToLibrary: _addToLibrary,
-                      onRemoveFromLibrary: _removeFromLibrary,
-                      appBarHeight: appBarHeight,
-                      localThumbnail: _localThumbnail,
-                      sourceId: widget.sourceId,
-                      url: widget.url,
-                      sourceName: detail.sourceName,
-                      lastChapterDate: lastChapterDate,
-                      releaseCycle: releaseCycle,
-                      expanded: detail.expanded,
-                      onExpandedChanged: (v) =>
-                          ref.read(mangaDetailProvider.notifier).setExpanded(v),
-                      fallbackTitle: widget.title,
-                    ),
-                  ),
-                  SliverToBoxAdapter(child: const SizedBox(height: 24)),
-                  // Chapter header
-                  SliverToBoxAdapter(
+                    if (detail.error != null)
+                      SliverToBoxAdapter(
+                        child: Padding(
+                          padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+                          child: Text(
+                            detail.error!,
+                            style: TextStyle(color: c.accent, fontSize: 13),
+                          ),
+                        ),
+                      ),
+                    // Chapter header
+                    SliverToBoxAdapter(
                     child: Padding(
                       padding: const EdgeInsets.only(bottom: 12),
                       child: Row(
@@ -2035,7 +2044,10 @@ class _MangaDetailScreenState extends ConsumerState<MangaDetailScreen> {
           ? Center(
               child: Padding(
                 padding: const EdgeInsets.all(32),
-                child: Text(detail.error!, style: TextStyle(color: c.accent)),
+                child: Text(
+                  detail.error!,
+                  style: TextStyle(color: c.accent),
+                ),
               ),
             )
           : const Center(child: Text('Failed to load manga details')),
