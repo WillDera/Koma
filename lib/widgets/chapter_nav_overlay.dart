@@ -98,7 +98,6 @@ class ChapterNavOverlay extends StatelessWidget {
             maxLines: 2,
             overflow: TextOverflow.ellipsis,
             style: TextStyle(
-              fontFamily: AppType.uiFont,
               fontSize: 20,
               height: 26 / 20,
               fontWeight: FontWeight.w700,

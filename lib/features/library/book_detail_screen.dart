@@ -7,6 +7,7 @@ import '../../core/models/book.dart';
 import '../../core/models/chapter.dart';
 import '../../router/book_navigation.dart';
 import '../../theme/app_theme.dart';
+import '../../theme/theme_provider.dart';
 import '../../theme/tokens/app_spacing.dart';
 import '../../theme/tokens/app_type.dart';
 import '../../widgets/animated_press.dart';
@@ -70,7 +71,7 @@ class BookDetailScreen extends ConsumerWidget {
   }
 }
 
-class _DetailBody extends StatelessWidget {
+class _DetailBody extends ConsumerWidget {
   const _DetailBody({
     required this.book,
     required this.chapters,
@@ -84,8 +85,9 @@ class _DetailBody extends StatelessWidget {
   final String? chapterError;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final c = context.colors;
+    final theme = ref.watch(themeProvider);
     final chapterId = savedChapterId(chapters, book.currentChapterIndex);
     final progress = book.progress.clamp(0.0, 1.0);
     final currentPosition = chapters.isEmpty
@@ -128,7 +130,10 @@ class _DetailBody extends StatelessWidget {
                             style: Theme.of(context).textTheme.headlineMedium
                                 ?.copyWith(
                                   color: c.textPrimary,
-                                  fontFamily: AppType.readingFont,
+                                  fontFamily: theme.useDeviceFont
+                                      ? null
+                                      : (theme.readingFontFamily ??
+                                          AppType.readingFont),
                                   height: 1.15,
                                 ),
                           ),
