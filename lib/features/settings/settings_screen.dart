@@ -15,15 +15,14 @@ import '../../core/services/library_update_prefs.dart';
 import '../../core/services/metadata_enrichment_service.dart';
 import '../../core/services/source_service.dart';
 import '../../router/router.dart';
-import '../../theme/app_icons.dart';
 import '../../theme/app_theme.dart';
 import '../../theme/theme_provider.dart';
 import '../../theme/tokens/app_colors.dart';
 import '../../theme/tokens/app_motion.dart';
 import '../../theme/tokens/app_spacing.dart';
+import '../../theme/tokens/app_type.dart';
 import '../../widgets/animated_press.dart';
 import '../../widgets/dialog_sheet.dart';
-import '../../widgets/divider_hairline.dart';
 import '../../widgets/library_book_card.dart';
 import '../../widgets/library_header.dart';
 import '../../widgets/one_hand_spacer.dart';
@@ -31,7 +30,6 @@ import '../../widgets/reading_streak_card.dart';
 import '../../widgets/screen_chrome.dart';
 import '../../widgets/segmented_control.dart';
 import '../../widgets/settings_section.dart';
-import '../../widgets/text_field.dart';
 import '../../widgets/toast.dart';
 
 class SettingsScreen extends StatelessWidget {
@@ -49,25 +47,73 @@ class SettingsScreen extends StatelessWidget {
             const OneHandSpacer(),
             const LibraryHeader(
               title: 'Settings',
-              subtitle: 'Version 2.36.0',
-              padding: EdgeInsets.fromLTRB(24, 20, 20, 12),
+              subtitle: 'Customize your reading experience',
+              padding: EdgeInsets.fromLTRB(20, 8, 16, 12),
             ),
-            const StaggeredEntrance(
-              index: 0,
-              child: FeaturePanel(
-                icon: AppIcons.tune,
-                title: 'Tune the reading room',
-                subtitle:
-                    'Shape the app around your eyes, your thumb, your sources, and your backups.',
-                stats: [
-                  PanelStat(value: 'Local', label: 'Storage'),
-                  PanelStat(value: 'Reader', label: 'Focus'),
-                  PanelStat(value: 'Fast', label: 'Controls'),
+            const StaggeredEntrance(index: 0, child: _ThemePreviewPill()),
+            const SizedBox(height: 16),
+            const StaggeredEntrance(index: 1, child: _SettingsHub()),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _ThemePreviewPill extends ConsumerWidget {
+  const _ThemePreviewPill();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final c = context.colors;
+    final theme = ref.watch(themeProvider);
+    final modeLabel = switch (theme.themeMode) {
+      ThemeMode.light => 'Light',
+      ThemeMode.dark => 'Dark',
+      ThemeMode.system => 'Auto',
+    };
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 20),
+      child: Container(
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: c.accentMuted,
+          borderRadius: AppSpacing.brLg,
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 40,
+              height: 40,
+              decoration: BoxDecoration(
+                color: c.accent,
+                borderRadius: AppSpacing.brMd,
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    '$modeLabel theme',
+                    style: TextStyle(
+                      color: c.textPrimary,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    '${theme.readingFont.label} · ${theme.fontSize.toInt()}px · ${theme.lineHeight.toStringAsFixed(2)}× leading',
+                    style: TextStyle(
+                      color: c.textSecondary,
+                      fontSize: 11,
+                    ),
+                  ),
                 ],
               ),
             ),
-            const SizedBox(height: 8),
-            const StaggeredEntrance(index: 1, child: _SettingsHub()),
           ],
         ),
       ),
@@ -86,28 +132,38 @@ class _SettingsHub extends StatelessWidget {
       children: [
         SettingsRow(
           icon: Icons.palette_outlined,
+          iconColor: AppColors.figmaViolet,
           title: 'Appearance',
+          subtitle: 'Theme, accent, single hand mode',
           onTap: () => _open(context, 'Appearance', const _AppearanceSection()),
         ),
         SettingsRow(
           icon: Icons.text_fields_rounded,
+          iconColor: AppColors.figmaGreen,
           title: 'Typography',
+          subtitle: 'Font, size, line height, bionic reading',
           onTap: () => _open(context, 'Typography', const _TypographySection()),
         ),
         SettingsRow(
           icon: Icons.storage_outlined,
+          iconColor: AppColors.figmaAmber,
           title: 'Data',
+          subtitle: 'Export and import your library data',
           onTap: () => _open(context, 'Data', const _DataAndStatsPage()),
         ),
         SettingsRow(
-          icon: Icons.travel_explore_outlined,
+          icon: Icons.layers_outlined,
+          iconColor: AppColors.figmaCyan,
           title: 'Sources',
+          subtitle: 'Ebook sources and manga plugins',
           onTap: () =>
               _open(context, 'Sources', const _SourcesAndPluginsPage()),
         ),
         SettingsRow(
           icon: Icons.info_outline_rounded,
+          iconColor: const Color(0xFF8888A0),
           title: 'About',
+          subtitle: 'App info, version, credits',
           onTap: () => _open(context, 'About', const _AboutSection()),
         ),
       ],
@@ -143,8 +199,11 @@ class _SettingsDestinationScreen extends StatelessWidget {
             padding: const EdgeInsets.only(bottom: 32),
             children: [
               const OneHandSpacer(),
-              LibraryHeader(title: title, showBackButton: true),
-              const SizedBox(height: 4),
+              LibraryHeader(
+                title: title,
+                showBackButton: true,
+                padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+              ),
               child,
             ],
           ),
@@ -162,13 +221,13 @@ class _DataAndStatsPage extends StatelessWidget {
     return const Column(
       children: [
         _DataSection(),
-        SizedBox(height: 24),
+        SizedBox(height: 20),
         _DownloadQueueSection(),
-        SizedBox(height: 24),
+        SizedBox(height: 20),
         _LibraryUpdateSection(),
-        SizedBox(height: 24),
+        SizedBox(height: 20),
         _BookMetadataSection(),
-        SizedBox(height: 24),
+        SizedBox(height: 20),
         _StatsSection(),
       ],
     );
@@ -181,7 +240,7 @@ class _SourcesAndPluginsPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return const Column(
-      children: [_SourcesSection(), SizedBox(height: 24), _PluginsSection()],
+      children: [_SourcesSection(), SizedBox(height: 20), _PluginsSection()],
     );
   }
 }
@@ -190,6 +249,9 @@ class _SourcesAndPluginsPage extends StatelessWidget {
 class _AppearanceSection extends ConsumerWidget {
   const _AppearanceSection();
 
+  static const _pad = EdgeInsets.symmetric(horizontal: 16);
+  static const _gap = SizedBox(height: 20);
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final c = context.colors;
@@ -197,242 +259,295 @@ class _AppearanceSection extends ConsumerWidget {
     final tn = ref.read(themeProvider.notifier);
     final library = ref.watch(libraryProvider);
     final ln = ref.read(libraryProvider.notifier);
-    return SettingsSection(
-      title: 'Appearance',
+    final violet = AppColors.figmaViolet;
+
+    return Column(
       children: [
-        Padding(
-          padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                'Theme',
-                style: TextStyle(
-                  color: c.textPrimary,
-                  fontSize: 14,
-                  fontWeight: FontWeight.w500,
-                ),
+        SettingsSection(
+          title: 'Theme',
+          headerColor: violet,
+          padding: _pad,
+          children: [
+            _ThemeModePicker(
+              value: theme.themeMode,
+              onChanged: tn.setThemeMode,
+            ),
+            SettingsRow(
+              title: 'Sepia mode',
+              subtitle: 'Warm paper-like background',
+              trailing: Switch(
+                value: theme.sepiaMode,
+                activeThumbColor: c.accent,
+                onChanged: tn.setSepiaMode,
               ),
-              const SizedBox(height: 10),
-              SegmentedControl<ThemeMode>(
-                segments: const {
-                  ThemeMode.light: 'Light',
-                  ThemeMode.dark: 'Dark',
-                  ThemeMode.system: 'Auto',
-                },
-                value: theme.themeMode,
-                onChanged: tn.setThemeMode,
+            ),
+            SettingsRow(
+              title: 'AMOLED dark mode',
+              subtitle: 'True black for OLED screens',
+              trailing: Switch(
+                value: theme.amoledMode,
+                activeThumbColor: c.accent,
+                onChanged: tn.setAmoledMode,
               ),
-              const SizedBox(height: 12),
-              Material(
-                type: MaterialType.transparency,
-                child: SwitchListTile(
-                  contentPadding: EdgeInsets.zero,
-                  title: const Text('Sepia mode'),
-                  subtitle: Text(
-                    'Warm paper-like background',
-                    style: TextStyle(color: c.textSecondary, fontSize: 12),
-                  ),
-                  value: theme.sepiaMode,
-                  onChanged: tn.setSepiaMode,
-                ),
+            ),
+            SettingsRow(
+              title: 'Use device font',
+              subtitle: 'System default instead of Inter',
+              trailing: Switch(
+                value: theme.useDeviceFont,
+                activeThumbColor: c.accent,
+                onChanged: tn.setUseDeviceFont,
               ),
-              Material(
-                type: MaterialType.transparency,
-                child: SwitchListTile(
-                  contentPadding: EdgeInsets.zero,
-                  title: const Text('AMOLED dark mode'),
-                  subtitle: Text(
-                    'True black for OLED screens',
-                    style: TextStyle(color: c.textSecondary, fontSize: 12),
-                  ),
-                  value: theme.amoledMode,
-                  onChanged: tn.setAmoledMode,
-                ),
-              ),
-              Material(
-                type: MaterialType.transparency,
-                child: SwitchListTile(
-                  contentPadding: EdgeInsets.zero,
-                  title: const Text('Use device font'),
-                  subtitle: Text(
-                    'System default instead of Inter',
-                    style: TextStyle(color: c.textSecondary, fontSize: 12),
-                  ),
-                  value: theme.useDeviceFont,
-                  onChanged: tn.setUseDeviceFont,
-                ),
-              ),
-            ],
-          ),
+            ),
+          ],
         ),
-        const Padding(
-          padding: EdgeInsets.symmetric(horizontal: 16),
-          child: HairlineDivider(),
-        ),
-        Padding(
-          padding: const EdgeInsets.fromLTRB(16, 16, 16, 16),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                'Accent',
-                style: TextStyle(
-                  color: c.textPrimary,
-                  fontSize: 14,
-                  fontWeight: FontWeight.w500,
-                ),
-              ),
-              const SizedBox(height: 4),
-              Text(
-                'Used for highlights, selections, and the active state.',
-                style: TextStyle(color: c.textSecondary, fontSize: 12),
-              ),
-              const SizedBox(height: 12),
-              Row(
+        _gap,
+        SettingsSection(
+          title: 'Accent color',
+          headerColor: violet,
+          padding: _pad,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  for (final entry in const [
-                    (
-                      AccentPreset.indigo,
-                      AppColors.accentIndigo,
-                      AppColors.accentIndigoDark,
-                      'Indigo',
+                  Text(
+                    'Used for highlights, selections, and the active state.',
+                    style: TextStyle(color: c.textSecondary, fontSize: 11),
+                  ),
+                  const SizedBox(height: 14),
+                  Row(
+                    children: [
+                      for (final entry in const [
+                        (
+                          AccentPreset.indigo,
+                          AppColors.accentIndigo,
+                          AppColors.accentIndigoDark,
+                          'Indigo',
+                        ),
+                        (
+                          AccentPreset.amber,
+                          AppColors.accentAmber,
+                          AppColors.accentAmberDark,
+                          'Amber',
+                        ),
+                        (
+                          AccentPreset.forest,
+                          AppColors.accentForest,
+                          AppColors.accentForestDark,
+                          'Forest',
+                        ),
+                        (
+                          AccentPreset.aethelgard,
+                          AppColors.aethelgardPrimary,
+                          AppColors.aethelgardPrimaryDark,
+                          'Neo-Noir',
+                        ),
+                      ]) ...[
+                        _AccentSwatch(
+                          light: entry.$2,
+                          dark: entry.$3,
+                          label: entry.$4,
+                          selected:
+                              theme.customAccentHex == null &&
+                              theme.accent == entry.$1,
+                          onTap: () => tn.setAccent(entry.$1),
+                        ),
+                        const SizedBox(width: 10),
+                      ],
+                    ],
+                  ),
+                  const SizedBox(height: 16),
+                  Text(
+                    'Custom color',
+                    style: TextStyle(
+                      color: c.textPrimary,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w500,
                     ),
-                    (
-                      AccentPreset.amber,
-                      AppColors.accentAmber,
-                      AppColors.accentAmberDark,
-                      'Amber',
-                    ),
-                    (
-                      AccentPreset.forest,
-                      AppColors.accentForest,
-                      AppColors.accentForestDark,
-                      'Forest',
-                    ),
-                    (
-                      AccentPreset.aethelgard,
-                      AppColors.aethelgardPrimary,
-                      AppColors.aethelgardPrimaryDark,
-                      'Neo-Noir',
-                    ),
-                  ]) ...[
-                    _AccentSwatch(
-                      light: entry.$2,
-                      dark: entry.$3,
-                      label: entry.$4,
-                      selected:
-                          theme.customAccentHex == null &&
-                          theme.accent == entry.$1,
-                      onTap: () => tn.setAccent(entry.$1),
-                    ),
-                    const SizedBox(width: 10),
-                  ],
+                  ),
+                  const SizedBox(height: 6),
+                  _CustomAccentPicker(
+                    current: theme.customAccentHex,
+                    fallback: theme.accentColor,
+                    onSubmit: tn.setCustomAccentHex,
+                  ),
                 ],
               ),
-              const SizedBox(height: 16),
-              Text(
-                'Custom hex',
-                style: TextStyle(
-                  color: c.textPrimary,
-                  fontSize: 13,
-                  fontWeight: FontWeight.w500,
-                ),
-              ),
-              const SizedBox(height: 6),
-              _CustomAccentInput(
-                current: theme.customAccentHex,
-                onSubmit: tn.setCustomAccentHex,
-              ),
-            ],
-          ),
+            ),
+          ],
         ),
-        const Padding(
-          padding: EdgeInsets.symmetric(horizontal: 16),
-          child: HairlineDivider(),
+        _gap,
+        SettingsSection(
+          title: 'Ergonomics',
+          headerColor: violet,
+          padding: _pad,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 14, 16, 8),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Dominant hand',
+                    style: TextStyle(
+                      color: c.textPrimary,
+                      fontSize: 14,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    'Floating buttons on your preferred side for one-thumb reach.',
+                    style: TextStyle(color: c.textSecondary, fontSize: 11),
+                  ),
+                  const SizedBox(height: 10),
+                  SegmentedControl<HandMode>(
+                    segments: const {
+                      HandMode.right: 'Right',
+                      HandMode.left: 'Left',
+                    },
+                    value: theme.handMode,
+                    onChanged: tn.setHandMode,
+                  ),
+                ],
+              ),
+            ),
+            const _OneHandToggle(),
+          ],
         ),
-        Padding(
-          padding: const EdgeInsets.fromLTRB(16, 16, 16, 16),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                'Handedness',
-                style: TextStyle(
-                  color: c.textPrimary,
-                  fontSize: 14,
-                  fontWeight: FontWeight.w500,
-                ),
+        _gap,
+        SettingsSection(
+          title: 'Library',
+          headerColor: violet,
+          padding: _pad,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 14, 16, 16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Library grid',
+                    style: TextStyle(
+                      color: c.textPrimary,
+                      fontSize: 14,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  SegmentedControl<int>(
+                    segments: const {2: '2 cols', 3: '3 cols'},
+                    value: library.gridColumns,
+                    onChanged: (v) => ln.setGridColumns(v),
+                  ),
+                  const SizedBox(height: 16),
+                  Text(
+                    'Card style',
+                    style: TextStyle(
+                      color: c.textPrimary,
+                      fontSize: 14,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  SegmentedControl<LibraryCardVariant>(
+                    segments: const {
+                      LibraryCardVariant.grid: 'Grid',
+                      LibraryCardVariant.list: 'List',
+                      LibraryCardVariant.compact: 'Compact',
+                      LibraryCardVariant.overlay: 'Overlay',
+                    },
+                    value: library.cardVariant,
+                    onChanged: (v) => ln.setCardVariant(v),
+                  ),
+                ],
               ),
-              const SizedBox(height: 4),
-              Text(
-                'Floating buttons on your preferred side for one-thumb reach.',
-                style: TextStyle(color: c.textSecondary, fontSize: 12),
-              ),
-              const SizedBox(height: 10),
-              SegmentedControl<HandMode>(
-                segments: const {
-                  HandMode.right: 'Right',
-                  HandMode.left: 'Left',
-                },
-                value: theme.handMode,
-                onChanged: tn.setHandMode,
-              ),
-            ],
-          ),
+            ),
+          ],
         ),
-        const Padding(
-          padding: EdgeInsets.symmetric(horizontal: 16),
-          child: HairlineDivider(),
-        ),
-        Padding(
-          padding: const EdgeInsets.fromLTRB(16, 16, 16, 16),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                'Library grid',
-                style: TextStyle(
-                  color: c.textPrimary,
-                  fontSize: 14,
-                  fontWeight: FontWeight.w500,
-                ),
-              ),
-              const SizedBox(height: 10),
-              SegmentedControl<int>(
-                segments: const {2: '2 cols', 3: '3 cols'},
-                value: library.gridColumns,
-                onChanged: (v) => ln.setGridColumns(v),
-              ),
-              const SizedBox(height: 16),
-              Text(
-                'Card style',
-                style: TextStyle(
-                  color: c.textPrimary,
-                  fontSize: 14,
-                  fontWeight: FontWeight.w500,
-                ),
-              ),
-              const SizedBox(height: 10),
-              SegmentedControl<LibraryCardVariant>(
-                segments: const {
-                  LibraryCardVariant.grid: 'Grid',
-                  LibraryCardVariant.list: 'List',
-                  LibraryCardVariant.compact: 'Compact',
-                  LibraryCardVariant.overlay: 'Overlay',
-                },
-                value: library.cardVariant,
-                onChanged: (v) => ln.setCardVariant(v),
-              ),
-            ],
-          ),
-        ),
-        const Padding(
-          padding: EdgeInsets.symmetric(horizontal: 16),
-          child: HairlineDivider(),
-        ),
-        const _OneHandToggle(),
       ],
+    );
+  }
+}
+
+/// Figma-style 3-column Light / Dark / System theme cards.
+class _ThemeModePicker extends StatelessWidget {
+  final ThemeMode value;
+  final ValueChanged<ThemeMode> onChanged;
+
+  const _ThemeModePicker({required this.value, required this.onChanged});
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.colors;
+    const options = <(ThemeMode, String, IconData)>[
+      (ThemeMode.light, 'Light', Icons.wb_sunny_outlined),
+      (ThemeMode.dark, 'Dark', Icons.dark_mode_outlined),
+      (ThemeMode.system, 'System', Icons.desktop_windows_outlined),
+    ];
+    // Match SettingsSection card corners (brLg) on the end cells.
+    final endRadius = Radius.circular(AppSpacing.radiusLg);
+    return IntrinsicHeight(
+      child: Row(
+        children: [
+          for (var i = 0; i < options.length; i++) ...[
+            Expanded(
+              child: AnimatedPress(
+                onTap: () => onChanged(options[i].$1),
+                child: AnimatedContainer(
+                  duration: AppMotion.base,
+                  curve: AppMotion.standard,
+                  padding: const EdgeInsets.symmetric(vertical: 16),
+                  decoration: BoxDecoration(
+                    color: value == options[i].$1
+                        ? c.accent.withValues(alpha: 0.16)
+                        : Colors.transparent,
+                    borderRadius: BorderRadius.only(
+                      topLeft: i == 0 ? endRadius : Radius.zero,
+                      topRight: i == options.length - 1
+                          ? endRadius
+                          : Radius.zero,
+                    ),
+                  ),
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(
+                        options[i].$3,
+                        size: 20,
+                        color: value == options[i].$1
+                            ? c.accent
+                            : c.textSecondary,
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        options[i].$2,
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: value == options[i].$1
+                              ? FontWeight.w600
+                              : FontWeight.w400,
+                          color: value == options[i].$1
+                              ? c.accent
+                              : c.textSecondary,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+            if (i < options.length - 1)
+              VerticalDivider(
+                width: 0.5,
+                thickness: 0.5,
+                color: c.border,
+              ),
+          ],
+        ],
+      ),
     );
   }
 }
@@ -464,33 +579,44 @@ class _AccentSwatch extends StatelessWidget {
           AnimatedContainer(
             duration: AppMotion.base,
             curve: AppMotion.standard,
-            width: 44,
-            height: 44,
+            padding: selected ? const EdgeInsets.all(3) : EdgeInsets.zero,
             decoration: BoxDecoration(
-              color: color,
-              borderRadius: AppSpacing.brMd,
-              border: Border.all(
-                color: selected ? c.textPrimary : c.border,
-                width: selected ? 2 : 1,
-              ),
+              borderRadius: BorderRadius.circular(selected ? 14 : 10),
+              border: selected
+                  ? Border.all(color: color, width: 2)
+                  : Border.all(color: Colors.transparent, width: 0),
             ),
-            child: selected
-                ? Icon(
-                    Icons.check,
-                    size: 20,
-                    color: color.computeLuminance() > 0.5
-                        ? const Color(0xFF1A1815)
-                        : Colors.white,
-                  )
-                : null,
+            child: AnimatedContainer(
+              duration: AppMotion.base,
+              curve: AppMotion.standard,
+              width: selected ? 40 : 44,
+              height: selected ? 40 : 44,
+              decoration: BoxDecoration(
+                color: color,
+                borderRadius: AppSpacing.brMd,
+                border: Border.all(
+                  color: selected ? Colors.transparent : c.border,
+                  width: selected ? 0 : 1,
+                ),
+              ),
+              child: selected
+                  ? Icon(
+                      Icons.check,
+                      size: 18,
+                      color: color.computeLuminance() > 0.5
+                          ? const Color(0xFF1A1815)
+                          : Colors.white,
+                    )
+                  : null,
+            ),
           ),
           const SizedBox(height: 4),
           Text(
             label,
             style: TextStyle(
-              color: c.textSecondary,
-              fontSize: 11,
-              fontWeight: FontWeight.w500,
+              color: selected ? color : c.textSecondary,
+              fontSize: 10,
+              fontWeight: selected ? FontWeight.w600 : FontWeight.w400,
             ),
           ),
         ],
@@ -499,87 +625,133 @@ class _AccentSwatch extends StatelessWidget {
   }
 }
 
-class _CustomAccentInput extends StatefulWidget {
+class _CustomAccentPicker extends StatefulWidget {
   final String? current;
+  final Color fallback;
   final ValueChanged<String?> onSubmit;
-  const _CustomAccentInput({required this.current, required this.onSubmit});
+
+  const _CustomAccentPicker({
+    required this.current,
+    required this.fallback,
+    required this.onSubmit,
+  });
 
   @override
-  State<_CustomAccentInput> createState() => _CustomAccentInputState();
+  State<_CustomAccentPicker> createState() => _CustomAccentPickerState();
 }
 
-class _CustomAccentInputState extends State<_CustomAccentInput> {
-  late final TextEditingController _ctrl;
+class _CustomAccentPickerState extends State<_CustomAccentPicker> {
+  Color? _draft;
 
   @override
   void initState() {
     super.initState();
-    _ctrl = TextEditingController(text: widget.current ?? '');
+    _draft = ThemeState.resolveHex(widget.current ?? '');
   }
 
   @override
-  void didUpdateWidget(covariant _CustomAccentInput old) {
+  void didUpdateWidget(covariant _CustomAccentPicker old) {
     super.didUpdateWidget(old);
-    final next = widget.current ?? '';
-    if (next != _ctrl.text) {
-      _ctrl.text = next;
+    if (old.current != widget.current) {
+      _draft = ThemeState.resolveHex(widget.current ?? '');
     }
   }
 
-  @override
-  void dispose() {
-    _ctrl.dispose();
-    super.dispose();
+  String _toHex(Color color) {
+    final r = ((color.r * 255.0).round() & 0xff).toRadixString(16).padLeft(2, '0');
+    final g = ((color.g * 255.0).round() & 0xff).toRadixString(16).padLeft(2, '0');
+    final b = ((color.b * 255.0).round() & 0xff).toRadixString(16).padLeft(2, '0');
+    return '#${r.toUpperCase()}${g.toUpperCase()}${b.toUpperCase()}';
+  }
+
+  Future<void> _openPicker() async {
+    final initial = _draft ??
+        ThemeState.resolveHex(widget.current ?? '') ??
+        widget.fallback;
+    final picked = await showDialog<Color>(
+      context: context,
+      builder: (ctx) => _AccentColorPickerDialog(initial: initial),
+    );
+    if (picked == null || !mounted) return;
+    setState(() => _draft = picked);
   }
 
   void _apply() {
-    final v = _ctrl.text.trim();
-    if (v.isEmpty) {
-      widget.onSubmit(null);
-    } else {
-      widget.onSubmit(v);
-    }
+    final draft = _draft;
+    if (draft == null) return;
+    widget.onSubmit(_toHex(draft));
   }
 
   @override
   Widget build(BuildContext context) {
     final c = context.colors;
-    final parsed = _parseColor(_ctrl.text);
+    final preview = _draft ??
+        ThemeState.resolveHex(widget.current ?? '') ??
+        widget.fallback;
+    final hex = _draft != null
+        ? _toHex(_draft!)
+        : (widget.current?.trim().isNotEmpty == true
+            ? widget.current!.trim()
+            : null);
+    final canApply = _draft != null;
+
     return Row(
       children: [
-        Container(
-          width: 32,
-          height: 32,
-          decoration: BoxDecoration(
-            color: parsed ?? c.surfaceMuted,
-            borderRadius: AppSpacing.brSm,
-            border: Border.all(color: c.border, width: 0.5),
+        AnimatedPress(
+          onTap: _openPicker,
+          child: Container(
+            width: 40,
+            height: 40,
+            decoration: BoxDecoration(
+              color: preview,
+              borderRadius: AppSpacing.brSm,
+              border: Border.all(color: c.border, width: 0.5),
+            ),
+            child: Icon(
+              Icons.colorize_rounded,
+              size: 18,
+              color: preview.computeLuminance() > 0.5
+                  ? const Color(0xFF1A1815)
+                  : Colors.white,
+            ),
           ),
         ),
         const SizedBox(width: 10),
         Expanded(
-          child: StashTextField(
-            controller: _ctrl,
-            hint: '#RRGGBB',
-            leadingIcon: Icons.format_color_fill,
-            showClearButton: true,
-            onSubmitted: (_) => _apply(),
-            onChanged: (_) => setState(() {}),
+          child: AnimatedPress(
+            onTap: _openPicker,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+              decoration: BoxDecoration(
+                color: c.surfaceMuted,
+                borderRadius: AppSpacing.brSm,
+                border: Border.all(color: c.border, width: 0.5),
+              ),
+              child: Text(
+                hex ?? 'Tap to pick a color',
+                style: TextStyle(
+                  color: hex != null ? c.textPrimary : c.textTertiary,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w500,
+                  fontFamily: 'monospace',
+                ),
+              ),
+            ),
           ),
         ),
         const SizedBox(width: 8),
         AnimatedPress(
-          onTap: _apply,
+          onTap: canApply ? _apply : null,
           child: Container(
             padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
             decoration: BoxDecoration(
-              color: parsed == null ? c.surfaceMuted : c.accent,
+              color: canApply ? c.accent : c.surfaceMuted,
               borderRadius: AppSpacing.brPill,
             ),
             child: Text(
               'Apply',
               style: TextStyle(
-                color: parsed == null ? c.textTertiary : c.onAccent,
+                color: canApply ? c.onAccent : c.textTertiary,
                 fontSize: 13,
                 fontWeight: FontWeight.w600,
               ),
@@ -589,17 +761,263 @@ class _CustomAccentInputState extends State<_CustomAccentInput> {
       ],
     );
   }
+}
 
-  Color? _parseColor(String hex) {
-    var v = hex.trim();
-    if (v.isEmpty) return null;
-    if (v.startsWith('#')) v = v.substring(1);
-    if (v.length == 6) v = 'FF$v';
-    if (v.length != 8) return null;
-    final i = int.tryParse(v, radix: 16);
-    if (i == null) return null;
-    return Color(i);
+class _AccentColorPickerDialog extends StatefulWidget {
+  final Color initial;
+  const _AccentColorPickerDialog({required this.initial});
+
+  @override
+  State<_AccentColorPickerDialog> createState() =>
+      _AccentColorPickerDialogState();
+}
+
+class _AccentColorPickerDialogState extends State<_AccentColorPickerDialog> {
+  late HSVColor _hsv;
+
+  @override
+  void initState() {
+    super.initState();
+    _hsv = HSVColor.fromColor(widget.initial);
   }
+
+  String _toHex(Color color) {
+    final r = ((color.r * 255.0).round() & 0xff).toRadixString(16).padLeft(2, '0');
+    final g = ((color.g * 255.0).round() & 0xff).toRadixString(16).padLeft(2, '0');
+    final b = ((color.b * 255.0).round() & 0xff).toRadixString(16).padLeft(2, '0');
+    return '#${r.toUpperCase()}${g.toUpperCase()}${b.toUpperCase()}';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.colors;
+    final color = _hsv.toColor();
+    return AlertDialog(
+      backgroundColor: c.surface,
+      title: Text('Pick accent color', style: TextStyle(color: c.textPrimary)),
+      content: SizedBox(
+        width: 280,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            AspectRatio(
+              aspectRatio: 1.2,
+              child: _SvPicker(
+                hsv: _hsv,
+                onChanged: (v) => setState(() => _hsv = v),
+              ),
+            ),
+            const SizedBox(height: 14),
+            _HueSlider(
+              hue: _hsv.hue,
+              onChanged: (h) => setState(() => _hsv = _hsv.withHue(h)),
+            ),
+            const SizedBox(height: 14),
+            Row(
+              children: [
+                Container(
+                  width: 36,
+                  height: 36,
+                  decoration: BoxDecoration(
+                    color: color,
+                    borderRadius: AppSpacing.brSm,
+                    border: Border.all(color: c.border, width: 0.5),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    _toHex(color),
+                    style: TextStyle(
+                      color: c.textPrimary,
+                      fontSize: 15,
+                      fontWeight: FontWeight.w600,
+                      fontFamily: 'monospace',
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: Text('Cancel', style: TextStyle(color: c.textSecondary)),
+        ),
+        TextButton(
+          onPressed: () => Navigator.pop(context, color),
+          child: Text('Select', style: TextStyle(color: c.accent)),
+        ),
+      ],
+    );
+  }
+}
+
+class _HueSlider extends StatelessWidget {
+  final double hue;
+  final ValueChanged<double> onChanged;
+  const _HueSlider({required this.hue, required this.onChanged});
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      height: 28,
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final w = constraints.maxWidth;
+          return GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onHorizontalDragUpdate: (d) {
+              final local = (d.localPosition.dx).clamp(0.0, w);
+              onChanged((local / w) * 360.0);
+            },
+            onTapDown: (d) {
+              final local = d.localPosition.dx.clamp(0.0, w);
+              onChanged((local / w) * 360.0);
+            },
+            child: CustomPaint(
+              size: Size(w, 28),
+              painter: _HueTrackPainter(hue: hue),
+            ),
+          );
+        },
+      ),
+    );
+  }
+}
+
+class _HueTrackPainter extends CustomPainter {
+  final double hue;
+  const _HueTrackPainter({required this.hue});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final r = RRect.fromRectAndRadius(
+      Rect.fromLTWH(0, 8, size.width, 12),
+      const Radius.circular(6),
+    );
+    final paint = Paint()
+      ..shader = const LinearGradient(
+        colors: [
+          Color(0xFFFF0000),
+          Color(0xFFFFFF00),
+          Color(0xFF00FF00),
+          Color(0xFF00FFFF),
+          Color(0xFF0000FF),
+          Color(0xFFFF00FF),
+          Color(0xFFFF0000),
+        ],
+      ).createShader(Rect.fromLTWH(0, 0, size.width, size.height));
+    canvas.drawRRect(r, paint);
+    final x = (hue / 360.0).clamp(0.0, 1.0) * size.width;
+    canvas.drawCircle(
+      Offset(x, size.height / 2),
+      10,
+      Paint()
+        ..color = Colors.white
+        ..style = PaintingStyle.fill,
+    );
+    canvas.drawCircle(
+      Offset(x, size.height / 2),
+      10,
+      Paint()
+        ..color = Colors.black26
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 1,
+    );
+  }
+
+  @override
+  bool shouldRepaint(covariant _HueTrackPainter old) => old.hue != hue;
+}
+
+class _SvPicker extends StatelessWidget {
+  final HSVColor hsv;
+  final ValueChanged<HSVColor> onChanged;
+  const _SvPicker({required this.hsv, required this.onChanged});
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final size = Size(constraints.maxWidth, constraints.maxHeight);
+        void update(Offset local) {
+          final s = (local.dx / size.width).clamp(0.0, 1.0);
+          final v = 1.0 - (local.dy / size.height).clamp(0.0, 1.0);
+          onChanged(hsv.withSaturation(s).withValue(v));
+        }
+
+        return GestureDetector(
+          onPanDown: (d) => update(d.localPosition),
+          onPanUpdate: (d) => update(d.localPosition),
+          child: CustomPaint(
+            size: size,
+            painter: _SvPainter(hsv: hsv),
+          ),
+        );
+      },
+    );
+  }
+}
+
+class _SvPainter extends CustomPainter {
+  final HSVColor hsv;
+  const _SvPainter({required this.hsv});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final rect = Offset.zero & size;
+    final rrect = RRect.fromRectAndRadius(rect, const Radius.circular(10));
+    canvas.save();
+    canvas.clipRRect(rrect);
+
+    final hueColor = HSVColor.fromAHSV(1, hsv.hue, 1, 1).toColor();
+    canvas.drawRect(rect, Paint()..color = hueColor);
+    canvas.drawRect(
+      rect,
+      Paint()
+        ..shader = LinearGradient(
+          colors: [Colors.white, Colors.white.withValues(alpha: 0)],
+        ).createShader(rect),
+    );
+    canvas.drawRect(
+      rect,
+      Paint()
+        ..shader = LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          colors: [Colors.transparent, Colors.black],
+        ).createShader(rect),
+    );
+
+    final cx = hsv.saturation * size.width;
+    final cy = (1.0 - hsv.value) * size.height;
+    canvas.drawCircle(
+      Offset(cx, cy),
+      9,
+      Paint()
+        ..color = Colors.white
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 2.5,
+    );
+    canvas.drawCircle(
+      Offset(cx, cy),
+      9,
+      Paint()
+        ..color = Colors.black38
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 1,
+    );
+    canvas.restore();
+  }
+
+  @override
+  bool shouldRepaint(covariant _SvPainter old) =>
+      old.hsv.hue != hsv.hue ||
+      old.hsv.saturation != hsv.saturation ||
+      old.hsv.value != hsv.value;
 }
 
 class _OneHandToggle extends ConsumerWidget {
@@ -610,35 +1028,14 @@ class _OneHandToggle extends ConsumerWidget {
     final theme = ref.watch(themeProvider);
     final tn = ref.read(themeProvider.notifier);
     final c = context.colors;
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 16, 16, 16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            'One-hand mode',
-            style: TextStyle(
-              color: c.textPrimary,
-              fontSize: 14,
-              fontWeight: FontWeight.w500,
-            ),
-          ),
-          const SizedBox(height: 4),
-          Text(
-            'Pushes content toward the bottom half of the screen for easier thumb reach. Headers grow larger and shrink as you scroll.',
-            style: TextStyle(color: c.textSecondary, fontSize: 12),
-          ),
-          const SizedBox(height: 10),
-          Material(
-            type: MaterialType.transparency,
-            child: SwitchListTile(
-              contentPadding: EdgeInsets.zero,
-              title: const Text('Enable one-hand layout'),
-              value: theme.oneHandMode,
-              onChanged: tn.setOneHandMode,
-            ),
-          ),
-        ],
+    return SettingsRow(
+      title: 'Single hand mode',
+      subtitle:
+          'Pushes content toward the bottom half of the screen for easier thumb reach.',
+      trailing: Switch(
+        value: theme.oneHandMode,
+        activeThumbColor: c.accent,
+        onChanged: tn.setOneHandMode,
       ),
     );
   }
@@ -648,82 +1045,116 @@ class _OneHandToggle extends ConsumerWidget {
 class _TypographySection extends ConsumerWidget {
   const _TypographySection();
 
+  static const _pad = EdgeInsets.symmetric(horizontal: 16);
+  static const _gap = SizedBox(height: 20);
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final p = ref.watch(themeProvider);
     final tn = ref.read(themeProvider.notifier);
-    return SettingsSection(
-      title: 'Typography',
+    final green = AppColors.figmaGreen;
+    return Column(
       children: [
-        SettingsRow(
-          icon: Icons.text_fields,
+        SettingsSection(
           title: 'Reading font',
-          subtitle: p.readingFont.label,
-          trailing: const Icon(Icons.chevron_right, size: 18),
-          onTap: () => _showFontPicker(context, ref, p),
-        ),
-        SettingsRow(
-          icon: Icons.format_size,
-          title: 'Font size',
-          subtitle: '${p.fontSize.toInt()}px',
-          trailing: SizedBox(
-            width: 110,
-            child: Slider(
-              value: p.fontSize,
-              min: 13,
-              max: 26,
-              divisions: 13,
-              onChanged: tn.setFontSize,
+          headerColor: green,
+          padding: _pad,
+          children: [
+            SettingsRow(
+              icon: Icons.text_fields,
+              iconColor: green,
+              title: 'Reading font',
+              subtitle: p.readingFont.label,
+              trailing: const Icon(Icons.chevron_right, size: 18),
+              onTap: () => _showFontPicker(context, ref, p),
             ),
-          ),
+          ],
         ),
-        SettingsRow(
-          icon: Icons.format_line_spacing,
-          title: 'Line height',
-          subtitle: p.lineHeight.toStringAsFixed(2),
-          trailing: SizedBox(
-            width: 110,
-            child: Slider(
-              value: p.lineHeight,
-              min: 1.2,
-              max: 2.2,
-              divisions: 10,
-              onChanged: tn.setLineHeight,
+        _gap,
+        SettingsSection(
+          title: 'Layout',
+          headerColor: green,
+          padding: _pad,
+          children: [
+            SettingsRow(
+              icon: Icons.format_size,
+              iconColor: green,
+              title: 'Font size',
+              subtitle: '${p.fontSize.toInt()}px',
+              trailing: SizedBox(
+                width: 110,
+                child: Slider(
+                  value: p.fontSize,
+                  min: 13,
+                  max: 26,
+                  divisions: 13,
+                  activeColor: green,
+                  onChanged: tn.setFontSize,
+                ),
+              ),
             ),
-          ),
-        ),
-        const HairlineDivider(indent: 16, endIndent: 16),
-        SettingsRow(
-          icon: Icons.bolt,
-          title: 'Bionic reading',
-          subtitle: 'Bold the first 40% of every word',
-          trailing: Switch(
-            value: p.bionicReading,
-            onChanged: tn.setBionicReading,
-          ),
-        ),
-        const HairlineDivider(indent: 16, endIndent: 16),
-        SettingsRow(
-          icon: Icons.format_align_left,
-          title: 'Text alignment',
-          subtitle: _alignName(p.textAlign),
-          trailing: const Icon(Icons.chevron_right, size: 18),
-          onTap: () => _showAlignPicker(context, ref, p),
-        ),
-        SettingsRow(
-          icon: Icons.width_normal,
-          title: 'Page width',
-          subtitle: '${p.pageWidth.toInt()}px',
-          trailing: SizedBox(
-            width: 110,
-            child: Slider(
-              value: p.pageWidth,
-              min: 520,
-              max: 760,
-              divisions: 12,
-              onChanged: tn.setPageWidth,
+            SettingsRow(
+              icon: Icons.format_line_spacing,
+              iconColor: green,
+              title: 'Line height',
+              subtitle: '${p.lineHeight.toStringAsFixed(2)}×',
+              trailing: SizedBox(
+                width: 110,
+                child: Slider(
+                  value: p.lineHeight,
+                  min: 1.2,
+                  max: 2.2,
+                  divisions: 10,
+                  activeColor: green,
+                  onChanged: tn.setLineHeight,
+                ),
+              ),
             ),
-          ),
+            SettingsRow(
+              icon: Icons.width_normal,
+              iconColor: green,
+              title: 'Page width',
+              subtitle: '${p.pageWidth.toInt()}px',
+              trailing: SizedBox(
+                width: 110,
+                child: Slider(
+                  value: p.pageWidth,
+                  min: 520,
+                  max: 760,
+                  divisions: 12,
+                  activeColor: green,
+                  onChanged: tn.setPageWidth,
+                ),
+              ),
+            ),
+          ],
+        ),
+        _gap,
+        SettingsSection(
+          title: 'Reading mode',
+          headerColor: green,
+          padding: _pad,
+          children: [
+            SettingsRow(
+              icon: Icons.bolt,
+              iconColor: green,
+              title: 'Bionic reading',
+              subtitle: 'Bold the first 40% of every word',
+              trailing: Switch(
+                value: p.bionicReading,
+                activeThumbColor: green,
+                onChanged: tn.setBionicReading,
+              ),
+            ),
+            SettingsRow(
+              icon: Icons.format_align_left,
+              iconColor: green,
+              title: 'Text alignment',
+              subtitle: _alignName(p.textAlign),
+              trailing: const Icon(Icons.chevron_right, size: 18),
+              onTap: () => _showAlignPicker(context, ref, p),
+            ),
+          ],
         ),
       ],
     );
@@ -792,17 +1223,18 @@ class _TypographySection extends ConsumerWidget {
                               fontWeight: FontWeight.w600,
                             ),
                           ),
-                          if (f.googleFontFamily != null)
-                            Padding(
-                              padding: const EdgeInsets.only(top: 4),
-                              child: Text(
-                                'Aa — long-form sample text',
-                                style: TextStyle(
-                                  color: context.colors.textSecondary,
-                                  fontSize: 13,
-                                ),
+                          Padding(
+                            padding: const EdgeInsets.only(top: 4),
+                            child: Text(
+                              'Aa — long-form sample text',
+                              style: AppType.fontStyle(
+                                fontFamily: f.googleFontFamily,
+                                fontSize: 15,
+                                lineHeight: 1.4,
+                                color: context.colors.textSecondary,
                               ),
                             ),
+                          ),
                         ],
                       ),
                     ),
@@ -972,6 +1404,8 @@ class _BookMetadataSectionState extends ConsumerState<_BookMetadataSection> {
     final progress = ref.watch(metadataEnrichmentProvider);
     return SettingsSection(
       title: 'Book metadata',
+      headerColor: AppColors.figmaAmber,
+      padding: const EdgeInsets.symmetric(horizontal: 16),
       footer:
           'Looks up author, cover, genres, and release date via Open Library (primary) and Google Books (fallback). An API key improves Google Books rate limits but is optional.',
       children: [
@@ -1019,6 +1453,8 @@ class _DownloadQueueSection extends ConsumerWidget {
     final pending = ref.watch(downloadManagerProvider).pendingCount;
     return SettingsSection(
       title: 'Downloads',
+      headerColor: AppColors.figmaAmber,
+      padding: const EdgeInsets.symmetric(horizontal: 16),
       footer:
           'Chapter downloads run in a shared queue across titles. Pause, cancel, or retry from the queue screen.',
       children: [
@@ -1048,11 +1484,13 @@ class _LibraryUpdateSection extends ConsumerWidget {
     final lastChecked = update.lastCheckedAt;
     return SettingsSection(
       title: 'Library updates',
+      headerColor: AppColors.figmaAmber,
+      padding: const EdgeInsets.symmetric(horizontal: 16),
       footer:
-          'Background checks can wait for Wi‑Fi or charging. Smart-update '
-          'skips titles that match the filters below. Turning on auto-download '
-          'queues newly discovered chapters after each successful check. '
-          'Category filters arrive once library categories exist.',
+          'Check now always fetches every library title. Skip filters below '
+          'apply only to auto/background checks. Background checks can also '
+          'wait for Wi‑Fi or charging. Turning on auto-download queues newly '
+          'discovered chapters after each successful check.',
       children: [
         SettingsRow(
           icon: Icons.autorenew,
@@ -1124,7 +1562,7 @@ class _LibraryUpdateSection extends ConsumerWidget {
           key: const Key('library_update_skip_completed'),
           icon: Icons.check_circle_outline,
           title: 'Skip completed titles',
-          subtitle: 'Do not check manga marked completed by the source',
+          subtitle: 'Auto-check: skip manga marked completed by the source',
           prefKey: LibraryUpdatePrefs.keySkipCompleted,
           defaultValue: LibraryUpdatePrefs.defaultSkipCompleted,
         ),
@@ -1132,7 +1570,7 @@ class _LibraryUpdateSection extends ConsumerWidget {
           key: const Key('library_update_skip_with_unread'),
           icon: Icons.mark_email_unread_outlined,
           title: 'Skip titles with unread chapters',
-          subtitle: 'Only check titles you are fully caught up on',
+          subtitle: 'Auto-check: only titles you are fully caught up on',
           prefKey: LibraryUpdatePrefs.keySkipWithUnread,
           defaultValue: LibraryUpdatePrefs.defaultSkipWithUnread,
         ),
@@ -1140,7 +1578,7 @@ class _LibraryUpdateSection extends ConsumerWidget {
           key: const Key('library_update_skip_not_started'),
           icon: Icons.play_circle_outline,
           title: 'Skip not-started titles',
-          subtitle: 'Only check titles you have started reading',
+          subtitle: 'Auto-check: only titles you have started reading',
           prefKey: LibraryUpdatePrefs.keySkipNotStarted,
           defaultValue: LibraryUpdatePrefs.defaultSkipNotStarted,
         ),
@@ -1156,10 +1594,12 @@ class _LibraryUpdateSection extends ConsumerWidget {
           icon: Icons.refresh,
           title: 'Check now',
           subtitle: update.checking
-              ? 'Checking…'
+              ? 'Checking all library titles…'
+              : update.error != null
+              ? 'Failed — tap to retry'
               : lastChecked != null
               ? 'Last checked ${_timeAgo(lastChecked)} · ${lastReport?.totalNew ?? update.lastNewChapterCount} new'
-              : 'Never checked',
+              : 'Fetches every library title from sources',
           trailing: update.checking
               ? const SizedBox(
                   width: 18,
@@ -1171,7 +1611,7 @@ class _LibraryUpdateSection extends ConsumerWidget {
               ? null
               : () => ref
                     .read(libraryUpdateProvider.notifier)
-                    .checkForNewChapters(),
+                    .checkForNewChapters(applyRestrictions: false),
         ),
       ],
     );
@@ -1246,6 +1686,45 @@ String _timeAgo(DateTime t) {
   return '${diff.inDays}d ago';
 }
 
+/// Soft tinted pill used as Export / Import trailing affordance.
+class _TintedActionChip extends StatelessWidget {
+  final String label;
+  final IconData icon;
+  final Color color;
+
+  const _TintedActionChip({
+    required this.label,
+    required this.icon,
+    required this.color,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.13),
+        borderRadius: AppSpacing.brMd,
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 14, color: color),
+          const SizedBox(width: 5),
+          Text(
+            label,
+            style: TextStyle(
+              color: color,
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 // ─── Data ────────────────────────────────────────────────────────────────
 class _DataSection extends ConsumerStatefulWidget {
   const _DataSection();
@@ -1260,13 +1739,18 @@ class _DataSectionState extends ConsumerState<_DataSection> {
 
   @override
   Widget build(BuildContext context) {
+    final amber = AppColors.figmaAmber;
+    final violet = AppColors.figmaVioletLight;
     return SettingsSection(
-      title: 'Data',
+      title: 'Backup & restore',
+      headerColor: amber,
+      padding: const EdgeInsets.symmetric(horizontal: 16),
       footer:
           'All your data lives on this device. Backups are plain JSON you can keep anywhere.',
       children: [
         SettingsRow(
           icon: Icons.file_upload_outlined,
+          iconColor: amber,
           title: 'Export',
           subtitle: 'Save books & snippets as JSON',
           trailing: _exporting
@@ -1275,11 +1759,16 @@ class _DataSectionState extends ConsumerState<_DataSection> {
                   height: 18,
                   child: CircularProgressIndicator(strokeWidth: 2),
                 )
-              : null,
+              : _TintedActionChip(
+                  label: 'Export',
+                  icon: Icons.download_outlined,
+                  color: amber,
+                ),
           onTap: _exporting ? null : _export,
         ),
         SettingsRow(
           icon: Icons.file_download_outlined,
+          iconColor: violet,
           title: 'Import',
           subtitle: 'Restore from a backup file',
           trailing: _importing
@@ -1288,7 +1777,11 @@ class _DataSectionState extends ConsumerState<_DataSection> {
                   height: 18,
                   child: CircularProgressIndicator(strokeWidth: 2),
                 )
-              : null,
+              : _TintedActionChip(
+                  label: 'Import',
+                  icon: Icons.upload_outlined,
+                  color: violet,
+                ),
           onTap: _importing ? null : _import,
         ),
       ],
@@ -1404,13 +1897,12 @@ class _SourcesSectionState extends ConsumerState<_SourcesSection> {
 
   @override
   Widget build(BuildContext context) {
-    final theme = ref.watch(themeProvider);
-    final tn = ref.read(themeProvider.notifier);
-    final c = context.colors;
     if (_loading) return const SizedBox.shrink();
     if (_error != null) {
       return SettingsSection(
-        title: 'ePub Sources',
+        title: 'Ebook sources',
+        headerColor: AppColors.figmaCyan,
+        padding: const EdgeInsets.symmetric(horizontal: 16),
         children: [
           Padding(
             padding: const EdgeInsets.all(16),
@@ -1423,7 +1915,9 @@ class _SourcesSectionState extends ConsumerState<_SourcesSection> {
       );
     }
     return SettingsSection(
-      title: 'ePub Sources',
+      title: 'Ebook sources',
+      headerColor: AppColors.figmaCyan,
+      padding: const EdgeInsets.symmetric(horizontal: 16),
       footer:
           'Discover tab searches all enabled sources. Add sources with the correct tag for the scraper to use.',
       children: [
@@ -1435,90 +1929,8 @@ class _SourcesSectionState extends ConsumerState<_SourcesSection> {
             onEdit: () => _edit(s),
           ),
         ),
-        SettingsRow(icon: Icons.add, title: 'Add source', onTap: _add),
-        const Padding(
-          padding: EdgeInsets.symmetric(horizontal: 16),
-          child: HairlineDivider(),
-        ),
-        Material(
-          type: MaterialType.transparency,
-          child: SwitchListTile(
-            contentPadding: const EdgeInsets.symmetric(horizontal: 16),
-            title: const Text('Show NSFW extensions'),
-            subtitle: Text(
-              'Hide sensitive extensions by default',
-              style: TextStyle(color: c.textSecondary, fontSize: 12),
-            ),
-            value: theme.showNsfwExtensions,
-            onChanged: tn.setShowNsfwExtensions,
-          ),
-        ),
-        Material(
-          type: MaterialType.transparency,
-          child: SwitchListTile(
-            contentPadding: const EdgeInsets.symmetric(horizontal: 16),
-            title: const Text('Show obsolete extensions'),
-            subtitle: Text(
-              'Hide extensions marked as outdated',
-              style: TextStyle(color: c.textSecondary, fontSize: 12),
-            ),
-            value: theme.showObsoleteExtensions,
-            onChanged: tn.setShowObsoleteExtensions,
-          ),
-        ),
-        SettingsRow(
-          icon: Icons.security_outlined,
-          title: 'Revoke all trusted extensions',
-          subtitle:
-              'Clear user-trusted sideloads. Repo-signed packages stay trusted.',
-          onTap: () => _revokeTrustedExtensions(context),
-        ),
+        SettingsRow(icon: Icons.add, iconColor: AppColors.figmaCyan, title: 'Add source', onTap: _add),
       ],
-    );
-  }
-
-  Future<void> _revokeTrustedExtensions(BuildContext context) async {
-    final c = context.colors;
-    final ok = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: c.surface,
-        title: Text(
-          'Revoke trusted extensions?',
-          style: TextStyle(color: c.textPrimary),
-        ),
-        content: Text(
-          'This clears extensions you explicitly trusted. Packages signed by '
-          'a known repository remain usable.',
-          style: TextStyle(color: c.textSecondary),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: Text('Cancel', style: TextStyle(color: c.textSecondary)),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            child: Text('Revoke', style: TextStyle(color: c.accent)),
-          ),
-        ],
-      ),
-    );
-    if (ok != true || !context.mounted) return;
-    final mgr = ExtensionManager(
-      ref.read(repositoriesProvider),
-      KeiyoushiService(),
-    );
-    final changed = await mgr.revokeAllTrusted();
-    if (!context.mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(
-          changed > 0
-              ? 'Revoked trust · $changed extension${changed == 1 ? '' : 's'} rechecked'
-              : 'Revoked all user-trusted extensions',
-        ),
-      ),
     );
   }
 
@@ -1676,10 +2088,21 @@ class _SourceRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final c = context.colors;
+    const cyan = AppColors.figmaCyan;
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
       child: Row(
         children: [
+          Container(
+            width: 40,
+            height: 40,
+            decoration: BoxDecoration(
+              color: cyan.withValues(alpha: 0.13),
+              borderRadius: AppSpacing.brMd,
+            ),
+            child: const Icon(Icons.language, size: 18, color: cyan),
+          ),
+          const SizedBox(width: 12),
           Expanded(
             child: GestureDetector(
               onTap: onEdit,
@@ -1692,15 +2115,9 @@ class _SourceRow extends StatelessWidget {
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(
                       color: c.textPrimary,
-                      fontSize: 14,
-                      fontWeight: FontWeight.w500,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
                     ),
-                  ),
-                  Text(
-                    source.tag,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(color: c.accent, fontSize: 11),
                   ),
                   Text(
                     source.baseUrl,
@@ -1708,6 +2125,27 @@ class _SourceRow extends StatelessWidget {
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(color: c.textTertiary, fontSize: 11),
                   ),
+                  if (source.tag.isNotEmpty) ...[
+                    const SizedBox(height: 2),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 6,
+                        vertical: 2,
+                      ),
+                      decoration: BoxDecoration(
+                        color: cyan.withValues(alpha: 0.13),
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                      child: Text(
+                        source.tag.toUpperCase(),
+                        style: const TextStyle(
+                          color: cyan,
+                          fontSize: 9,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ),
+                  ],
                 ],
               ),
             ),
@@ -1786,6 +2224,8 @@ class _StatsSectionState extends ConsumerState<_StatsSection> {
     if (_loading) return const SizedBox.shrink();
     return SettingsSection(
       title: 'Stats',
+      headerColor: AppColors.figmaAmber,
+      padding: const EdgeInsets.symmetric(horizontal: 16),
       children: [
         ReadingStreakCard(
           minutesPerDay: _minutesPerDay,
@@ -1923,11 +2363,14 @@ class _PluginsSection extends ConsumerWidget {
     final updateCount = ref.watch(extensionUpdateCountProvider);
     return SettingsSection(
       title: 'Plugins',
+      headerColor: AppColors.figmaCyan,
+      padding: const EdgeInsets.symmetric(horizontal: 16),
       footer:
           'Plugins extend Koma with new sources via Keiyoushi/Mihon extension APKs. Add a repo, fetch its index, and install the ones you want.',
       children: [
         SettingsRow(
           icon: Icons.extension_outlined,
+          iconColor: AppColors.figmaCyan,
           title: 'Manage plugins',
           subtitle: updateCount > 0
               ? 'Browse, install, and remove extensions · $updateCount update${updateCount == 1 ? '' : 's'} available'
@@ -1964,6 +2407,7 @@ class _PluginsSection extends ConsumerWidget {
         ),
         SettingsRow(
           icon: Icons.code,
+          iconColor: AppColors.figmaCyan,
           title: 'Plugin SDK',
           subtitle: 'Documentation for authors',
           trailing: const Icon(Icons.chevron_right, size: 18),
@@ -1986,7 +2430,64 @@ class _PluginsSection extends ConsumerWidget {
           prefKey: 'extension_auto_update_enabled',
           defaultValue: false,
         ),
+        SettingsRow(
+          icon: Icons.security_outlined,
+          iconColor: const Color(0xFFEF4444),
+          title: 'Revoke all trusted extensions',
+          subtitle:
+              'Clear user-trusted sideloads. Repo-signed packages stay trusted.',
+          destructive: true,
+          onTap: () => _revokeTrustedExtensions(context, ref),
+        ),
       ],
+    );
+  }
+
+  Future<void> _revokeTrustedExtensions(
+    BuildContext context,
+    WidgetRef ref,
+  ) async {
+    final c = context.colors;
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: c.surface,
+        title: Text(
+          'Revoke trusted extensions?',
+          style: TextStyle(color: c.textPrimary),
+        ),
+        content: Text(
+          'This clears extensions you explicitly trusted. Packages signed by '
+          'a known repository remain usable.',
+          style: TextStyle(color: c.textSecondary),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: Text('Cancel', style: TextStyle(color: c.textSecondary)),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: Text('Revoke', style: TextStyle(color: c.accent)),
+          ),
+        ],
+      ),
+    );
+    if (ok != true || !context.mounted) return;
+    final mgr = ExtensionManager(
+      ref.read(repositoriesProvider),
+      KeiyoushiService(),
+    );
+    final changed = await mgr.revokeAllTrusted();
+    if (!context.mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          changed > 0
+              ? 'Revoked trust · $changed extension${changed == 1 ? '' : 's'} rechecked'
+              : 'Revoked all user-trusted extensions',
+        ),
+      ),
     );
   }
 }
@@ -1995,25 +2496,221 @@ class _PluginsSection extends ConsumerWidget {
 class _AboutSection extends StatelessWidget {
   const _AboutSection();
 
+  static const _muted = Color(0xFF8888A0);
+  static const _pad = EdgeInsets.symmetric(horizontal: 16);
+
   @override
   Widget build(BuildContext context) {
-    return SettingsSection(
-      title: 'About',
+    final c = context.colors;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    const features = <(IconData, String, Color)>[
+      (Icons.menu_book_outlined, 'EPUB reading', AppColors.figmaViolet),
+      (Icons.extension_outlined, 'Manga plugins', AppColors.figmaAmber),
+      (Icons.bolt, 'Bionic reading', Color(0xFFEF4444)),
+      (Icons.shield_outlined, 'Local-first / offline', AppColors.figmaGreen),
+    ];
+    return Column(
       children: [
-        SettingsRow(
-          icon: Icons.info_outline,
-          title: 'Koma',
-          subtitle: 'Version 2.36.0 · build 2.36.0+266',
+        Padding(
+          padding: _pad,
+          child: Container(
+            width: double.infinity,
+            padding: const EdgeInsets.fromLTRB(24, 28, 24, 24),
+            decoration: BoxDecoration(
+              color: c.surface,
+              borderRadius: AppSpacing.brLg,
+              border: Border.all(color: c.border, width: 0.5),
+            ),
+            child: Column(
+              children: [
+                Container(
+                  width: 72,
+                  height: 72,
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(22),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withValues(alpha: 0.18),
+                        blurRadius: 12,
+                        offset: const Offset(0, 4),
+                      ),
+                    ],
+                  ),
+                  clipBehavior: Clip.antiAlias,
+                  child: Image.asset(
+                    'app_icons/hon.png',
+                    fit: BoxFit.cover,
+                    errorBuilder: (_, error, stackTrace) => Container(
+                      decoration: const BoxDecoration(
+                        gradient: LinearGradient(
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
+                          colors: [AppColors.figmaViolet, AppColors.figmaCyan],
+                        ),
+                      ),
+                      child: const Icon(
+                        Icons.menu_book_rounded,
+                        size: 34,
+                        color: Colors.white,
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 14),
+                Text(
+                  'Koma',
+                  style: TextStyle(
+                    color: c.textPrimary,
+                    fontSize: 22,
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: -0.4,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  'Version 2.37.15 · build 2.37.15+282',
+                  style: TextStyle(color: c.textSecondary, fontSize: 13),
+                ),
+                const SizedBox(height: 10),
+                Text(
+                  'A reader and a thinking tool. Local-first. No accounts. No tracking.',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    color: c.textSecondary,
+                    fontSize: 13,
+                    height: 1.5,
+                  ),
+                ),
+              ],
+            ),
+          ),
         ),
-        SettingsRow(
-          icon: Icons.favorite_outline,
-          title: 'A reader and a thinking tool',
-          subtitle: 'Local-first. No accounts. No tracking.',
+        const SizedBox(height: 20),
+        Padding(
+          padding: _pad,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              const Padding(
+                padding: EdgeInsets.fromLTRB(4, 8, 4, 8),
+                child: Text(
+                  'FEATURES',
+                  style: TextStyle(
+                    color: _muted,
+                    fontSize: 11,
+                    fontWeight: FontWeight.w600,
+                    letterSpacing: 0.8,
+                  ),
+                ),
+              ),
+              GridView.count(
+                crossAxisCount: 2,
+                shrinkWrap: true,
+                physics: const NeverScrollableScrollPhysics(),
+                mainAxisSpacing: 8,
+                crossAxisSpacing: 8,
+                childAspectRatio: 2.6,
+                children: [
+                  for (final f in features)
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 10,
+                        vertical: 8,
+                      ),
+                      decoration: BoxDecoration(
+                        color: c.surface,
+                        borderRadius: AppSpacing.brMd,
+                        border: Border.all(color: c.border, width: 0.5),
+                      ),
+                      child: Row(
+                        children: [
+                          Container(
+                            width: 28,
+                            height: 28,
+                            decoration: BoxDecoration(
+                              color: f.$3.withValues(alpha: 0.13),
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: Icon(f.$1, size: 14, color: f.$3),
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              f.$2,
+                              style: TextStyle(
+                                color: c.textPrimary,
+                                fontSize: 12,
+                                fontWeight: FontWeight.w500,
+                                height: 1.25,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                ],
+              ),
+            ],
+          ),
         ),
-        SettingsRow(
-          icon: Icons.book_outlined,
-          title: 'Open source licenses',
-          trailing: const Icon(Icons.chevron_right, size: 18),
+        const SizedBox(height: 20),
+        SettingsSection(
+          title: 'About',
+          headerColor: _muted,
+          padding: _pad,
+          children: [
+            SettingsRow(
+              icon: Icons.info_outline,
+              iconColor: _muted,
+              title: 'Koma',
+              subtitle: 'Version 2.37.15 · build 2.37.15+282',
+            ),
+            SettingsRow(
+              icon: Icons.favorite_outline,
+              iconColor: const Color(0xFFEF4444),
+              title: 'A reader and a thinking tool',
+              subtitle: 'Local-first. No accounts. No tracking.',
+            ),
+            SettingsRow(
+              icon: Icons.book_outlined,
+              iconColor: _muted,
+              title: 'Open source licenses',
+              trailing: const Icon(Icons.chevron_right, size: 18),
+            ),
+          ],
+        ),
+        const SizedBox(height: 20),
+        Padding(
+          padding: _pad,
+          child: Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: c.surface,
+              borderRadius: AppSpacing.brLg,
+              border: Border.all(color: c.border, width: 0.5),
+            ),
+            child: Column(
+              children: [
+                Text(
+                  'Made for readers who take their collections seriously.',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(color: c.textSecondary, fontSize: 12),
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  'Inspired by Mihon & Mangayomi',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    color: isDark
+                        ? const Color(0xFF3A3A55)
+                        : const Color(0xFFC0C0D8),
+                    fontSize: 11,
+                  ),
+                ),
+              ],
+            ),
+          ),
         ),
       ],
     );

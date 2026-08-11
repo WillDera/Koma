@@ -1,17 +1,23 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
+import '../../core/models/source.dart';
 import '../../core/providers.dart';
 import '../../core/services/source_service.dart';
 import '../../core/utils/image_cache.dart';
+import '../../router/router.dart';
 import '../../theme/app_icons.dart';
 import '../../theme/app_theme.dart';
-import '../../theme/theme_provider.dart';
 import '../../theme/tokens/app_spacing.dart';
 import '../../widgets/animated_press.dart';
 import '../../widgets/catalog_card_layout.dart';
 import '../../widgets/catalog_cover_card.dart';
 import '../../widgets/empty_state.dart';
+import '../../widgets/horizontal_tab_swipe.dart';
+import '../../widgets/icon_button_round.dart';
 import '../../widgets/library_book_card.dart';
 import '../../widgets/library_header.dart';
 import '../../widgets/one_hand_spacer.dart';
@@ -31,34 +37,172 @@ class DiscoverScreen extends ConsumerStatefulWidget {
 class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
   final _ctrl = TextEditingController();
   final _scrollCtrl = ScrollController();
+  final _searchFocus = FocusNode();
+  Timer? _idleUnfocus;
   List<SourceSearchResult> _results = [];
   bool _searching = false;
   bool _loaded = false;
   _DiscoverSection _section = _DiscoverSection.books;
-  final ValueNotifier<double> _scrollProgress = ValueNotifier<double>(0);
   final Map<String, double> _downloading = {};
-  bool get _oneHand => ref.watch(themeProvider).oneHandMode;
+  List<Source> _sources = [];
+  String? _sourceSubtitle;
 
   @override
   void initState() {
     super.initState();
-    _scrollCtrl.addListener(_onScroll);
+    WidgetsBinding.instance.addPostFrameCallback((_) => _loadSources());
   }
 
   @override
   void dispose() {
+    _idleUnfocus?.cancel();
+    _searchFocus.dispose();
     _ctrl.dispose();
-    _scrollCtrl.removeListener(_onScroll);
     _scrollCtrl.dispose();
-    _scrollProgress.dispose();
     super.dispose();
   }
 
-  void _onScroll() {
-    final p = (_scrollCtrl.offset / 60).clamp(0.0, 1.0);
-    if ((p - _scrollProgress.value).abs() > 0.02) {
-      _scrollProgress.value = p;
+  void _setSection(_DiscoverSection section) {
+    if (_section == section) return;
+    setState(() => _section = section);
+  }
+
+  void _scheduleIdleUnfocus() {
+    _idleUnfocus?.cancel();
+    _idleUnfocus = Timer(const Duration(milliseconds: 1800), () {
+      if (mounted && _searchFocus.hasFocus) _searchFocus.unfocus();
+    });
+  }
+
+  void _unfocusSearch() {
+    _idleUnfocus?.cancel();
+    _searchFocus.unfocus();
+  }
+
+  Future<void> _loadSources() async {
+    try {
+      final repos = ref.read(repositoriesProvider);
+      var sources = await repos.stats.getSources();
+      if (sources.isEmpty) {
+        for (final s in SourceService.defaultSources()) {
+          await repos.stats.insertSource(s);
+        }
+        sources = await repos.stats.getSources();
+      }
+      if (!mounted) return;
+      final enabled = sources.where((s) => s.enabled).toList();
+      setState(() {
+        _sources = sources;
+        if (enabled.isEmpty) {
+          _sourceSubtitle = 'No sources enabled';
+        } else if (enabled.length == 1) {
+          _sourceSubtitle = enabled.first.name;
+        } else {
+          _sourceSubtitle = '${enabled.length} sources';
+        }
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _sourceSubtitle = 'Find books from your sources');
     }
+  }
+
+  void _openSourcePicker() {
+    if (_section == _DiscoverSection.manga) {
+      context.pushNamed(Routes.extensions);
+      return;
+    }
+    _showBookSourceSheet();
+  }
+
+  Future<void> _showBookSourceSheet() async {
+    await _loadSources();
+    if (!mounted) return;
+    final c = context.colors;
+    await showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) {
+        return Container(
+          decoration: BoxDecoration(
+            color: c.surface,
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+          ),
+          child: SafeArea(
+            top: false,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(20, 16, 20, 8),
+                  child: Row(
+                    children: [
+                      Text(
+                        'Ebook sources',
+                        style: TextStyle(
+                          color: c.textPrimary,
+                          fontSize: 16,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      const Spacer(),
+                      TextButton(
+                        onPressed: () {
+                          Navigator.pop(ctx);
+                          context.pushNamed(Routes.sources);
+                        },
+                        child: Text(
+                          'Manage',
+                          style: TextStyle(color: c.accent),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                if (_sources.isEmpty)
+                  Padding(
+                    padding: const EdgeInsets.all(24),
+                    child: Text(
+                      'No sources configured',
+                      style: TextStyle(color: c.textSecondary),
+                    ),
+                  )
+                else
+                  ..._sources.map(
+                    (s) => ListTile(
+                      leading: Icon(
+                        Icons.public,
+                        color: s.enabled ? c.accent : c.textTertiary,
+                      ),
+                      title: Text(s.name),
+                      subtitle: Text(
+                        [
+                          if (s.language != null && s.language!.isNotEmpty)
+                            s.language!.toUpperCase(),
+                          s.baseUrl,
+                        ].join(' · '),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      trailing: Switch(
+                        value: s.enabled,
+                        onChanged: (v) async {
+                          final repos = ref.read(repositoriesProvider);
+                          final updated = s.copyWith(enabled: v);
+                          await repos.stats.updateSource(updated);
+                          if (ctx.mounted) Navigator.pop(ctx);
+                          await _loadSources();
+                        },
+                      ),
+                    ),
+                  ),
+                const SizedBox(height: 12),
+              ],
+            ),
+          ),
+        );
+      },
+    );
   }
 
   SourceService _svc() => ref.read(sourceServiceProvider);
@@ -66,12 +210,12 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
   Future<void> _search() async {
     final q = _ctrl.text.trim();
     if (q.isEmpty) return;
+    _unfocusSearch();
     setState(() {
       _searching = true;
       _loaded = true;
       _results = [];
-      // Show progressive per-source manga rows immediately.
-      _section = _DiscoverSection.manga;
+      // Keep the Books/Manga tab the user started the search from.
     });
     // Manga: progressive Global Search (per-source Loading → Success/Error).
     // Do not await — UI watches [globalSearchProvider].
@@ -83,26 +227,19 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
       onError: (_) => <SourceSearchResult>[],
     );
     if (!mounted) return;
-    final mangaState = ref.read(globalSearchProvider);
     setState(() {
       _results = books;
-      if (_results.isEmpty &&
-          (mangaState.mangaHitCount > 0 || mangaState.searching)) {
-        _section = _DiscoverSection.manga;
-      } else if (_results.isNotEmpty) {
-        _section = _DiscoverSection.books;
-      }
       _searching = false;
     });
   }
 
   void _clearSearch() {
     _ctrl.clear();
+    _unfocusSearch();
     ref.read(globalSearchProvider.notifier).search('');
     setState(() {
       _results = [];
       _loaded = false;
-      _section = _DiscoverSection.books;
     });
   }
 
@@ -310,142 +447,185 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
   @override
   Widget build(BuildContext context) {
     final c = context.colors;
-    final titleSize = _oneHand ? 64.0 : 32.0;
     final mangaState = ref.watch(globalSearchProvider);
     final library = ref.watch(libraryProvider);
     final mangaItemCount = mangaState.mangaHitCount;
-    final mangaBusy = mangaState.searching;
     final hasMangaUi =
         mangaState.query.trim().isNotEmpty &&
-        (mangaState.items.isNotEmpty || mangaBusy);
-    // Book wait only — manga has its own progressive spinner/progress bar.
+        (mangaState.items.isNotEmpty || mangaState.searching);
     final searching = _searching;
     final gridView = library.isGridView;
+    final showIdle = !_loaded && _results.isEmpty && !hasMangaUi;
+    final subtitle = _section == _DiscoverSection.manga
+        ? 'Manga extensions'
+        : (_sourceSubtitle ?? 'Find books from your sources');
 
     return ScreenBackdrop(
-      child: SafeArea(
-        bottom: false,
-        child: CustomScrollView(
-          controller: _scrollCtrl,
-          physics: const AlwaysScrollableScrollPhysics(),
-          slivers: [
-            const SliverToBoxAdapter(child: OneHandSpacer()),
-            SliverToBoxAdapter(
-              child: ValueListenableBuilder<double>(
-                valueListenable: _scrollProgress,
-                builder: (_, progress, _) => LibraryHeader(
+      child: HorizontalTabSwipe(
+        tabIndex: _section == _DiscoverSection.books ? 0 : 1,
+        tabCount: 2,
+        onTabChanged: (i) => _setSection(
+          i == 0 ? _DiscoverSection.books : _DiscoverSection.manga,
+        ),
+        child: SafeArea(
+          bottom: false,
+          child: CustomScrollView(
+            controller: _scrollCtrl,
+            physics: const AlwaysScrollableScrollPhysics(),
+            slivers: [
+              const SliverToBoxAdapter(child: OneHandSpacer()),
+              SliverToBoxAdapter(
+                child: LibraryHeader(
                   title: 'Discover',
-                  subtitle: 'Find books from your sources',
-                  shrinkProgress: progress,
-                  titleSize: titleSize,
-                ),
-              ),
-            ),
-            SliverToBoxAdapter(
-              child: StaggeredEntrance(
-                child: FeaturePanel(
-                  icon: AppIcons.compass,
-                  title: 'Search across every shelf',
-                  subtitle:
-                      'Pull from book sources and installed manga extensions without leaving your desk.',
-                  stats: [
-                    PanelStat(value: '${_results.length}', label: 'Books'),
-                    PanelStat(value: '$mangaItemCount', label: 'Manga'),
-                    PanelStat(
-                      value: gridView ? 'Grid' : 'List',
-                      label: 'View',
+                  subtitle: subtitle,
+                  actions: [
+                    IconButtonRound(
+                      iconData: AppIcons.filter,
+                      size: 38,
+                      variant: IconButtonVariant.tonal,
+                      iconColor: c.textSecondary,
+                      tooltip: 'Sources',
+                      onPressed: _openSourcePicker,
                     ),
                   ],
                 ),
               ),
-            ),
-            SliverToBoxAdapter(
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(20, 8, 20, 12),
-                child: TextField(
-                  controller: _ctrl,
-                  decoration: InputDecoration(
-                    hintText: 'Search for a book or manga…',
-                    suffixIcon: _ctrl.text.isNotEmpty
-                        ? IconButton(
-                            icon: const Icon(Icons.clear, size: 18),
-                      onPressed: _clearSearch,
-                          )
-                        : null,
-                  ),
-                  onSubmitted: (_) => _search(),
-                ),
-              ),
-            ),
-            SliverToBoxAdapter(
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 20),
-                child: SizedBox(
-                  width: double.infinity,
-                  child: AnimatedPress(
-                    onTap: searching ? null : _search,
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(vertical: 12),
-                      decoration: BoxDecoration(
-                        color: c.accent,
-                        borderRadius: AppSpacing.brLg,
-                      ),
-                      child: Center(
-                        child: searching
-                            ? SizedBox(
-                                width: 18,
-                                height: 18,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2,
-                                  color: c.onAccent,
-                                ),
-                              )
-                            : Text(
-                                'Search',
-                                style: TextStyle(
-                                  color: c.onAccent,
-                                  fontWeight: FontWeight.w600,
-                                ),
-                              ),
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-            ),
-            const SliverToBoxAdapter(child: SizedBox(height: 16)),
-            if (_results.isEmpty && !hasMangaUi)
               SliverToBoxAdapter(
                 child: Padding(
-                  padding: const EdgeInsets.symmetric(
-                    vertical: 40,
-                    horizontal: 20,
+                  padding: const EdgeInsets.fromLTRB(20, 4, 20, 12),
+                  child: SegmentedControl<_DiscoverSection>(
+                    segments: const {
+                      _DiscoverSection.books: 'Books',
+                      _DiscoverSection.manga: 'Manga',
+                    },
+                    value: _section,
+                    onChanged: _setSection,
+                    height: 42,
                   ),
-                  child: Center(
-                    child: Text(
-                      _loaded
-                          ? 'No results'
-                          : 'Enter a title to search across your sources',
-                      style: TextStyle(color: c.textTertiary, fontSize: 14),
-                    ),
+                ),
+              ),
+              SliverToBoxAdapter(
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(20, 0, 20, 12),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: TextField(
+                          controller: _ctrl,
+                          focusNode: _searchFocus,
+                          decoration: InputDecoration(
+                            hintText: _section == _DiscoverSection.books
+                                ? 'Search books...'
+                                : 'Search manga...',
+                            prefixIcon: const Icon(Icons.search, size: 18),
+                            suffixIcon: _ctrl.text.isNotEmpty
+                                ? IconButton(
+                                    icon: const Icon(Icons.clear, size: 18),
+                                    onPressed: _clearSearch,
+                                  )
+                                : null,
+                          ),
+                          onChanged: (_) {
+                            setState(() {});
+                            _scheduleIdleUnfocus();
+                          },
+                          onSubmitted: (_) => _search(),
+                          textInputAction: TextInputAction.search,
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      AnimatedPress(
+                        onTap: searching ? null : _search,
+                        child: Container(
+                          height: 48,
+                          padding: const EdgeInsets.symmetric(horizontal: 16),
+                          alignment: Alignment.center,
+                          decoration: BoxDecoration(
+                            color: c.accent,
+                            borderRadius: AppSpacing.brMd,
+                          ),
+                          child: searching
+                              ? SizedBox(
+                                  width: 18,
+                                  height: 18,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                    color: c.onAccent,
+                                  ),
+                                )
+                              : Text(
+                                  'Search',
+                                  style: TextStyle(
+                                    color: c.onAccent,
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            if (showIdle)
+              const SliverToBoxAdapter(
+                child: SizedBox(
+                  height: 280,
+                  child: EmptyState(
+                    icon: AppIcons.search,
+                    title: 'Find your next read',
+                    subtitle: 'Search across your configured sources',
+                  ),
+                ),
+              )
+            else if (_loaded && _results.isEmpty && !hasMangaUi)
+              const SliverToBoxAdapter(
+                child: SizedBox(
+                  height: 240,
+                  child: EmptyState(
+                    icon: AppIcons.search,
+                    title: 'No results',
+                    subtitle: 'Try another title or switch Books / Manga.',
                   ),
                 ),
               )
             else ...[
-              SliverToBoxAdapter(
-                child: _DiscoverControls(
-                  section: _section,
-                  bookCount: _results.length,
-                  mangaCount: mangaItemCount,
-                  gridView: gridView,
-                  onSectionChanged: (section) => setState(() {
-                    _section = section;
-                  }),
-                  onLayoutChanged: () =>
-                      ref.read(libraryProvider.notifier).toggleLayout(),
+              if (_section == _DiscoverSection.books) ...[
+                SliverToBoxAdapter(
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(20, 0, 20, 12),
+                    child: Row(
+                      children: [
+                        Text(
+                          '${_results.length} result${_results.length == 1 ? '' : 's'}',
+                          style: TextStyle(
+                            color: c.textTertiary,
+                            fontSize: 12,
+                          ),
+                        ),
+                        const Spacer(),
+                        AnimatedPress(
+                          onTap: () =>
+                              ref.read(libraryProvider.notifier).toggleLayout(),
+                          child: Container(
+                            width: 42,
+                            height: 42,
+                            decoration: BoxDecoration(
+                              color: c.surfaceMuted,
+                              borderRadius: AppSpacing.brMd,
+                              border: Border.all(color: c.border, width: 0.5),
+                            ),
+                            child: Icon(
+                              gridView ? Icons.view_list : Icons.grid_view,
+                              size: 19,
+                              color: c.textSecondary,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
                 ),
-              ),
-              if (_section == _DiscoverSection.books)
                 _DiscoverBookResults(
                   key: const ValueKey('discover-books'),
                   results: _results,
@@ -455,17 +635,26 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
                   showSourcePills: library.showSourcePills,
                   downloading: _downloading,
                   onTap: (result) => _showResultOptions(context, result),
-                )
-              else
-                ...[
-                  const SliverToBoxAdapter(
-                    child: GlobalSearchFilterBar(compact: true),
+                ),
+              ] else ...[
+                SliverToBoxAdapter(
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
+                    child: Text(
+                      '$mangaItemCount result${mangaItemCount == 1 ? '' : 's'}',
+                      style: TextStyle(color: c.textTertiary, fontSize: 12),
+                    ),
                   ),
-                  const GlobalSearchResultsSliver(),
-                ],
+                ),
+                const SliverToBoxAdapter(
+                  child: GlobalSearchFilterBar(compact: true),
+                ),
+                const GlobalSearchResultsSliver(),
+              ],
             ],
             const SliverToBoxAdapter(child: SizedBox(height: 100)),
           ],
+        ),
         ),
       ),
     );
@@ -473,65 +662,6 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
 }
 
 enum _DiscoverSection { books, manga }
-
-class _DiscoverControls extends StatelessWidget {
-  final _DiscoverSection section;
-  final int bookCount;
-  final int mangaCount;
-  final bool gridView;
-  final ValueChanged<_DiscoverSection> onSectionChanged;
-  final VoidCallback onLayoutChanged;
-
-  const _DiscoverControls({
-    required this.section,
-    required this.bookCount,
-    required this.mangaCount,
-    required this.gridView,
-    required this.onSectionChanged,
-    required this.onLayoutChanged,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final c = context.colors;
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(20, 0, 20, 12),
-      child: Row(
-        children: [
-          Expanded(
-            child: SegmentedControl<_DiscoverSection>(
-              segments: {
-                _DiscoverSection.books: 'Books $bookCount',
-                _DiscoverSection.manga: 'Manga $mangaCount',
-              },
-              value: section,
-              onChanged: onSectionChanged,
-              height: 42,
-            ),
-          ),
-          const SizedBox(width: 10),
-          AnimatedPress(
-            onTap: onLayoutChanged,
-            child: Container(
-              width: 42,
-              height: 42,
-              decoration: BoxDecoration(
-                color: c.surfaceMuted,
-                borderRadius: AppSpacing.brMd,
-                border: Border.all(color: c.border, width: 0.5),
-              ),
-              child: Icon(
-                gridView ? Icons.view_list : Icons.grid_view,
-                size: 19,
-                color: c.textSecondary,
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
 
 class _DiscoverBookResults extends StatelessWidget {
   final List<SourceSearchResult> results;

@@ -47,11 +47,12 @@ class IconButtonRound extends StatelessWidget {
         iconColor ?? c.textPrimary,
       ),
       IconButtonVariant.filled => (
-        backgroundColor ?? c.surfaceMuted,
+        backgroundColor ?? c.iconWell,
         iconColor ?? c.textPrimary,
       ),
+      // Figma header tile: rounded-xl icon well, muted icon (18px).
       IconButtonVariant.tonal => (
-        Colors.transparent,
+        backgroundColor ?? c.iconWell,
         iconColor ?? c.textSecondary,
       ),
     };
@@ -68,7 +69,12 @@ class IconButtonRound extends StatelessWidget {
         width: size,
         height: size,
         alignment: Alignment.center,
-        decoration: BoxDecoration(color: bg, borderRadius: AppSpacing.brPill),
+        decoration: BoxDecoration(
+          color: bg,
+          borderRadius: variant == IconButtonVariant.tonal
+              ? AppSpacing.brMd
+              : AppSpacing.brPill,
+        ),
         child: iconWidget,
       ),
     );

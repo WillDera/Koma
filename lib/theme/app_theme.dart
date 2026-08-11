@@ -445,6 +445,13 @@ class AppTheme {
           bgElevated: bgElevated,
           surface: surface,
           surfaceMuted: surfaceMuted,
+          iconWell: brightness == Brightness.dark
+              ? (bg == AppColors.amoledBg
+                    ? AppColors.amoledIconWell
+                    : AppColors.darkIconWell)
+              : (bg == AppColors.sepiaBg
+                    ? AppColors.sepiaIconWell
+                    : AppColors.lightIconWell),
           border: border,
           borderStrong: borderStrong,
           textPrimary: textPrimary,
@@ -467,6 +474,8 @@ class KomaColors extends ThemeExtension<KomaColors> {
   final Color bgElevated;
   final Color surface;
   final Color surfaceMuted;
+  /// Header/action icon button well (Figma `#1e1e2a` / `#e8e8f0`).
+  final Color iconWell;
   final Color border;
   final Color borderStrong;
   final Color textPrimary;
@@ -481,6 +490,7 @@ class KomaColors extends ThemeExtension<KomaColors> {
     required this.bgElevated,
     required this.surface,
     required this.surfaceMuted,
+    required this.iconWell,
     required this.border,
     required this.borderStrong,
     required this.textPrimary,
@@ -497,6 +507,7 @@ class KomaColors extends ThemeExtension<KomaColors> {
     Color? bgElevated,
     Color? surface,
     Color? surfaceMuted,
+    Color? iconWell,
     Color? border,
     Color? borderStrong,
     Color? textPrimary,
@@ -511,6 +522,7 @@ class KomaColors extends ThemeExtension<KomaColors> {
       bgElevated: bgElevated ?? this.bgElevated,
       surface: surface ?? this.surface,
       surfaceMuted: surfaceMuted ?? this.surfaceMuted,
+      iconWell: iconWell ?? this.iconWell,
       border: border ?? this.border,
       borderStrong: borderStrong ?? this.borderStrong,
       textPrimary: textPrimary ?? this.textPrimary,
@@ -530,6 +542,7 @@ class KomaColors extends ThemeExtension<KomaColors> {
       bgElevated: Color.lerp(bgElevated, other.bgElevated, t)!,
       surface: Color.lerp(surface, other.surface, t)!,
       surfaceMuted: Color.lerp(surfaceMuted, other.surfaceMuted, t)!,
+      iconWell: Color.lerp(iconWell, other.iconWell, t)!,
       border: Color.lerp(border, other.border, t)!,
       borderStrong: Color.lerp(borderStrong, other.borderStrong, t)!,
       textPrimary: Color.lerp(textPrimary, other.textPrimary, t)!,
@@ -554,6 +567,7 @@ extension KomaColorsAccess on BuildContext {
       bgElevated: AppColors.lightBgElevated,
       surface: AppColors.lightSurface,
       surfaceMuted: AppColors.lightSurfaceMuted,
+      iconWell: AppColors.lightIconWell,
       border: AppColors.lightBorder,
       borderStrong: AppColors.lightBorderStrong,
       textPrimary: AppColors.lightTextPrimary,

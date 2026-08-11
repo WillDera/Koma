@@ -141,15 +141,6 @@ final GoRouter appRouter = GoRouter(
         StatefulShellBranch(
           routes: [
             GoRoute(
-              path: '/search',
-              name: Routes.search,
-              builder: (context, state) => const SearchScreen(),
-            ),
-          ],
-        ),
-        StatefulShellBranch(
-          routes: [
-            GoRoute(
               path: '/settings',
               name: Routes.settings,
               builder: (context, state) => const SettingsScreen(),
@@ -160,6 +151,13 @@ final GoRouter appRouter = GoRouter(
     ),
 
     // ── Detail routes (above the shell) ──────────────────────────────
+    // Library-wide search is pushed from the Library header (not a tab).
+    GoRoute(
+      path: '/search',
+      name: Routes.search,
+      parentNavigatorKey: rootNavigatorKey,
+      builder: (context, state) => const SearchScreen(),
+    ),
     GoRoute(
       path: '/reader',
       name: Routes.reader,
