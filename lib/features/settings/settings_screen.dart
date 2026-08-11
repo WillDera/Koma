@@ -292,7 +292,7 @@ class _AppearanceSection extends ConsumerWidget {
             ),
             SettingsRow(
               title: 'Use device font',
-              subtitle: 'System default instead of Inter',
+              subtitle: 'System default for UI and ebook reading (on by default)',
               trailing: Switch(
                 value: theme.useDeviceFont,
                 activeThumbColor: c.accent,
@@ -313,50 +313,66 @@ class _AppearanceSection extends ConsumerWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    'Used for highlights, selections, and the active state.',
+                    'Used for highlights, selections, and the active state. '
+                    'Device follows wallpaper Material You colors.',
                     style: TextStyle(color: c.textSecondary, fontSize: 11),
                   ),
                   const SizedBox(height: 14),
-                  Row(
-                    children: [
-                      for (final entry in const [
-                        (
-                          AccentPreset.indigo,
-                          AppColors.accentIndigo,
-                          AppColors.accentIndigoDark,
-                          'Indigo',
-                        ),
-                        (
-                          AccentPreset.amber,
-                          AppColors.accentAmber,
-                          AppColors.accentAmberDark,
-                          'Amber',
-                        ),
-                        (
-                          AccentPreset.forest,
-                          AppColors.accentForest,
-                          AppColors.accentForestDark,
-                          'Forest',
-                        ),
-                        (
-                          AccentPreset.aethelgard,
-                          AppColors.aethelgardPrimary,
-                          AppColors.aethelgardPrimaryDark,
-                          'Neo-Noir',
-                        ),
-                      ]) ...[
+                  SingleChildScrollView(
+                    scrollDirection: Axis.horizontal,
+                    child: Row(
+                      children: [
                         _AccentSwatch(
-                          light: entry.$2,
-                          dark: entry.$3,
-                          label: entry.$4,
-                          selected:
-                              theme.customAccentHex == null &&
-                              theme.accent == entry.$1,
-                          onTap: () => tn.setAccent(entry.$1),
+                          light: theme.lightDynamicPrimary ??
+                              AppColors.accentIndigo,
+                          dark: theme.darkDynamicPrimary ??
+                              AppColors.accentIndigoDark,
+                          label: 'Device',
+                          selected: theme.followSystemAccent &&
+                              theme.customAccentHex == null,
+                          onTap: () => tn.setFollowSystemAccent(true),
                         ),
                         const SizedBox(width: 10),
+                        for (final entry in const [
+                          (
+                            AccentPreset.indigo,
+                            AppColors.accentIndigo,
+                            AppColors.accentIndigoDark,
+                            'Indigo',
+                          ),
+                          (
+                            AccentPreset.amber,
+                            AppColors.accentAmber,
+                            AppColors.accentAmberDark,
+                            'Amber',
+                          ),
+                          (
+                            AccentPreset.forest,
+                            AppColors.accentForest,
+                            AppColors.accentForestDark,
+                            'Forest',
+                          ),
+                          (
+                            AccentPreset.aethelgard,
+                            AppColors.aethelgardPrimary,
+                            AppColors.aethelgardPrimaryDark,
+                            'Neo-Noir',
+                          ),
+                        ]) ...[
+                          _AccentSwatch(
+                            light: entry.$2,
+                            dark: entry.$3,
+                            label: entry.$4,
+                            selected:
+                                !theme.followSystemAccent &&
+                                theme.customAccentHex == null &&
+                                theme.accent == entry.$1,
+                            onTap: () => tn.setAccent(entry.$1),
+                          ),
+                          const SizedBox(width: 10),
+                        ],
                       ],
-                    ],
+                    ),
                   ),
                   const SizedBox(height: 16),
                   Text(
@@ -2568,7 +2584,7 @@ class _AboutSection extends StatelessWidget {
                 ),
                 const SizedBox(height: 4),
                 Text(
-                  'Version 2.37.16 · build 2.37.16+283',
+                  'Version 2.37.17 · build 2.37.17+284',
                   style: TextStyle(color: c.textSecondary, fontSize: 13),
                 ),
                 const SizedBox(height: 10),
@@ -2663,7 +2679,7 @@ class _AboutSection extends StatelessWidget {
               icon: Icons.info_outline,
               iconColor: _muted,
               title: 'Koma',
-              subtitle: 'Version 2.37.16 · build 2.37.16+283',
+              subtitle: 'Version 2.37.17 · build 2.37.17+284',
             ),
             SettingsRow(
               icon: Icons.favorite_outline,

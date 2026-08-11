@@ -28,6 +28,7 @@ class ThemeNotifier extends Notifier<ThemeState> {
   static const _keyLineHeight = 'line_height';
   static const _keyAccentIndex = 'accent_index';
   static const _keyCustomAccentHex = 'custom_accent_hex';
+  static const _keyFollowSystemAccent = 'follow_system_accent';
   static const _keyReadingFont = 'reading_font';
   static const _keyPageWidth = 'page_width';
   static const _keyTextAlign = 'text_align';
@@ -43,6 +44,10 @@ class ThemeNotifier extends Notifier<ThemeState> {
   static const _keyShowObsoleteExtensions = 'show_obsolete_extensions';
   static const _keyImmersiveAutoHide = 'immersive_auto_hide';
   static const _keyPageStyle = 'page_style';
+
+  /// Full Material You schemes from [DynamicColorBuilder] (not persisted).
+  ColorScheme? lightDynamicScheme;
+  ColorScheme? darkDynamicScheme;
 
   @override
   ThemeState build() {
@@ -63,7 +68,8 @@ class ThemeNotifier extends Notifier<ThemeState> {
       lineHeight: prefs.getDouble(_keyLineHeight) ?? 1.65,
       accent: AccentPreset.values[prefs.getInt(_keyAccentIndex) ?? 0],
       customAccentHex: prefs.getString(_keyCustomAccentHex),
-      readingFont: ReadingFont.values[prefs.getInt(_keyReadingFont) ?? 1],
+      followSystemAccent: prefs.getBool(_keyFollowSystemAccent) ?? true,
+      readingFont: ReadingFont.values[prefs.getInt(_keyReadingFont) ?? 0],
       pageWidth: prefs.getDouble(_keyPageWidth) ?? 680,
       textAlign: TextAlign.values[prefs.getInt(_keyTextAlign) ?? 0],
       hyphenation: prefs.getBool(_keyHyphenation) ?? true,
@@ -72,7 +78,7 @@ class ThemeNotifier extends Notifier<ThemeState> {
       handMode: HandMode.values[prefs.getInt(_keyHandMode) ?? 1],
       oneHandMode: prefs.getBool(_keyOneHandMode) ?? false,
       bionicReading: prefs.getBool(_keyBionicReading) ?? false,
-      useDeviceFont: prefs.getBool(_keyUseDeviceFont) ?? false,
+      useDeviceFont: prefs.getBool(_keyUseDeviceFont) ?? true,
       amoledMode: prefs.getBool(_keyAmoledMode) ?? false,
       showNsfwExtensions: prefs.getBool(_keyShowNsfwExtensions) ?? false,
       showObsoleteExtensions:
@@ -100,21 +106,60 @@ class ThemeNotifier extends Notifier<ThemeState> {
     return font;
   }
 
+  /// Called from [DynamicColorBuilder] whenever wallpaper/system colors change.
+  void setDynamicColorSchemes(ColorScheme? light, ColorScheme? dark) {
+    lightDynamicScheme = light;
+    darkDynamicScheme = dark;
+    final lp = light?.primary;
+    final dp = dark?.primary;
+    if (lp == state.lightDynamicPrimary && dp == state.darkDynamicPrimary) {
+      return;
+    }
+    state = state.copyWith(
+      lightDynamicPrimary: () => lp,
+      darkDynamicPrimary: () => dp,
+    );
+  }
+
   // ── Theme convenience getters (forwarded from state) ───────────────
 
-  /// Live light theme built from the current accent color.
+  ColorScheme? get _activeDynamicScheme {
+    if (!state.followSystemAccent || state.customAccentHex != null) {
+      return null;
+    }
+    return state.isDarkMode ? darkDynamicScheme : lightDynamicScheme;
+  }
+
+  ColorScheme? get _lightDynamicForTheme {
+    if (!state.followSystemAccent || state.customAccentHex != null) {
+      return null;
+    }
+    return lightDynamicScheme;
+  }
+
+  ColorScheme? get _darkDynamicForTheme {
+    if (!state.followSystemAccent || state.customAccentHex != null) {
+      return null;
+    }
+    return darkDynamicScheme;
+  }
+
+  /// Live light theme built from the current accent / Material You colors.
   ThemeData get lightTheme => AppTheme.lightTheme(
     accent: state.accentColor,
     fontFamily: _fontFamilyForMode(),
+    dynamicScheme: _lightDynamicForTheme,
   );
   ThemeData get darkTheme => AppTheme.darkTheme(
     accent: state.accentColor,
     amoled: state.amoledMode,
     fontFamily: _fontFamilyForMode(),
+    dynamicScheme: _darkDynamicForTheme,
   );
   ThemeData get sepiaTheme => AppTheme.sepiaTheme(
     accent: state.accentColor,
     fontFamily: _fontFamilyForMode(),
+    dynamicScheme: _activeDynamicScheme,
   );
 
   String? _fontFamilyForMode() {
@@ -167,11 +212,28 @@ class ThemeNotifier extends Notifier<ThemeState> {
     await prefs.setDouble(_keyLineHeight, height);
   }
 
+  Future<void> setFollowSystemAccent(bool value) async {
+    state = state.copyWith(
+      followSystemAccent: value,
+      customAccentHex: value ? () => null : null,
+    );
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_keyFollowSystemAccent, value);
+    if (value) {
+      await prefs.remove(_keyCustomAccentHex);
+    }
+  }
+
   Future<void> setAccent(AccentPreset accent) async {
-    state = state.copyWith(accent: accent, customAccentHex: () => null);
+    state = state.copyWith(
+      accent: accent,
+      customAccentHex: () => null,
+      followSystemAccent: false,
+    );
     final prefs = await SharedPreferences.getInstance();
     await prefs.setInt(_keyAccentIndex, accent.index);
     await prefs.remove(_keyCustomAccentHex);
+    await prefs.setBool(_keyFollowSystemAccent, false);
   }
 
   Future<void> setCustomAccentHex(String? hex) async {
@@ -181,12 +243,16 @@ class ThemeNotifier extends Notifier<ThemeState> {
       if (parsed == null) return;
       resolved = hex.trim();
     }
-    state = state.copyWith(customAccentHex: () => resolved);
+    state = state.copyWith(
+      customAccentHex: () => resolved,
+      followSystemAccent: resolved != null ? false : state.followSystemAccent,
+    );
     final prefs = await SharedPreferences.getInstance();
     if (resolved == null) {
       await prefs.remove(_keyCustomAccentHex);
     } else {
       await prefs.setString(_keyCustomAccentHex, resolved);
+      await prefs.setBool(_keyFollowSystemAccent, false);
     }
   }
 

@@ -17,7 +17,10 @@ class ThemeState {
     this.lineHeight = 1.65,
     this.accent = AccentPreset.indigo,
     this.customAccentHex,
-    this.readingFont = ReadingFont.literata,
+    this.followSystemAccent = true,
+    this.lightDynamicPrimary,
+    this.darkDynamicPrimary,
+    this.readingFont = ReadingFont.system,
     this.pageWidth = 680,
     this.textAlign = TextAlign.left,
     this.hyphenation = true,
@@ -26,7 +29,7 @@ class ThemeState {
     this.handMode = HandMode.right,
     this.oneHandMode = false,
     this.bionicReading = false,
-    this.useDeviceFont = false,
+    this.useDeviceFont = true,
     this.amoledMode = false,
     this.systemFontFamily,
     this.showNsfwExtensions = false,
@@ -43,6 +46,14 @@ class ThemeState {
   final double lineHeight;
   final AccentPreset accent;
   final String? customAccentHex;
+
+  /// When true (default), accent comes from Material You / wallpaper colors.
+  final bool followSystemAccent;
+
+  /// Cached dynamic primaries from [DynamicColorBuilder] (not persisted).
+  final Color? lightDynamicPrimary;
+  final Color? darkDynamicPrimary;
+
   final ReadingFont readingFont;
   final double pageWidth;
   final TextAlign textAlign;
@@ -67,10 +78,17 @@ class ThemeState {
 
   Color get accentColor {
     if (customAccentHex != null && customAccentHex!.isNotEmpty) {
-      return resolveHex(customAccentHex!) ?? _presetAccent(accent);
+      return resolveHex(customAccentHex!) ?? _fallbackAccent();
+    }
+    if (followSystemAccent) {
+      final dynamicPrimary =
+          isDarkMode ? darkDynamicPrimary : lightDynamicPrimary;
+      return dynamicPrimary ?? _presetAccent(AccentPreset.indigo);
     }
     return _presetAccent(accent);
   }
+
+  Color _fallbackAccent() => _presetAccent(accent);
 
   Color _presetAccent(AccentPreset preset) {
     if (sepiaMode) return AppColors.sepiaAccent;
@@ -130,6 +148,9 @@ class ThemeState {
     double? lineHeight,
     AccentPreset? accent,
     String? Function()? customAccentHex,
+    bool? followSystemAccent,
+    Color? Function()? lightDynamicPrimary,
+    Color? Function()? darkDynamicPrimary,
     ReadingFont? readingFont,
     double? pageWidth,
     TextAlign? textAlign,
@@ -158,6 +179,13 @@ class ThemeState {
       customAccentHex: customAccentHex != null
           ? customAccentHex()
           : this.customAccentHex,
+      followSystemAccent: followSystemAccent ?? this.followSystemAccent,
+      lightDynamicPrimary: lightDynamicPrimary != null
+          ? lightDynamicPrimary()
+          : this.lightDynamicPrimary,
+      darkDynamicPrimary: darkDynamicPrimary != null
+          ? darkDynamicPrimary()
+          : this.darkDynamicPrimary,
       readingFont: readingFont ?? this.readingFont,
       pageWidth: pageWidth ?? this.pageWidth,
       textAlign: textAlign ?? this.textAlign,

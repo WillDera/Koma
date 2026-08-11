@@ -38,8 +38,12 @@ class AppTheme {
   static const Color sepiaAccent = AppColors.sepiaAccent;
 
   // ─── Public entry points ───────────────────────────────────────────────
-  static ThemeData lightTheme({Color? accent, String? fontFamily}) {
-    final a = accent ?? AppColors.lightAccent;
+  static ThemeData lightTheme({
+    Color? accent,
+    String? fontFamily,
+    ColorScheme? dynamicScheme,
+  }) {
+    final a = accent ?? dynamicScheme?.primary ?? AppColors.lightAccent;
     return _buildTheme(
       brightness: Brightness.light,
       bg: AppColors.lightBg,
@@ -53,9 +57,10 @@ class AppTheme {
       textTertiary: AppColors.lightTextTertiary,
       accent: a,
       accentMuted: _muted(a, AppColors.lightSurface),
-      onAccent: _onAccentFor(a),
+      onAccent: dynamicScheme?.onPrimary ?? _onAccentFor(a),
       // null = let the platform default font apply (Use device font).
       fontFamily: fontFamily,
+      dynamicScheme: dynamicScheme,
     );
   }
 
@@ -63,8 +68,9 @@ class AppTheme {
     Color? accent,
     bool amoled = false,
     String? fontFamily,
+    ColorScheme? dynamicScheme,
   }) {
-    final a = accent ?? AppColors.darkAccent;
+    final a = accent ?? dynamicScheme?.primary ?? AppColors.darkAccent;
     // null = let the platform default font apply (Use device font).
     final ff = fontFamily;
     if (amoled) {
@@ -81,8 +87,9 @@ class AppTheme {
         textTertiary: AppColors.amoledTextTertiary,
         accent: a,
         accentMuted: _muted(a, AppColors.amoledSurface),
-        onAccent: _onAccentFor(a),
+        onAccent: dynamicScheme?.onPrimary ?? _onAccentFor(a),
         fontFamily: ff,
+        dynamicScheme: dynamicScheme,
       );
     }
     return _buildTheme(
@@ -98,13 +105,18 @@ class AppTheme {
       textTertiary: AppColors.darkTextTertiary,
       accent: a,
       accentMuted: _muted(a, AppColors.darkSurface),
-      onAccent: _onAccentFor(a),
+      onAccent: dynamicScheme?.onPrimary ?? _onAccentFor(a),
       fontFamily: ff,
+      dynamicScheme: dynamicScheme,
     );
   }
 
-  static ThemeData sepiaTheme({Color? accent, String? fontFamily}) {
-    final a = accent ?? AppColors.sepiaAccent;
+  static ThemeData sepiaTheme({
+    Color? accent,
+    String? fontFamily,
+    ColorScheme? dynamicScheme,
+  }) {
+    final a = accent ?? dynamicScheme?.primary ?? AppColors.sepiaAccent;
     return _buildTheme(
       brightness: Brightness.light,
       bg: AppColors.sepiaBg,
@@ -118,9 +130,10 @@ class AppTheme {
       textTertiary: AppColors.sepiaTextTertiary,
       accent: a,
       accentMuted: _muted(a, AppColors.sepiaSurface),
-      onAccent: _onAccentFor(a),
+      onAccent: dynamicScheme?.onPrimary ?? _onAccentFor(a),
       // null = let the platform default font apply (Use device font).
       fontFamily: fontFamily,
+      dynamicScheme: dynamicScheme,
     );
   }
 
@@ -154,33 +167,59 @@ class AppTheme {
     required Color accentMuted,
     required Color onAccent,
     required String? fontFamily,
+    ColorScheme? dynamicScheme,
   }) {
     final textTheme = AppType.ui(
       fontFamily: fontFamily,
     ).apply(bodyColor: textPrimary, displayColor: textPrimary);
 
-    final colorScheme = ColorScheme(
-      brightness: brightness,
-      primary: accent,
-      onPrimary: onAccent,
-      secondary: accent,
-      onSecondary: onAccent,
-      tertiary: accent,
-      onTertiary: onAccent,
-      error: AppColors.danger,
-      onError: Colors.white,
-      surface: surface,
-      onSurface: textPrimary,
-      surfaceContainerHighest: surfaceMuted,
-      outline: border,
-      outlineVariant: border,
-      shadow: Colors.black,
-      scrim: Colors.black,
-      inverseSurface: textPrimary,
-      onInverseSurface: bg,
-      inversePrimary: accentMuted,
-      surfaceTint: accent,
-    );
+    // Material You when available: keep dynamic accent roles, overlay Koma
+    // brand surfaces (Mihon Monet + AMOLED-style surface override).
+    final colorScheme = dynamicScheme != null
+        ? dynamicScheme.copyWith(
+            brightness: brightness,
+            primary: accent,
+            onPrimary: onAccent,
+            secondary: dynamicScheme.secondary,
+            onSecondary: dynamicScheme.onSecondary,
+            tertiary: dynamicScheme.tertiary,
+            onTertiary: dynamicScheme.onTertiary,
+            error: AppColors.danger,
+            onError: Colors.white,
+            surface: surface,
+            onSurface: textPrimary,
+            surfaceContainerHighest: surfaceMuted,
+            outline: border,
+            outlineVariant: border,
+            shadow: Colors.black,
+            scrim: Colors.black,
+            inverseSurface: textPrimary,
+            onInverseSurface: bg,
+            inversePrimary: accentMuted,
+            surfaceTint: accent,
+          )
+        : ColorScheme(
+            brightness: brightness,
+            primary: accent,
+            onPrimary: onAccent,
+            secondary: accent,
+            onSecondary: onAccent,
+            tertiary: accent,
+            onTertiary: onAccent,
+            error: AppColors.danger,
+            onError: Colors.white,
+            surface: surface,
+            onSurface: textPrimary,
+            surfaceContainerHighest: surfaceMuted,
+            outline: border,
+            outlineVariant: border,
+            shadow: Colors.black,
+            scrim: Colors.black,
+            inverseSurface: textPrimary,
+            onInverseSurface: bg,
+            inversePrimary: accentMuted,
+            surfaceTint: accent,
+          );
 
     return ThemeData(
       useMaterial3: true,
@@ -383,10 +422,13 @@ class AppTheme {
         }),
       ),
       progressIndicatorTheme: ProgressIndicatorThemeData(
+        // Opt into latest Material 3 progress look (track gap + round caps).
+        year2023: false,
         color: accent,
         linearTrackColor: border,
         circularTrackColor: border,
-        linearMinHeight: 2,
+        strokeCap: StrokeCap.round,
+        linearMinHeight: 3,
       ),
       tabBarTheme: TabBarThemeData(
         labelColor: textPrimary,
