@@ -75,7 +75,6 @@ class NavDrawer extends StatelessWidget {
                 Text(
                   'Koma',
                   style: TextStyle(
-                    fontFamily: AppType.uiFont,
                     fontSize: 22,
                     height: 28 / 22,
                     fontWeight: FontWeight.w700,
