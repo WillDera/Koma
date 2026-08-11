@@ -5,6 +5,8 @@ import '../../core/providers.dart';
 import '../../core/services/download/chapter_download.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/library_header.dart';
+import '../../widgets/one_hand_spacer.dart';
+import '../../widgets/screen_chrome.dart';
 
 /// Mihon-style download queue: pause / resume, clear, cancel per item, retry.
 class DownloadQueueScreen extends ConsumerWidget {
@@ -26,80 +28,90 @@ class DownloadQueueScreen extends ConsumerWidget {
       groups.putIfAbsent(key, () => []).add(d);
     }
 
-    return Scaffold(
-      backgroundColor: c.bg,
-      body: Column(
-        children: [
-          LibraryHeader(
-            title: queue.isEmpty
-                ? 'Download queue'
-                : 'Download queue (${queue.length})',
-            showBackButton: true,
-          ),
-          if (queue.isNotEmpty)
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
-              child: Row(
-                children: [
-                  if (paused || !running)
-                    FilledButton.tonalIcon(
-                      onPressed: () => mgr.startDownloads(),
-                      icon: const Icon(Icons.play_arrow),
-                      label: const Text('Resume'),
-                    )
-                  else
-                    FilledButton.tonalIcon(
-                      onPressed: () => mgr.pauseDownloads(),
-                      icon: const Icon(Icons.pause),
-                      label: const Text('Pause'),
-                    ),
-                  const SizedBox(width: 8),
-                  TextButton(
-                    onPressed: () => mgr.clearQueue(),
-                    child: const Text('Clear'),
-                  ),
-                ],
+    // Match Settings → Data title chrome: SafeArea + OneHandSpacer +
+    // LibraryHeader with sub-screen padding (not flush under the status bar).
+    return Material(
+      type: MaterialType.transparency,
+      child: ScreenBackdrop(
+        child: SafeArea(
+          bottom: false,
+          child: Column(
+            children: [
+              const OneHandSpacer(),
+              LibraryHeader(
+                title: queue.isEmpty
+                    ? 'Download queue'
+                    : 'Download queue (${queue.length})',
+                showBackButton: true,
+                padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
               ),
-            ),
-          Expanded(
-            child: queue.isEmpty
-                ? Center(
-                    child: Text(
-                      'No chapters queued',
-                      style: TextStyle(
-                        color: c.textSecondary.withValues(alpha: 0.9),
+              if (queue.isNotEmpty)
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+                  child: Row(
+                    children: [
+                      if (paused || !running)
+                        FilledButton.tonalIcon(
+                          onPressed: () => mgr.startDownloads(),
+                          icon: const Icon(Icons.play_arrow),
+                          label: const Text('Resume'),
+                        )
+                      else
+                        FilledButton.tonalIcon(
+                          onPressed: () => mgr.pauseDownloads(),
+                          icon: const Icon(Icons.pause),
+                          label: const Text('Pause'),
+                        ),
+                      const SizedBox(width: 8),
+                      TextButton(
+                        onPressed: () => mgr.clearQueue(),
+                        child: const Text('Clear'),
                       ),
-                    ),
-                  )
-                : ListView.builder(
-                    padding: const EdgeInsets.only(bottom: 24),
-                    itemCount: groups.length,
-                    itemBuilder: (context, index) {
-                      final entries = groups.entries.toList();
-                      final group = entries[index];
-                      final items = group.value;
-                      final title = items.first.mangaTitle;
-                      return Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Padding(
-                            padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
-                            child: Text(
-                              title.isEmpty ? 'Unknown title' : title,
-                              style: TextStyle(
-                                color: c.textPrimary,
-                                fontWeight: FontWeight.w600,
-                                fontSize: 15,
-                              ),
-                            ),
-                          ),
-                          ...items.map((d) => _DownloadTile(download: d)),
-                        ],
-                      );
-                    },
+                    ],
                   ),
+                ),
+              Expanded(
+                child: queue.isEmpty
+                    ? Center(
+                        child: Text(
+                          'No chapters queued',
+                          style: TextStyle(
+                            color: c.textSecondary.withValues(alpha: 0.9),
+                          ),
+                        ),
+                      )
+                    : ListView.builder(
+                        padding: const EdgeInsets.only(bottom: 24),
+                        itemCount: groups.length,
+                        itemBuilder: (context, index) {
+                          final entries = groups.entries.toList();
+                          final group = entries[index];
+                          final items = group.value;
+                          final title = items.first.mangaTitle;
+                          return Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Padding(
+                                padding:
+                                    const EdgeInsets.fromLTRB(16, 12, 16, 4),
+                                child: Text(
+                                  title.isEmpty ? 'Unknown title' : title,
+                                  style: TextStyle(
+                                    color: c.textPrimary,
+                                    fontWeight: FontWeight.w600,
+                                    fontSize: 15,
+                                  ),
+                                ),
+                              ),
+                              ...items.map((d) => _DownloadTile(download: d)),
+                            ],
+                          );
+                        },
+                      ),
+              ),
+            ],
           ),
-        ],
+        ),
       ),
     );
   }

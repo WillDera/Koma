@@ -41,165 +41,165 @@ class SnippetCard extends StatelessWidget {
       onLongPress: onLongPress,
       scaleDown: 0.99,
       child: Container(
-        padding: const EdgeInsets.fromLTRB(20, 18, 20, 18),
         decoration: BoxDecoration(
           color: selectionMode && selected ? c.accentMuted : c.surface,
           borderRadius: AppSpacing.brLg,
           border: Border.all(color: c.border, width: 0.5),
         ),
+        clipBehavior: Clip.antiAlias,
         child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            if (selectionMode) ...[const SizedBox(height: 4)],
-            // Top row with color hairline + optional checkbox
-            Row(
-              children: [
-                Container(
-                  height: 2,
-                  width: 36,
-                  decoration: BoxDecoration(
-                    color: color,
-                    borderRadius: BorderRadius.circular(1),
-                  ),
-                ),
-                if (selectionMode) ...[
-                  const Spacer(),
-                  AnimatedContainer(
-                    duration: const Duration(milliseconds: 200),
-                    width: 22,
-                    height: 22,
-                    decoration: BoxDecoration(
-                      color: selected
-                          ? c.accent
-                          : Colors.black.withValues(alpha: 0.2),
-                      shape: BoxShape.circle,
-                      border: Border.all(
-                        color: selected ? c.accent : c.textTertiary,
-                        width: 1.5,
-                      ),
-                    ),
-                    child: selected
-                        ? Icon(Icons.check, size: 13, color: c.onAccent)
-                        : null,
-                  ),
-                ],
-              ],
-            ),
-            if (!selectionMode) ...[
-              const SizedBox(height: 16),
-            ] else ...[
-              const SizedBox(height: 12),
-            ],
-            // Quote
-            Text(
-              '"${snippet.text}"',
-              style: AppType.readingItalic(
-                fontSize: 16,
-                lineHeight: 1.5,
-                color: c.textPrimary,
-              ),
-            ),
-            // Note
-            if (snippet.note != null && snippet.note!.isNotEmpty) ...[
-              const SizedBox(height: 14),
-              Container(
-                padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
-                decoration: BoxDecoration(
-                  color: c.surfaceMuted,
-                  borderRadius: AppSpacing.brMd,
-                ),
-                child: Text(
-                  snippet.note!,
-                  style: TextStyle(
-                    color: c.textPrimary,
-                    fontSize: 14,
-                    height: 1.5,
-                  ),
-                ),
-              ),
-            ],
-            const SizedBox(height: 16),
-            // Footer
-            Row(
-              children: [
-                if (snippet.sourceTitle != null) ...[
-                  GestureDetector(
-                    onTap: onOpenSource,
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(
-                          Icons.book_outlined,
-                          size: 13,
-                          color: onOpenSource != null
-                              ? c.accent
-                              : c.textTertiary,
-                        ),
-                        const SizedBox(width: 5),
-                        Flexible(
-                          child: Text(
-                            snippet.sourceTitle!,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: TextStyle(
-                              color: onOpenSource != null
-                                  ? c.accent
-                                  : c.textSecondary,
-                              fontSize: 12,
-                              fontWeight: onOpenSource != null
-                                  ? FontWeight.w600
-                                  : FontWeight.w500,
+            // Full-width highlight color bar (Figma).
+            Container(height: 3, color: color),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // Source row + selection checkbox
+                  Row(
+                    children: [
+                      if (snippet.sourceTitle != null)
+                        Expanded(
+                          child: GestureDetector(
+                            onTap: onOpenSource,
+                            child: Row(
+                              children: [
+                                Icon(
+                                  Icons.book_outlined,
+                                  size: 14,
+                                  color: onOpenSource != null
+                                      ? c.accent
+                                      : c.textTertiary,
+                                ),
+                                const SizedBox(width: 6),
+                                Flexible(
+                                  child: Text(
+                                    snippet.sourceTitle!,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: TextStyle(
+                                      color: onOpenSource != null
+                                          ? c.accent
+                                          : c.textSecondary,
+                                      fontSize: 12,
+                                      fontWeight: onOpenSource != null
+                                          ? FontWeight.w600
+                                          : FontWeight.w500,
+                                    ),
+                                  ),
+                                ),
+                              ],
                             ),
                           ),
+                        )
+                      else
+                        const Spacer(),
+                      if (selectionMode)
+                        AnimatedContainer(
+                          duration: const Duration(milliseconds: 200),
+                          width: 22,
+                          height: 22,
+                          decoration: BoxDecoration(
+                            color: selected
+                                ? c.accent
+                                : Colors.black.withValues(alpha: 0.2),
+                            shape: BoxShape.circle,
+                            border: Border.all(
+                              color: selected ? c.accent : c.textTertiary,
+                              width: 1.5,
+                            ),
+                          ),
+                          child: selected
+                              ? Icon(Icons.check, size: 13, color: c.onAccent)
+                              : null,
                         ),
-                      ],
-                    ),
+                    ],
                   ),
-                  const SizedBox(width: 8),
-                ],
-                Text(
-                  '·',
-                  style: TextStyle(color: c.textTertiary, fontSize: 12),
-                ),
-                const SizedBox(width: 8),
-                Text(
-                  _relativeDate(snippet.createdAt),
-                  style: TextStyle(color: c.textTertiary, fontSize: 12),
-                ),
-                const Spacer(),
-                if (snippet.tags.isNotEmpty)
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 8,
-                      vertical: 3,
-                    ),
-                    decoration: BoxDecoration(
+                  const SizedBox(height: 12),
+                  // Quote block with left accent strip
+                  ClipRRect(
+                    borderRadius: AppSpacing.brMd,
+                    child: Container(
+                      width: double.infinity,
                       color: c.surfaceMuted,
-                      borderRadius: AppSpacing.brPill,
-                    ),
-                    child: Text(
-                      '${snippet.tags.length} tag${snippet.tags.length == 1 ? '' : 's'}',
-                      style: TextStyle(
-                        color: c.textSecondary,
-                        fontSize: 10,
-                        fontWeight: FontWeight.w600,
-                        letterSpacing: 0.2,
+                      child: IntrinsicHeight(
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            Container(width: 3, color: color),
+                            Expanded(
+                              child: Padding(
+                                padding: const EdgeInsets.fromLTRB(
+                                  12,
+                                  10,
+                                  12,
+                                  10,
+                                ),
+                                child: Text(
+                                  '"${snippet.text}"',
+                                  maxLines: dense ? 3 : 8,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: AppType.readingItalic(
+                                    fontSize: 13,
+                                    lineHeight: 1.65,
+                                    color: c.textPrimary,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
                     ),
                   ),
-              ],
-            ),
-            if (snippet.tags.isNotEmpty && !dense) ...[
-              const SizedBox(height: 12),
-              Wrap(
-                spacing: 6,
-                runSpacing: 6,
-                children: snippet.tags
-                    .take(4)
-                    .map((t) => TagPill(label: t))
-                    .toList(),
+                  // Note
+                  if (snippet.note != null && snippet.note!.isNotEmpty) ...[
+                    const SizedBox(height: 10),
+                    Text(
+                      snippet.note!,
+                      style: TextStyle(
+                        color: c.textSecondary,
+                        fontSize: 13,
+                        height: 1.45,
+                      ),
+                    ),
+                  ],
+                  const SizedBox(height: 10),
+                  // Footer
+                  Row(
+                    children: [
+                      Text(
+                        _relativeDate(snippet.createdAt),
+                        style: TextStyle(color: c.textTertiary, fontSize: 10),
+                      ),
+                      const Spacer(),
+                      if (snippet.tags.isNotEmpty)
+                        Text(
+                          '${snippet.tags.length} tag${snippet.tags.length == 1 ? '' : 's'}',
+                          style: TextStyle(
+                            color: c.textTertiary,
+                            fontSize: 10,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                    ],
+                  ),
+                  if (snippet.tags.isNotEmpty && !dense) ...[
+                    const SizedBox(height: 10),
+                    Wrap(
+                      spacing: 6,
+                      runSpacing: 6,
+                      children: snippet.tags
+                          .take(4)
+                          .map((t) => TagPill(label: t))
+                          .toList(),
+                    ),
+                  ],
+                ],
               ),
-            ],
+            ),
           ],
         ),
       ),

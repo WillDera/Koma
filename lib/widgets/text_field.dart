@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import '../theme/app_theme.dart';
 import '../theme/tokens/app_spacing.dart';
@@ -25,6 +27,10 @@ class StashTextField extends StatefulWidget {
   final Widget? trailing;
   final EdgeInsetsGeometry? padding;
 
+  /// Dismiss keyboard after the user stops typing for this duration.
+  /// Set to [Duration.zero] to disable idle unfocus.
+  final Duration idleUnfocusAfter;
+
   const StashTextField({
     super.key,
     this.hint,
@@ -44,6 +50,7 @@ class StashTextField extends StatefulWidget {
     this.obscureText = false,
     this.trailing,
     this.padding,
+    this.idleUnfocusAfter = const Duration(milliseconds: 1800),
   });
 
   @override
@@ -55,6 +62,7 @@ class _StashTextFieldState extends State<StashTextField> {
   late final FocusNode _focus;
   bool _hasText = false;
   bool _focused = false;
+  Timer? _idleUnfocus;
 
   @override
   void initState() {
@@ -68,6 +76,7 @@ class _StashTextFieldState extends State<StashTextField> {
 
   @override
   void dispose() {
+    _idleUnfocus?.cancel();
     _focus.removeListener(_onFocusChange);
     _ctrl.removeListener(_onTextChange);
     if (widget.controller == null) _ctrl.dispose();
@@ -77,11 +86,26 @@ class _StashTextFieldState extends State<StashTextField> {
 
   void _onFocusChange() {
     if (mounted) setState(() => _focused = _focus.hasFocus);
+    if (!_focus.hasFocus) _idleUnfocus?.cancel();
   }
 
   void _onTextChange() {
     final has = _ctrl.text.isNotEmpty;
     if (has != _hasText && mounted) setState(() => _hasText = has);
+  }
+
+  void _scheduleIdleUnfocus() {
+    _idleUnfocus?.cancel();
+    final after = widget.idleUnfocusAfter;
+    if (after == Duration.zero) return;
+    _idleUnfocus = Timer(after, () {
+      if (mounted && _focus.hasFocus) _focus.unfocus();
+    });
+  }
+
+  void _unfocus() {
+    _idleUnfocus?.cancel();
+    _focus.unfocus();
   }
 
   void _clear() {
@@ -107,65 +131,74 @@ class _StashTextFieldState extends State<StashTextField> {
           width: 1,
         ),
       ),
-      child: Row(
-        children: [
-          if (widget.leadingIcon != null) ...[
-            const SizedBox(width: 10),
-            Icon(widget.leadingIcon, size: 18, color: c.textTertiary),
-            const SizedBox(width: 6),
-          ],
-          Expanded(
-            child: TextField(
-              controller: _ctrl,
-              focusNode: _focus,
-              onChanged: widget.onChanged,
-              onSubmitted: widget.onSubmitted,
-              textInputAction: widget.textInputAction,
-              keyboardType: widget.keyboardType,
-              autofocus: widget.autofocus,
-              enabled: widget.enabled,
-              maxLines: widget.maxLines,
-              minLines: widget.minLines,
-              obscureText: widget.obscureText,
-              cursorColor: c.accent,
-              cursorWidth: 1.5,
-              style: Theme.of(
-                context,
-              ).textTheme.bodyLarge?.copyWith(color: c.textPrimary),
-              decoration: InputDecoration(
-                hintText: widget.hint,
-                border: InputBorder.none,
-                focusedBorder: InputBorder.none,
-                enabledBorder: InputBorder.none,
-                contentPadding: const EdgeInsets.symmetric(
-                  horizontal: 14,
-                  vertical: 12,
-                ),
-                isDense: true,
-                hintStyle: TextStyle(
-                  color: c.textTertiary,
-                  fontSize: 15,
-                  fontWeight: FontWeight.w400,
+      child: Material(
+        type: MaterialType.transparency,
+        child: Row(
+          children: [
+            if (widget.leadingIcon != null) ...[
+              const SizedBox(width: 10),
+              Icon(widget.leadingIcon, size: 18, color: c.textTertiary),
+              const SizedBox(width: 6),
+            ],
+            Expanded(
+              child: TextField(
+                controller: _ctrl,
+                focusNode: _focus,
+                onChanged: (v) {
+                  widget.onChanged?.call(v);
+                  _scheduleIdleUnfocus();
+                },
+                onSubmitted: (v) {
+                  _unfocus();
+                  widget.onSubmitted?.call(v);
+                },
+                textInputAction: widget.textInputAction,
+                keyboardType: widget.keyboardType,
+                autofocus: widget.autofocus,
+                enabled: widget.enabled,
+                maxLines: widget.maxLines,
+                minLines: widget.minLines,
+                obscureText: widget.obscureText,
+                cursorColor: c.accent,
+                cursorWidth: 1.5,
+                style: Theme.of(
+                  context,
+                ).textTheme.bodyLarge?.copyWith(color: c.textPrimary),
+                decoration: InputDecoration(
+                  hintText: widget.hint,
+                  border: InputBorder.none,
+                  focusedBorder: InputBorder.none,
+                  enabledBorder: InputBorder.none,
+                  contentPadding: const EdgeInsets.symmetric(
+                    horizontal: 14,
+                    vertical: 12,
+                  ),
+                  isDense: true,
+                  hintStyle: TextStyle(
+                    color: c.textTertiary,
+                    fontSize: 15,
+                    fontWeight: FontWeight.w400,
+                  ),
                 ),
               ),
             ),
-          ),
-          if (widget.showClearButton && _hasText)
-            AnimatedPress(
-              scaleDown: 0.85,
-              duration: const Duration(milliseconds: 120),
-              onTap: _clear,
-              child: Padding(
-                padding: const EdgeInsets.only(right: 4),
-                child: Icon(Icons.close, size: 16, color: c.textSecondary),
+            if (widget.showClearButton && _hasText)
+              AnimatedPress(
+                scaleDown: 0.85,
+                duration: const Duration(milliseconds: 120),
+                onTap: _clear,
+                child: Padding(
+                  padding: const EdgeInsets.only(right: 4),
+                  child: Icon(Icons.close, size: 16, color: c.textSecondary),
+                ),
               ),
-            ),
-          if (widget.trailing != null) ...[
-            const SizedBox(width: 4),
-            widget.trailing!,
-            const SizedBox(width: 8),
+            if (widget.trailing != null) ...[
+              const SizedBox(width: 4),
+              widget.trailing!,
+              const SizedBox(width: 8),
+            ],
           ],
-        ],
+        ),
       ),
     );
   }

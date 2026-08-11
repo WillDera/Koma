@@ -14,6 +14,7 @@ import '../../eval/models/m_source.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/catalog_card_layout.dart';
 import '../../widgets/catalog_cover_card.dart';
+import '../../widgets/horizontal_tab_swipe.dart';
 import '../../widgets/library_book_card.dart';
 import 'manga_detail_screen.dart';
 
@@ -618,7 +619,11 @@ class _SourceBrowseScreenState extends ConsumerState<SourceBrowseScreen>
                 ),
                 style: TextStyle(color: c.textPrimary),
                 onChanged: _onSearchChanged,
-                onSubmitted: (v) => _performSearch(v),
+                onSubmitted: (v) {
+                  FocusScope.of(context).unfocus();
+                  _performSearch(v);
+                },
+                textInputAction: TextInputAction.search,
               )
             : Text(widget.sourceName),
         actions: [
@@ -654,43 +659,51 @@ class _SourceBrowseScreenState extends ConsumerState<SourceBrowseScreen>
                 ],
               ),
       ),
-      body: _booting
-          ? const Center(child: CircularProgressIndicator())
-          : _searchActive
-          ? _buildSearchBody(c, headers, coverMaxBytes)
-          : _error != null && _mangas.isEmpty && !_loading
-          ? ListView(
-              children: [
-                Padding(
-                  padding: const EdgeInsets.all(16),
-                  child: Text(
-                    _error!,
-                    style: TextStyle(color: c.accent, fontSize: 13),
+      body: HorizontalTabSwipe(
+        tabIndex: _tabCtrl.index,
+        tabCount: 2,
+        onTabChanged: (i) {
+          if (_booting || _searchActive) return;
+          _tabCtrl.animateTo(i);
+        },
+        child: _booting
+            ? const Center(child: CircularProgressIndicator())
+            : _searchActive
+            ? _buildSearchBody(c, headers, coverMaxBytes)
+            : _error != null && _mangas.isEmpty && !_loading
+            ? ListView(
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: Text(
+                      _error!,
+                      style: TextStyle(color: c.accent, fontSize: 13),
+                    ),
                   ),
-                ),
-                Center(
-                  child: TextButton(
-                    onPressed: _refresh,
-                    child: const Text('Retry'),
+                  Center(
+                    child: TextButton(
+                      onPressed: _refresh,
+                      child: const Text('Retry'),
+                    ),
                   ),
-                ),
-              ],
-            )
-          : _mangas.isEmpty && !_loading
-          ? ListView(
-              children: [
-                const SizedBox(height: 120),
-                const Center(child: Text('Nothing found')),
-              ],
-            )
-          : _catalogMangaBody(
-              mangas: _mangas,
-              headers: headers,
-              controller: _scrollCtrl,
-              hasNext: _hasNext && _error == null,
-              onRefresh: _refresh,
-              coverMaxBytes: coverMaxBytes,
-            ),
+                ],
+              )
+            : _mangas.isEmpty && !_loading
+            ? ListView(
+                children: [
+                  const SizedBox(height: 120),
+                  const Center(child: Text('Nothing found')),
+                ],
+              )
+            : _catalogMangaBody(
+                mangas: _mangas,
+                headers: headers,
+                controller: _scrollCtrl,
+                hasNext: _hasNext && _error == null,
+                onRefresh: _refresh,
+                coverMaxBytes: coverMaxBytes,
+              ),
+      ),
     );
   }
 
