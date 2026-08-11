@@ -22,6 +22,7 @@ import '../../core/services/extension_manager.dart';
 import '../../core/services/extension_source_resolve.dart';
 import '../../core/services/keiyoushi_service.dart';
 import '../../core/services/media_export_service.dart';
+import '../../core/utils/custom_extended_image_provider.dart';
 import '../../eval/dispatch_service.dart';
 import '../../eval/models/m_chapter.dart';
 import '../../eval/models/m_source.dart';
@@ -1015,9 +1016,27 @@ class _MangaReaderScreenState extends ConsumerState<MangaReaderScreen>
 
   // ── Page actions ──
 
+  final Map<int, int> _pageRetryTokens = {};
+
   void _retryPage(int index) {
-    // No-op: the page will naturally reload from the widget
-    setState(() {});
+    if (index < 0 || index >= _pages.length) return;
+    final page = _pages[index];
+    page.resolvedFilePath = null;
+    final url = page.imageUrl;
+    if (url.startsWith('http')) {
+      PaintingBinding.instance.imageCache.clearLiveImages();
+      unawaited(
+        CustomExtendedNetworkImageProvider(
+          url,
+          headers: page.headers,
+          cacheMaxAge: const Duration(days: 7),
+          imageCacheFolderName: 'cacheimagemanga',
+        ).evict(),
+      );
+    }
+    setState(() {
+      _pageRetryTokens[index] = (_pageRetryTokens[index] ?? 0) + 1;
+    });
   }
 
   Future<Uint8List?> _bytesForCurrentPage() async {
@@ -1159,6 +1178,7 @@ class _MangaReaderScreenState extends ConsumerState<MangaReaderScreen>
     onToggleToolbar: _toggleToolbar,
     onLongPress: _showLongPressMenu,
     onRetryPage: _retryPage,
+    pageRetryTokens: Map<int, int>.from(_pageRetryTokens),
   );
 
   @override

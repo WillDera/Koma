@@ -7,10 +7,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/models/extension_repo.dart';
 import '../../core/models/extension_source.dart';
-import '../../core/providers.dart';
 import '../../core/services/extension_icon_cache.dart';
 import '../../core/services/extension_manager.dart';
-import '../../core/services/keiyoushi_service.dart';
 import '../../core/utils/custom_extended_image_provider.dart';
 import '../../core/utils/language.dart';
 import '../../theme/app_icons.dart';
@@ -20,33 +18,17 @@ import '../../theme/tokens/app_spacing.dart';
 import '../../widgets/aethelgard_fab.dart';
 import '../../widgets/animated_press.dart';
 import 'extension_detail_screen.dart';
+import 'extensions_catalog_provider.dart';
 import 'source_browse_screen.dart';
 
 const _keiyoushiDefaultRepoUrl =
     'https://raw.githubusercontent.com/keiyoushi/extensions/repo/index.json';
 const _keiyoushiDefaultRepoName = 'Keiyoushi (official)';
 
-String _extractPkgFromApkPath(String apkPath) {
-  final fileName = apkPath.split('/').last;
-  if (fileName.endsWith('.apk')) {
-    return fileName.substring(0, fileName.length - 4);
-  }
-  return fileName;
-}
+String _extractPkgFromApkPath(String apkPath) => extractPkgFromApkPath(apkPath);
 
-Set<String> _installedPkgs(List<ExtensionSource> installed) {
-  final set = <String>{};
-  for (final s in installed) {
-    final pkg = _extractPkgFromApkPath(s.apkPath);
-    if (pkg.isNotEmpty) set.add(pkg);
-    // JS/Dart installs store the catalog id on sourceId/id (no APK path).
-    if (s.isJs || s.isDart) {
-      if (s.sourceId.isNotEmpty) set.add(s.sourceId);
-      if (s.id.isNotEmpty) set.add(s.id);
-    }
-  }
-  return set;
-}
+Set<String> _installedPkgs(List<ExtensionSource> installed) =>
+    installedPkgsOf(installed);
 
 class ExtensionsScreen extends ConsumerStatefulWidget {
   const ExtensionsScreen({super.key});
@@ -58,23 +40,10 @@ class ExtensionsScreen extends ConsumerStatefulWidget {
 class _ExtensionsScreenState extends ConsumerState<ExtensionsScreen>
     with SingleTickerProviderStateMixin {
   late final TabController _tabs;
-  late final ExtensionManager _mgr;
-
-  List<ExtensionRepo> _repos = const [];
-  List<ExtensionSource> _installed = const [];
-
-  // Map<repoId, List<ExtensionIndexEntry>> (all entries, installed or not).
-  // Needed to resolve an `ExtensionIndexEntry` + repo when updating an
-  // already-installed extension via ExtensionManager.updateSource.
-  final Map<int, List<ExtensionIndexEntry>> _fullIndexCache = {};
-
-  // Map<repoId, List<ExtensionIndexEntry>> (only not-installed entries).
-  final Map<int, List<ExtensionIndexEntry>> _indexCache = {};
-  final Set<int> _loadingIndex = {};
-  String? _error;
 
   /// Available-tab local filters (independent of Settings NSFW prefs).
-  bool _availShowNsfw = false;
+  /// When true, only NSFW rows are listed; when false, NSFW is hidden.
+  bool _availShowOnlyNsfw = false;
   String _availLang = 'all';
   final Set<String> _availTypes = {
     SourceCodeLanguage.mihon,
@@ -82,14 +51,30 @@ class _ExtensionsScreenState extends ConsumerState<ExtensionsScreen>
     SourceCodeLanguage.dart,
   };
 
+  ExtensionsCatalogNotifier get _catalog =>
+      ref.read(extensionsCatalogProvider.notifier);
+
+  ExtensionManager get _mgr => _catalog.manager;
+
+  List<ExtensionRepo> get _repos => ref.watch(extensionsCatalogProvider).repos;
+  List<ExtensionSource> get _installed =>
+      ref.watch(extensionsCatalogProvider).installed;
+  Map<int, List<ExtensionIndexEntry>> get _fullIndexCache =>
+      ref.watch(extensionsCatalogProvider).fullIndexCache;
+  Map<int, List<ExtensionIndexEntry>> get _indexCache =>
+      ref.watch(extensionsCatalogProvider).indexCache;
+  Set<int> get _loadingIndex =>
+      ref.watch(extensionsCatalogProvider).loadingIndex;
+  String? get _error => ref.watch(extensionsCatalogProvider).error;
+
   @override
   void initState() {
     super.initState();
     _tabs = TabController(length: 3, vsync: this);
-    // ref.read (not watch) — initState must not subscribe to providers.
-    _mgr = ExtensionManager(ref.read(repositoriesProvider), KeiyoushiService());
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) _refresh();
+      if (mounted) {
+        unawaited(_catalog.ensureBootstrapped());
+      }
     });
   }
 
@@ -99,33 +84,12 @@ class _ExtensionsScreenState extends ConsumerState<ExtensionsScreen>
     super.dispose();
   }
 
-  Future<void> _refresh() async {
-    try {
-      // Reconcile before listing so Untrusted rows show correctly.
-      try {
-        await _mgr.reconcileTrust();
-      } catch (_) {}
-      final repos = await _mgr.listRepos();
-      final installed = await _mgr.listInstalled();
-      if (!mounted) return;
-      setState(() {
-        _repos = repos;
-        _installed = installed;
-        _error = null;
-      });
-      ref.read(extensionUpdateCountProvider.notifier).refresh();
-      // One-time population of the pkg→iconUrl cache from the full Keiyoushi
-      // index. No-op after the first run; failures are swallowed internally
-      // so icon resolution degrades to the CDN derivation fallback.
-      // See Q5.
-      _mgr.refreshIconCache();
-    } catch (e) {
-      if (!mounted) return;
-      setState(() => _error = '$e');
-    }
-  }
+  Future<void> _refresh() => _catalog.refreshInstalled();
 
-  /// Mihon Untrusted dialog — Trust continues install/update; Uninstall discards.
+  Future<void> _fetchIndex(ExtensionRepo repo) => _catalog.fetchIndex(repo);
+
+  Future<void> _fetchAllIndexes() => _catalog.fetchAllIndexes();
+
   Future<bool> _confirmTrust(UntrustedExtensionException e) async {
     final c = context.colors;
     final action = await showDialog<bool>(
@@ -165,37 +129,6 @@ class _ExtensionsScreenState extends ConsumerState<ExtensionsScreen>
       kind: ExtensionRepoKind.mihon,
     );
     await _refresh();
-  }
-
-  Future<void> _fetchIndex(ExtensionRepo repo) async {
-    if (_loadingIndex.contains(repo.id)) return;
-    setState(() => _loadingIndex.add(repo.id));
-    try {
-      final entries = await _mgr.fetchIndex(repo);
-      if (!mounted) return;
-      await _mgr.checkForObsoleteSources(entries, repo.url);
-      await _mgr.checkForUpdates(entries, repo.url);
-      if (!mounted) return;
-      final installed = await _mgr.listInstalled();
-      if (!mounted) return;
-      final loadedPkgs = _installedPkgs(installed);
-      setState(() {
-        _fullIndexCache[repo.id] = entries;
-        _indexCache[repo.id] = entries
-            .where((e) => !loadedPkgs.contains(e.pkg))
-            .toList(growable: false);
-        _installed = installed;
-        _error = null;
-      });
-      ref.read(extensionUpdateCountProvider.notifier).refresh();
-    } catch (e) {
-      if (!mounted) return;
-      setState(() => _error = '$e');
-    } finally {
-      if (mounted) {
-        setState(() => _loadingIndex.remove(repo.id));
-      }
-    }
   }
 
   Future<void> _addRepoDialog() async {
@@ -297,9 +230,7 @@ class _ExtensionsScreenState extends ConsumerState<ExtensionsScreen>
   }
 
   Future<void> _removeRepo(ExtensionRepo repo) async {
-    await _mgr.removeRepo(repo.id);
-    setState(() => _indexCache.remove(repo.id));
-    await _refresh();
+    await _catalog.removeRepo(repo.id);
   }
 
   Future<void> _install(ExtensionIndexEntry entry, ExtensionRepo repo) async {
@@ -308,14 +239,7 @@ class _ExtensionsScreenState extends ConsumerState<ExtensionsScreen>
     try {
       final src = await _mgr.install(entry, repoUrl: repo.url);
       messenger.showSnackBar(SnackBar(content: Text('Loaded ${src.name}')));
-      setState(() {
-        _installed = List.from(_installed)..add(src);
-        _indexCache[repo.id] =
-            _indexCache[repo.id]
-                ?.where((e) => e.pkg != entry.pkg)
-                .toList(growable: false) ??
-            const [];
-      });
+      await _refresh();
       await _fetchIndex(repo);
     } on UnsupportedExtensionLanguageException catch (e) {
       messenger.showSnackBar(
@@ -381,11 +305,6 @@ class _ExtensionsScreenState extends ConsumerState<ExtensionsScreen>
     try {
       await _mgr.uninstall(src);
       messenger.showSnackBar(SnackBar(content: Text('Unloaded ${src.name}')));
-      setState(() {
-        _installed = _installed
-            .where((s) => s.sourceId != src.sourceId)
-            .toList();
-      });
       await _refresh();
     } catch (e) {
       messenger.showSnackBar(SnackBar(content: Text('Unload failed: $e')));
@@ -587,7 +506,7 @@ class _ExtensionsScreenState extends ConsumerState<ExtensionsScreen>
   }
 
   void _openAvailableFilter() {
-    var showNsfw = _availShowNsfw;
+    var showOnlyNsfw = _availShowOnlyNsfw;
     var lang = _availLang;
     final types = Set<String>.from(_availTypes);
     final c = context.colors;
@@ -646,11 +565,17 @@ class _ExtensionsScreenState extends ConsumerState<ExtensionsScreen>
                   SwitchListTile(
                     contentPadding: EdgeInsets.zero,
                     title: Text(
-                      'Show NSFW',
+                      'Show only NSFW',
                       style: TextStyle(color: c.textPrimary),
                     ),
-                    value: showNsfw,
-                    onChanged: (v) => setSheet(() => showNsfw = v),
+                    subtitle: Text(
+                      showOnlyNsfw
+                          ? 'Only NSFW extensions listed'
+                          : 'NSFW and non-NSFW extensions listed',
+                      style: TextStyle(color: c.textSecondary, fontSize: 12),
+                    ),
+                    value: showOnlyNsfw,
+                    onChanged: (v) => setSheet(() => showOnlyNsfw = v),
                   ),
                   const SizedBox(height: 4),
                   Text(
@@ -703,7 +628,7 @@ class _ExtensionsScreenState extends ConsumerState<ExtensionsScreen>
                     child: FilledButton(
                       onPressed: () {
                         setState(() {
-                          _availShowNsfw = showNsfw;
+                          _availShowOnlyNsfw = showOnlyNsfw;
                           _availLang = lang;
                           _availTypes
                             ..clear()
@@ -734,6 +659,11 @@ class _ExtensionsScreenState extends ConsumerState<ExtensionsScreen>
         title: Text('Extensions', style: TextStyle(color: c.textPrimary)),
         iconTheme: IconThemeData(color: c.textPrimary),
         actions: [
+          IconButton(
+            tooltip: 'Fetch all catalogues',
+            icon: Icon(Icons.cloud_download_outlined, color: c.textPrimary),
+            onPressed: _fetchAllIndexes,
+          ),
           IconButton(
             tooltip: 'Filter available extensions',
             icon: Icon(Icons.filter_list_rounded, color: c.textPrimary),
@@ -791,11 +721,12 @@ class _ExtensionsScreenState extends ConsumerState<ExtensionsScreen>
                   indexCache: _indexCache,
                   loading: _loadingIndex,
                   installed: _installed,
-                  showNsfw: _availShowNsfw,
+                  showOnlyNsfw: _availShowOnlyNsfw,
                   langFilter: _availLang,
                   typeFilters: _availTypes,
                   showObsolete: theme.showObsoleteExtensions,
                   onFetch: _fetchIndex,
+                  onFetchAll: _fetchAllIndexes,
                   onInstall: _install,
                   onSeed: _ensureRepoSeeded,
                 ),
@@ -1234,11 +1165,12 @@ class _AvailableTab extends StatefulWidget {
   final Map<int, List<ExtensionIndexEntry>> indexCache;
   final Set<int> loading;
   final List<ExtensionSource> installed;
-  final bool showNsfw;
+  final bool showOnlyNsfw;
   final String langFilter;
   final Set<String> typeFilters;
   final bool showObsolete;
   final void Function(ExtensionRepo) onFetch;
+  final VoidCallback onFetchAll;
   final void Function(ExtensionIndexEntry, ExtensionRepo) onInstall;
   final VoidCallback onSeed;
 
@@ -1247,11 +1179,12 @@ class _AvailableTab extends StatefulWidget {
     required this.indexCache,
     required this.loading,
     required this.installed,
-    required this.showNsfw,
+    required this.showOnlyNsfw,
     required this.langFilter,
     required this.typeFilters,
     required this.showObsolete,
     required this.onFetch,
+    required this.onFetchAll,
     required this.onInstall,
     required this.onSeed,
   });
@@ -1311,7 +1244,7 @@ class _AvailableTabState extends State<_AvailableTab> {
   }
 
   List<_AvailableRow> _buildRowsCached({
-    required bool showNsfw,
+    required bool showOnlyNsfw,
     required bool showObsolete,
   }) {
     final key = Object.hash(
@@ -1320,19 +1253,23 @@ class _AvailableTabState extends State<_AvailableTab> {
       widget.indexCache.length,
       widget.installed.length,
       _expandedRepos.length,
-      showNsfw,
+      showOnlyNsfw,
       showObsolete,
       widget.langFilter,
       Object.hashAll(widget.typeFilters),
+      Object.hashAll(widget.loading),
     );
     if (_cachedRows != null && _rowsCacheKey == key) return _cachedRows!;
-    _cachedRows = _buildRows(showNsfw: showNsfw, showObsolete: showObsolete);
+    _cachedRows = _buildRows(
+      showOnlyNsfw: showOnlyNsfw,
+      showObsolete: showObsolete,
+    );
     _rowsCacheKey = key;
     return _cachedRows!;
   }
 
   List<_AvailableRow> _buildRows({
-    required bool showNsfw,
+    required bool showOnlyNsfw,
     required bool showObsolete,
   }) {
     final installedPkgs = _installedPkgs(widget.installed);
@@ -1361,9 +1298,11 @@ class _AvailableTabState extends State<_AvailableTab> {
       if (!_allowedLanguageSet.contains(lang)) continue;
       if (widget.langFilter != 'all' && lang != widget.langFilter) continue;
       if (entry.sources.isEmpty && !entry.isJs && !entry.isDart) continue;
-      if (!showNsfw && entry.isNsfw) continue;
+      // Filter: ON → NSFW only; OFF → show NSFW and non-NSFW.
+      if (showOnlyNsfw && !entry.isNsfw) continue;
       if (!showObsolete && entry.isObsolete) continue;
-      final typeOk = widget.typeFilters.isEmpty ||
+      final typeOk =
+          widget.typeFilters.isEmpty ||
           (entry.isMihon &&
               widget.typeFilters.contains(SourceCodeLanguage.mihon)) ||
           (entry.isJs && widget.typeFilters.contains(SourceCodeLanguage.js)) ||
@@ -1375,50 +1314,57 @@ class _AvailableTabState extends State<_AvailableTab> {
 
     final rows = <_AvailableRow>[];
 
-    void appendKindSection(String title, String kind) {
-      final kindEntries = notInstalledEntries
-          .where((er) => er.repo.kind == kind)
-          .toList(growable: false);
-      if (kindEntries.isEmpty) return;
+    // One expandable group per repo — no Mihon/JS catalogue section headers.
+    final groups = <int, List<_EntryWithRepo>>{};
+    for (final er in notInstalledEntries) {
+      groups.putIfAbsent(er.repo.id, () => []).add(er);
+    }
 
-      rows.add(_AvailableRow.section(title));
+    final sortedRepos = List<ExtensionRepo>.from(widget.repos)
+      ..sort((a, b) => a.name.compareTo(b.name));
 
-      final groups = <int, List<_EntryWithRepo>>{};
-      for (final er in kindEntries) {
-        groups.putIfAbsent(er.repo.id, () => []).add(er);
+    for (final repo in sortedRepos) {
+      final fetched = widget.indexCache.containsKey(repo.id);
+      final group = groups[repo.id] ?? const <_EntryWithRepo>[];
+      final loading = widget.loading.contains(repo.id);
+      if (!fetched && group.isEmpty && !loading && query.isNotEmpty) {
+        continue;
       }
-      final sortedIds = groups.keys.toList()
-        ..sort((a, b) {
-          final repoA = widget.repos.firstWhere((r) => r.id == a);
-          final repoB = widget.repos.firstWhere((r) => r.id == b);
-          return repoA.name.compareTo(repoB.name);
-        });
-
-      for (final repoId in sortedIds) {
-        final repo = widget.repos.firstWhere((r) => r.id == repoId);
-        final group = groups[repoId]!
-          ..sort((a, b) => a.entry.name.compareTo(b.entry.name));
-        final expanded = _expandedRepos.contains(repoId);
+      final sortedGroup = List<_EntryWithRepo>.from(group)
+        ..sort((a, b) => a.entry.name.compareTo(b.entry.name));
+      final expanded = _expandedRepos.contains(repo.id);
+      rows.add(
+        _AvailableRow.repoHeader(
+          repoId: repo.id,
+          repoName: repo.name,
+          count: sortedGroup.length,
+          expanded: expanded,
+        ),
+      );
+      if (!fetched) {
         rows.add(
-          _AvailableRow.repoHeader(
-            repoId: repoId,
-            repoName: repo.name,
-            count: group.length,
-            expanded: expanded,
+          _AvailableRow.pendingFetch(
+            repoId: repo.id,
+            loading: loading,
           ),
         );
-        if (expanded) {
-          for (final er in group) {
-            rows.add(
-              _AvailableRow.entry(er, installed: false, hasUpdate: false),
-            );
-          }
+      } else if (expanded) {
+        for (final er in sortedGroup) {
+          rows.add(
+            _AvailableRow.entry(er, installed: false, hasUpdate: false),
+          );
+        }
+        if (sortedGroup.isEmpty) {
+          rows.add(
+            _AvailableRow.emptyMessage(
+              query.isNotEmpty
+                  ? 'No matches in ${repo.name}'
+                  : 'No extensions in ${repo.name}',
+            ),
+          );
         }
       }
     }
-
-    appendKindSection('Catalogue · Mihon', ExtensionRepoKind.mihon);
-    appendKindSection('Catalogue · JavaScript', ExtensionRepoKind.javascript);
 
     if (rows.isEmpty && allEntries.isNotEmpty) {
       rows.add(
@@ -1450,193 +1396,160 @@ class _AvailableTabState extends State<_AvailableTab> {
       );
     }
 
-    final hasAnyFetched = widget.repos.any(
-      (r) => widget.indexCache.containsKey(r.id),
+    final rows = _buildRowsCached(
+      showOnlyNsfw: widget.showOnlyNsfw,
+      showObsolete: widget.showObsolete,
     );
-    final rows = hasAnyFetched
-        ? _buildRowsCached(
-            showNsfw: widget.showNsfw,
-            showObsolete: widget.showObsolete,
-          )
-        : const <_AvailableRow>[];
 
     return Column(
       children: [
-        if (hasAnyFetched)
-          Padding(
-            padding: const EdgeInsets.fromLTRB(20, 16, 20, 4),
-            child: TextField(
-              controller: _searchCtrl,
-              style: TextStyle(
-                color: c.textPrimary,
+        Padding(
+          padding: const EdgeInsets.fromLTRB(20, 16, 20, 4),
+          child: TextField(
+            controller: _searchCtrl,
+            style: TextStyle(
+              color: c.textPrimary,
+              fontSize: 15,
+              letterSpacing: 0.2,
+            ),
+            cursorColor: c.accent,
+            decoration: InputDecoration(
+              hintText: 'Find a source…',
+              hintStyle: TextStyle(
+                color: c.textTertiary,
                 fontSize: 15,
                 letterSpacing: 0.2,
               ),
-              cursorColor: c.accent,
-              decoration: InputDecoration(
-                hintText: 'Find a source…',
-                hintStyle: TextStyle(
-                  color: c.textTertiary,
-                  fontSize: 15,
-                  letterSpacing: 0.2,
-                ),
-                prefixIcon: Icon(
-                  Icons.search,
-                  size: 20,
-                  color: c.textTertiary,
-                ),
-                suffixIcon: _query.isNotEmpty || _searchCtrl.text.isNotEmpty
-                    ? IconButton(
-                        icon: Icon(Icons.close, size: 18, color: c.textTertiary),
-                        onPressed: () {
-                          _searchDebounce?.cancel();
-                          _searchCtrl.clear();
-                          setState(() => _query = '');
-                        },
-                      )
-                    : null,
-                isDense: true,
-                filled: true,
-                fillColor: c.bgElevated,
-                contentPadding: const EdgeInsets.symmetric(
-                  horizontal: 14,
-                  vertical: 14,
-                ),
-                enabledBorder: UnderlineInputBorder(
-                  borderSide: BorderSide(color: c.borderStrong),
-                ),
-                focusedBorder: UnderlineInputBorder(
-                  borderSide: BorderSide(color: c.accent, width: 1.5),
-                ),
-                border: UnderlineInputBorder(
-                  borderSide: BorderSide(color: c.border),
-                ),
+              prefixIcon: Icon(
+                Icons.search,
+                size: 20,
+                color: c.textTertiary,
+              ),
+              suffixIcon: _query.isNotEmpty || _searchCtrl.text.isNotEmpty
+                  ? IconButton(
+                      icon: Icon(Icons.close, size: 18, color: c.textTertiary),
+                      onPressed: () {
+                        _searchDebounce?.cancel();
+                        _searchCtrl.clear();
+                        setState(() => _query = '');
+                      },
+                    )
+                  : null,
+              isDense: true,
+              filled: true,
+              fillColor: c.bgElevated,
+              contentPadding: const EdgeInsets.symmetric(
+                horizontal: 14,
+                vertical: 14,
+              ),
+              enabledBorder: UnderlineInputBorder(
+                borderSide: BorderSide(color: c.borderStrong),
+              ),
+              focusedBorder: UnderlineInputBorder(
+                borderSide: BorderSide(color: c.accent, width: 1.5),
+              ),
+              border: UnderlineInputBorder(
+                borderSide: BorderSide(color: c.border),
               ),
             ),
           ),
+        ),
         Expanded(
-          child: !hasAnyFetched
-              ? ListView(
-                  padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
-                  children: [
-                    for (final repo in widget.repos) ...[
-                      _RepoHeader(
-                        repo: repo,
-                        loading: widget.loading.contains(repo.id),
-                        onFetch: () => widget.onFetch(repo),
-                      ),
-                      const SizedBox(height: 8),
-                      Padding(
-                        padding: const EdgeInsets.only(bottom: 20),
-                        child: Text(
-                          'Fetch this catalogue to browse its sources.',
-                          style: TextStyle(
-                            color: c.textSecondary,
-                            fontSize: 12,
-                            height: 1.4,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ],
-                )
-              : RepaintBoundary(
-                  child: ListView.builder(
-                    padding: const EdgeInsets.fromLTRB(16, 8, 16, 28),
-                    itemCount: rows.length,
-                    itemBuilder: (context, index) {
-                      final row = rows[index];
-                      switch (row.kind) {
-                        case _AvailableRowKind.section:
-                          return Padding(
-                            padding: EdgeInsets.only(
-                              left: 4,
-                              right: 4,
-                              bottom: 10,
-                              top: index == 0 ? 8 : 20,
-                            ),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  row.title!.toUpperCase(),
-                                  style: TextStyle(
-                                    fontWeight: FontWeight.w700,
-                                    fontSize: 11,
-                                    letterSpacing: 1.6,
-                                    color: c.textSecondary,
-                                  ),
-                                ),
-                                const SizedBox(height: 6),
-                                Container(
-                                  height: 2,
-                                  width: 36,
-                                  color: c.accent,
-                                ),
-                              ],
-                            ),
-                          );
-                        case _AvailableRowKind.repoHeader:
-                          return _RepoGroupHeader(
-                            repoName: row.title!,
-                            count: row.count,
-                            expanded: row.expanded,
-                            onToggle: () {
-                              final id = row.repoId!;
-                              setState(() {
-                                if (row.expanded) {
-                                  _expandedRepos.remove(id);
-                                } else {
-                                  _expandedRepos.add(id);
-                                }
-                              });
-                            },
-                          );
-                        case _AvailableRowKind.entry:
-                          final er = row.entry!;
-                          return Padding(
-                            padding: const EdgeInsets.only(
-                              left: 8,
-                              right: 0,
-                              bottom: 4,
-                            ),
-                            child: _ExtensionRow(
-                              entry: er.entry,
-                              installed: row.installed,
-                              hasUpdate: row.hasUpdate,
-                              installedVersion: row.installedVersion,
-                              onInstall: () =>
-                                  widget.onInstall(er.entry, er.repo),
-                            ),
-                          );
-                        case _AvailableRowKind.emptyMessage:
-                          return Padding(
-                            padding: const EdgeInsets.only(top: 48),
-                            child: Center(
-                              child: Column(
-                                children: [
-                                  Icon(
-                                    Icons.search_off,
-                                    size: 40,
-                                    color: c.textTertiary,
-                                  ),
-                                  const SizedBox(height: 12),
-                                  Text(
-                                    row.title!,
-                                    style: TextStyle(
-                                      color: c.textSecondary,
-                                      fontSize: 14,
-                                    ),
-                                    textAlign: TextAlign.center,
-                                  ),
-                                ],
+          child: RepaintBoundary(
+            child: ListView.builder(
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 28),
+              itemCount: rows.length,
+              itemBuilder: (context, index) {
+                final row = rows[index];
+                switch (row.kind) {
+                  case _AvailableRowKind.repoHeader:
+                    return _RepoGroupHeader(
+                      repoName: row.title!,
+                      count: row.count,
+                      expanded: row.expanded,
+                      onToggle: () {
+                        final id = row.repoId!;
+                        setState(() {
+                          if (row.expanded) {
+                            _expandedRepos.remove(id);
+                          } else {
+                            _expandedRepos.add(id);
+                          }
+                        });
+                      },
+                    );
+                  case _AvailableRowKind.pendingFetch:
+                    final repo = widget.repos.firstWhere(
+                      (r) => r.id == row.repoId,
+                    );
+                    return Padding(
+                      padding: const EdgeInsets.fromLTRB(12, 0, 4, 16),
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              row.loading
+                                  ? 'Fetching catalogue…'
+                                  : 'Catalogue not loaded yet',
+                              style: TextStyle(
+                                color: c.textSecondary,
+                                fontSize: 12,
                               ),
                             ),
-                          );
-                      }
-                    },
-                  ),
-                ),
+                          ),
+                          OutlinedButton.icon(
+                            onPressed: row.loading
+                                ? null
+                                : () => widget.onFetch(repo),
+                            icon: row.loading
+                                ? const SizedBox(
+                                    width: 14,
+                                    height: 14,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                    ),
+                                  )
+                                : const Icon(Icons.refresh, size: 16),
+                            label: Text(row.loading ? '…' : 'Fetch'),
+                          ),
+                        ],
+                      ),
+                    );
+                  case _AvailableRowKind.entry:
+                    final er = row.entry!;
+                    return Padding(
+                      padding: const EdgeInsets.only(
+                        left: 8,
+                        right: 0,
+                        bottom: 4,
+                      ),
+                      child: _ExtensionRow(
+                        entry: er.entry,
+                        installed: row.installed,
+                        hasUpdate: row.hasUpdate,
+                        installedVersion: row.installedVersion,
+                        onInstall: () =>
+                            widget.onInstall(er.entry, er.repo),
+                      ),
+                    );
+                  case _AvailableRowKind.emptyMessage:
+                    return Padding(
+                      padding: const EdgeInsets.only(top: 24, bottom: 16),
+                      child: Center(
+                        child: Text(
+                          row.title ?? '',
+                          style: TextStyle(
+                            color: c.textSecondary,
+                            fontSize: 13,
+                          ),
+                          textAlign: TextAlign.center,
+                        ),
+                      ),
+                    );
+                }
+              },
+            ),
+          ),
         ),
       ],
     );
@@ -1644,7 +1557,7 @@ class _AvailableTabState extends State<_AvailableTab> {
 }
 
 
-enum _AvailableRowKind { section, repoHeader, entry, emptyMessage }
+enum _AvailableRowKind { repoHeader, pendingFetch, entry, emptyMessage }
 
 class _AvailableRow {
   final _AvailableRowKind kind;
@@ -1656,6 +1569,7 @@ class _AvailableRow {
   final int? repoId;
   final int count;
   final bool expanded;
+  final bool loading;
 
   const _AvailableRow._({
     required this.kind,
@@ -1667,10 +1581,8 @@ class _AvailableRow {
     this.repoId,
     this.count = 0,
     this.expanded = false,
+    this.loading = false,
   });
-
-  const _AvailableRow.section(String title)
-    : this._(kind: _AvailableRowKind.section, title: title);
 
   const _AvailableRow.emptyMessage(String message)
     : this._(kind: _AvailableRowKind.emptyMessage, title: message);
@@ -1686,6 +1598,15 @@ class _AvailableRow {
          repoId: repoId,
          count: count,
          expanded: expanded,
+       );
+
+  const _AvailableRow.pendingFetch({
+    required int repoId,
+    required bool loading,
+  }) : this._(
+         kind: _AvailableRowKind.pendingFetch,
+         repoId: repoId,
+         loading: loading,
        );
 
   const _AvailableRow.entry(
@@ -1710,60 +1631,6 @@ class _EntryWithRepo {
 
 extension on ExtensionIndexEntry {
   bool get isObsolete => false;
-}
-
-class _RepoHeader extends StatelessWidget {
-  final ExtensionRepo repo;
-  final bool loading;
-  final VoidCallback onFetch;
-
-  const _RepoHeader({
-    required this.repo,
-    required this.loading,
-    required this.onFetch,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final c = context.colors;
-    return Row(
-      children: [
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                repo.name,
-                style: TextStyle(
-                  color: c.textPrimary,
-                  fontSize: 14,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-              const SizedBox(height: 2),
-              Text(
-                repo.url,
-                style: TextStyle(color: c.textSecondary, fontSize: 11),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-              ),
-            ],
-          ),
-        ),
-        OutlinedButton.icon(
-          onPressed: loading ? null : onFetch,
-          icon: loading
-              ? const SizedBox(
-                  width: 14,
-                  height: 14,
-                  child: CircularProgressIndicator(strokeWidth: 2),
-                )
-              : const Icon(Icons.refresh, size: 16),
-          label: const Text('Fetch'),
-        ),
-      ],
-    );
-  }
 }
 
 class _ExtensionRow extends StatelessWidget {

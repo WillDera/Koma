@@ -63,7 +63,7 @@ class ReaderPageImage extends StatelessWidget {
                 ),
               )
             : child,
-        errorBuilder: (_, _, _) => _brokenBox(),
+        errorBuilder: (_, _, _) => _retryColumn(),
       );
     }
 
@@ -98,12 +98,7 @@ class ReaderPageImage extends StatelessWidget {
     );
   }
 
-  Widget _brokenBox() => const AspectRatio(
-    aspectRatio: 16 / 9,
-    child: Center(
-      child: Icon(Icons.broken_image, color: Colors.white38, size: 48),
-    ),
-  );
+  Widget _brokenBox() => _retryColumn();
 
   Widget _retryColumn() => Center(
     child: Column(
@@ -114,7 +109,10 @@ class ReaderPageImage extends StatelessWidget {
         TextButton.icon(
           onPressed: onRetry,
           icon: const Icon(Icons.refresh, color: Colors.white54),
-          label: const Text('Retry', style: TextStyle(color: Colors.white54)),
+          label: const Text(
+            'Reload image',
+            style: TextStyle(color: Colors.white54),
+          ),
         ),
       ],
     ),

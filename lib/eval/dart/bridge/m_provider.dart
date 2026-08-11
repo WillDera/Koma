@@ -66,18 +66,36 @@ class MProviderBridged {
     );
     interpreter.registertopLevelFunction(
       'getPreferenceValue',
-      (visitor, positionalArgs, namedArgs, _) => getPreferenceValue(
-        positionalArgs[0] as int,
-        positionalArgs[1] as String,
-      ),
+      (visitor, positionalArgs, namedArgs, _) {
+        final rawId = positionalArgs.isNotEmpty ? positionalArgs[0] : null;
+        final sid = rawId is int
+            ? rawId
+            : rawId is num
+                ? rawId.toInt()
+                : int.tryParse('$rawId') ?? 0;
+        final key = positionalArgs.length > 1
+            ? positionalArgs[1]?.toString() ?? ''
+            : '';
+        return getPreferenceValue(sid, key);
+      },
     );
     interpreter.registertopLevelFunction(
       'getPrefStringValue',
-      (visitor, positionalArgs, namedArgs, _) => getSourcePreferenceStringValue(
-        positionalArgs[0] as int,
-        positionalArgs[1] as String,
-        positionalArgs[2] as String,
-      ),
+      (visitor, positionalArgs, namedArgs, _) {
+        final rawId = positionalArgs.isNotEmpty ? positionalArgs[0] : null;
+        final sid = rawId is int
+            ? rawId
+            : rawId is num
+                ? rawId.toInt()
+                : int.tryParse('$rawId') ?? 0;
+        final key = positionalArgs.length > 1
+            ? positionalArgs[1]?.toString() ?? ''
+            : '';
+        final def = positionalArgs.length > 2
+            ? positionalArgs[2]?.toString() ?? ''
+            : '';
+        return getSourcePreferenceStringValue(sid, key, def);
+      },
     );
     interpreter.registertopLevelFunction(
       'cryptoHandler',

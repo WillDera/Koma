@@ -47,7 +47,16 @@ class MangaImageViewWebtoon extends StatelessWidget {
             readerMode: props.settings.readingMode,
           );
         }
-        return ReaderPageImage(page: page, webtoon: isWebtoon);
+        return KeyedSubtree(
+          key: ValueKey(
+            'webtoon-$index-r${props.pageRetryTokens[index] ?? 0}',
+          ),
+          child: ReaderPageImage(
+            page: page,
+            webtoon: isWebtoon,
+            onRetry: () => props.onRetryPage(index),
+          ),
+        );
       },
     );
   }
