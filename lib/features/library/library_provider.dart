@@ -439,7 +439,11 @@ class LibraryUpdateNotifier extends Notifier<LibraryUpdateState> {
 
   /// Poll every library manga for new chapters. Safe to call manually (the
   /// library screen's refresh) or from the periodic timer.
-  Future<void> checkForNewChapters() async {
+  ///
+  /// [applyRestrictions]: when true (auto / background), honor Settings skip
+  /// filters. Manual "Check now" passes false so titles with unread chapters
+  /// still hit the source.
+  Future<void> checkForNewChapters({bool applyRestrictions = true}) async {
     if (state.checking) return;
     state = state.copyWith(checking: true, error: () => null);
     try {
@@ -448,7 +452,11 @@ class LibraryUpdateNotifier extends Notifier<LibraryUpdateState> {
         ref.read(extensionServiceProvider),
         extensionManager: ref.read(extensionManagerProvider),
       );
-      final report = await service.checkForNewChapters();
+      final report = await service.checkForNewChapters(
+        restrictions: applyRestrictions
+            ? null
+            : LibraryUpdateMangaRestrictions.none,
+      );
       // Reload library so the new-chapter badges + card state refresh.
       await ref.read(libraryProvider.notifier).loadBooks();
       if (report.totalNew > 0) {

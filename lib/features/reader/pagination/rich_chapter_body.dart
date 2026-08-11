@@ -91,7 +91,9 @@ class RichChapterBody extends StatelessWidget {
       children: [
         for (var i = 0; i < blocks.length; i++) ...[
           if (i > 0) SizedBox(height: _gapBefore(blocks[i])),
-          _buildBlock(context, blocks[i], c),
+          // Isolate each block so scroll pans don't dirty-repaint the whole
+          // chapter when only the viewport moves.
+          RepaintBoundary(child: _buildBlock(context, blocks[i], c)),
         ],
       ],
     );
