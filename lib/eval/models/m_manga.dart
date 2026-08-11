@@ -1,4 +1,5 @@
 import '../../core/services/keiyoushi_service.dart';
+import '../../core/utils/json_coerce.dart';
 
 class MManga {
   final String url;
@@ -49,9 +50,7 @@ class MManga {
     author: json['author'] as String?,
     artist: json['artist'] as String?,
     description: json['description'] as String?,
-    status: json['status'] is int
-        ? json['status'] as int
-        : int.tryParse('${json['status'] ?? ''}') ?? 0,
+    status: asIntOr(json['status']),
     memo: coerceMemoJson(json['memo']),
     genres: _genresFromJson(json['genre']),
   );

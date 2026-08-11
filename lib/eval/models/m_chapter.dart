@@ -1,4 +1,5 @@
 import '../../core/services/keiyoushi_service.dart';
+import '../../core/utils/json_coerce.dart';
 
 class MChapter {
   final String url;
@@ -35,21 +36,11 @@ class MChapter {
     url: json['url'] as String? ?? json['link'] as String? ?? '',
     name: json['name'] as String? ?? '',
     scanlator: json['scanlator'] as String?,
-    dateUpload: _dateUploadFromJson(json),
-    chapterNumber: json['chapter_number'] as int? ??
-        (json['chapterNumber'] is num
-            ? (json['chapterNumber'] as num).toInt()
-            : -1),
+    dateUpload: asIntOr(json['date_upload'] ?? json['dateUpload']),
+    chapterNumber:
+        asInt(json['chapter_number'] ?? json['chapterNumber']) ?? -1,
     memo: coerceMemoJson(json['memo']),
   );
-
-  static int _dateUploadFromJson(Map<String, dynamic> json) {
-    final raw = json['date_upload'] ?? json['dateUpload'];
-    if (raw is int) return raw;
-    if (raw is num) return raw.toInt();
-    if (raw is String) return int.tryParse(raw) ?? 0;
-    return 0;
-  }
 
   factory MChapter.fromMap(Map<String, dynamic> map) => MChapter.fromJson(map);
 

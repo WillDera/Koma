@@ -1,3 +1,5 @@
+import '../../core/utils/json_coerce.dart';
+
 class MPage {
   final int index;
   final String url;
@@ -12,7 +14,7 @@ class MPage {
   };
 
   factory MPage.fromJson(Map<String, dynamic> json) => MPage(
-    index: json['index'] as int? ?? 0,
+    index: asIntOr(json['index']),
     url: json['url'] as String? ?? '',
     headers: json['headers'] != null
         ? Map<String, String>.from(json['headers'] as Map)

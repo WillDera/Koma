@@ -3,6 +3,7 @@ import 'dart:convert';
 
 import 'package:flutter_qjs/flutter_qjs.dart';
 
+import '../../core/utils/json_coerce.dart';
 import '../extension_service.dart';
 import '../models/m_source.dart';
 import '../models/m_manga.dart';
@@ -200,7 +201,7 @@ var extention = new DefaultExtension();
         if (url.isEmpty) continue;
         pages.add(
           MPage(
-            index: map['index'] as int? ?? i,
+            index: asInt(map['index']) ?? i,
             url: url,
             headers: map['headers'] != null
                 ? Map<String, String>.from(
