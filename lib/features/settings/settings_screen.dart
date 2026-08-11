@@ -2296,7 +2296,7 @@ class _AboutSection extends StatelessWidget {
                 ),
                 const SizedBox(height: 4),
                 Text(
-                  'Version 2.37.5 · build 2.37.5+272',
+                  'Version 2.37.7 · build 2.37.7+274',
                   style: TextStyle(color: c.textSecondary, fontSize: 13),
                 ),
                 const SizedBox(height: 10),
@@ -2391,7 +2391,7 @@ class _AboutSection extends StatelessWidget {
               icon: Icons.info_outline,
               iconColor: _muted,
               title: 'Koma',
-              subtitle: 'Version 2.37.5 · build 2.37.5+272',
+              subtitle: 'Version 2.37.7 · build 2.37.7+274',
             ),
             SettingsRow(
               icon: Icons.favorite_outline,

@@ -124,6 +124,9 @@ class MangaImageViewPaged extends StatelessWidget {
     return Padding(
       padding: EdgeInsets.symmetric(horizontal: hPad, vertical: vPad),
       child: SubsamplingScaleImageView(
+        key: ValueKey(
+          'page-$index-r${props.pageRetryTokens[index] ?? 0}',
+        ),
         image: imageProvider,
         resolvedFilePath: resolvedFilePath,
         preloadData: page,
@@ -283,7 +286,10 @@ class _BrokenPage extends StatelessWidget {
           TextButton.icon(
             onPressed: onRetry,
             icon: const Icon(Icons.refresh, color: Colors.white54),
-            label: const Text('Retry', style: TextStyle(color: Colors.white54)),
+            label: const Text(
+              'Reload image',
+              style: TextStyle(color: Colors.white54),
+            ),
           ),
         ],
       ),

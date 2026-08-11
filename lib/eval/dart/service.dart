@@ -1,6 +1,7 @@
 import 'package:d4rt/d4rt.dart';
 import 'package:flutter/foundation.dart';
 import 'package:koma/eval/dart/bridge/registrer.dart';
+import 'package:koma/eval/dart/preference_providers.dart';
 import 'package:koma/eval/extension_service.dart';
 import 'package:koma/eval/javascript/bridges/prefs_bridge.dart';
 import 'package:koma/eval/model/filter.dart' as dart_filter;
@@ -81,6 +82,8 @@ class DartExtensionService implements ExtensionService {
         final def = pref.typedValue;
         if (def == null) continue;
         PrefsCache.instance.putJson(fullKey, def);
+        final sidInt = int.tryParse(sid);
+        if (sidInt != null) cachePreferenceDefault(sidInt, key, def);
       }
     } catch (_) {}
   }
@@ -92,7 +95,12 @@ class DartExtensionService implements ExtensionService {
     // call getPreferenceValue(source.id, …) and index prefs by that id.
     final id = int.tryParse(source.id) ??
         int.tryParse(source.sourceId) ??
-        int.tryParse(meta['id'] ?? '');
+        int.tryParse(meta['id'] ?? '') ??
+        // Stable non-null id so getPreferenceValue(source.id, …) never
+        // receives null (dart_eval "Unsupported target for indexing: null").
+        (source.sourceId.isNotEmpty
+            ? source.sourceId.hashCode.abs()
+            : source.name.hashCode.abs());
     // Match mangayomi Source.toMSource() / JS bridge: missing meta fields
     // must be empty strings, never null. Dart extensions commonly call
     // `source.dateFormat.isNotEmpty` in getDetail when parsing chapter dates.
@@ -511,20 +519,25 @@ class DartExtensionService implements ExtensionService {
   @override
   Future<List<MPages>> getPageList(MSource source, MChapter chapter) async {
     await _init(source);
+    final url = chapter.url.trim();
     final result =
-        await _interpreter!.invoke('getPageList', [chapter.url]) as List;
+        await _interpreter!.invoke('getPageList', [url]) as List;
     final urls = result.map((e) {
       if (e is String) return PageUrl(e.trim());
       if (e is PageUrl) return e;
       if (e is BridgedInstance) {
         final n = e.nativeObject;
         if (n is PageUrl) return n;
+        if (n is Map) {
+          return PageUrl.fromJson(Map<String, dynamic>.from(n));
+        }
       }
       if (e is Map) {
         return PageUrl.fromJson(Map<String, dynamic>.from(e));
       }
-      return PageUrl(e.toString().trim());
-    }).toList();
+      final s = e.toString().trim();
+      return PageUrl(s == 'null' ? '' : s);
+    }).where((p) => p.url.isNotEmpty).toList();
     return [MPages(pages: _pageUrlsToMPages(urls))];
   }
 
