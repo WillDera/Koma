@@ -503,9 +503,15 @@ class _MangaDetailScreenState extends ConsumerState<MangaDetailScreen> {
     if (_mangaId != null) {
       final repos = ref.read(repositoriesProvider);
       final existing = await repos.manga.getMangaChapters(_mangaId!);
-      if (existing.isNotEmpty) return;
+      if (existing.isNotEmpty) {
+        if (mounted && expectedGen == _loadGen && _isCurrentBinding) {
+          ref.read(mangaDetailProvider.notifier).setLoading(false);
+        }
+        return;
+      }
     }
     if (!mounted || expectedGen != _loadGen || !_isCurrentBinding) return;
+    ref.read(mangaDetailProvider.notifier).setLoading(true);
     try {
       final repos = ref.read(repositoriesProvider);
       final mSource = await resolveExtensionMSource(
@@ -1756,8 +1762,41 @@ class _MangaDetailScreenState extends ConsumerState<MangaDetailScreen> {
           ? CustomScrollView(
               slivers: [
                 if (detail.loading)
-                  const SliverToBoxAdapter(
-                    child: LinearProgressIndicator(minHeight: 2),
+                  SliverToBoxAdapter(
+                    child: Material(
+                      color: c.accent.withValues(alpha: 0.14),
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 16,
+                          vertical: 10,
+                        ),
+                        child: Row(
+                          children: [
+                            SizedBox(
+                              width: 16,
+                              height: 16,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                color: c.accent,
+                              ),
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Text(
+                                detail.chapters.isEmpty
+                                    ? 'Fetching manga details and chapters…'
+                                    : 'Refreshing manga metadata…',
+                                style: TextStyle(
+                                  color: c.textPrimary,
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w500,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
                   ),
                 if (detail.error != null)
                   SliverToBoxAdapter(

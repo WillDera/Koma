@@ -1454,13 +1454,24 @@ class _SubsamplingScaleImageViewState extends State<SubsamplingScaleImageView>
                   : const CircularProgressIndicator(),
             ),
             LoadState.failed => Center(
-              child: GestureDetector(
-                onTap: _loadFromProvider,
-                child: const Icon(
-                  Icons.broken_image_outlined,
-                  color: Colors.grey,
-                  size: 48,
-                ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Icon(
+                    Icons.broken_image_outlined,
+                    color: Colors.grey,
+                    size: 48,
+                  ),
+                  const SizedBox(height: 12),
+                  TextButton.icon(
+                    onPressed: _loadFromProvider,
+                    icon: const Icon(Icons.refresh, color: Colors.white54),
+                    label: const Text(
+                      'Reload image',
+                      style: TextStyle(color: Colors.white54),
+                    ),
+                  ),
+                ],
               ),
             ),
             LoadState.completed => const SizedBox.shrink(),
