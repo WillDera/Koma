@@ -22,7 +22,6 @@ import '../../theme/tokens/app_motion.dart';
 import '../../theme/tokens/app_spacing.dart';
 import '../../widgets/animated_press.dart';
 import '../../widgets/dialog_sheet.dart';
-import '../../widgets/divider_hairline.dart';
 import '../../widgets/library_book_card.dart';
 import '../../widgets/library_header.dart';
 import '../../widgets/one_hand_spacer.dart';
@@ -1595,9 +1594,6 @@ class _SourcesSectionState extends ConsumerState<_SourcesSection> {
 
   @override
   Widget build(BuildContext context) {
-    final theme = ref.watch(themeProvider);
-    final tn = ref.read(themeProvider.notifier);
-    final c = context.colors;
     if (_loading) return const SizedBox.shrink();
     if (_error != null) {
       return SettingsSection(
@@ -1631,91 +1627,7 @@ class _SourcesSectionState extends ConsumerState<_SourcesSection> {
           ),
         ),
         SettingsRow(icon: Icons.add, iconColor: AppColors.figmaCyan, title: 'Add source', onTap: _add),
-        const Padding(
-          padding: EdgeInsets.symmetric(horizontal: 16),
-          child: HairlineDivider(),
-        ),
-        Material(
-          type: MaterialType.transparency,
-          child: SwitchListTile(
-            contentPadding: const EdgeInsets.symmetric(horizontal: 16),
-            title: const Text('Show NSFW extensions'),
-            subtitle: Text(
-              'Hide sensitive extensions by default',
-              style: TextStyle(color: c.textSecondary, fontSize: 12),
-            ),
-            value: theme.showNsfwExtensions,
-            onChanged: tn.setShowNsfwExtensions,
-          ),
-        ),
-        Material(
-          type: MaterialType.transparency,
-          child: SwitchListTile(
-            contentPadding: const EdgeInsets.symmetric(horizontal: 16),
-            title: const Text('Show obsolete extensions'),
-            subtitle: Text(
-              'Hide extensions marked as outdated',
-              style: TextStyle(color: c.textSecondary, fontSize: 12),
-            ),
-            value: theme.showObsoleteExtensions,
-            onChanged: tn.setShowObsoleteExtensions,
-          ),
-        ),
-        SettingsRow(
-          icon: Icons.security_outlined,
-          iconColor: const Color(0xFFEF4444),
-          title: 'Revoke all trusted extensions',
-          subtitle:
-              'Clear user-trusted sideloads. Repo-signed packages stay trusted.',
-          destructive: true,
-          onTap: () => _revokeTrustedExtensions(context),
-        ),
       ],
-    );
-  }
-
-  Future<void> _revokeTrustedExtensions(BuildContext context) async {
-    final c = context.colors;
-    final ok = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: c.surface,
-        title: Text(
-          'Revoke trusted extensions?',
-          style: TextStyle(color: c.textPrimary),
-        ),
-        content: Text(
-          'This clears extensions you explicitly trusted. Packages signed by '
-          'a known repository remain usable.',
-          style: TextStyle(color: c.textSecondary),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: Text('Cancel', style: TextStyle(color: c.textSecondary)),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            child: Text('Revoke', style: TextStyle(color: c.accent)),
-          ),
-        ],
-      ),
-    );
-    if (ok != true || !context.mounted) return;
-    final mgr = ExtensionManager(
-      ref.read(repositoriesProvider),
-      KeiyoushiService(),
-    );
-    final changed = await mgr.revokeAllTrusted();
-    if (!context.mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(
-          changed > 0
-              ? 'Revoked trust · $changed extension${changed == 1 ? '' : 's'} rechecked'
-              : 'Revoked all user-trusted extensions',
-        ),
-      ),
     );
   }
 
@@ -2215,7 +2127,64 @@ class _PluginsSection extends ConsumerWidget {
           prefKey: 'extension_auto_update_enabled',
           defaultValue: false,
         ),
+        SettingsRow(
+          icon: Icons.security_outlined,
+          iconColor: const Color(0xFFEF4444),
+          title: 'Revoke all trusted extensions',
+          subtitle:
+              'Clear user-trusted sideloads. Repo-signed packages stay trusted.',
+          destructive: true,
+          onTap: () => _revokeTrustedExtensions(context, ref),
+        ),
       ],
+    );
+  }
+
+  Future<void> _revokeTrustedExtensions(
+    BuildContext context,
+    WidgetRef ref,
+  ) async {
+    final c = context.colors;
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: c.surface,
+        title: Text(
+          'Revoke trusted extensions?',
+          style: TextStyle(color: c.textPrimary),
+        ),
+        content: Text(
+          'This clears extensions you explicitly trusted. Packages signed by '
+          'a known repository remain usable.',
+          style: TextStyle(color: c.textSecondary),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: Text('Cancel', style: TextStyle(color: c.textSecondary)),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: Text('Revoke', style: TextStyle(color: c.accent)),
+          ),
+        ],
+      ),
+    );
+    if (ok != true || !context.mounted) return;
+    final mgr = ExtensionManager(
+      ref.read(repositoriesProvider),
+      KeiyoushiService(),
+    );
+    final changed = await mgr.revokeAllTrusted();
+    if (!context.mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          changed > 0
+              ? 'Revoked trust · $changed extension${changed == 1 ? '' : 's'} rechecked'
+              : 'Revoked all user-trusted extensions',
+        ),
+      ),
     );
   }
 }
@@ -2296,7 +2265,7 @@ class _AboutSection extends StatelessWidget {
                 ),
                 const SizedBox(height: 4),
                 Text(
-                  'Version 2.37.7 · build 2.37.7+274',
+                  'Version 2.37.12 · build 2.37.12+279',
                   style: TextStyle(color: c.textSecondary, fontSize: 13),
                 ),
                 const SizedBox(height: 10),
@@ -2391,7 +2360,7 @@ class _AboutSection extends StatelessWidget {
               icon: Icons.info_outline,
               iconColor: _muted,
               title: 'Koma',
-              subtitle: 'Version 2.37.7 · build 2.37.7+274',
+              subtitle: 'Version 2.37.12 · build 2.37.12+279',
             ),
             SettingsRow(
               icon: Icons.favorite_outline,
