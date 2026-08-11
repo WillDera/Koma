@@ -20,6 +20,7 @@ import '../../theme/theme_provider.dart';
 import '../../theme/tokens/app_colors.dart';
 import '../../theme/tokens/app_motion.dart';
 import '../../theme/tokens/app_spacing.dart';
+import '../../theme/tokens/app_type.dart';
 import '../../widgets/animated_press.dart';
 import '../../widgets/dialog_sheet.dart';
 import '../../widgets/library_book_card.dart';
@@ -1222,17 +1223,18 @@ class _TypographySection extends ConsumerWidget {
                               fontWeight: FontWeight.w600,
                             ),
                           ),
-                          if (f.googleFontFamily != null)
-                            Padding(
-                              padding: const EdgeInsets.only(top: 4),
-                              child: Text(
-                                'Aa — long-form sample text',
-                                style: TextStyle(
-                                  color: context.colors.textSecondary,
-                                  fontSize: 13,
-                                ),
+                          Padding(
+                            padding: const EdgeInsets.only(top: 4),
+                            child: Text(
+                              'Aa — long-form sample text',
+                              style: AppType.fontStyle(
+                                fontFamily: f.googleFontFamily,
+                                fontSize: 15,
+                                lineHeight: 1.4,
+                                color: context.colors.textSecondary,
                               ),
                             ),
+                          ),
                         ],
                       ),
                     ),
@@ -1485,10 +1487,10 @@ class _LibraryUpdateSection extends ConsumerWidget {
       headerColor: AppColors.figmaAmber,
       padding: const EdgeInsets.symmetric(horizontal: 16),
       footer:
-          'Background checks can wait for Wi‑Fi or charging. Smart-update '
-          'skips titles that match the filters below. Turning on auto-download '
-          'queues newly discovered chapters after each successful check. '
-          'Category filters arrive once library categories exist.',
+          'Check now always fetches every library title. Skip filters below '
+          'apply only to auto/background checks. Background checks can also '
+          'wait for Wi‑Fi or charging. Turning on auto-download queues newly '
+          'discovered chapters after each successful check.',
       children: [
         SettingsRow(
           icon: Icons.autorenew,
@@ -1560,7 +1562,7 @@ class _LibraryUpdateSection extends ConsumerWidget {
           key: const Key('library_update_skip_completed'),
           icon: Icons.check_circle_outline,
           title: 'Skip completed titles',
-          subtitle: 'Do not check manga marked completed by the source',
+          subtitle: 'Auto-check: skip manga marked completed by the source',
           prefKey: LibraryUpdatePrefs.keySkipCompleted,
           defaultValue: LibraryUpdatePrefs.defaultSkipCompleted,
         ),
@@ -1568,7 +1570,7 @@ class _LibraryUpdateSection extends ConsumerWidget {
           key: const Key('library_update_skip_with_unread'),
           icon: Icons.mark_email_unread_outlined,
           title: 'Skip titles with unread chapters',
-          subtitle: 'Only check titles you are fully caught up on',
+          subtitle: 'Auto-check: only titles you are fully caught up on',
           prefKey: LibraryUpdatePrefs.keySkipWithUnread,
           defaultValue: LibraryUpdatePrefs.defaultSkipWithUnread,
         ),
@@ -1576,7 +1578,7 @@ class _LibraryUpdateSection extends ConsumerWidget {
           key: const Key('library_update_skip_not_started'),
           icon: Icons.play_circle_outline,
           title: 'Skip not-started titles',
-          subtitle: 'Only check titles you have started reading',
+          subtitle: 'Auto-check: only titles you have started reading',
           prefKey: LibraryUpdatePrefs.keySkipNotStarted,
           defaultValue: LibraryUpdatePrefs.defaultSkipNotStarted,
         ),
@@ -1592,10 +1594,12 @@ class _LibraryUpdateSection extends ConsumerWidget {
           icon: Icons.refresh,
           title: 'Check now',
           subtitle: update.checking
-              ? 'Checking…'
+              ? 'Checking all library titles…'
+              : update.error != null
+              ? 'Failed — tap to retry'
               : lastChecked != null
               ? 'Last checked ${_timeAgo(lastChecked)} · ${lastReport?.totalNew ?? update.lastNewChapterCount} new'
-              : 'Never checked',
+              : 'Fetches every library title from sources',
           trailing: update.checking
               ? const SizedBox(
                   width: 18,
@@ -1607,7 +1611,7 @@ class _LibraryUpdateSection extends ConsumerWidget {
               ? null
               : () => ref
                     .read(libraryUpdateProvider.notifier)
-                    .checkForNewChapters(),
+                    .checkForNewChapters(applyRestrictions: false),
         ),
       ],
     );
@@ -2564,7 +2568,7 @@ class _AboutSection extends StatelessWidget {
                 ),
                 const SizedBox(height: 4),
                 Text(
-                  'Version 2.37.13 · build 2.37.13+280',
+                  'Version 2.37.15 · build 2.37.15+282',
                   style: TextStyle(color: c.textSecondary, fontSize: 13),
                 ),
                 const SizedBox(height: 10),
@@ -2659,7 +2663,7 @@ class _AboutSection extends StatelessWidget {
               icon: Icons.info_outline,
               iconColor: _muted,
               title: 'Koma',
-              subtitle: 'Version 2.37.13 · build 2.37.13+280',
+              subtitle: 'Version 2.37.15 · build 2.37.15+282',
             ),
             SettingsRow(
               icon: Icons.favorite_outline,
