@@ -1,10 +1,7 @@
-import 'dart:async';
-
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-import '../../core/services/system_font_service.dart';
 import 'app_theme.dart';
 import 'theme_state.dart';
 import 'tokens/app_type.dart';
@@ -91,20 +88,16 @@ class ThemeNotifier extends Notifier<ThemeState> {
           )],
     );
     if (state.useDeviceFont) {
-      unawaited(_resolveSystemFont());
+      // Null ThemeData.fontFamily = platform Default. No name resolution.
+      state = state.copyWith(systemFontFamily: () => null);
     }
   }
 
   static String? _nonEmpty(String? s) => s != null && s.isNotEmpty ? s : null;
 
-  Future<String?> _resolveSystemFont() async {
-    if (state.systemFontFamily != null) return state.systemFontFamily;
-    final font = await SystemFontService().getSystemTypeface();
-    if (font != null) {
-      state = state.copyWith(systemFontFamily: font);
-    }
-    return font;
-  }
+  // SystemFontService name resolution intentionally unused for theming —
+  // Flutter cannot map Android alias / fonts.xml names to OEM faces.
+  // Device font = ThemeData.fontFamily null (platform Default).
 
   /// Called from [DynamicColorBuilder] whenever wallpaper/system colors change.
   void setDynamicColorSchemes(ColorScheme? light, ColorScheme? dark) {
@@ -163,8 +156,11 @@ class ThemeNotifier extends Notifier<ThemeState> {
   );
 
   String? _fontFamilyForMode() {
-    if (!state.useDeviceFont) return AppType.uiFont;
-    return state.systemFontFamily;
+    // Device/system: null → Flutter platform Default (OEM font). Do not
+    // inject "sans-serif" / fonts.xml names — they don't map to the real
+    // system face in Flutter and made the toggle a no-op.
+    if (state.useDeviceFont) return null;
+    return AppType.uiFont;
   }
 
   ThemeData get currentTheme {
@@ -311,12 +307,13 @@ class ThemeNotifier extends Notifier<ThemeState> {
   }
 
   Future<void> setUseDeviceFont(bool value) async {
-    state = state.copyWith(useDeviceFont: value);
+    state = state.copyWith(
+      useDeviceFont: value,
+      // Drop any previously resolved Android family name — null is correct.
+      systemFontFamily: () => null,
+    );
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool(_keyUseDeviceFont, value);
-    if (value) {
-      unawaited(_resolveSystemFont());
-    }
   }
 
   Future<void> setAmoledMode(bool value) async {

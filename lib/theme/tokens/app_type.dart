@@ -110,8 +110,15 @@ class AppType {
   static const String _mono = 'JetBrainsMono';
 
   static TextTheme ui({String? fontFamily}) {
-    final base = _platformTextTheme();
-    return _withFontFamily(base, fontFamily);
+    final sized = _platformTextTheme();
+    // null = platform Default (system / OEM font — Mihon parity).
+    if (fontFamily == null) return sized;
+    // Inter must be loaded via google_fonts; a bare family name never
+    // resolves and looked identical to system Default (toggle no-op).
+    if (fontFamily == _ui) {
+      return GoogleFonts.interTextTheme(sized);
+    }
+    return _withFontFamily(sized, fontFamily);
   }
 
   /// Reading body — used in ReaderScreen for chapter content.

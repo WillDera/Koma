@@ -292,7 +292,8 @@ class _AppearanceSection extends ConsumerWidget {
             ),
             SettingsRow(
               title: 'Use device font',
-              subtitle: 'System default for UI and ebook reading (on by default)',
+              subtitle:
+                  'On: Android system UI font. Off: Inter (visible difference)',
               trailing: Switch(
                 value: theme.useDeviceFont,
                 activeThumbColor: c.accent,
@@ -2584,7 +2585,7 @@ class _AboutSection extends StatelessWidget {
                 ),
                 const SizedBox(height: 4),
                 Text(
-                  'Version 2.37.17 · build 2.37.17+284',
+                  'Version 2.37.19 · build 2.37.19+286',
                   style: TextStyle(color: c.textSecondary, fontSize: 13),
                 ),
                 const SizedBox(height: 10),
@@ -2679,7 +2680,7 @@ class _AboutSection extends StatelessWidget {
               icon: Icons.info_outline,
               iconColor: _muted,
               title: 'Koma',
-              subtitle: 'Version 2.37.17 · build 2.37.17+284',
+              subtitle: 'Version 2.37.19 · build 2.37.19+286',
             ),
             SettingsRow(
               icon: Icons.favorite_outline,

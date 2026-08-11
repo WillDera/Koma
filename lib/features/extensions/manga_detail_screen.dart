@@ -23,6 +23,7 @@ import '../../core/services/source_webview_bridge.dart';
 import '../../core/utils/chapter_recognition.dart';
 import '../../core/utils/image_cache.dart';
 import '../../core/utils/image_headers.dart';
+import '../../core/utils/json_coerce.dart';
 import '../../router/router.dart';
 import '../../theme/app_icons.dart';
 import '../../theme/app_theme.dart';
@@ -132,14 +133,14 @@ class _MangaDetailScreenState extends ConsumerState<MangaDetailScreen> {
         );
       case SortMode.dateAsc:
         sorted.sort(
-          (a, b) => (a['date_upload'] as int? ?? 0).compareTo(
-            b['date_upload'] as int? ?? 0,
+          (a, b) => asIntOr(a['date_upload']).compareTo(
+            asIntOr(b['date_upload']),
           ),
         );
       case SortMode.dateDesc:
         sorted.sort(
-          (a, b) => (b['date_upload'] as int? ?? 0).compareTo(
-            a['date_upload'] as int? ?? 0,
+          (a, b) => asIntOr(b['date_upload']).compareTo(
+            asIntOr(a['date_upload']),
           ),
         );
       case SortMode.chapterAsc:
@@ -553,7 +554,11 @@ class _MangaDetailScreenState extends ConsumerState<MangaDetailScreen> {
           if (!mounted || expectedGen != _loadGen || !_isCurrentBinding) {
             return;
           }
-          if (fallback.isNotEmpty) chapters = fallback;
+          if (fallback.isNotEmpty) {
+            chapters = fallback
+                .map((m) => MChapter.fromMap(Map<String, dynamic>.from(m)).toJson())
+                .toList();
+          }
         } catch (_) {}
       }
 
@@ -617,7 +622,7 @@ class _MangaDetailScreenState extends ConsumerState<MangaDetailScreen> {
           author: details['author'] as String? ?? manga.author,
           artist: details['artist'] as String? ?? manga.artist,
           description: details['description'] as String? ?? manga.description,
-          status: details['status'] as int? ?? manga.status,
+          status: asInt(details['status']) ?? manga.status,
           genres: (details['genre'] as String? ?? '')
               .split(',')
               .map((g) => g.trim())
@@ -656,7 +661,7 @@ class _MangaDetailScreenState extends ConsumerState<MangaDetailScreen> {
           existing.copyWith(
             name: name.isNotEmpty ? name : existing.name,
             scanlator: ch['scanlator'] as String? ?? existing.scanlator,
-            dateUpload: ch['date_upload'] as int? ?? existing.dateUpload,
+            dateUpload: asInt(ch['date_upload']) ?? existing.dateUpload,
             index: i,
             chapterNumber: recognized,
             memo: ch['memo'] as String? ?? existing.memo,
@@ -671,7 +676,7 @@ class _MangaDetailScreenState extends ConsumerState<MangaDetailScreen> {
             name: name,
             url: url,
             scanlator: ch['scanlator'] as String?,
-            dateUpload: ch['date_upload'] as int? ?? 0,
+            dateUpload: asIntOr(ch['date_upload']),
             index: i,
             sourceChapterNumber: sourceNum,
             memo: ch['memo'] as String?,
@@ -796,10 +801,10 @@ class _MangaDetailScreenState extends ConsumerState<MangaDetailScreen> {
               name: name,
               url: url,
               scanlator: e.value['scanlator'] as String?,
-              dateUpload: e.value['date_upload'] as int? ?? 0,
+              dateUpload: asIntOr(e.value['date_upload']),
               index: e.key,
               isRead: local?['is_read'] as bool? ?? false,
-              lastPageRead: local?['last_page_read'] as int? ?? 0,
+              lastPageRead: asIntOr(local?['last_page_read']),
               sourceChapterNumber: e.value['chapter_number'] as num?,
               isDownloaded: detail.downloadProgress[url] == 'done',
               isOpened: local?['is_opened'] as bool? ?? false,
@@ -826,7 +831,7 @@ class _MangaDetailScreenState extends ConsumerState<MangaDetailScreen> {
             author: d?['author'] as String?,
             artist: d?['artist'] as String?,
             description: d?['description'] as String?,
-            status: d?['status'] as int? ?? 0,
+            status: asIntOr(d?['status']),
             genres: (d?['genre'] as String? ?? '')
                 .split(',')
                 .map((g) => g.trim())
@@ -858,7 +863,7 @@ class _MangaDetailScreenState extends ConsumerState<MangaDetailScreen> {
         author: d['author'] as String?,
         artist: d['artist'] as String?,
         description: d['description'] as String?,
-        status: d['status'] as int? ?? 0,
+        status: asIntOr(d['status']),
         genres: (d['genre'] as String? ?? '')
             .split(',')
             .map((g) => g.trim())
@@ -883,10 +888,10 @@ class _MangaDetailScreenState extends ConsumerState<MangaDetailScreen> {
           name: e.value['name'] as String? ?? '',
           url: url,
           scanlator: e.value['scanlator'] as String?,
-          dateUpload: e.value['date_upload'] as int? ?? 0,
+          dateUpload: asIntOr(e.value['date_upload']),
           index: e.key,
           isRead: local?['is_read'] as bool? ?? false,
-          lastPageRead: local?['last_page_read'] as int? ?? 0,
+          lastPageRead: asIntOr(local?['last_page_read']),
           sourceChapterNumber: e.value['chapter_number'] as num?,
           isDownloaded: detail.downloadProgress[url] == 'done',
           isOpened: local?['is_opened'] as bool? ?? false,
@@ -1588,7 +1593,7 @@ class _MangaDetailScreenState extends ConsumerState<MangaDetailScreen> {
     };
     final counts = <int, int>{};
     for (final ch in chapters) {
-      final date = ch['date_upload'] as int? ?? 0;
+      final date = asIntOr(ch['date_upload']);
       if (date <= 0) continue;
       final wd = DateTime.fromMillisecondsSinceEpoch(date).weekday;
       counts[wd] = (counts[wd] ?? 0) + 1;
@@ -1655,7 +1660,7 @@ class _MangaDetailScreenState extends ConsumerState<MangaDetailScreen> {
     String lastChapterDate = '';
     int latestDate = 0;
     for (final ch in detail.chapters) {
-      final date = ch['date_upload'] as int? ?? 0;
+      final date = asIntOr(ch['date_upload']);
       if (date > latestDate) latestDate = date;
     }
     if (latestDate > 0) {
@@ -2066,11 +2071,11 @@ class _MangaDetailScreenState extends ConsumerState<MangaDetailScreen> {
     final url = ch['url'] as String? ?? '';
     final isRead = ch['is_read'] as bool? ?? false;
     final isOpened = ch['is_opened'] as bool? ?? true;
-    final lastPageRead = ch['last_page_read'] as int? ?? 0;
+    final lastPageRead = asIntOr(ch['last_page_read']);
     final name = ch['name'] as String? ?? '';
     final chNum = ch['chapter_number'] as num?;
     final scanlator = ch['scanlator'] as String?;
-    final dateUpload = ch['date_upload'] as int? ?? 0;
+    final dateUpload = asIntOr(ch['date_upload']);
     final dlStatus = downloadProgress[url];
     final pageProg = _parsePageProgress(dlStatus);
     final isNewUpdate = !isOpened;
@@ -2339,7 +2344,7 @@ class _HeaderState extends State<_Header> {
     final artist = widget.details['artist'] as String?;
     final description = widget.details['description'] as String?;
     final genre = widget.details['genre'] as String?;
-    final status = widget.details['status'] as int? ?? 0;
+    final status = asIntOr(widget.details['status']);
     final statusLabel =
         _MangaDetailScreenState._statusLabels[status] ?? 'Unknown';
     final sourceName = widget.sourceName;

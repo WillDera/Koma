@@ -162,7 +162,7 @@ class ThemeState {
     bool? bionicReading,
     bool? useDeviceFont,
     bool? amoledMode,
-    String? systemFontFamily,
+    String? Function()? systemFontFamily,
     bool? showNsfwExtensions,
     bool? showObsoleteExtensions,
     bool? immersiveAutoHide,
@@ -197,7 +197,9 @@ class ThemeState {
       bionicReading: bionicReading ?? this.bionicReading,
       useDeviceFont: useDeviceFont ?? this.useDeviceFont,
       amoledMode: amoledMode ?? this.amoledMode,
-      systemFontFamily: systemFontFamily ?? this.systemFontFamily,
+      systemFontFamily: systemFontFamily != null
+          ? systemFontFamily()
+          : this.systemFontFamily,
       showNsfwExtensions: showNsfwExtensions ?? this.showNsfwExtensions,
       showObsoleteExtensions:
           showObsoleteExtensions ?? this.showObsoleteExtensions,

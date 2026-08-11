@@ -1,4 +1,5 @@
 import '../utils/chapter_recognition.dart';
+import '../utils/json_coerce.dart';
 
 class MangaChapter {
   final int id;
@@ -146,20 +147,20 @@ class MangaChapter {
   };
 
   factory MangaChapter.fromJson(Map<String, dynamic> json) => MangaChapter(
-    id: json['id'] as int? ?? 0,
-    mangaId: json['manga_id'] as int? ?? 0,
+    id: asInt(json['id']) ?? 0,
+    mangaId: asIntOr(json['manga_id']),
     name: json['name'] as String? ?? '',
     url: json['url'] as String? ?? '',
     scanlator: json['scanlator'] as String?,
-    dateUpload: json['date_upload'] as int? ?? 0,
-    index: json['index'] as int? ?? 0,
-    isRead: (json['is_read'] as int? ?? 0) == 1,
-    lastPageRead: json['last_page_read'] as int? ?? 0,
-    scrollPosition: (json['scroll_position'] as num?)?.toDouble() ?? 0.0,
-    chapterNumber: (json['chapter_number'] as num?)?.toDouble() ?? -1,
-    isBookmarked: (json['is_bookmarked'] as int? ?? 0) == 1,
-    isDownloaded: (json['is_downloaded'] as int? ?? 0) == 1,
-    isOpened: (json['is_opened'] as int? ?? 0) == 1,
+    dateUpload: asIntOr(json['date_upload']),
+    index: asIntOr(json['index']),
+    isRead: asIntOr(json['is_read']) == 1,
+    lastPageRead: asIntOr(json['last_page_read']),
+    scrollPosition: asDoubleOr(json['scroll_position']),
+    chapterNumber: asDouble(json['chapter_number']) ?? -1,
+    isBookmarked: asIntOr(json['is_bookmarked']) == 1,
+    isDownloaded: asIntOr(json['is_downloaded']) == 1,
+    isOpened: asIntOr(json['is_opened']) == 1,
     readAt: json['read_at'] != null
         ? DateTime.parse(json['read_at'] as String)
         : null,

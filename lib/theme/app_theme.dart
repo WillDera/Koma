@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:google_fonts/google_fonts.dart';
 
 import 'tokens/app_colors.dart';
 import 'tokens/app_spacing.dart';
@@ -173,6 +174,13 @@ class AppTheme {
       fontFamily: fontFamily,
     ).apply(bodyColor: textPrimary, displayColor: textPrimary);
 
+    // Register Inter with google_fonts when chosen; null keeps OEM Default.
+    final themeFontFamily = fontFamily == null
+        ? null
+        : (fontFamily == AppType.uiFont
+              ? GoogleFonts.inter().fontFamily
+              : fontFamily);
+
     // Material You when available: keep dynamic accent roles, overlay Koma
     // brand surfaces (Mihon Monet + AMOLED-style surface override).
     final colorScheme = dynamicScheme != null
@@ -228,7 +236,7 @@ class AppTheme {
       scaffoldBackgroundColor: bg,
       canvasColor: bg,
       // null => Flutter uses the platform default device font.
-      fontFamily: fontFamily,
+      fontFamily: themeFontFamily,
       textTheme: textTheme,
       primaryTextTheme: textTheme,
       splashFactory: InkSparkle.splashFactory,
