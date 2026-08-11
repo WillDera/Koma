@@ -1,6 +1,7 @@
 import 'package:koma/eval/model/m_chapter.dart';
 import 'package:koma/eval/model/status.dart';
 import 'package:koma/utils/extensions/string_extensions.dart';
+import 'package:koma/core/utils/json_coerce.dart';
 
 class MManga {
   String? name;
@@ -41,7 +42,7 @@ class MManga {
       description: json['description'],
       author: json['author'],
       artist: json['artist'],
-      status: switch (json['status'] as int?) {
+      status: switch (asInt(json['status'])) {
         0 => Status.ongoing,
         1 => Status.completed,
         2 => Status.onHiatus,
