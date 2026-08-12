@@ -65,3 +65,5 @@ mihon/
 mangayomi/
 android/piper/piper1-gpl/
 android/piper/onnxruntime/
+.commandcode/
+.kilo/
