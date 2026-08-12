@@ -1,6 +1,6 @@
 import 'dart:typed_data';
 
-enum TtsEngineType { device, edge }
+enum TtsEngineType { device, edge, piper }
 
 class TtsVoice {
   final String id;

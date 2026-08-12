@@ -3,6 +3,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'tts/tts_engine.dart';
 import 'tts/device_tts.dart';
 import 'tts/edge_tts.dart';
+import 'tts/piper_tts.dart';
 
 class TtsProvider extends ChangeNotifier {
   static const prefsRemember = 'tts_remember_selection';
@@ -91,6 +92,7 @@ class TtsProvider extends ChangeNotifier {
     final engineName = prefs.getString(prefsEngine);
     final type = switch (engineName) {
       'edge' => TtsEngineType.edge,
+      'piper' => TtsEngineType.piper,
       // Migrate removed Google Cloud preference to device.
       'googleCloud' => TtsEngineType.device,
       _ => TtsEngineType.device,
@@ -125,7 +127,11 @@ class TtsProvider extends ChangeNotifier {
     await prefs.setBool(prefsOptimistic, _optimistic);
     await prefs.setString(
       prefsEngine,
-      _engineType == TtsEngineType.edge ? 'edge' : 'device',
+      switch (_engineType) {
+        TtsEngineType.edge => 'edge',
+        TtsEngineType.piper => 'piper',
+        TtsEngineType.device => 'device',
+      },
     );
     await prefs.setDouble(prefsRate, _rate);
     await prefs.setDouble(prefsPitch, _pitch);
@@ -146,11 +152,17 @@ class TtsProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  static double _defaultRate(TtsEngineType type) =>
-      type == TtsEngineType.device ? 0.5 : 0.88;
+  static double _defaultRate(TtsEngineType type) => switch (type) {
+    TtsEngineType.device => 0.5,
+    TtsEngineType.edge => 0.88,
+    TtsEngineType.piper => 1.0,
+  };
 
-  static double _defaultPitch(TtsEngineType type) =>
-      type == TtsEngineType.device ? 1.0 : -0.02;
+  static double _defaultPitch(TtsEngineType type) => switch (type) {
+    TtsEngineType.device => 1.0,
+    TtsEngineType.edge => -0.02,
+    TtsEngineType.piper => 0.0,
+  };
 
   void _configureEdge() {
     if (_engine is EdgeTtsEngine) {
@@ -190,6 +202,7 @@ class TtsProvider extends ChangeNotifier {
     _engine = switch (type) {
       TtsEngineType.device => DeviceTtsEngine(),
       TtsEngineType.edge => EdgeTtsEngine(),
+      TtsEngineType.piper => PiperTtsEngine(),
     };
     _rate = _defaultRate(type);
     _pitch = _defaultPitch(type);

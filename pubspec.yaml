@@ -1,7 +1,7 @@
 name: koma
 description: "A hybrid reader + knowledge snippet manager."
 publish_to: 'none'
-version: 2.37.23+290
+version: 2.37.24+291
 
 environment:
   sdk: ^3.12.2
@@ -96,6 +96,7 @@ flutter:
   uses-material-design: true
   assets:
     - app_icons/
+    - assets/legal/
 
 flutter_icons:
   android: "launcher_icon"

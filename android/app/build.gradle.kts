@@ -9,6 +9,10 @@ android {
     compileSdk = flutter.compileSdkVersion
     ndkVersion = flutter.ndkVersion
 
+    buildFeatures {
+        prefab = true
+    }
+
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
@@ -28,6 +32,22 @@ android {
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
         versionName = flutter.versionName
+        externalNativeBuild {
+            cmake {
+                cppFlags += "-std=c++17"
+                arguments += listOf("-DANDROID_STL=c++_shared")
+            }
+        }
+        ndk {
+            abiFilters += listOf("arm64-v8a")
+        }
+    }
+
+    externalNativeBuild {
+        cmake {
+            path = file("src/main/cpp/CMakeLists.txt")
+            version = "3.22.1"
+        }
     }
 
     signingConfigs {
@@ -66,6 +86,9 @@ android {
     }
 
     packaging {
+        jniLibs {
+            pickFirsts += listOf("**/libonnxruntime.so", "**/libc++_shared.so")
+        }
         resources {
             excludes += setOf(
                 "META-INF/versions/9/OSGI-INF/MANIFEST.MF",
@@ -105,4 +128,6 @@ dependencies {
     implementation("androidx.core:core-ktx:1.15.0")
     // Keiyoushi extensions expect Injekt (dependency injection) at runtime
     implementation("com.github.mihonapp:injekt:91edab2317")
+    // Piper TTS — ONNX Runtime (linked by koma_piper native lib).
+    implementation("com.microsoft.onnxruntime:onnxruntime-android:1.22.0")
 }
