@@ -8,6 +8,8 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../core/models/source.dart';
 import '../../core/providers.dart';
+import '../../core/services/app_update/app_update_checker.dart';
+import '../../core/services/app_update/get_application_release.dart';
 import '../../core/services/export_service.dart';
 import '../../core/services/extension_manager.dart';
 import '../../core/services/keiyoushi_service.dart';
@@ -27,6 +29,7 @@ import '../../widgets/animated_press.dart';
 import '../../widgets/dialog_sheet.dart';
 import '../../widgets/library_book_card.dart';
 import '../../widgets/library_header.dart';
+import '../../widgets/new_update_sheet.dart';
 import '../../widgets/one_hand_spacer.dart';
 import '../../widgets/reading_streak_card.dart';
 import '../../widgets/reading_calendar_sheet.dart';
@@ -2576,6 +2579,35 @@ class _AboutSection extends StatelessWidget {
   static const _muted = Color(0xFF8888A0);
   static const _pad = EdgeInsets.symmetric(horizontal: 16);
 
+  Future<void> _checkForAppUpdate(BuildContext context) async {
+    StashToast.show(
+      context,
+      message: 'Checking for updates…',
+      icon: Icons.system_update_alt_outlined,
+    );
+    try {
+      final result = await AppUpdateChecker().checkForUpdate(forceCheck: true);
+      if (!context.mounted) return;
+      switch (result) {
+        case NewAppUpdate(:final release):
+          await NewUpdateSheet.show(context, release);
+        case NoNewAppUpdate():
+          StashToast.show(
+            context,
+            message: 'You\'re on the latest version',
+            icon: Icons.check,
+          );
+      }
+    } catch (e) {
+      if (!context.mounted) return;
+      StashToast.show(
+        context,
+        message: 'Update check failed',
+        icon: Icons.error_outline,
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final c = context.colors;
@@ -2645,7 +2677,7 @@ class _AboutSection extends StatelessWidget {
                 ),
                 const SizedBox(height: 4),
                 Text(
-                  'Version 2.37.32 · build 2.37.32+299',
+                  'Version 2.37.33 · build 2.37.33+300',
                   style: TextStyle(color: c.textSecondary, fontSize: 13),
                 ),
                 const SizedBox(height: 10),
@@ -2740,8 +2772,17 @@ class _AboutSection extends StatelessWidget {
               icon: Icons.info_outline,
               iconColor: _muted,
               title: 'Koma',
-              subtitle: 'Version 2.37.32 · build 2.37.32+299',
+              subtitle: 'Version 2.37.33 · build 2.37.33+300',
             ),
+            if (AppUpdateChecker.updaterEnabled)
+              SettingsRow(
+                icon: Icons.system_update_alt_outlined,
+                iconColor: _muted,
+                title: 'Check for updates',
+                subtitle: 'Download and install the latest APK',
+                trailing: const Icon(Icons.chevron_right, size: 18),
+                onTap: () => _checkForAppUpdate(context),
+              ),
             SettingsRow(
               icon: Icons.favorite_outline,
               iconColor: const Color(0xFFEF4444),

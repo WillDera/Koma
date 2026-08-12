@@ -81,6 +81,17 @@ class MainActivity : FlutterActivity() {
                         }
                     }.start()
                 }
+                "installApk" -> {
+                    try {
+                        val apkPath = call.argument<String>("apkPath")
+                            ?: throw IllegalArgumentException("missing apkPath")
+                        installApkUpdate(apkPath)
+                        result.success(null)
+                    } catch (e: Throwable) {
+                        Log.e("AppUpdate", "installApk failed", e)
+                        result.error("INSTALL_APK", e.message, null)
+                    }
+                }
                 else -> result.notImplemented()
             }
         }
@@ -306,6 +317,25 @@ class MainActivity : FlutterActivity() {
         }
         return contentResolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values)
             ?: Uri.fromFile(file)
+    }
+
+    /**
+     * Mihon [NewUpdateScreenModel.installUpdate] parity — open the system
+     * package installer for a downloaded APK via FileProvider.
+     */
+    private fun installApkUpdate(apkPath: String) {
+        val file = File(apkPath)
+        if (!file.exists()) throw IllegalArgumentException("apk not found: $apkPath")
+        val uri = FileProvider.getUriForFile(
+            this,
+            "${applicationContext.packageName}.fileprovider",
+            file,
+        )
+        val intent = Intent(Intent.ACTION_VIEW).apply {
+            setDataAndType(uri, "application/vnd.android.package-archive")
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_GRANT_READ_URI_PERMISSION
+        }
+        startActivity(intent)
     }
 
     private fun shareImageBytes(bytes: ByteArray, displayName: String, mimeType: String) {

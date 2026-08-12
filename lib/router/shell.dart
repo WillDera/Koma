@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 
 import '../theme/app_icons.dart';
 import '../theme/theme_provider.dart';
+import '../widgets/app_update_gate.dart';
 import '../widgets/glass_pill_nav.dart';
 import '../widgets/nav_drawer.dart';
 
@@ -60,19 +61,21 @@ class MainShell extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final theme = ref.watch(themeProvider);
-    return Scaffold(
-      extendBody: true,
-      backgroundColor: theme.bgColor,
-      body: navigationShell,
-      bottomNavigationBar: AppBottomNav(
-        items: _navItems,
-        currentIndex: navigationShell.currentIndex,
-        onTap: _onTap,
-      ),
-      drawer: NavDrawer(
-        currentIndex: navigationShell.currentIndex,
-        onTap: _onTap,
-        version: '2.37.20',
+    return AppUpdateGate(
+      child: Scaffold(
+        extendBody: true,
+        backgroundColor: theme.bgColor,
+        body: navigationShell,
+        bottomNavigationBar: AppBottomNav(
+          items: _navItems,
+          currentIndex: navigationShell.currentIndex,
+          onTap: _onTap,
+        ),
+        drawer: NavDrawer(
+          currentIndex: navigationShell.currentIndex,
+          onTap: _onTap,
+          version: '2.37.33',
+        ),
       ),
     );
   }
