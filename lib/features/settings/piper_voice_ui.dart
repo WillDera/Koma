@@ -30,6 +30,7 @@ class PiperVoiceUi {
     if (files.isEmpty) return false;
 
     final voice = await PiperVoiceService.instance.importFiles(files);
+    if (!context.mounted) return voice != null;
     if (voice == null) {
       _snack(
         context,
