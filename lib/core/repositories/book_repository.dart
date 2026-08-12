@@ -176,8 +176,13 @@ class BookRepository {
     final books = await _isar.books.where().findAll();
     final counts = <String, int>{};
     for (final b in books) {
-      final g = b.genre.isEmpty ? 'Unknown' : b.genre;
-      counts[g] = (counts[g] ?? 0) + 1;
+      final raw = b.genre.trim();
+      if (raw.isEmpty) continue;
+      for (final part in raw.split(',')) {
+        final g = part.trim();
+        if (g.isEmpty) continue;
+        counts[g] = (counts[g] ?? 0) + 1;
+      }
     }
     return counts;
   }
@@ -186,10 +191,33 @@ class BookRepository {
     final books = await _isar.books.where().findAll();
     final counts = <String, int>{};
     for (final b in books) {
-      final ext = b.fileExtension.isEmpty ? 'unknown' : b.fileExtension;
-      counts[ext] = (counts[ext] ?? 0) + 1;
+      final label = _formatLabelForBook(b);
+      counts[label] = (counts[label] ?? 0) + 1;
     }
     return counts;
+  }
+
+  /// Human-readable format bucket for stats. [fileExtension] is often empty
+  /// because importers don't populate it — fall back to the path suffix.
+  static String _formatLabelForBook(i.Book b) {
+    final stored = b.fileExtension.trim();
+    if (stored.isNotEmpty) return stored.toUpperCase();
+
+    final path = b.filePath?.trim() ?? '';
+    if (path.isNotEmpty) {
+      final dot = path.lastIndexOf('.');
+      if (dot >= 0 && dot < path.length - 1) {
+        final ext = path.substring(dot + 1).toLowerCase();
+        if (ext.isNotEmpty &&
+            ext.length <= 8 &&
+            RegExp(r'^[a-z0-9]+$').hasMatch(ext)) {
+          return ext.toUpperCase();
+        }
+      }
+    }
+
+    if (b.source == 'web') return 'Web';
+    return 'Other';
   }
 
   // ── Books: Stream API (reactive, for Riverpod StreamProvider) ──────

@@ -18,10 +18,19 @@ class ReadingStreakCard extends StatelessWidget {
     this.onTap,
   });
 
+  static const _weekdayLabels = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
+
+  /// Rolling window slot [index] is `today - (6 - index)` days. Labels must
+  /// follow those dates — a fixed Mon→Sun header misplaces activity (e.g.
+  /// Wednesday reading shown under Sunday).
+  String _labelForSlot(int index) {
+    final day = DateTime.now().subtract(Duration(days: 6 - index));
+    return _weekdayLabels[day.weekday - 1];
+  }
+
   @override
   Widget build(BuildContext context) {
     final c = context.colors;
-    final labels = const ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
     final weeklyMinutes = minutesPerDay.fold<int>(0, (sum, value) => sum + value);
 
     return AnimatedPress(
@@ -95,7 +104,7 @@ class ReadingStreakCard extends StatelessWidget {
                                 ),
                         ),
                         const SizedBox(height: 5),
-                        Text(labels[i], style: TextStyle(color: c.textTertiary, fontSize: 10, fontWeight: FontWeight.w600)),
+                        Text(_labelForSlot(i), style: TextStyle(color: c.textTertiary, fontSize: 10, fontWeight: FontWeight.w600)),
                       ],
                     ),
                   ),
