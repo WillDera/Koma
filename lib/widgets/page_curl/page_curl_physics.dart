@@ -22,13 +22,20 @@ class PageCurlPhysics {
   /// [progress] is the current curl progress (0..1). [velocity] is the
   /// gesture's horizontal exit velocity in px/s, positive in the direction
   /// that advances the turn.
-  CurlRelease resolve({required double progress, required double velocity}) {
+  CurlRelease resolve({
+    required double progress,
+    required double velocity,
+    double pageWidth = 400.0,
+  }) {
     if (velocity > config.flingVelocityThreshold) return CurlRelease.complete;
     if (velocity < -config.flingVelocityThreshold) return CurlRelease.cancel;
-    // A drag already most of the way over should finish without demanding a
-    // big exit velocity — real flicks rarely exceed a few hundred px/s.
-    if (progress >= config.completionThreshold) return CurlRelease.complete;
-    return velocity > config.completionBiasVelocity
+    // Project a short distance along the release velocity. This lets a modest
+    // forward/reverse gesture influence the decision on either side of the
+    // threshold without the binary feel of a second velocity cutoff.
+    final projected = pageWidth <= 0
+        ? progress
+        : progress + velocity / pageWidth * 0.16;
+    return projected >= config.completionThreshold
         ? CurlRelease.complete
         : CurlRelease.cancel;
   }
@@ -67,6 +74,24 @@ class PageCurlPhysics {
     // the edge off both ends.
     const ease = 0.12;
     return raw * (1 - ease) + ease * raw * raw * (3 - 2 * raw);
+  }
+
+  /// Applies a cumulative drag to an already-partially-curled sheet.
+  ///
+  /// This is used when a finger catches a settling turn. Zero movement returns
+  /// [from] exactly, avoiding the discontinuity caused by remapping from zero.
+  double progressForDragFrom({
+    required double from,
+    required double dragDistance,
+    required double pageWidth,
+  }) {
+    if (pageWidth <= 0) return from.clamp(0.0, 1.0);
+    final sign = dragDistance < 0 ? -1.0 : 1.0;
+    final delta = progressForDrag(
+      dragDistance: dragDistance.abs(),
+      pageWidth: pageWidth,
+    );
+    return (from + sign * delta).clamp(0.0, 1.0);
   }
 
   /// Duration for a programmatic turn, scaled by how far it has to travel.

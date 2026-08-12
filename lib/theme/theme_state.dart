@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../core/models/custom_font.dart';
 import 'tokens/app_colors.dart';
 import 'tokens/app_type.dart';
 
@@ -17,7 +18,10 @@ class ThemeState {
     this.lineHeight = 1.65,
     this.accent = AccentPreset.indigo,
     this.customAccentHex,
-    this.readingFont = ReadingFont.literata,
+    this.followSystemAccent = true,
+    this.lightDynamicPrimary,
+    this.darkDynamicPrimary,
+    this.readingFont = ReadingFont.system,
     this.pageWidth = 680,
     this.textAlign = TextAlign.left,
     this.hyphenation = true,
@@ -26,9 +30,10 @@ class ThemeState {
     this.handMode = HandMode.right,
     this.oneHandMode = false,
     this.bionicReading = false,
-    this.useDeviceFont = false,
     this.amoledMode = false,
-    this.systemFontFamily,
+    this.customFonts = const [],
+    this.uiFontId,
+    this.readingFontId,
     this.showNsfwExtensions = false,
     this.showObsoleteExtensions = false,
     this.immersiveAutoHide = false,
@@ -43,6 +48,14 @@ class ThemeState {
   final double lineHeight;
   final AccentPreset accent;
   final String? customAccentHex;
+
+  /// When true (default), accent comes from Material You / wallpaper colors.
+  final bool followSystemAccent;
+
+  /// Cached dynamic primaries from [DynamicColorBuilder] (not persisted).
+  final Color? lightDynamicPrimary;
+  final Color? darkDynamicPrimary;
+
   final ReadingFont readingFont;
   final double pageWidth;
   final TextAlign textAlign;
@@ -52,9 +65,17 @@ class ThemeState {
   final HandMode handMode;
   final bool oneHandMode;
   final bool bionicReading;
-  final bool useDeviceFont;
   final bool amoledMode;
-  final String? systemFontFamily;
+
+  /// User-imported font families (manifest from [CustomFontService]).
+  final List<CustomFont> customFonts;
+
+  /// When null, UI uses built-in Inter. Otherwise a [CustomFont.id].
+  final String? uiFontId;
+
+  /// When null, [readingFont] enum supplies the face. Otherwise a [CustomFont.id].
+  final String? readingFontId;
+
   final bool showNsfwExtensions;
   final bool showObsoleteExtensions;
   final bool immersiveAutoHide;
@@ -65,12 +86,55 @@ class ThemeState {
 
   // ── Derived getters ────────────────────────────────────────────────
 
+  CustomFont? customFontById(String id) {
+    for (final font in customFonts) {
+      if (font.id == id) return font;
+    }
+    return null;
+  }
+
+  /// Resolved UI font family for [ThemeData].
+  String get uiFontFamily {
+    if (uiFontId != null) {
+      return customFontById(uiFontId!)?.registeredFamily ?? AppType.uiFont;
+    }
+    return AppType.uiFont;
+  }
+
+  String get uiFontLabel {
+    if (uiFontId != null) {
+      return customFontById(uiFontId!)?.displayName ?? 'Custom';
+    }
+    return 'Inter';
+  }
+
+  String? get effectiveReadingFontFamily {
+    if (readingFontId != null) {
+      return customFontById(readingFontId!)?.registeredFamily;
+    }
+    return readingFont.googleFontFamily;
+  }
+
+  String get readingFontLabel {
+    if (readingFontId != null) {
+      return customFontById(readingFontId!)?.displayName ?? 'Custom';
+    }
+    return readingFont.label;
+  }
+
   Color get accentColor {
     if (customAccentHex != null && customAccentHex!.isNotEmpty) {
-      return resolveHex(customAccentHex!) ?? _presetAccent(accent);
+      return resolveHex(customAccentHex!) ?? _fallbackAccent();
+    }
+    if (followSystemAccent) {
+      final dynamicPrimary =
+          isDarkMode ? darkDynamicPrimary : lightDynamicPrimary;
+      return dynamicPrimary ?? _presetAccent(AccentPreset.indigo);
     }
     return _presetAccent(accent);
   }
+
+  Color _fallbackAccent() => _presetAccent(accent);
 
   Color _presetAccent(AccentPreset preset) {
     if (sepiaMode) return AppColors.sepiaAccent;
@@ -104,8 +168,6 @@ class ThemeState {
     return isDarkMode ? AppColors.darkBg : AppColors.lightBg;
   }
 
-  String? get readingFontFamily => readingFont.googleFontFamily;
-
   FontWeight get bionicBoldWeight => FontWeight.w700;
 
   double get bionicBoldFraction => 0.4;
@@ -130,6 +192,9 @@ class ThemeState {
     double? lineHeight,
     AccentPreset? accent,
     String? Function()? customAccentHex,
+    bool? followSystemAccent,
+    Color? Function()? lightDynamicPrimary,
+    Color? Function()? darkDynamicPrimary,
     ReadingFont? readingFont,
     double? pageWidth,
     TextAlign? textAlign,
@@ -139,9 +204,10 @@ class ThemeState {
     HandMode? handMode,
     bool? oneHandMode,
     bool? bionicReading,
-    bool? useDeviceFont,
     bool? amoledMode,
-    String? systemFontFamily,
+    List<CustomFont>? customFonts,
+    String? Function()? uiFontId,
+    String? Function()? readingFontId,
     bool? showNsfwExtensions,
     bool? showObsoleteExtensions,
     bool? immersiveAutoHide,
@@ -158,6 +224,13 @@ class ThemeState {
       customAccentHex: customAccentHex != null
           ? customAccentHex()
           : this.customAccentHex,
+      followSystemAccent: followSystemAccent ?? this.followSystemAccent,
+      lightDynamicPrimary: lightDynamicPrimary != null
+          ? lightDynamicPrimary()
+          : this.lightDynamicPrimary,
+      darkDynamicPrimary: darkDynamicPrimary != null
+          ? darkDynamicPrimary()
+          : this.darkDynamicPrimary,
       readingFont: readingFont ?? this.readingFont,
       pageWidth: pageWidth ?? this.pageWidth,
       textAlign: textAlign ?? this.textAlign,
@@ -167,9 +240,10 @@ class ThemeState {
       handMode: handMode ?? this.handMode,
       oneHandMode: oneHandMode ?? this.oneHandMode,
       bionicReading: bionicReading ?? this.bionicReading,
-      useDeviceFont: useDeviceFont ?? this.useDeviceFont,
       amoledMode: amoledMode ?? this.amoledMode,
-      systemFontFamily: systemFontFamily ?? this.systemFontFamily,
+      customFonts: customFonts ?? this.customFonts,
+      uiFontId: uiFontId != null ? uiFontId() : this.uiFontId,
+      readingFontId: readingFontId != null ? readingFontId() : this.readingFontId,
       showNsfwExtensions: showNsfwExtensions ?? this.showNsfwExtensions,
       showObsoleteExtensions:
           showObsoleteExtensions ?? this.showObsoleteExtensions,

@@ -1,3 +1,6 @@
+import 'dart:async';
+
+import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:isar_community/isar.dart';
 
@@ -6,6 +9,8 @@ import '../features/library/library_provider.dart';
 import '../features/reader/reader_provider.dart';
 import '../features/snippets/snippets_provider.dart';
 import 'repositories/repositories.dart';
+import 'services/download/chapter_download.dart';
+import 'services/download/download_manager.dart';
 import 'services/ebook_service.dart';
 import 'services/extension_manager.dart';
 import 'services/keiyoushi_service.dart';
@@ -48,6 +53,102 @@ final extensionServiceProvider = Provider<ExtensionDispatchService>(
     keiyoushiService: ref.watch(keiyoushiServiceProvider),
   ),
 );
+
+/// Snapshot of the global chapter download queue for Riverpod rebuilds.
+class DownloadQueueSnapshot {
+  const DownloadQueueSnapshot({
+    required this.queue,
+    required this.isRunning,
+    required this.isPaused,
+  });
+
+  final List<ChapterDownload> queue;
+  final bool isRunning;
+  final bool isPaused;
+
+  int get pendingCount =>
+      queue.where((d) => d.status != DownloadState.downloaded).length;
+}
+
+/// Holds the singleton [DownloadManager] and exposes queue snapshots.
+class DownloadManagerNotifier extends Notifier<DownloadQueueSnapshot>
+    with WidgetsBindingObserver {
+  late final DownloadManager manager;
+
+  @override
+  DownloadQueueSnapshot build() {
+    manager = DownloadManager(
+      keiyoushi: ref.watch(keiyoushiServiceProvider),
+      extensionService: ref.watch(extensionServiceProvider),
+      repositories: ref.watch(repositoriesProvider),
+    );
+    void onChange() {
+      state = DownloadQueueSnapshot(
+        queue: manager.queue,
+        isRunning: manager.isRunning,
+        isPaused: manager.isPaused,
+      );
+    }
+
+    manager.addListener(onChange);
+    WidgetsBinding.instance.addObserver(this);
+    ref.onDispose(() {
+      WidgetsBinding.instance.removeObserver(this);
+      manager.removeListener(onChange);
+      manager.dispose();
+    });
+    return DownloadQueueSnapshot(
+      queue: manager.queue,
+      isRunning: manager.isRunning,
+      isPaused: manager.isPaused,
+    );
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.paused ||
+        state == AppLifecycleState.hidden ||
+        state == AppLifecycleState.detached) {
+      unawaited(manager.scheduleBackgroundIfNeeded());
+    }
+  }
+
+  Future<void> restore({bool autoStart = true}) =>
+      manager.restore(autoStart: autoStart);
+
+  Future<void> downloadChapters({
+    required String sourceId,
+    required String mangaUrl,
+    required String mangaTitle,
+    required List<Map<String, dynamic>> chapters,
+    int? mangaId,
+    String? mangaMemo,
+    bool autoStart = true,
+  }) =>
+      manager.downloadChapters(
+        sourceId: sourceId,
+        mangaUrl: mangaUrl,
+        mangaTitle: mangaTitle,
+        chapters: chapters,
+        mangaId: mangaId,
+        mangaMemo: mangaMemo,
+        autoStart: autoStart,
+      );
+
+  Future<void> startDownloads({bool retryErrors = true}) =>
+      manager.startDownloads(retryErrors: retryErrors);
+  Future<void> pauseDownloads() => manager.pauseDownloads();
+  Future<void> clearQueue() => manager.clearQueue();
+  Future<void> cancelQueuedDownloads(List<ChapterDownload> downloads) =>
+      manager.cancelQueuedDownloads(downloads);
+  Future<void> startDownloadNow(String chapterKey) =>
+      manager.startDownloadNow(chapterKey);
+}
+
+final downloadManagerProvider =
+    NotifierProvider<DownloadManagerNotifier, DownloadQueueSnapshot>(
+      DownloadManagerNotifier.new,
+    );
 
 final extensionManagerProvider = Provider<ExtensionManager>(
   (ref) => ExtensionManager(

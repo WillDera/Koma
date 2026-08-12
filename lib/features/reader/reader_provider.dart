@@ -54,7 +54,7 @@ class ReaderNotifier extends Notifier<ReaderState> {
   Timer? _readingTimer;
   int _elapsedSeconds = 0;
   Timer? _scrollPersistTimer;
-  double? _pendingScroll;
+  ({int chapterId, double position})? _pendingScroll;
 
   /// Reading position per chapter index, as a character offset. Populated from
   /// storage on load and updated as paginated mode turns pages.
@@ -71,7 +71,8 @@ class ReaderNotifier extends Notifier<ReaderState> {
   List<Chapter> get chapters => state.chapters;
   Chapter? get currentChapter => state.currentChapter;
   int get currentIndex => state.currentIndex;
-  double get scrollPosition => state.scrollPosition;
+  double get scrollPosition =>
+      _chapterScrollPositions[state.currentIndex] ?? state.scrollPosition;
   bool get loading => state.loading;
   String? get error => state.error;
 
@@ -162,9 +163,10 @@ class ReaderNotifier extends Notifier<ReaderState> {
   }
 
   void updateScrollPosition(double position) {
-    state = state.copyWith(scrollPosition: position);
     _chapterScrollPositions[state.currentIndex] = position;
-    _pendingScroll = position;
+    final chapter = state.currentChapter;
+    if (chapter == null) return;
+    _pendingScroll = (chapterId: chapter.id, position: position);
     _scrollPersistTimer?.cancel();
     _scrollPersistTimer = Timer(const Duration(milliseconds: 1500), () {
       _flushPendingScroll();
@@ -174,12 +176,11 @@ class ReaderNotifier extends Notifier<ReaderState> {
   Future<void> _flushPendingScroll() async {
     _scrollPersistTimer?.cancel();
     _scrollPersistTimer = null;
-    final pos = _pendingScroll;
-    final ch = state.currentChapter;
-    if (pos == null || ch == null) return;
+    final pending = _pendingScroll;
+    if (pending == null) return;
     _pendingScroll = null;
-    final repos = ref.watch(repositoriesProvider);
-    await repos.books.updateChapterScroll(ch.id, pos);
+    final repos = ref.read(repositoriesProvider);
+    await repos.books.updateChapterScroll(pending.chapterId, pending.position);
   }
 
   /// The stored character offset for a chapter, or null if none was recorded.
@@ -217,15 +218,15 @@ class ReaderNotifier extends Notifier<ReaderState> {
     final updatedBook = book.copyWith(
       progress: progress,
       currentChapterIndex: state.currentIndex,
-      scrollPosition: state.scrollPosition,
+      scrollPosition: scrollPosition,
     );
     state = state.copyWith(book: () => updatedBook);
-    final repos = ref.watch(repositoriesProvider);
+    final repos = ref.read(repositoriesProvider);
     await repos.books.updateProgress(
       book.id,
       progress,
       currentChapterIndex: state.currentIndex,
-      scrollPosition: state.scrollPosition,
+      scrollPosition: scrollPosition,
     );
     // Bump the history revision so the History tab refreshes in real time.
     ref.read(historyRevisionProvider.notifier).bump();
@@ -254,14 +255,14 @@ class ReaderNotifier extends Notifier<ReaderState> {
         book.progress < 1.0) {
       final updated = book.copyWith(
         progress: 1.0,
-        scrollPosition: state.scrollPosition,
+        scrollPosition: scrollPosition,
       );
       state = state.copyWith(book: () => updated);
-      final repos = ref.watch(repositoriesProvider);
+      final repos = ref.read(repositoriesProvider);
       await repos.books.updateProgress(
         book.id,
         1.0,
-        scrollPosition: state.scrollPosition,
+        scrollPosition: scrollPosition,
       );
       stats.trackCompletion(book.id);
     }

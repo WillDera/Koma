@@ -1,11 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
 import '../../core/models/extension_source.dart';
 import '../../core/providers.dart';
 import '../../core/services/extension_icon_cache.dart';
 import '../../core/utils/custom_extended_image_provider.dart';
 import '../../core/utils/language.dart';
+import '../../router/router.dart';
 import '../../theme/app_theme.dart';
 import '../../theme/tokens/app_spacing.dart';
 import '../../widgets/animated_press.dart';
@@ -50,7 +52,7 @@ class _SourcesScreenState extends ConsumerState<SourcesScreen> {
     final sources = await repos.extensions.getInstalledExtensions();
     if (!mounted) return;
     setState(() {
-      _sources = sources;
+      _sources = sources.where((s) => s.isActive).toList();
       _loading = false;
     });
   }
@@ -73,7 +75,7 @@ class _SourcesScreenState extends ConsumerState<SourcesScreen> {
   Future<void> _navigateToLatest(ExtensionSource src) async {
     setState(() => _lastUsedId = src.id);
     if (!mounted) return;
-    // Browse with a pre-applied search of "latest" (mangayomi's "Latest" button)
+    // Open Popular/Latest browse on the Latest tab (mangayomi parity).
     Navigator.push(
       context,
       MaterialPageRoute(
@@ -81,6 +83,7 @@ class _SourcesScreenState extends ConsumerState<SourcesScreen> {
           sourceId: src.sourceId,
           sourceName: src.name,
           baseUrl: src.baseUrl,
+          initialTab: 'latest',
         ),
       ),
     );
@@ -107,6 +110,13 @@ class _SourcesScreenState extends ConsumerState<SourcesScreen> {
         backgroundColor: c.bg,
         title: Text('Sources', style: TextStyle(color: c.textPrimary)),
         iconTheme: IconThemeData(color: c.textPrimary),
+        actions: [
+          IconButton(
+            tooltip: 'Global search',
+            icon: Icon(Icons.travel_explore, color: c.textPrimary),
+            onPressed: () => context.pushNamed(Routes.globalSearch),
+          ),
+        ],
       ),
       body: _loading
           ? const Center(child: CircularProgressIndicator())
@@ -405,25 +415,56 @@ class _PkgExtensionIcon extends StatefulWidget {
 
 class _PkgExtensionIconState extends State<_PkgExtensionIcon> {
   String? _url;
+  bool _failed = false;
 
   @override
   void initState() {
     super.initState();
-    if (widget.iconUrl != null && widget.iconUrl!.isNotEmpty) {
-      _url = widget.iconUrl;
-    } else {
-      _url = ExtensionIconCache.iconUrlForPkg(widget.pkg);
-      _resolveFromCache();
+    _bootstrapUrl();
+  }
+
+  void _bootstrapUrl() {
+    _failed = false;
+    _url = ExtensionIconCache.initialDisplayUrl(
+      pkg: widget.pkg,
+      iconUrl: widget.iconUrl,
+    );
+    _resolveFromCache();
+  }
+
+  @override
+  void didUpdateWidget(covariant _PkgExtensionIcon oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.iconUrl != widget.iconUrl || oldWidget.pkg != widget.pkg) {
+      _bootstrapUrl();
     }
   }
 
   Future<void> _resolveFromCache() async {
-    if (_url != null && _url!.isNotEmpty) return;
     final cached = await ExtensionIconCache.instance.cachedIconUrl(widget.pkg);
-    if (!mounted) return;
-    if (cached != null && cached.isNotEmpty) {
+    if (!mounted || _failed) return;
+    if (cached != null &&
+        cached.isNotEmpty &&
+        cached != _url &&
+        !ExtensionIconCache.isLegacyBrokenIconUrl(cached)) {
       setState(() => _url = cached);
     }
+  }
+
+  Future<void> _retryAfterLoadError() async {
+    if (_failed || !mounted) return;
+    final resolved = await ExtensionIconCache.instance.resolveIconUrl(
+      widget.pkg,
+    );
+    if (!mounted || _failed) return;
+    if (resolved != null &&
+        resolved.isNotEmpty &&
+        resolved != _url &&
+        !ExtensionIconCache.isLegacyBrokenIconUrl(resolved)) {
+      setState(() => _url = resolved);
+      return;
+    }
+    setState(() => _failed = true);
   }
 
   @override
@@ -431,7 +472,7 @@ class _PkgExtensionIconState extends State<_PkgExtensionIcon> {
     final url = _url;
     final size = widget.size;
     final c = widget.colors;
-    if (url == null || url.isEmpty) {
+    if (url == null || url.isEmpty || _failed) {
       return SizedBox(
         width: size,
         height: size,
@@ -457,15 +498,20 @@ class _PkgExtensionIconState extends State<_PkgExtensionIcon> {
           width: size,
           height: size,
           gaplessPlayback: true,
-          errorBuilder: (_, _, _) => SizedBox(
-            width: size,
-            height: size,
-            child: Icon(
-              Icons.extension_rounded,
-              color: c.accent,
-              size: size * 0.75,
-            ),
-          ),
+          errorBuilder: (_, _, _) {
+            WidgetsBinding.instance.addPostFrameCallback(
+              (_) => _retryAfterLoadError(),
+            );
+            return SizedBox(
+              width: size,
+              height: size,
+              child: Icon(
+                Icons.extension_rounded,
+                color: c.accent,
+                size: size * 0.75,
+              ),
+            );
+          },
         ),
       ),
     );

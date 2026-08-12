@@ -2,11 +2,14 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:crypto/crypto.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:http/http.dart' as http;
+import 'package:path/path.dart' as p;
+import 'package:path_provider/path_provider.dart';
 import 'package:scrollable_positioned_list/scrollable_positioned_list.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
@@ -16,7 +19,13 @@ import '../../core/models/manga_page.dart';
 import '../../core/providers.dart';
 import '../../core/repositories/repositories.dart';
 import '../../core/services/extension_manager.dart';
+import '../../core/services/extension_source_resolve.dart';
 import '../../core/services/keiyoushi_service.dart';
+import '../../core/services/media_export_service.dart';
+import '../../core/utils/custom_extended_image_provider.dart';
+import '../../eval/dispatch_service.dart';
+import '../../eval/models/m_chapter.dart';
+import '../../eval/models/m_source.dart';
 import '../../features/snippets/bookmarks_provider.dart';
 import '../../router/router.dart';
 import '../../theme/app_theme.dart';
@@ -58,7 +67,9 @@ class MangaReaderScreen extends ConsumerStatefulWidget {
 
 class _MangaReaderScreenState extends ConsumerState<MangaReaderScreen>
     with WidgetsBindingObserver, ReaderMemoryManagement {
-  final _service = KeiyoushiService();
+  late final KeiyoushiService _keiyoushi;
+  late final ExtensionDispatchService _dispatch;
+  MSource? _mSource;
   Repositories? _repos;
   ExtensionManager? _extensionManager;
   bool _loading = true;
@@ -68,11 +79,13 @@ class _MangaReaderScreenState extends ConsumerState<MangaReaderScreen>
   final ItemPositionsListener _itemPositionsListener =
       ItemPositionsListener.create();
   final ValueNotifier<int> _currentPageNotifier = ValueNotifier<int>(0);
-  bool _showToolbar = false;
+  final ValueNotifier<bool> _showToolbar = ValueNotifier<bool>(false);
   bool _showNavigationOverlay = false;
   bool _isBookmarked = false;
   final List<TransformationController> _zoomCtrls = [];
   Timer? _saveTimer;
+  Timer? _readingTimer;
+  int _elapsedReadingSeconds = 0;
 
   /// The full chapter list for this manga (cached for navigation lookups).
   List<MangaChapter> _chapters = [];
@@ -91,11 +104,22 @@ class _MangaReaderScreenState extends ConsumerState<MangaReaderScreen>
 
   ReaderSettings _settings = ReaderSettings();
 
+  /// Bumped on dispose so late Futures from getPageList/preload abandon work.
+  int _loadSession = 0;
+
+  /// Flip before tearing down controllers so async chains stop chaining.
+  bool _leftReader = false;
+
   List<PageData> get _pages => pages;
+
+  bool _isLive(int session) =>
+      !_leftReader && mounted && session == _loadSession;
 
   @override
   void initState() {
     super.initState();
+    _keiyoushi = ref.read(keiyoushiServiceProvider);
+    _dispatch = ref.read(extensionServiceProvider);
     _repos = ref.read(repositoriesProvider);
     _extensionManager = ref.read(extensionManagerProvider);
     WidgetsBinding.instance.addObserver(this);
@@ -104,27 +128,46 @@ class _MangaReaderScreenState extends ConsumerState<MangaReaderScreen>
   }
 
   Future<void> _initAsync() async {
+    final session = _loadSession;
     await _loadSettings();
+    if (!_isLive(session)) return;
     _applyOrientation();
     _applyWakelock();
+    try {
+      _mSource = await resolveExtensionMSource(
+        ref.read(repositoriesProvider),
+        widget.sourceId,
+      );
+    } catch (_) {
+      _mSource = null;
+    }
+    if (!_isLive(session)) return;
     if (widget.mangaId != null && _repos != null) {
       final ch = await _repos!.manga.getMangaChapterByUrl(
         widget.mangaId!,
         widget.chapterUrl,
       );
-      if (ch != null && mounted) {
+      if (!_isLive(session)) return;
+      if (ch != null) {
         _currentChapter = ch;
         if (!ch.isOpened) {
           await _repos!.manga.markMangaChapterOpened(ch.id);
         }
       }
+      if (!_isLive(session)) return;
       _chapters = await _repos!.manga.getMangaChapters(widget.mangaId!);
     }
-    if (mounted) _load();
+    if (_isLive(session)) _load();
   }
 
   @override
   void dispose() {
+    _leftReader = true;
+    _loadSession++;
+    _isNextChapterPreloading = false;
+    _saveTimer?.cancel();
+    _saveTimer = null;
+    _stopReadingTimer();
     _flushPageProgress();
     _restoreSystemUI();
     WakelockPlus.disable();
@@ -133,6 +176,7 @@ class _MangaReaderScreenState extends ConsumerState<MangaReaderScreen>
     WidgetsBinding.instance.removeObserver(this);
     _pageCtrl.dispose();
     _currentPageNotifier.dispose();
+    _showToolbar.dispose();
     for (final c in _zoomCtrls) {
       c.dispose();
     }
@@ -214,10 +258,12 @@ class _MangaReaderScreenState extends ConsumerState<MangaReaderScreen>
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.paused) {
+      _stopReadingTimer();
       _flushPageProgress();
       WakelockPlus.disable();
     } else if (state == AppLifecycleState.resumed) {
       _applyWakelock();
+      if (!_loading && _error == null) _startReadingTimer();
     }
   }
 
@@ -230,44 +276,196 @@ class _MangaReaderScreenState extends ConsumerState<MangaReaderScreen>
     return resolved.isNotEmpty ? resolved : widget.sourceId;
   }
 
-  Future<void> _load() async {
-    try {
-      final sourceId = await _resolveSourceId();
-      final raw = await _service.getPageList(
-        sourceId: sourceId,
-        url: widget.chapterUrl,
-        memo: _currentChapter?.memo,
-      );
-      if (!mounted) return;
+  /// Normalize Dalvik local page paths (`file://` URI or absolute path).
+  String _normalizeLocalPath(String path) {
+    if (path.startsWith('file:')) {
+      try {
+        return Uri.parse(path).toFilePath();
+      } catch (_) {
+        return path.replaceFirst(RegExp(r'^file://'), '');
+      }
+    }
+    return path;
+  }
 
+  /// Build [PageData] for [chapter], preferring on-disk downloads (Mihon
+  /// DownloadPageLoader / Mangayomi isLocale pattern) before the network
+  /// getPageList.
+  Future<List<PageData>> _pagesForChapter(
+    MangaChapter chapter, {
+    required int session,
+  }) async {
+    if (!_isLive(session)) return const [];
+    final sourceId = await _resolveSourceId();
+    if (!_isLive(session)) return const [];
+    final source = _mSource ??
+        await resolveExtensionMSource(
+          ref.read(repositoriesProvider),
+          sourceId,
+        );
+    if (!_isLive(session)) return const [];
+    _mSource = source;
+
+    // Local pages: Mihon via Dalvik; JS via the same on-disk layout the
+    // download manager writes under applicationSupport/manga/...
+    try {
+      List<String> local = const [];
+      if (source.isJs) {
+        local = await _listLocalJsPages(
+          sourceId: sourceId,
+          mangaUrl: widget.mangaUrl,
+          chapterUrl: chapter.url,
+        );
+      } else {
+        local = await _keiyoushi.getLocalPages(
+          sourceId: sourceId,
+          mangaUrl: widget.mangaUrl,
+          chapterUrl: chapter.url,
+        );
+      }
+      if (!_isLive(session)) return const [];
+      if (local.isNotEmpty) {
+        // Heal the DB flag if files exist but isDownloaded was never set.
+        if (!chapter.isDownloaded && chapter.id > 0 && _repos != null) {
+          unawaited(
+            _repos!.manga.markMangaChapterDownloaded(chapter.id, true),
+          );
+        }
+        return local.asMap().entries.map((e) {
+          final path = _normalizeLocalPath(local[e.key]);
+          return PageData.page(
+            mangaPage: MangaPage(
+              index: e.key,
+              imageUrl: path,
+              localPath: path,
+              chapterUrl: chapter.url,
+            ),
+            chapter: chapter,
+            pageIndex: e.key,
+          )..localPath = path;
+        }).toList();
+      }
+    } catch (_) {
+      // Fall through to network page list.
+    }
+
+    if (!_isLive(session)) return const [];
+    final pagesWrapped = await _dispatch.getPageList(
+      source,
+      MChapter(
+        url: chapter.url,
+        name: chapter.name,
+        memo: chapter.memo,
+      ),
+    );
+    if (!_isLive(session)) return const [];
+    final flat = [
+      for (final group in pagesWrapped)
+        for (final p in group.pages) p,
+    ];
+    return flat.asMap().entries.map((e) {
+      final page = e.value;
+      return PageData.page(
+        mangaPage: MangaPage(
+          index: e.key,
+          imageUrl: page.url,
+          headers: page.headers,
+          chapterUrl: chapter.url,
+        ),
+        chapter: chapter,
+        pageIndex: e.key,
+      );
+    }).toList();
+  }
+
+  Future<List<String>> _listLocalJsPages({
+    required String sourceId,
+    required String mangaUrl,
+    required String chapterUrl,
+  }) async {
+    final supportDir = await getApplicationSupportDirectory();
+    final mangaKey =
+        sha256.convert(utf8.encode(mangaUrl)).toString().substring(0, 16);
+    final chKey =
+        sha256.convert(utf8.encode(chapterUrl)).toString().substring(0, 16);
+    final dir = Directory(
+      '${supportDir.path}/manga/$sourceId/$mangaKey/$chKey',
+    );
+    if (!await dir.exists()) return const [];
+    final files = await dir.list().where((e) => e is File).cast<File>().toList();
+    files.retainWhere((f) => f.path.toLowerCase().endsWith('.jpg'));
+    files.sort((a, b) {
+      int idx(File f) =>
+          int.tryParse(p.basenameWithoutExtension(f.path)) ?? 1 << 30;
+      return idx(a).compareTo(idx(b));
+    });
+    return [for (final f in files) f.path];
+  }
+
+  Future<void> _load() async {
+    final session = _loadSession;
+    try {
       final currentCh = _getCurrentChapter();
       if (currentCh == null) {
-        if (mounted) setState(() => _loading = false);
+        // Chapter may not be in DB yet — synthesize a stub for page load.
+        final stub = MangaChapter(
+          id: 0,
+          mangaId: widget.mangaId ?? 0,
+          name: widget.chapterName,
+          url: widget.chapterUrl,
+          dateUpload: 0,
+          index: 0,
+        );
+        final pageDataList = await _pagesForChapter(stub, session: session);
+        if (!_isLive(session)) return;
+        if (pageDataList.isEmpty) {
+          setState(() {
+            _error = 'No pages found';
+            _loading = false;
+          });
+          return;
+        }
+        _currentChapter = stub;
+        initializePreloadManager(
+          pageDataList,
+          onPagesUpdated: () {
+            if (_isLive(session)) setState(() {});
+          },
+        );
+        setState(() {
+          _zoomCtrls.addAll(
+            List.generate(
+              pageDataList.length,
+              (_) => TransformationController(),
+            ),
+          );
+          _loading = false;
+        });
+        await _initProgress();
+        if (!_isLive(session)) return;
+        _startReadingTimer();
+        _proactivePreload();
+        _updateBookmarkState();
         return;
       }
 
-      final pageDataList = raw.asMap().entries.map((e) {
-        final imgUrl = e.value['imageUrl'] as String?;
-        final rawHeaders = e.value['headers'] as Map?;
-        final headers = rawHeaders?.map(
-          (k, v) => MapEntry(k.toString(), v.toString()),
-        );
-        return PageData.page(
-          mangaPage: MangaPage(
-            index: e.key,
-            imageUrl: imgUrl ?? (e.value['url'] as String? ?? ''),
-            headers: headers,
-          ),
-          chapter: currentCh,
-          pageIndex: e.key,
-        );
-      }).toList();
+      final pageDataList =
+          await _pagesForChapter(currentCh, session: session);
+      if (!_isLive(session)) return;
+
+      if (pageDataList.isEmpty) {
+        setState(() {
+          _error = 'No pages found';
+          _loading = false;
+        });
+        return;
+      }
 
       // Initialize the preload manager with the current chapter's pages
       initializePreloadManager(
         pageDataList,
         onPagesUpdated: () {
-          if (mounted) setState(() {});
+          if (_isLive(session)) setState(() {});
         },
       );
 
@@ -279,13 +477,12 @@ class _MangaReaderScreenState extends ConsumerState<MangaReaderScreen>
       });
 
       await _initProgress();
+      if (!_isLive(session)) return;
+      _startReadingTimer();
       _proactivePreload();
       _updateBookmarkState();
-      if (widget.pageNumber != null) {
-        _jumpToPageByNumber(widget.pageNumber!);
-      }
     } catch (e) {
-      if (!mounted) return;
+      if (!_isLive(session)) return;
       setState(() {
         _error = '$e';
         _loading = false;
@@ -373,6 +570,13 @@ class _MangaReaderScreenState extends ConsumerState<MangaReaderScreen>
   Future<void> _initProgress() async {
     if (_currentChapter == null || _pages.isEmpty) return;
     _showNavigationOverlay = true;
+
+    // A bookmark deep link outranks stored progress — restoring last-read too
+    // would queue a second post-frame jump that lands afterwards and wins.
+    // Fall through only when the bookmarked page isn't part of this chapter.
+    final bookmarked = widget.pageNumber;
+    if (bookmarked != null && _jumpToPageByNumber(bookmarked)) return;
+
     final ch = _currentChapter;
     if (ch == null || ch.lastPageRead <= 0) return;
 
@@ -439,7 +643,29 @@ class _MangaReaderScreenState extends ConsumerState<MangaReaderScreen>
     _saveProgress();
   }
 
-  void _toggleToolbar() => setState(() => _showToolbar = !_showToolbar);
+  void _startReadingTimer() {
+    if (_readingTimer != null) return;
+    _readingTimer = Timer.periodic(const Duration(seconds: 30), (_) {
+      _elapsedReadingSeconds += 30;
+      unawaited(
+        ref.read(statsServiceProvider).trackReading(widget.mangaId ?? 0, 30),
+      );
+    });
+  }
+
+  void _stopReadingTimer() {
+    _readingTimer?.cancel();
+    _readingTimer = null;
+    final remainder = _elapsedReadingSeconds % 30;
+    if (remainder > 0) {
+      unawaited(
+        ref.read(statsServiceProvider).trackReading(widget.mangaId ?? 0, remainder),
+      );
+    }
+    _elapsedReadingSeconds = 0;
+  }
+
+  void _toggleToolbar() => _showToolbar.value = !_showToolbar.value;
 
   // ── Scroll listener (continuous modes — webtoon, long strip) ──
 
@@ -544,16 +770,23 @@ class _MangaReaderScreenState extends ConsumerState<MangaReaderScreen>
     _schedulePageSave(clamped);
   }
 
-  void _jumpToPageByNumber(int chapterRelativePage) {
-    if (_pages.isEmpty) return;
+  /// Jumps to [chapterRelativePage] of the chapter being read (bookmark deep
+  /// link). Returns false when that page isn't in the loaded chapter.
+  ///
+  /// Goes through [_jumpToFlatIndex] rather than [_goToPage] because this runs
+  /// before the reader's first frame: the [PageController] and
+  /// [ItemScrollController] have no clients yet, so an immediate jump is
+  /// silently dropped and the reader stays on whatever page it opened at.
+  bool _jumpToPageByNumber(int chapterRelativePage) {
+    if (_pages.isEmpty) return false;
     final target = _pages.indexWhere((p) {
       if (p.isTransitionPage) return false;
       return p.chapter?.id == _currentChapter?.id &&
           p.mangaPage?.index == chapterRelativePage;
     });
-    if (target >= 0) {
-      _goToPage(target);
-    }
+    if (target < 0) return false;
+    _jumpToFlatIndex(target, animate: false);
+    return true;
   }
 
   /// Saves the chapter-relative page index (not the flat list index),
@@ -597,12 +830,15 @@ class _MangaReaderScreenState extends ConsumerState<MangaReaderScreen>
 
   /// Fires off next-chapter page fetching if not already in progress.
   Future<void> _triggerNextChapterPreload() async {
-    if (_isNextChapterPreloading || _isLastPageTransition) return;
+    if (_leftReader || _isNextChapterPreloading || _isLastPageTransition) {
+      return;
+    }
     if (_currentChapter == null) return;
 
+    final session = _loadSession;
     _isNextChapterPreloading = true;
     try {
-      if (!mounted) {
+      if (!_isLive(session)) {
         _isNextChapterPreloading = false;
         return;
       }
@@ -610,37 +846,19 @@ class _MangaReaderScreenState extends ConsumerState<MangaReaderScreen>
       if (nextChapter == null) {
         // No next chapter — add the end-of-manga transition
         _isNextChapterPreloading = false;
-        if (mounted) _addLastPageTransition(_currentChapter!);
+        if (_isLive(session)) _addLastPageTransition(_currentChapter!);
         return;
       }
       if (isChapterLoaded(nextChapter)) {
         _isNextChapterPreloading = false;
         return;
       }
-      final raw = await _service.getPageList(
-        sourceId: await _resolveSourceId(),
-        url: nextChapter.url,
-        memo: nextChapter.memo,
-      );
-      if (!mounted) {
+      final nextPages =
+          await _pagesForChapter(nextChapter, session: session);
+      if (!_isLive(session)) {
         _isNextChapterPreloading = false;
         return;
       }
-      final nextPages = raw.asMap().entries.map((e) {
-        final imgUrl = e.value['imageUrl'] as String?;
-        final rawHeaders = e.value['headers'] as Map?;
-        final headers = rawHeaders?.map(
-          (k, v) => MapEntry(k.toString(), v.toString()),
-        );
-        return PageData.page(
-          mangaPage: MangaPage(
-            index: e.key,
-            imageUrl: imgUrl ?? (e.value['url'] as String? ?? ''),
-            headers: headers,
-          ),
-          chapter: nextChapter,
-        );
-      }).toList();
 
       if (nextPages.isEmpty) {
         _isNextChapterPreloading = false;
@@ -649,7 +867,11 @@ class _MangaReaderScreenState extends ConsumerState<MangaReaderScreen>
 
       // Use mixin to preload with memory management
       final success = await preloadNextChapter(nextPages, _currentChapter!);
-      if (success && mounted) {
+      if (!_isLive(session)) {
+        _isNextChapterPreloading = false;
+        return;
+      }
+      if (success) {
         // Add zoom controllers for new pages
         final newPagesCount = nextPages.length + 1; // +1 for transition page
         setState(() {
@@ -724,7 +946,10 @@ class _MangaReaderScreenState extends ConsumerState<MangaReaderScreen>
           mangaUrl: widget.mangaUrl,
           chapterUrl: chapter.url,
           chapterName: chapter.name,
-          pageNumber: widget.pageNumber,
+          // A bookmark's page number belongs to the chapter it was made in.
+          // Carrying it into a different chapter would drop the reader at that
+          // page instead of the new chapter's own last-read position.
+          pageNumber: null,
         ),
       );
     });
@@ -831,29 +1056,92 @@ class _MangaReaderScreenState extends ConsumerState<MangaReaderScreen>
 
   // ── Page actions ──
 
+  final Map<int, int> _pageRetryTokens = {};
+
   void _retryPage(int index) {
-    // No-op: the page will naturally reload from the widget
-    setState(() {});
+    if (index < 0 || index >= _pages.length) return;
+    final page = _pages[index];
+    page.resolvedFilePath = null;
+    final url = page.imageUrl;
+    if (url.startsWith('http')) {
+      PaintingBinding.instance.imageCache.clearLiveImages();
+      unawaited(
+        CustomExtendedNetworkImageProvider(
+          url,
+          headers: page.headers,
+          cacheMaxAge: const Duration(days: 7),
+          imageCacheFolderName: 'cacheimagemanga',
+        ).evict(),
+      );
+    }
+    setState(() {
+      _pageRetryTokens[index] = (_pageRetryTokens[index] ?? 0) + 1;
+    });
+  }
+
+  Future<Uint8List?> _bytesForCurrentPage() async {
+    final current = _currentPageNotifier.value;
+    if (current >= _pages.length) return null;
+    final page = _pages[current];
+    final local = page.localPath ?? page.resolvedFilePath;
+    if (local != null && local.isNotEmpty) {
+      final file = File(local);
+      if (await file.exists()) return file.readAsBytes();
+    }
+    if (page.imageUrl.isEmpty) return null;
+    // Local absolute paths may be stored in imageUrl for downloaded pages.
+    if (!page.imageUrl.startsWith('http')) {
+      final file = File(_normalizeLocalPath(page.imageUrl));
+      if (await file.exists()) return file.readAsBytes();
+    }
+    final uri = Uri.parse(page.imageUrl);
+    final req = http.Request('GET', uri);
+    page.headers?.forEach((k, v) => req.headers[k] = v);
+    final streamed = await req.send();
+    if (streamed.statusCode < 200 || streamed.statusCode >= 300) {
+      throw Exception('HTTP ${streamed.statusCode}');
+    }
+    return streamed.stream.toBytes();
+  }
+
+  String _galleryFileName(int pageIndex) {
+    final chapter = _currentChapter?.name ?? widget.chapterName;
+    final manga = widget.mangaUrl.split('/').lastWhere(
+      (s) => s.isNotEmpty,
+      orElse: () => 'manga',
+    );
+    final safeManga = manga.replaceAll(RegExp(r'[\\/:*?"<>|]'), '_');
+    final safeChapter = chapter.replaceAll(RegExp(r'[\\/:*?"<>|]'), '_');
+    return '$safeManga - $safeChapter - ${pageIndex + 1}.jpg';
   }
 
   Future<void> _saveCurrentPage() async {
     final current = _currentPageNotifier.value;
-    if (current >= _pages.length) return;
-    final page = _pages[current];
-    if (page.imageUrl.isEmpty) return;
     try {
-      final uri = Uri.parse(page.imageUrl);
-      final req = http.MultipartRequest('GET', uri);
-      page.headers?.forEach((k, v) => req.headers[k] = v);
-      final streamed = await req.send();
-      final bytes = await streamed.stream.toBytes();
-      if (!mounted) return;
-      final file = File('${Directory.systemTemp.path}/page_${current + 1}.jpg');
-      await file.writeAsBytes(bytes);
+      final bytes = await _bytesForCurrentPage();
+      if (bytes == null || bytes.isEmpty) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Nothing to save')),
+          );
+        }
+        return;
+      }
+      final name = _galleryFileName(current);
+      final uri = await MediaExportService().saveToGallery(
+        bytes: bytes,
+        displayName: name,
+      );
       if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('Saved to ${file.path}')));
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              uri != null && uri.startsWith('content:')
+                  ? 'Saved to Pictures/Koma'
+                  : 'Saved to gallery',
+            ),
+          ),
+        );
       }
     } catch (e) {
       if (mounted) {
@@ -864,20 +1152,43 @@ class _MangaReaderScreenState extends ConsumerState<MangaReaderScreen>
     }
   }
 
-  void _shareCurrentPage() {
+  Future<void> _shareCurrentPage() async {
     final current = _currentPageNotifier.value;
-    Clipboard.setData(ClipboardData(text: _pages[current].imageUrl));
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Image URL copied to clipboard')),
-    );
+    try {
+      final bytes = await _bytesForCurrentPage();
+      if (bytes == null || bytes.isEmpty) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Nothing to share')),
+          );
+        }
+        return;
+      }
+      await MediaExportService().shareImage(
+        bytes: bytes,
+        displayName: _galleryFileName(current),
+      );
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Share failed: $e')));
+      }
+    }
   }
 
   void _copyCurrentPage() {
     final current = _currentPageNotifier.value;
-    Clipboard.setData(ClipboardData(text: _pages[current].imageUrl));
+    if (current >= _pages.length) return;
+    final page = _pages[current];
+    final text = page.imageUrl.isNotEmpty
+        ? page.imageUrl
+        : (page.localPath ?? '');
+    if (text.isEmpty) return;
+    Clipboard.setData(ClipboardData(text: text));
     ScaffoldMessenger.of(
       context,
-    ).showSnackBar(const SnackBar(content: Text('Image URL copied')));
+    ).showSnackBar(const SnackBar(content: Text('Copied')));
   }
 
   void _showLongPressMenu() {
@@ -907,6 +1218,7 @@ class _MangaReaderScreenState extends ConsumerState<MangaReaderScreen>
     onToggleToolbar: _toggleToolbar,
     onLongPress: _showLongPressMenu,
     onRetryPage: _retryPage,
+    pageRetryTokens: Map<int, int>.from(_pageRetryTokens),
   );
 
   @override
@@ -977,25 +1289,28 @@ class _MangaReaderScreenState extends ConsumerState<MangaReaderScreen>
             final props = _viewProps();
             return Stack(
               children: [
-                ColorFilterWidget(
-                  brightness: _settings.brightness,
-                  contrast: _settings.contrast,
-                  saturation: _settings.saturation,
-                  tint: _settings.tintColor,
-                  tintOpacity: _settings.tintOpacity,
-                  child: isContinuous
-                      ? MangaImageViewWebtoon(
-                          props: props,
-                          itemScrollController: _itemScrollCtrl,
-                          itemPositionsListener: _itemPositionsListener,
-                        )
-                      : MangaImageViewPaged(
-                          props: props,
-                          pageController: _pageCtrl,
-                          axis: axis,
-                          reverse: reverse,
-                          bookMode: _isBookModeActive,
-                        ),
+                // Page stack is isolated from toolbar chrome rebuilds.
+                RepaintBoundary(
+                  child: ColorFilterWidget(
+                    brightness: _settings.brightness,
+                    contrast: _settings.contrast,
+                    saturation: _settings.saturation,
+                    tint: _settings.tintColor,
+                    tintOpacity: _settings.tintOpacity,
+                    child: isContinuous
+                        ? MangaImageViewWebtoon(
+                            props: props,
+                            itemScrollController: _itemScrollCtrl,
+                            itemPositionsListener: _itemPositionsListener,
+                          )
+                        : MangaImageViewPaged(
+                            props: props,
+                            pageController: _pageCtrl,
+                            axis: axis,
+                            reverse: reverse,
+                            bookMode: _isBookModeActive,
+                          ),
+                  ),
                 ),
 
                 if (_showNavigationOverlay)
@@ -1005,56 +1320,68 @@ class _MangaReaderScreenState extends ConsumerState<MangaReaderScreen>
                     navigationLayout: 0,
                   ),
 
-                if (_showToolbar)
-                  Positioned.fill(
-                    child: GestureDetector(
-                      onTap: _toggleToolbar,
-                      behavior: HitTestBehavior.translucent,
-                      child: const SizedBox.expand(),
-                    ),
-                  )
-                else if (!_showNavigationOverlay)
-                  Positioned.fill(
-                    child: isContinuous
-                        ? GestureDetector(
-                            onTap: _toggleToolbar,
-                            onLongPress: _showLongPressMenu,
-                            behavior: HitTestBehavior.translucent,
-                            child: const SizedBox.expand(),
+                // Must be Positioned.fill: the chrome Stack's children are all
+                // positioned, so without this the overlay collapses to 0×0 and
+                // eats no hits (taps/long-press appear dead).
+                Positioned.fill(
+                  child: ValueListenableBuilder<bool>(
+                    valueListenable: _showToolbar,
+                    builder: (_, showToolbar, _) => Stack(
+                      children: [
+                        if (showToolbar)
+                          Positioned.fill(
+                            child: GestureDetector(
+                              onTap: _toggleToolbar,
+                              behavior: HitTestBehavior.translucent,
+                              child: const SizedBox.expand(),
+                            ),
                           )
-                        : ReaderTapZones(props: props),
+                        else if (!_showNavigationOverlay)
+                          Positioned.fill(
+                            child: isContinuous
+                                ? GestureDetector(
+                                    onTap: _toggleToolbar,
+                                    onLongPress: _showLongPressMenu,
+                                    behavior: HitTestBehavior.translucent,
+                                    child: const SizedBox.expand(),
+                                  )
+                                : ReaderTapZones(props: props),
+                          ),
+                        ReaderAppBar(
+                          chapterName:
+                              _currentChapter?.name ?? widget.chapterName,
+                          isBookmarked: _isBookmarked,
+                          isVisible: showToolbar,
+                          onClose: () {
+                            _saveProgress().then((_) {
+                              if (context.mounted) {
+                                Navigator.of(context).pop();
+                              }
+                            });
+                          },
+                          onBookmarkToggle: _toggleBookmark,
+                          onChapterList: _showChapterList,
+                        ),
+                        ReaderBottomBar(
+                          pageListenable: _currentPageNotifier,
+                          totalPages: _pages.length,
+                          showNavigator: _settings.showPageNavigator,
+                          onPageChanged: _goToPage,
+                          onSettings: _showSettings,
+                          onCropToggle: _toggleCropBorders,
+                          onPreviousChapter: _navigateToPrevChapter,
+                          onNextChapter: _navigateToNextChapter,
+                          isVisible: showToolbar,
+                        ),
+                        PageIndicator(
+                          pageListenable: _currentPageNotifier,
+                          totalPages: _pages.length,
+                          isVisible: showToolbar,
+                          showPageNumbers: _settings.showPageNumber,
+                        ),
+                      ],
+                    ),
                   ),
-
-                ReaderAppBar(
-                  chapterName: _currentChapter?.name ?? widget.chapterName,
-                  isBookmarked: _isBookmarked,
-                  isVisible: _showToolbar,
-                  onClose: () {
-                    _saveProgress().then((_) {
-                      if (context.mounted) Navigator.of(context).pop();
-                    });
-                  },
-                  onBookmarkToggle: _toggleBookmark,
-                  onChapterList: _showChapterList,
-                ),
-
-                ReaderBottomBar(
-                  pageListenable: _currentPageNotifier,
-                  totalPages: _pages.length,
-                  showNavigator: _settings.showPageNavigator,
-                  onPageChanged: _goToPage,
-                  onSettings: _showSettings,
-                  onCropToggle: _toggleCropBorders,
-                  onPreviousChapter: _navigateToPrevChapter,
-                  onNextChapter: _navigateToNextChapter,
-                  isVisible: _showToolbar,
-                ),
-
-                PageIndicator(
-                  pageListenable: _currentPageNotifier,
-                  totalPages: _pages.length,
-                  isVisible: _showToolbar,
-                  showPageNumbers: _settings.showPageNumber,
                 ),
               ],
             );

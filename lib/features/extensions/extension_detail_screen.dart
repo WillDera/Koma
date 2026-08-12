@@ -2,9 +2,13 @@ import 'package:flutter/material.dart';
 
 import '../../core/models/extension_source.dart';
 import '../../core/services/extension_icon_cache.dart';
+import '../../core/services/source_preferences_bridge.dart';
+import '../../core/services/source_webview_bridge.dart';
 import '../../core/utils/custom_extended_image_provider.dart';
 import '../../core/utils/language.dart';
 import '../../theme/app_theme.dart';
+import 'extension_client_settings_screen.dart';
+import 'js_source_preferences_screen.dart';
 import 'source_browse_screen.dart';
 
 /// Extract the package name from an installed extension's on-disk APK path,
@@ -19,7 +23,8 @@ String _extractPkgFromApkPath(String apkPath) {
 
 /// Extension detail screen — ported from mangayomi's ExtensionDetail.
 ///
-/// Shows the extension icon, name, version, language, and uninstall action.
+/// Shows the extension icon, name, version, language, source settings
+/// (when ConfigurableSource), and uninstall action.
 class ExtensionDetailScreen extends StatelessWidget {
   final ExtensionSource source;
   final VoidCallback onUninstall;
@@ -33,24 +38,63 @@ class ExtensionDetailScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final c = context.colors;
+    final hasApk = source.apkPath.isNotEmpty;
     return Scaffold(
       backgroundColor: c.bg,
       appBar: AppBar(
         backgroundColor: c.bg,
         title: Text('Extension Detail', style: TextStyle(color: c.textPrimary)),
         iconTheme: IconThemeData(color: c.textPrimary),
+        actions: [
+          if (source.baseUrl != null && source.baseUrl!.isNotEmpty)
+            IconButton(
+              tooltip: 'Open website',
+              icon: Icon(Icons.public, color: c.accent),
+              onPressed: () async {
+                try {
+                  await SourceWebViewBridge.open(
+                    url: source.baseUrl!,
+                    sourceId: source.sourceId,
+                    title: source.name,
+                  );
+                } catch (e) {
+                  if (!context.mounted) return;
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: Text('WebView failed: $e')),
+                  );
+                }
+              },
+            ),
+          IconButton(
+            tooltip: 'Client settings',
+            icon: Icon(Icons.settings_outlined, color: c.textPrimary),
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) =>
+                      ExtensionClientSettingsScreen(source: source),
+                ),
+              );
+            },
+          ),
+        ],
       ),
       body: SingleChildScrollView(
         child: Column(
           children: [
             const SizedBox(height: 20),
-            // Icon
+            // Icon — JS sources use stored iconUrl (no APK pkg); Mihon uses pkg cache.
             Container(
               decoration: BoxDecoration(
                 color: c.surfaceMuted,
                 borderRadius: BorderRadius.circular(10),
               ),
-              child: _buildLargeIcon(_extractPkgFromApkPath(source.apkPath), c),
+              child: _LargePkgExtensionIcon(
+                pkg: _extractPkgFromApkPath(source.apkPath),
+                colors: c,
+                iconUrl: source.iconUrl,
+              ),
             ),
             const SizedBox(height: 12),
             // Name
@@ -141,6 +185,90 @@ class ExtensionDetailScreen extends StatelessWidget {
                 ),
               ),
             ],
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
+              child: SizedBox(
+                width: double.infinity,
+                child: OutlinedButton.icon(
+                  onPressed: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) =>
+                            ExtensionClientSettingsScreen(source: source),
+                      ),
+                    );
+                  },
+                  icon: Icon(Icons.settings_outlined, color: c.accent),
+                  label: Text(
+                    'Client settings',
+                    style: TextStyle(color: c.accent),
+                  ),
+                ),
+              ),
+            ),
+            if (source.isJs)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
+                child: SizedBox(
+                  width: double.infinity,
+                  child: OutlinedButton.icon(
+                    onPressed: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) =>
+                              JsSourcePreferencesScreen(source: source),
+                        ),
+                      );
+                    },
+                    icon: Icon(Icons.tune_rounded, color: c.accent),
+                    label: Text(
+                      'Source settings',
+                      style: TextStyle(color: c.accent),
+                    ),
+                  ),
+                ),
+              )
+            else if (hasApk)
+              FutureBuilder<bool>(
+                future: SourcePreferencesBridge.isConfigurable(
+                  sourceId: source.sourceId,
+                  apkPath: source.apkPath,
+                ),
+                builder: (context, snap) {
+                  if (snap.data != true) return const SizedBox.shrink();
+                  return Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
+                    child: SizedBox(
+                      width: double.infinity,
+                      child: OutlinedButton.icon(
+                        onPressed: () async {
+                          try {
+                            await SourcePreferencesBridge.open(
+                              sourceId: source.sourceId,
+                              apkPath: source.apkPath,
+                              title: source.name,
+                            );
+                          } catch (e) {
+                            if (!context.mounted) return;
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(
+                                content: Text('Could not open settings: $e'),
+                              ),
+                            );
+                          }
+                        },
+                        icon: Icon(Icons.tune_rounded, color: c.accent),
+                        label: Text(
+                          'Source settings',
+                          style: TextStyle(color: c.accent),
+                        ),
+                      ),
+                    ),
+                  );
+                },
+              ),
             const SizedBox(height: 16),
             // Uninstall button
             Padding(
@@ -216,38 +344,46 @@ class ExtensionDetailScreen extends StatelessWidget {
     );
   }
 
-  Widget _buildLargeIcon(String pkg, KomaColors c) {
-    return _LargePkgExtensionIcon(pkg: pkg, colors: c);
-  }
 }
 
 /// Large (140×140) variant of the pkg-resolving icon widget for the detail
-/// screen. Resolves the icon URL via [ExtensionIconCache] (cache-first, with
-/// a deterministic CDN derivation fallback), so already-installed extensions
-/// with a stale `.../repo/icon/${pkg}.png` iconUrl self-heal. See Q5.
+/// screen. Prefers [iconUrl] (JS / index-provided), then [ExtensionIconCache]
+/// for Mihon APK pkg names.
 class _LargePkgExtensionIcon extends StatefulWidget {
   final String pkg;
   final KomaColors colors;
+  final String? iconUrl;
 
-  const _LargePkgExtensionIcon({required this.pkg, required this.colors});
+  const _LargePkgExtensionIcon({
+    required this.pkg,
+    required this.colors,
+    this.iconUrl,
+  });
 
   @override
   State<_LargePkgExtensionIcon> createState() => _LargePkgExtensionIconState();
 }
 
 class _LargePkgExtensionIconState extends State<_LargePkgExtensionIcon> {
-  String? _url = ExtensionIconCache.iconUrlForPkg('');
+  String? _url;
 
   @override
   void initState() {
     super.initState();
-    _url = ExtensionIconCache.iconUrlForPkg(widget.pkg);
+    if (widget.iconUrl != null && widget.iconUrl!.isNotEmpty) {
+      _url = widget.iconUrl;
+    } else if (widget.pkg.isNotEmpty) {
+      _url = ExtensionIconCache.iconUrlForPkg(widget.pkg);
+    }
     _resolveFromCache();
   }
 
   Future<void> _resolveFromCache() async {
+    if (widget.pkg.isEmpty) return;
     final cached = await ExtensionIconCache.instance.cachedIconUrl(widget.pkg);
     if (!mounted) return;
+    // Don't override a working JS/index iconUrl with a pkg-derived miss.
+    if (widget.iconUrl != null && widget.iconUrl!.isNotEmpty) return;
     if (cached != null && cached.isNotEmpty && cached != _url) {
       setState(() => _url = cached);
     }

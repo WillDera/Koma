@@ -27,6 +27,9 @@ class ReaderViewProps {
   final VoidCallback onLongPress;
   final ValueChanged<int> onRetryPage;
 
+  /// Bumped per-page when the user taps Reload so image widgets remount.
+  final Map<int, int> pageRetryTokens;
+
   const ReaderViewProps({
     required this.pages,
     required this.settings,
@@ -37,5 +40,6 @@ class ReaderViewProps {
     required this.onToggleToolbar,
     required this.onLongPress,
     required this.onRetryPage,
+    this.pageRetryTokens = const {},
   });
 }

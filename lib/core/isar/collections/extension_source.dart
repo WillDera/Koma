@@ -1,20 +1,22 @@
 import 'package:isar_community/isar.dart';
 
+import '../../utils/language.dart';
+
 part 'extension_source.g.dart';
 
-/// One installed Keiyoushi/Mihon APK extension OR (future, PHASE 9) a
-/// JS extension. The `id` is the native bridge's MD5-based ID for Mihon
-/// sources, or a synthetic ID we mint for JS sources.
+/// One installed Keiyoushi/Mihon APK extension OR a JS extension.
 @collection
 @Name('ExtensionSource')
 class ExtensionSource {
   Id? id;
 
-  /// Native bridge MD5 ID (Mihon) or synthetic ID (JS). Stored as String
-  /// in the existing schema; we use Isar.autoIncrement for the row PK and
-  /// keep [sourceId] as the stable logical identifier.
+  /// Bridge cache key (hex for Mihon APKs, catalog pkg id for JS).
   @Index(unique: true, replace: true)
   String sourceId;
+
+  /// Mihon `Source.id` as string (long numeric). Empty for JS.
+  /// Persisted so library pills can resolve manga that still store this id.
+  String nativeId;
 
   String name;
   String version;
@@ -32,26 +34,50 @@ class ExtensionSource {
   String? sourceCodeUrl;
   String? repoUrl;
 
+  /// Mangayomi JS API base (e.g. MangaDex). Null/empty when unused.
+  String? apiUrl;
+
+  /// Whether the source sits behind Cloudflare (mangayomi).
+  bool hasCloudflare;
+
+  /// Product kind: `manga` / `anime` / `novel`. Koma is manga-only UI;
+  /// field is persisted for index/JS fidelity.
+  String itemType;
+
+  /// JS source body (mangayomi). Empty for Mihon APKs.
+  String sourceCode;
+
+  /// Package name from the APK (trust key). Empty until inspected.
+  String pkgName;
+
+  /// Package versionCode from the APK.
+  int versionCode;
+
+  /// Primary (last) SHA-256 signing fingerprint. Empty until inspected.
+  String signatureHash;
+
   bool isInstalled;
   bool isActive;
   bool isNsfw;
   bool isPinned;
   bool isObsolete;
 
-  /// `mihon` for the native Keiyoushi bridge, `js` for the flutter_qjs
-  /// runtime. Added in PHASE 1a (not in the existing Drift schema) so
-  /// the unified ExtensionService in PHASE 10 can dispatch correctly.
-  /// Default `mihon` matches the existing data.
+  /// `mihon` for the native Keiyoushi bridge, `js` for flutter_qjs.
   String sourceCodeLanguage;
 
   DateTime? createdAt;
   DateTime? updatedAt;
 
-  bool get isUpdateAvailable => versionLast != null && versionLast != version;
+  bool get isUpdateAvailable {
+    final latest = versionLast;
+    if (latest == null || latest.isEmpty) return false;
+    return compareVersions(version, latest) < 0;
+  }
 
   ExtensionSource copyWith({
     Id? id,
     String? sourceId,
+    String? nativeId,
     String? name,
     String? version,
     String? versionLast,
@@ -62,6 +88,13 @@ class ExtensionSource {
     String? baseUrl,
     String? sourceCodeUrl,
     String? repoUrl,
+    String? apiUrl,
+    bool? hasCloudflare,
+    String? itemType,
+    String? sourceCode,
+    String? pkgName,
+    int? versionCode,
+    String? signatureHash,
     bool? isInstalled,
     bool? isActive,
     bool? isNsfw,
@@ -74,6 +107,7 @@ class ExtensionSource {
     return ExtensionSource(
       id: id ?? this.id,
       sourceId: sourceId ?? this.sourceId,
+      nativeId: nativeId ?? this.nativeId,
       name: name ?? this.name,
       version: version ?? this.version,
       versionLast: versionLast ?? this.versionLast,
@@ -84,6 +118,13 @@ class ExtensionSource {
       baseUrl: baseUrl ?? this.baseUrl,
       sourceCodeUrl: sourceCodeUrl ?? this.sourceCodeUrl,
       repoUrl: repoUrl ?? this.repoUrl,
+      apiUrl: apiUrl ?? this.apiUrl,
+      hasCloudflare: hasCloudflare ?? this.hasCloudflare,
+      itemType: itemType ?? this.itemType,
+      sourceCode: sourceCode ?? this.sourceCode,
+      pkgName: pkgName ?? this.pkgName,
+      versionCode: versionCode ?? this.versionCode,
+      signatureHash: signatureHash ?? this.signatureHash,
       isInstalled: isInstalled ?? this.isInstalled,
       isActive: isActive ?? this.isActive,
       isNsfw: isNsfw ?? this.isNsfw,
@@ -98,6 +139,7 @@ class ExtensionSource {
   ExtensionSource({
     this.id = Isar.autoIncrement,
     required this.sourceId,
+    this.nativeId = '',
     required this.name,
     required this.version,
     this.versionLast,
@@ -108,6 +150,13 @@ class ExtensionSource {
     this.baseUrl,
     this.sourceCodeUrl,
     this.repoUrl,
+    this.apiUrl,
+    this.hasCloudflare = false,
+    this.itemType = 'manga',
+    this.sourceCode = '',
+    this.pkgName = '',
+    this.versionCode = 0,
+    this.signatureHash = '',
     this.isInstalled = true,
     this.isActive = true,
     this.isNsfw = false,
@@ -121,6 +170,7 @@ class ExtensionSource {
   Map<String, dynamic> toJson() => {
     'id': id,
     'source_id': sourceId,
+    'native_id': nativeId,
     'name': name,
     'version': version,
     'version_last': versionLast,
@@ -131,6 +181,13 @@ class ExtensionSource {
     'base_url': baseUrl,
     'source_code_url': sourceCodeUrl,
     'repo_url': repoUrl,
+    'api_url': apiUrl,
+    'has_cloudflare': hasCloudflare ? 1 : 0,
+    'item_type': itemType,
+    'source_code': sourceCode,
+    'pkg_name': pkgName,
+    'version_code': versionCode,
+    'signature_hash': signatureHash,
     'is_installed': isInstalled ? 1 : 0,
     'is_active': isActive ? 1 : 0,
     'is_nsfw': isNsfw ? 1 : 0,
@@ -144,7 +201,8 @@ class ExtensionSource {
   factory ExtensionSource.fromJson(Map<String, dynamic> json) =>
       ExtensionSource(
         id: json['id'] as int?,
-        sourceId: json['source_id'] as String? ?? json['id'] as String? ?? '',
+        sourceId: json['source_id'] as String? ?? '',
+        nativeId: json['native_id'] as String? ?? '',
         name: json['name'] as String? ?? '',
         version: json['version'] as String? ?? '',
         versionLast: json['version_last'] as String?,
@@ -155,6 +213,14 @@ class ExtensionSource {
         baseUrl: json['base_url'] as String?,
         sourceCodeUrl: json['source_code_url'] as String?,
         repoUrl: json['repo_url'] as String?,
+        apiUrl: json['api_url'] as String?,
+        hasCloudflare: (json['has_cloudflare'] as int? ?? 0) == 1 ||
+            json['has_cloudflare'] == true,
+        itemType: json['item_type'] as String? ?? 'manga',
+        sourceCode: json['source_code'] as String? ?? '',
+        pkgName: json['pkg_name'] as String? ?? '',
+        versionCode: (json['version_code'] as num?)?.toInt() ?? 0,
+        signatureHash: json['signature_hash'] as String? ?? '',
         isInstalled: (json['is_installed'] as int? ?? 0) == 1,
         isActive: (json['is_active'] as int? ?? 1) == 1,
         isNsfw: (json['is_nsfw'] as int? ?? 0) == 1,

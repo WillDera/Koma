@@ -20,12 +20,18 @@ class BookCover extends StatelessWidget {
   final BorderRadius? borderRadius;
   final BoxFit fit;
 
+  /// When true, fill the parent (no intrinsic AspectRatio / fixed size).
+  /// Use inside Expanded / Positioned.fill grid cells so title rows never
+  /// overflow the SliverGrid cell.
+  final bool expand;
+
   const BookCover({
     super.key,
     required this.book,
     this.variant = BookCoverVariant.grid,
     this.borderRadius,
     this.fit = BoxFit.cover,
+    this.expand = false,
   });
 
   @override
@@ -35,7 +41,7 @@ class BookCover extends StatelessWidget {
         borderRadius ??
         switch (variant) {
           BookCoverVariant.grid => AppSpacing.brMd,
-          BookCoverVariant.list => AppSpacing.brSm,
+          BookCoverVariant.list => AppSpacing.brMd,
           BookCoverVariant.hero => AppSpacing.brLg,
           BookCoverVariant.compact => AppSpacing.brSm,
         };
@@ -45,12 +51,17 @@ class BookCover extends StatelessWidget {
         ? Image.file(
             File(book.coverPath!),
             fit: fit,
+            width: expand ? double.infinity : null,
+            height: expand ? double.infinity : null,
             errorBuilder: (_, _, _) => _placeholder(c),
           )
         : _placeholder(c);
 
     final child = ClipRRect(borderRadius: radius, child: image);
 
+    if (expand) {
+      return SizedBox.expand(child: child);
+    }
     if (variant == BookCoverVariant.grid || variant == BookCoverVariant.hero) {
       return AspectRatio(
         aspectRatio: AppSpacing.coverAspectRatio,
@@ -58,7 +69,8 @@ class BookCover extends StatelessWidget {
       );
     }
     if (variant == BookCoverVariant.list) {
-      return SizedBox(width: 44, height: 64, child: child);
+      // Figma list row thumbnails: 52×74.
+      return SizedBox(width: 52, height: 74, child: child);
     }
     return SizedBox(width: 32, height: 44, child: child);
   }

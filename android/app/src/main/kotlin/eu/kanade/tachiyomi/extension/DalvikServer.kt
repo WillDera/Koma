@@ -6,7 +6,7 @@ import android.content.pm.PackageManager
 import android.util.Base64
 import android.util.Log
 import eu.kanade.tachiyomi.network.NetworkHelper
-import eu.kanade.tachiyomi.network.defaultClient
+import eu.kanade.tachiyomi.source.ConfigurableSource
 import eu.kanade.tachiyomi.source.Source
 import eu.kanade.tachiyomi.source.SourceFactory
 import eu.kanade.tachiyomi.source.model.Filter
@@ -33,7 +33,6 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.put
 import mihon.core.common.extensions.EMPTY
-import okhttp3.OkHttpClient
 import uy.kohesive.injekt.Injekt
 import uy.kohesive.injekt.api.InjektModule
 import uy.kohesive.injekt.api.InjektRegistrar
@@ -42,6 +41,7 @@ import uy.kohesive.injekt.api.addSingletonFactory
 import uy.kohesive.injekt.api.get
 import java.io.BufferedReader
 import java.io.File
+import java.io.IOException
 import java.io.InputStreamReader
 import java.io.OutputStream
 import java.net.ServerSocket
@@ -90,6 +90,55 @@ class DalvikServer(
         File(context.cacheDir, "dex-extensions").also { it.mkdirs() }
     }
 
+    /**
+     * Looks up a loaded [HttpSource] by hex bridge id or Mihon numeric
+     * [Source.id]. Used by SourcePreferencesActivity (outside the TCP API).
+     */
+    fun findHttpSource(sourceId: String): HttpSource? {
+        if (sourceId.isBlank()) return null
+        loadedExtensions[sourceId]?.source?.let { return it }
+        for ((_, candidate) in loadedExtensions) {
+            if (candidate.source.id.toString() == sourceId) return candidate.source
+        }
+        return null
+    }
+
+    fun isConfigurableSource(sourceId: String): Boolean =
+        findHttpSource(sourceId) is ConfigurableSource
+
+    /**
+     * Load (or reuse) an extension APK and return whether the resulting source
+     * implements [ConfigurableSource].
+     */
+    @Synchronized
+    fun ensureLoadedAndConfigurable(apkPath: String, preferredSourceId: String? = null): Boolean {
+        ensureInjekt()
+        val apkFile = File(apkPath)
+        if (!apkFile.exists()) return false
+        // Prefer existing entry matching path or preferred id.
+        if (preferredSourceId != null) {
+            findHttpSource(preferredSourceId)?.let { return it is ConfigurableSource }
+        }
+        for ((_, ext) in loadedExtensions) {
+            if (ext.apkPath == apkPath) return ext.source is ConfigurableSource
+        }
+        return try {
+            val root = buildJsonObject {
+                put("apkPath", apkPath)
+            }
+            val resp = handleLoadExtension(root)
+            val parsed = json.parseToJsonElement(resp) as? JsonObject ?: return false
+            if (parsed.containsKey("error")) return false
+            val sid = (parsed["sourceId"] as? JsonPrimitive)?.content
+                ?: preferredSourceId
+                ?: return false
+            findHttpSource(sid) is ConfigurableSource
+        } catch (e: Exception) {
+            Log.e(TAG, "ensureLoadedAndConfigurable failed", e)
+            false
+        }
+    }
+
     @Synchronized
     fun start(): Int {
         if (isRunning) return _port
@@ -136,11 +185,11 @@ class DalvikServer(
         Injekt.importModule(object : InjektModule {
             override fun InjektRegistrar.registerInjectables() {
                 addSingleton(app)
-                addSingletonFactory { defaultClient(context) }
+                addSingletonFactory { NetworkHelper(app) }
                 addSingletonFactory {
                     Json { ignoreUnknownKeys = true; explicitNulls = false; isLenient = true }
                 }
-                addSingletonFactory { NetworkHelper(Injekt.get<OkHttpClient>()) }
+                addSingletonFactory { Injekt.get<NetworkHelper>().client }
             }
         })
     }
@@ -306,6 +355,29 @@ class DalvikServer(
             throw RuntimeException("Failed to create classloader for $apkPath", e)
         }
 
+        // Prove host-patched keiyoushi WebView wins over the copy inside the APK.
+        try {
+            val webViewKt = classLoader.loadClass("keiyoushi.utils.WebViewKt")
+            val fromHost = webViewKt.classLoader !== classLoader
+            Log.d(
+                TAG,
+                "WebViewKt loader=${webViewKt.classLoader} fromHost=$fromHost",
+            )
+            if (!fromHost) {
+                Log.e(TAG, "WebViewKt loaded from extension APK — SW stub will NOT apply")
+            }
+        } catch (e: Throwable) {
+            Log.e(TAG, "Failed to resolve keiyoushi.utils.WebViewKt from host", e)
+            throw RuntimeException(
+                "Host keiyoushi.utils.WebViewKt missing — ServiceWorker stub unavailable",
+                e,
+            )
+        }
+
+        // Keep host WebView symbols reachable for the dex linker / R8.
+        @Suppress("UNUSED_VARIABLE")
+        val keep = keiyoushi.utils.WebViewTimeoutException::class.java
+
         val clazz = try {
             classLoader.loadClass(resolvedClassName)
         } catch (e: Throwable) {
@@ -393,9 +465,23 @@ class DalvikServer(
             }
             val bodyStr = String(body, 0, read)
 
-            val response = handleRequest(bodyStr)
-            sendResponse(output, 200, response)
-            Log.d(TAG, "handleClient: response sent")
+            // downloadChapters streams NDJSON progress lines; other methods
+            // return a single JSON body via sendResponse.
+            val streamMethod = try {
+                val root = json.parseToJsonElement(bodyStr) as? JsonObject
+                (root?.get("method") as? JsonPrimitive)?.content
+            } catch (_: Throwable) {
+                null
+            }
+            if (streamMethod == "downloadChapters") {
+                val root = json.parseToJsonElement(bodyStr) as JsonObject
+                streamDownloadChapters(output, root)
+                Log.d(TAG, "handleClient: ndjson download stream finished")
+            } else {
+                val response = handleRequest(bodyStr)
+                sendResponse(output, 200, response)
+                Log.d(TAG, "handleClient: response sent")
+            }
         } catch (e: Throwable) {
             Log.e(TAG, "handleClient: caught", e)
         } finally {
@@ -503,16 +589,14 @@ class DalvikServer(
                 "getMangaDetails" -> {
                     val url = root.str("url") ?: return errorJson("missing url")
                     withLoadedExtension(root.str("sourceId"), data) { src ->
-                        val manga = SManga.create().apply {
-                            this.url = url
-                            memo = root.memo()
-                        }
+                        // Mihon parity: hydrate catalogue fields (title/memo/…) before
+                        // getMangaUpdate — AllAnime and similar sources NPE on empty memo.
+                        val manga = hydrateSManga(root)
                         val result = try {
                             runBlocking { src.getMangaUpdate(manga, emptyList(), fetchDetails = true, fetchChapters = false) }
                         } catch (e: Exception) {
                             Log.e(TAG, "getMangaDetails failed for $url", e)
-                            manga.also { it.initialized = true }
-                            return@withLoadedExtension json.encodeToString(manga.toMap().toJsonObject())
+                            return@withLoadedExtension errorJson("getMangaDetails failed: ${e.message}")
                         }
                         val details = result.manga
                         if (!details.initialized) details.initialized = true
@@ -522,19 +606,14 @@ class DalvikServer(
                 "getMangaUpdate" -> {
                     val url = root.str("url") ?: return errorJson("missing url")
                     withLoadedExtension(root.str("sourceId"), data) { src ->
-                        val manga = SManga.create().apply {
-                            this.url = url
-                            memo = root.memo()
-                        }
+                        val manga = hydrateSManga(root)
                         val update = try {
                             runBlocking { src.getMangaUpdate(manga, emptyList(), fetchDetails = true, fetchChapters = true) }
                         } catch (e: Exception) {
                             Log.e(TAG, "getMangaUpdate failed for $url", e)
-                            manga.also { it.initialized = true }
-                            return@withLoadedExtension json.encodeToString(buildJsonObject {
-                                put("manga", manga.toMap().toJsonObject())
-                                put("chapters", JsonArray(emptyList()))
-                            })
+                            // Do not return a fake empty manga — Dart treats that as
+                            // success and wipes the seeded catalogue title.
+                            return@withLoadedExtension errorJson("getMangaUpdate failed: ${e.message}")
                         }
                         json.encodeToString(buildJsonObject {
                             put("manga", update.manga.toMap().toJsonObject())
@@ -545,15 +624,12 @@ class DalvikServer(
                 "getChapterList" -> {
                     val url = root.str("url") ?: return errorJson("missing url")
                     withLoadedExtension(root.str("sourceId"), data) { src ->
-                        val manga = SManga.create().apply {
-                            this.url = url
-                            memo = root.memo()
-                        }
+                        val manga = hydrateSManga(root)
                         val update = try {
                             runBlocking { src.getMangaUpdate(manga, emptyList(), fetchDetails = false, fetchChapters = true) }
                         } catch (e: Exception) {
                             Log.e(TAG, "getChapterList failed for $url", e)
-                            return@withLoadedExtension json.encodeToString(JsonArray(emptyList()))
+                            return@withLoadedExtension errorJson("getChapterList failed: ${e.message}")
                         }
                         json.encodeToString(JsonArray(update.chapters.map { it.toMap().toJsonObject() }))
                     }
@@ -566,7 +642,7 @@ class DalvikServer(
                             memo = root.memo()
                         }
                         val pages = runBlocking {
-                            src.getPageList(chapter).map { page ->
+                            resolvePageList(src, chapter).map { page ->
                                 val headers = try {
                                     src.getImageRequestHeaders(page).toMap()
                                 } catch (_: Exception) {
@@ -578,67 +654,7 @@ class DalvikServer(
                         json.encodeToString(pages.toJsonElement())
                     }
                 }
-                "downloadChapters" -> {
-                    val mangaUrl = root.str("mangaUrl") ?: return errorJson("missing mangaUrl")
-                    val chapterUrls = (root["chapterUrls"] as? JsonArray)?.map { (it as? JsonPrimitive)?.content ?: "" } ?: emptyList()
-                    val chapterNames = (root["chapterNames"] as? JsonArray)?.map { (it as? JsonPrimitive)?.content ?: "" } ?: emptyList()
-                    val chapterMemos = (root["chapterMemos"] as? JsonArray)?.map {
-                        (it as? JsonPrimitive)?.content ?: ""
-                    } ?: emptyList()
-                    val sourceId = root.str("sourceId") ?: ""
-                    withLoadedExtension(root.str("sourceId"), data) { src ->
-                        val mangaKey = sha256(mangaUrl).take(16)
-                        val baseDir = File(context.filesDir, "manga/$sourceId/$mangaKey")
-                        baseDir.mkdirs()
-                        val result = mutableMapOf<String, List<String>>()
-                        for ((i, chapterUrl) in chapterUrls.withIndex()) {
-                            val chName = chapterNames.getOrElse(i) { chapterUrl }
-                            val chKey = sha256(chapterUrl).take(16)
-                            val chDir = File(baseDir, chKey)
-                            chDir.mkdirs()
-                            val existing = chDir.listFiles()?.filter { it.isFile }?.sortedBy { it.name }
-                            if (existing != null && existing.isNotEmpty()) {
-                                result[chapterUrl] = existing.map { it.toURI().toString() }
-                                continue
-                            }
-                            val chapter = SChapter.create().apply {
-                                url = chapterUrl
-                                name = chName
-                                memo = chapterMemos.getOrElse(i) { "" }.let {
-                                    if (it.isBlank()) JsonObject.EMPTY
-                                    else runCatching { json.parseToJsonElement(it).jsonObject }
-                                        .getOrDefault(JsonObject.EMPTY)
-                                }
-                            }
-                            val pages: List<Page> = runBlocking { src.getPageList(chapter) }
-                            val localPaths = mutableListOf<String>()
-                            for (page in pages) {
-                                try {
-                                    if (page.imageUrl == null) {
-                                        page.imageUrl = runBlocking { src.getImageUrl(page) }
-                                    }
-                                    if (page.imageUrl.isNullOrEmpty()) continue
-                                    val response = runBlocking { src.getImage(page) }
-                                    if (!response.isSuccessful) {
-                                        Log.w(TAG, "download: HTTP ${response.code} for page ${page.index}")
-                                        response.close()
-                                        continue
-                                    }
-                                    val bytes = response.body.bytes()
-                                    response.close()
-                                    if (bytes == null || bytes.isEmpty()) continue
-                                    val file = File(chDir, "${page.index}.jpg")
-                                    file.writeBytes(bytes)
-                                    localPaths.add(file.toURI().toString())
-                                } catch (e: Exception) {
-                                    Log.e(TAG, "download: failed page ${page.index} of $chName", e)
-                                }
-                            }
-                            if (localPaths.isNotEmpty()) result[chapterUrl] = localPaths
-                        }
-                        json.encodeToString(result.toJsonElement())
-                    }
-                }
+                // downloadChapters is handled as an NDJSON stream in handleClient.
                 "getLocalPages" -> {
                     val sourceId = root.str("sourceId") ?: return errorJson("missing sourceId")
                     val mangaUrl = root.str("mangaUrl") ?: return errorJson("missing mangaUrl")
@@ -653,6 +669,44 @@ class DalvikServer(
                         ?.map { it.absolutePath }
                         ?: emptyList()
                     json.encodeToString(paths.toJsonElement())
+                }
+                "deleteChapters" -> {
+                    // Filesystem-only — no extension load required (Mihon
+                    // DownloadManager.deleteChapters parity).
+                    val sourceId = root.str("sourceId") ?: return errorJson("missing sourceId")
+                    val mangaUrl = root.str("mangaUrl") ?: return errorJson("missing mangaUrl")
+                    val chapterUrls = (root["chapterUrls"] as? JsonArray)
+                        ?.map { (it as? JsonPrimitive)?.content ?: "" }
+                        ?.filter { it.isNotBlank() }
+                        ?: emptyList()
+                    val mangaKey = sha256(mangaUrl).take(16)
+                    val mangaDir = File(context.filesDir, "manga/$sourceId/$mangaKey")
+                    val deleted = mutableListOf<String>()
+                    for (chapterUrl in chapterUrls) {
+                        val chKey = sha256(chapterUrl).take(16)
+                        val chDir = File(mangaDir, chKey)
+                        try {
+                            if (chDir.exists()) {
+                                chDir.deleteRecursively()
+                            }
+                            // Missing dir still counts as deleted (already gone).
+                            deleted.add(chapterUrl)
+                        } catch (e: Exception) {
+                            Log.e(TAG, "deleteChapters: failed $chapterUrl", e)
+                        }
+                    }
+                    // Prune empty manga directory (Mihon empty-manga prune).
+                    try {
+                        val leftover = mangaDir.listFiles()
+                        if (mangaDir.isDirectory && (leftover == null || leftover.isEmpty())) {
+                            mangaDir.delete()
+                        }
+                    } catch (e: Exception) {
+                        Log.w(TAG, "deleteChapters: prune manga dir failed", e)
+                    }
+                    json.encodeToString(buildJsonObject {
+                        put("deleted", JsonArray(deleted.map { JsonPrimitive(it) }))
+                    })
                 }
                 "getExtensionMetadata" -> {
                     withLoadedExtension(root.str("sourceId"), data) { src ->
@@ -688,6 +742,87 @@ class DalvikServer(
 
     // -- Helpers -----------------------------------------------------------
 
+    /**
+     * Download a single page with Mihon Downloader–style retries (3 attempts,
+     * 2s / 4s backoff). Returns true when a non-empty file was written.
+     */
+    private fun downloadPageWithRetry(
+        src: HttpSource,
+        page: Page,
+        file: File,
+        chapterName: String,
+    ): Boolean {
+        var lastError: Exception? = null
+        for (attempt in 0 until 3) {
+            try {
+                if (page.imageUrl.isNullOrEmpty()) {
+                    page.imageUrl = runBlocking { src.getImageUrl(page) }
+                }
+                if (page.imageUrl.isNullOrEmpty()) {
+                    throw IOException("empty imageUrl for page ${page.index}")
+                }
+                val response = runBlocking { src.getImage(page) }
+                try {
+                    if (!response.isSuccessful) {
+                        throw IOException("HTTP ${response.code} for page ${page.index}")
+                    }
+                    val bytes = response.body.bytes()
+                    if (bytes == null || bytes.isEmpty()) {
+                        throw IOException("empty body for page ${page.index}")
+                    }
+                    file.parentFile?.mkdirs()
+                    // Write via temp then rename so a crashed attempt does not
+                    // leave a truncated JPEG counted as "exists".
+                    val tmp = File(file.parentFile, "${file.name}.tmp")
+                    tmp.writeBytes(bytes)
+                    if (file.exists()) file.delete()
+                    if (!tmp.renameTo(file)) {
+                        tmp.copyTo(file, overwrite = true)
+                        tmp.delete()
+                    }
+                    return file.exists() && file.length() > 0L
+                } finally {
+                    response.close()
+                }
+            } catch (e: Exception) {
+                lastError = e
+                Log.w(
+                    TAG,
+                    "download: page ${page.index} of $chapterName " +
+                        "attempt ${attempt + 1}/3 failed: ${e.message}",
+                )
+                if (attempt < 2) {
+                    try {
+                        Thread.sleep((2L shl attempt) * 1000L)
+                    } catch (_: InterruptedException) {
+                    }
+                }
+            }
+        }
+        Log.e(TAG, "download: giving up page ${page.index} of $chapterName", lastError)
+        return false
+    }
+
+    /**
+     * Build an [SManga] with the same fields Mihon puts in `Manga.toSManga()`
+     * before calling `getMangaUpdate`. Extensions such as AllAnime read
+     * memo/title during details fetch and NPE when they stay at defaults.
+     */
+    private fun hydrateSManga(root: JsonObject): SManga {
+        val url = root.str("url") ?: ""
+        return SManga.create().apply {
+            this.url = url
+            title = root.str("title") ?: ""
+            artist = root.str("artist")
+            author = root.str("author")
+            description = root.str("description")
+            genre = root.str("genre")
+            status = root.int("status") ?: 0
+            thumbnail_url = root.str("thumbnail_url")
+            memo = root.memo()
+        }
+    }
+
     private fun JsonObject.str(key: String): String? = (this[key] as? JsonPrimitive)?.content
 
     private fun JsonObject.int(key: String): Int? = str(key)?.toIntOrNull()
@@ -717,6 +852,149 @@ class DalvikServer(
         output.write(response.toByteArray(StandardCharsets.UTF_8))
         output.write(bodyBytes)
         output.flush()
+    }
+
+    /** Open an HTTP response that streams one JSON object per line. */
+    private fun beginNdjsonResponse(output: OutputStream) {
+        val header = "HTTP/1.1 200 OK\r\n" +
+            "Content-Type: application/x-ndjson\r\n" +
+            "Connection: close\r\n" +
+            "\r\n"
+        output.write(header.toByteArray(StandardCharsets.UTF_8))
+        output.flush()
+    }
+
+    private fun writeNdjsonLine(output: OutputStream, obj: JsonObject) {
+        val line = json.encodeToString(obj as JsonElement) + "\n"
+        output.write(line.toByteArray(StandardCharsets.UTF_8))
+        output.flush()
+    }
+
+    /**
+     * Streams download progress as NDJSON:
+     * - `{"type":"progress","chapterUrl":"...","done":n,"total":m}`
+     * - `{"type":"result","chapters":{ url: [paths...] }}`
+     * - `{"type":"error","message":"..."}` on fatal setup failure
+     */
+    private fun streamDownloadChapters(output: OutputStream, root: JsonObject) {
+        beginNdjsonResponse(output)
+        try {
+            val mangaUrl = root.str("mangaUrl")
+            if (mangaUrl == null) {
+                writeNdjsonLine(output, buildJsonObject {
+                    put("type", "error")
+                    put("message", "missing mangaUrl")
+                })
+                return
+            }
+            val chapterUrls = (root["chapterUrls"] as? JsonArray)
+                ?.map { (it as? JsonPrimitive)?.content ?: "" }
+                ?: emptyList()
+            val chapterNames = (root["chapterNames"] as? JsonArray)
+                ?.map { (it as? JsonPrimitive)?.content ?: "" }
+                ?: emptyList()
+            val chapterMemos = (root["chapterMemos"] as? JsonArray)
+                ?.map { (it as? JsonPrimitive)?.content ?: "" }
+                ?: emptyList()
+            val sourceId = root.str("sourceId") ?: ""
+            val data = (root["data"] as? JsonPrimitive)?.content
+
+            withLoadedExtension(root.str("sourceId"), data) { src ->
+                val mangaKey = sha256(mangaUrl).take(16)
+                val baseDir = File(context.filesDir, "manga/$sourceId/$mangaKey")
+                baseDir.mkdirs()
+                val result = mutableMapOf<String, List<String>>()
+                for ((i, chapterUrl) in chapterUrls.withIndex()) {
+                    if (chapterUrl.isBlank()) continue
+                    val chName = chapterNames.getOrElse(i) { chapterUrl }
+                    val chKey = sha256(chapterUrl).take(16)
+                    val chDir = File(baseDir, chKey)
+                    chDir.mkdirs()
+                    fun emitProgress(done: Int, total: Int) {
+                        writeNdjsonLine(output, buildJsonObject {
+                            put("type", "progress")
+                            put("chapterUrl", chapterUrl)
+                            put("done", done)
+                            put("total", total)
+                        })
+                    }
+                    try {
+                        val chapter = SChapter.create().apply {
+                            url = chapterUrl
+                            name = chName
+                            memo = chapterMemos.getOrElse(i) { "" }.let {
+                                if (it.isBlank()) JsonObject.EMPTY
+                                else runCatching { json.parseToJsonElement(it).jsonObject }
+                                    .getOrDefault(JsonObject.EMPTY)
+                            }
+                        }
+                        // Always re-fetch page list so we know the expected
+                        // count — never treat a non-empty directory as done.
+                        val pages: List<Page> = runBlocking { resolvePageList(src, chapter) }
+                        if (pages.isEmpty()) {
+                            Log.w(TAG, "download: empty page list for $chName")
+                            continue
+                        }
+                        emitProgress(0, pages.size)
+                        val localPaths = mutableListOf<String>()
+                        var allOk = true
+                        var aborted = false
+                        for ((pageIdx, page) in pages.withIndex()) {
+                            try {
+                                val file = File(chDir, "${page.index}.jpg")
+                                if (file.exists() && file.length() > 0L) {
+                                    localPaths.add(file.absolutePath)
+                                } else {
+                                    val saved = downloadPageWithRetry(src, page, file, chName)
+                                    if (saved) {
+                                        localPaths.add(file.absolutePath)
+                                    } else {
+                                        allOk = false
+                                    }
+                                }
+                                emitProgress(pageIdx + 1, pages.size)
+                            } catch (e: java.io.IOException) {
+                                // Client closed the socket (cancel/pause).
+                                Log.w(TAG, "download: client disconnected, aborting", e)
+                                aborted = true
+                                break
+                            }
+                        }
+                        if (aborted) {
+                            return@withLoadedExtension
+                        }
+                        // Mihon Downloader parity: only report success when
+                        // every page file exists.
+                        if (allOk && localPaths.size == pages.size) {
+                            result[chapterUrl] = localPaths
+                        } else {
+                            Log.w(
+                                TAG,
+                                "download: incomplete $chName " +
+                                    "${localPaths.size}/${pages.size} pages",
+                            )
+                        }
+                    } catch (e: Exception) {
+                        // One chapter (or CF challenge) failing must not
+                        // abort the rest of the batch.
+                        Log.e(TAG, "download: chapter failed $chName", e)
+                    }
+                }
+                writeNdjsonLine(output, buildJsonObject {
+                    put("type", "result")
+                    put("chapters", result.toJsonElement())
+                })
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "streamDownloadChapters: fatal", e)
+            try {
+                writeNdjsonLine(output, buildJsonObject {
+                    put("type", "error")
+                    put("message", e.message ?: "Download failed")
+                })
+            } catch (_: Exception) {
+            }
+        }
     }
 
     private fun sha256(input: String): String =
@@ -885,6 +1163,19 @@ class DalvikServer(
                 object : Filter.Group<Filter<*>>(name, subFilters) {}
             }
             else -> null
+        }
+    }
+
+    /**
+     * Page list entry point shared by reader RPC and downloads. Mkissa/AllManga
+     * is handled in-process — extension [HttpSource.getPageList] uses a
+     * R8-private runWebView that cannot be ClassLoader-replaced.
+     */
+    private suspend fun resolvePageList(src: HttpSource, chapter: SChapter): List<Page> {
+        return if (MkissaHostPageList.appliesTo(src)) {
+            MkissaHostPageList.fetch(src, chapter)
+        } else {
+            src.getPageList(chapter)
         }
     }
 }

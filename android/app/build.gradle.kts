@@ -1,7 +1,7 @@
 plugins {
     id("com.android.application") version "8.11.1"
     id("dev.flutter.flutter-gradle-plugin")
-    kotlin("android") version "2.2.20"
+    kotlin("android") version "2.4.10"
 }
 
 android {
@@ -28,6 +28,22 @@ android {
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
         versionName = flutter.versionName
+        externalNativeBuild {
+            cmake {
+                cppFlags += "-std=c++17"
+                arguments += listOf("-DANDROID_STL=c++_shared")
+            }
+        }
+        ndk {
+            abiFilters += listOf("arm64-v8a")
+        }
+    }
+
+    externalNativeBuild {
+        cmake {
+            path = file("src/main/cpp/CMakeLists.txt")
+            version = "3.22.1"
+        }
     }
 
     signingConfigs {
@@ -66,6 +82,9 @@ android {
     }
 
     packaging {
+        jniLibs {
+            pickFirsts += listOf("**/libonnxruntime.so", "**/libc++_shared.so")
+        }
         resources {
             excludes += setOf(
                 "META-INF/versions/9/OSGI-INF/MANIFEST.MF",
@@ -98,8 +117,15 @@ dependencies {
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json-okio:1.11.0")
     // RxJava 1 — source-api uses rx.Observable for deprecated fetch* methods
     implementation("io.reactivex:rxjava:1.3.8")
-    // AndroidX Preference — needed by ConfigurableSource
+    // AndroidX Preference — needed by ConfigurableSource + prefs Activity
     implementation("androidx.preference:preference-ktx:1.2.1")
+    implementation("androidx.appcompat:appcompat:1.7.0")
+    // FileProvider + MediaStore helpers for gallery export / share
+    implementation("androidx.core:core-ktx:1.15.0")
     // Keiyoushi extensions expect Injekt (dependency injection) at runtime
     implementation("com.github.mihonapp:injekt:91edab2317")
+    // Piper TTS — packages libonnxruntime.so into the APK. koma_piper links
+    // against the same version unpacked by src/main/cpp/CMakeLists.txt; keep
+    // ONNXRUNTIME_VERSION there in sync with this coordinate.
+    implementation("com.microsoft.onnxruntime:onnxruntime-android:1.22.0")
 }

@@ -4,10 +4,13 @@ import 'package:go_router/go_router.dart';
 import '../app.dart' show routeObserver;
 import '../core/models/manga.dart';
 import '../features/discover/discover_screen.dart';
+import '../features/downloads/download_queue_screen.dart';
 import '../features/extensions/extensions_screen.dart';
+import '../features/extensions/global_search_screen.dart';
 import '../features/extensions/manga_detail_screen.dart';
 import '../features/extensions/sources_screen.dart';
 import '../features/history/history_screen.dart';
+import '../features/library/book_detail_screen.dart';
 import '../features/library/library_screen.dart';
 import '../features/reader/manga_reader_screen.dart';
 import '../features/reader/reader_screen.dart';
@@ -29,10 +32,13 @@ abstract final class Routes {
 
   // Detail (pushed above the shell)
   static const reader = 'reader';
+  static const bookDetail = 'bookDetail';
   static const mangaReader = 'mangaReader';
   static const mangaDetail = 'mangaDetail';
   static const extensions = 'extensions';
   static const sources = 'sources';
+  static const downloadQueue = 'downloadQueue';
+  static const globalSearch = 'globalSearch';
 }
 
 // ── Typed argument records for detail routes ─────────────────────────
@@ -58,6 +64,8 @@ typedef ReaderArgs = ({
   int? snippetEndOffset,
 });
 
+typedef BookDetailArgs = ({int bookId});
+
 typedef MangaReaderArgs = ({
   int? mangaId,
   String sourceId,
@@ -72,6 +80,7 @@ typedef MangaDetailArgs = ({
   String url,
   String title,
   Manga? manga,
+  String? memo,
 });
 
 final GlobalKey<NavigatorState> rootNavigatorKey = GlobalKey<NavigatorState>(
@@ -132,15 +141,6 @@ final GoRouter appRouter = GoRouter(
         StatefulShellBranch(
           routes: [
             GoRoute(
-              path: '/search',
-              name: Routes.search,
-              builder: (context, state) => const SearchScreen(),
-            ),
-          ],
-        ),
-        StatefulShellBranch(
-          routes: [
-            GoRoute(
               path: '/settings',
               name: Routes.settings,
               builder: (context, state) => const SettingsScreen(),
@@ -151,6 +151,13 @@ final GoRouter appRouter = GoRouter(
     ),
 
     // ── Detail routes (above the shell) ──────────────────────────────
+    // Library-wide search is pushed from the Library header (not a tab).
+    GoRoute(
+      path: '/search',
+      name: Routes.search,
+      parentNavigatorKey: rootNavigatorKey,
+      builder: (context, state) => const SearchScreen(),
+    ),
     GoRoute(
       path: '/reader',
       name: Routes.reader,
@@ -164,6 +171,15 @@ final GoRouter appRouter = GoRouter(
           snippetStartOffset: a.snippetStartOffset,
           snippetEndOffset: a.snippetEndOffset,
         );
+      },
+    ),
+    GoRoute(
+      path: '/book-detail',
+      name: Routes.bookDetail,
+      parentNavigatorKey: rootNavigatorKey,
+      builder: (context, state) {
+        final a = state.extra as BookDetailArgs;
+        return BookDetailScreen(bookId: a.bookId);
       },
     ),
     GoRoute(
@@ -221,6 +237,7 @@ final GoRouter appRouter = GoRouter(
           url: a.url,
           title: a.title,
           manga: a.manga,
+          memo: a.memo ?? a.manga?.memo,
         );
       },
     ),
@@ -235,6 +252,21 @@ final GoRouter appRouter = GoRouter(
       name: Routes.sources,
       parentNavigatorKey: rootNavigatorKey,
       builder: (context, state) => const SourcesScreen(),
+    ),
+    GoRoute(
+      path: '/global-search',
+      name: Routes.globalSearch,
+      parentNavigatorKey: rootNavigatorKey,
+      builder: (context, state) {
+        final q = state.extra is String ? state.extra as String : null;
+        return GlobalSearchScreen(initialQuery: q);
+      },
+    ),
+    GoRoute(
+      path: '/download-queue',
+      name: Routes.downloadQueue,
+      parentNavigatorKey: rootNavigatorKey,
+      builder: (context, state) => const DownloadQueueScreen(),
     ),
   ],
 );

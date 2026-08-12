@@ -29,19 +29,29 @@ class ReaderPageImage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final imgUrl = page.imageUrl;
+    final localPath = page.localPath;
 
     if (webtoon) {
+      // Prefer on-disk pages (downloaded chapters) — must check before the
+      // empty-URL guard so offline reading does not render as broken.
+      if (localPath != null && localPath.isNotEmpty) {
+        return Image(
+          image: FileImage(File(localPath)),
+          key: ValueKey('p${page.chapter?.id ?? 0}-${page.index}-local'),
+          fit: BoxFit.contain,
+          width: double.infinity,
+          errorBuilder: (_, _, _) => _brokenBox(),
+        );
+      }
       if (imgUrl.isEmpty) return _brokenBox();
       return Image(
-        image: page.localPath != null
-            ? FileImage(File(page.localPath!))
-            : CustomExtendedNetworkImageProvider(
-                imgUrl,
-                headers: page.headers,
-                cacheMaxAge: const Duration(days: 7),
-                imageCacheFolderName: 'cacheimagemanga',
-                showCloudFlareError: true,
-              ),
+        image: CustomExtendedNetworkImageProvider(
+          imgUrl,
+          headers: page.headers,
+          cacheMaxAge: const Duration(days: 7),
+          imageCacheFolderName: 'cacheimagemanga',
+          showCloudFlareError: true,
+        ),
         key: ValueKey('p${page.chapter?.id ?? 0}-${page.index}'),
         fit: BoxFit.contain,
         width: double.infinity,
@@ -53,7 +63,7 @@ class ReaderPageImage extends StatelessWidget {
                 ),
               )
             : child,
-        errorBuilder: (_, _, _) => _brokenBox(),
+        errorBuilder: (_, _, _) => _retryColumn(),
       );
     }
 
@@ -88,12 +98,7 @@ class ReaderPageImage extends StatelessWidget {
     );
   }
 
-  Widget _brokenBox() => const AspectRatio(
-    aspectRatio: 16 / 9,
-    child: Center(
-      child: Icon(Icons.broken_image, color: Colors.white38, size: 48),
-    ),
-  );
+  Widget _brokenBox() => _retryColumn();
 
   Widget _retryColumn() => Center(
     child: Column(
@@ -104,7 +109,10 @@ class ReaderPageImage extends StatelessWidget {
         TextButton.icon(
           onPressed: onRetry,
           icon: const Icon(Icons.refresh, color: Colors.white54),
-          label: const Text('Retry', style: TextStyle(color: Colors.white54)),
+          label: const Text(
+            'Reload image',
+            style: TextStyle(color: Colors.white54),
+          ),
         ),
       ],
     ),

@@ -1,172 +1,347 @@
+import 'dart:async';
+import 'dart:convert';
+
+import 'package:flutter_qjs/flutter_qjs.dart';
+
+import '../../core/utils/json_coerce.dart';
 import '../extension_service.dart';
 import '../models/m_source.dart';
 import '../models/m_manga.dart';
 import '../models/m_chapter.dart';
 import '../models/m_pages.dart';
+import '../models/manga_browse_page.dart';
 import '../models/filter_list.dart';
 import '../models/source_preference.dart';
-import 'js_runtime.dart';
+import 'bridges/crypto_bridge.dart';
+import 'bridges/dom_bridge.dart';
+import 'bridges/http_bridge.dart';
+import 'bridges/m_provider_bridge.dart';
+import 'bridges/prefs_bridge.dart';
+import 'bridges/utils_bridge.dart';
+import 'js_source_meta.dart';
 
+/// Mangayomi-compatible JS extension host.
+///
+/// Architecture mirrors `mangayomi/lib/eval/javascript/service.dart`:
+/// - Fresh [getJavascriptRuntime] per bound source (no shared dirty engine)
+/// - Init order: Http → Dom → Utils → Crypto → SharedPreferences → MProvider
+/// - Calls via `jsonStringify(() => extention.$call)` + [handlePromise]
 class JsExtensionService implements ExtensionService {
-  final JsRuntime _runtime;
+  JavascriptRuntime? _runtime;
+  String? _boundSourceKey;
 
-  JsExtensionService({JsRuntime? runtime}) : _runtime = runtime ?? JsRuntime();
+  /// Serialize calls on the active runtime (QuickJS is not re-entrant).
+  Future<void> _chain = Future.value();
 
   @override
   String get type => 'js';
 
-  JsRuntime _ensureRuntime() {
-    _runtime.init();
-    return _runtime;
+  Future<T> _serialized<T>(Future<T> Function() run) {
+    final done = Completer<T>();
+    _chain = _chain.then((_) async {
+      try {
+        done.complete(await run());
+      } catch (e, st) {
+        done.completeError(e, st);
+      }
+    });
+    return done.future;
   }
 
-  @override
-  Future<FilterList> getFilterList(MSource source) async => const FilterList();
+  Future<void> _init(MSource source) async {
+    final code = source.sourceCode ?? '';
+    if (code.trim().isEmpty) {
+      throw StateError(
+        'JS extension ${source.name} has empty sourceCode — reinstall it',
+      );
+    }
+    final key = '${source.id}|${source.sourceId}|${code.hashCode}';
+    if (_boundSourceKey == key && _runtime != null) return;
 
-  @override
-  Future<List<MManga>> getPopular(int page, {required MSource source}) async {
-    final rt = _ensureRuntime();
-    final results = rt.evaluateMangaList(
-      source.sourceCode ?? '',
-      'source.getPopular($page)',
+    // Tear down previous source's engine (mangayomi: one runtime per Source).
+    try {
+      _runtime?.dispose();
+    } catch (_) {}
+    _runtime = null;
+    _boundSourceKey = null;
+
+    await hydrateJsPrefsCache();
+
+    // Same factory mangayomi uses for JS manga extensions.
+    final runtime = getJavascriptRuntime();
+    await injectHttpBridge(runtime);
+    await injectDomBridge(runtime);
+    await injectUtilsBridge(runtime);
+    await injectCryptoBridge(runtime);
+    injectPrefsBridge(runtime, sourceId: source.sourceId);
+
+    final sourceJson = jsonEncode(_sourceToJsJson(source));
+    runtime.evaluate(buildMProviderStub(sourceJson));
+    runtime.evaluate('''
+$code
+var extention = new DefaultExtension();
+''');
+    // Mangayomi seeds SourcePreference on first SharedPreferences.get —
+    // do that eagerly so keys like original_languages resolve to [].
+    seedJsPreferenceDefaults(runtime, sourceId: source.sourceId);
+
+    _runtime = runtime;
+    _boundSourceKey = key;
+  }
+
+  Map<String, dynamic> _sourceToJsJson(MSource source) {
+    final id = int.tryParse(source.id) ?? int.tryParse(source.sourceId);
+    final meta = parseMangayomiSourcesHeader(source.sourceCode);
+    final baseUrl = source.baseUrl.isNotEmpty
+        ? source.baseUrl
+        : (meta['baseUrl'] ?? '');
+    final apiUrl = (source.apiUrl != null && source.apiUrl!.isNotEmpty)
+        ? source.apiUrl!
+        : (meta['apiUrl'] ?? '');
+    final hasCloudflare = source.hasCloudflare || meta['hasCloudflare'] == 'true';
+    final dateFormat = (source.dateFormat != null && source.dateFormat!.isNotEmpty)
+        ? source.dateFormat!
+        : (meta['dateFormat'] ?? '');
+    final dateFormatLocale =
+        (source.dateFormatLocale != null && source.dateFormatLocale!.isNotEmpty)
+        ? source.dateFormatLocale!
+        : (meta['dateFormatLocale'] ?? '');
+    return {
+      'id': id ?? source.id,
+      'name': source.name,
+      'lang': source.lang,
+      'baseUrl': baseUrl,
+      'apiUrl': apiUrl,
+      'dateFormat': dateFormat,
+      'dateFormatLocale': dateFormatLocale,
+      'hasCloudflare': hasCloudflare,
+      'isFullData': false,
+      'additionalParams': '',
+      'notes': '',
+    };
+  }
+
+  Future<T> _extensionCallAsync<T>(MSource source, String call) {
+    return _serialized(() async {
+      await _init(source);
+      final runtime = _runtime!;
+      final evaled = await runtime.evaluateAsync(
+        'jsonStringify(() => extention.$call)',
+      );
+      final promised = await runtime
+          .handlePromise(evaled)
+          .timeout(
+            const Duration(seconds: 60),
+            onTimeout: () => throw TimeoutException(
+              'JS call timed out: $call (${source.name})',
+            ),
+          );
+      if (promised.isError) {
+        throw StateError('JS error in $call: ${promised.stringResult}');
+      }
+      final raw = promised.stringResult;
+      if (raw.isEmpty) {
+        throw StateError('JS call returned empty: $call (${source.name})');
+      }
+      return jsonDecode(raw) as T;
+    });
+  }
+
+  T _extensionCallSync<T>(String call, T def) {
+    final runtime = _runtime;
+    if (runtime == null) return def;
+    try {
+      final res = runtime.evaluate('JSON.stringify(extention.$call)');
+      return jsonDecode(res.stringResult) as T;
+    } catch (_) {
+      return def;
+    }
+  }
+
+  MangaBrowsePage _parseMangaBrowsePage(dynamic raw) {
+    final List<dynamic> list;
+    var hasNextPage = false;
+    if (raw is Map && raw['list'] is List) {
+      list = raw['list'] as List;
+      final flag = raw['hasNextPage'];
+      hasNextPage = flag == true || flag == 1 || flag == 'true';
+    } else if (raw is List) {
+      list = raw;
+    } else {
+      return const MangaBrowsePage(list: []);
+    }
+    return MangaBrowsePage(
+      list: list
+          .whereType<Map>()
+          .map((e) => MManga.fromJson(Map<String, dynamic>.from(e)))
+          .toList(),
+      hasNextPage: hasNextPage,
     );
-    return results
-        .map(
-          (r) => MManga(
-            url: r['url'] as String? ?? '',
-            title: r['title'] as String? ?? '',
-            thumbnailUrl: r['thumbnail_url'] as String?,
-            author: r['author'] as String?,
-            artist: r['artist'] as String?,
-            description: r['description'] as String?,
-            status: r['status'] as int? ?? 0,
-            genres: r['genre'] != null
-                ? (r['genre'] as String)
-                      .split(',')
-                      .map((g) => g.trim())
-                      .toList()
+  }
+
+  List<MChapter> _parseChapters(dynamic raw) {
+    if (raw is! List) return [];
+    return raw.map((e) => MChapter.fromDynamic(e)).toList();
+  }
+
+  List<MPage> _parsePageImages(List raw) {
+    final pages = <MPage>[];
+    for (var i = 0; i < raw.length; i++) {
+      final e = raw[i];
+      if (e == null) continue;
+      if (e is String) {
+        final url = e.trim();
+        if (url.isEmpty) continue;
+        pages.add(MPage(index: i, url: url));
+        continue;
+      }
+      if (e is Map) {
+        final map = Map<String, dynamic>.from(e);
+        final url = (map['url'] as String? ?? '').trim();
+        if (url.isEmpty) continue;
+        pages.add(
+          MPage(
+            index: asInt(map['index']) ?? i,
+            url: url,
+            headers: map['headers'] != null
+                ? Map<String, String>.from(
+                    (map['headers'] as Map).map(
+                      (k, v) => MapEntry(k.toString(), v.toString()),
+                    ),
+                  )
                 : null,
           ),
-        )
-        .toList();
+        );
+      }
+    }
+    return pages;
   }
 
   @override
-  Future<List<MManga>> getLatestUpdates(
+  Future<FilterList> getFilterList(MSource source) {
+    return _serialized(() async {
+      await _init(source);
+      try {
+        final raw = _extensionCallSync<List>('getFilterList()', <dynamic>[]);
+        return FilterList.fromJson(raw);
+      } catch (_) {
+        return const FilterList();
+      }
+    });
+  }
+
+  @override
+  Future<MangaBrowsePage> getPopular(
     int page, {
     required MSource source,
   }) async {
-    final rt = _ensureRuntime();
-    final results = rt.evaluateMangaList(
-      source.sourceCode ?? '',
-      'source.getLatestUpdates($page)',
-    );
-    return results
-        .map(
-          (r) => MManga(
-            url: r['url'] as String? ?? '',
-            title: r['title'] as String? ?? '',
-            thumbnailUrl: r['thumbnail_url'] as String?,
-            author: r['author'] as String?,
-            artist: r['artist'] as String?,
-            description: r['description'] as String?,
-            status: r['status'] as int? ?? 0,
-            genres: r['genre'] != null
-                ? (r['genre'] as String)
-                      .split(',')
-                      .map((g) => g.trim())
-                      .toList()
-                : null,
-          ),
-        )
-        .toList();
+    final raw = await _extensionCallAsync(source, 'getPopular($page)');
+    return _parseMangaBrowsePage(raw);
   }
 
   @override
-  Future<List<MManga>> search(
+  Future<MangaBrowsePage> getLatestUpdates(
+    int page, {
+    required MSource source,
+  }) async {
+    final raw = await _extensionCallAsync(source, 'getLatestUpdates($page)');
+    return _parseMangaBrowsePage(raw);
+  }
+
+  @override
+  Future<MangaBrowsePage> search(
     MSource source,
     int page,
     String query, {
     FilterList? filters,
   }) async {
-    final rt = _ensureRuntime();
-    final filtersJson = filters != null
-        ? '[${filters.filters.map((f) => _jsStringify(f.toJson())).join(",")}]'
-        : '[]';
-    final results = rt.evaluateMangaList(
-      source.sourceCode ?? '',
-      'source.search("$query", $page, $filtersJson)',
+    // Mangayomi passes filter objects with type_name/state/values — extensions
+    // (e.g. Webtoons) look up filters by `type` id and read `.state`/`.values`.
+    // Keiyoushi-shaped `toJson()` breaks that; use mangayomi shape.
+    var effective = filters;
+    if (effective == null || effective.filters.isEmpty) {
+      effective = await getFilterList(source);
+    }
+    final filtersJson = jsonEncode(effective.toJsJson());
+    final raw = await _extensionCallAsync(
+      source,
+      'search(${jsonEncode(query)},$page,$filtersJson)',
     );
-    return results
-        .map(
-          (r) => MManga(
-            url: r['url'] as String? ?? '',
-            title: r['title'] as String? ?? '',
-            thumbnailUrl: r['thumbnail_url'] as String?,
-            author: r['author'] as String?,
-            artist: r['artist'] as String?,
-            description: r['description'] as String?,
-            status: r['status'] as int? ?? 0,
-            genres: r['genre'] != null
-                ? (r['genre'] as String)
-                      .split(',')
-                      .map((g) => g.trim())
-                      .toList()
-                : null,
-          ),
-        )
-        .toList();
+    return _parseMangaBrowsePage(raw);
   }
 
   @override
-  Future<MManga?> getDetail(MSource source, String url) async {
-    final rt = _ensureRuntime();
-    final result = rt.evaluateDetail(
-      source.sourceCode ?? '',
-      'source.getDetail("$url")',
+  Future<MManga?> getDetail(
+    MSource source,
+    String url, {
+    String? memo,
+    String? title,
+  }) async {
+    final raw = await _extensionCallAsync(
+      source,
+      'getDetail(${jsonEncode(url)})',
     );
-    if (result == null) return null;
-    return MManga.fromJson(result);
+    if (raw is! Map) return null;
+    return MManga.fromJson(Map<String, dynamic>.from(raw));
   }
 
   @override
-  Future<List<MChapter>> getChapterList(MSource source, String url) async {
-    final rt = _ensureRuntime();
-    final results = rt.evaluateList(
-      source.sourceCode ?? '',
-      'source.getChapterList("$url")',
+  Future<List<MChapter>> getChapterList(
+    MSource source,
+    String url, {
+    String? memo,
+    String? title,
+  }) async {
+    // Mangayomi JS has no getChapterList — chapters come from getDetail only.
+    final raw = await _extensionCallAsync(
+      source,
+      'getDetail(${jsonEncode(url)})',
     );
-    return results.map((e) => MChapter.fromDynamic(e)).toList();
+    if (raw is! Map) return [];
+    final map = Map<String, dynamic>.from(raw);
+    return _parseChapters(map['chapters'] ?? map['episodes']);
   }
 
   @override
   Future<({MManga? manga, List<MChapter> chapters})> getMangaDetail(
     MSource source,
-    String url,
-  ) async {
-    final manga = await getDetail(source, url);
-    final chapters = await getChapterList(source, url);
+    String url, {
+    String? memo,
+    String? title,
+  }) async {
+    final raw = await _extensionCallAsync(
+      source,
+      'getDetail(${jsonEncode(url)})',
+    );
+    if (raw is! Map) {
+      return (manga: null, chapters: <MChapter>[]);
+    }
+    final map = Map<String, dynamic>.from(raw);
+    final manga = MManga.fromJson(map);
+    final chapters = _parseChapters(map['chapters'] ?? map['episodes']);
     return (manga: manga, chapters: chapters);
   }
 
   @override
   Future<List<MPages>> getPageList(MSource source, MChapter chapter) async {
-    final rt = _ensureRuntime();
-    final results = rt.evaluateList(
-      source.sourceCode ?? '',
-      'source.getPageList("${chapter.url}")',
+    final raw = await _extensionCallAsync<List>(
+      source,
+      'getPageList(${jsonEncode(chapter.url)})',
     );
-    return [MPages.fromJson(results)];
+    final pages = _parsePageImages(raw);
+    return [MPages(pages: pages)];
   }
 
   @override
   Future<List<SourcePreference>> getSourcePreferences(MSource source) async {
-    final rt = _ensureRuntime();
-    final results = rt.evaluateList(
-      source.sourceCode ?? '',
-      'source.getSourcePreferences()',
-    );
-    return results.map((e) => SourcePreference.fromDynamic(e)).toList();
+    await _init(source);
+    try {
+      final raw =
+          _extensionCallSync<List>('getSourcePreferences()', <dynamic>[]);
+      return raw.map((e) => SourcePreference.fromDynamic(e)).toList();
+    } catch (_) {
+      return [];
+    }
   }
 
   @override
@@ -174,33 +349,11 @@ class JsExtensionService implements ExtensionService {
     MSource source,
     SourcePreference pref,
   ) async {
-    final rt = _ensureRuntime();
-    rt.evaluate(
-      'source.saveSourcePreference("${pref.key}", ${_jsStringify(pref.defaultValue)})',
-    );
-  }
-
-  String _jsStringify(dynamic value) {
-    if (value == null) return 'null';
-    if (value is String) {
-      final escaped = value
-          .replaceAll('\\', '\\\\')
-          .replaceAll('"', '\\"')
-          .replaceAll('\n', '\\n')
-          .replaceAll('\r', '\\r')
-          .replaceAll('\t', '\\t');
-      return '"$escaped"';
-    }
-    if (value is num || value is bool) return value.toString();
-    if (value is List) {
-      return '[${value.map(_jsStringify).join(',')}]';
-    }
-    if (value is Map) {
-      final entries = value.entries
-          .map((e) => '"${e.key}": ${_jsStringify(e.value)}')
-          .join(',');
-      return '{$entries}';
-    }
-    return value.toString();
+    await hydrateJsPrefsCache();
+    final key = pref.key;
+    if (key == null || key.isEmpty) return;
+    final value = pref.typedValue;
+    if (value == null) return;
+    setJsPreferenceValue(source.sourceId, key, value);
   }
 }

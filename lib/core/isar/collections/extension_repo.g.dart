@@ -23,8 +23,14 @@ const ExtensionRepoSchema = CollectionSchema(
       type: IsarType.dateTime,
     ),
     r'enabled': PropertySchema(id: 1, name: r'enabled', type: IsarType.bool),
-    r'name': PropertySchema(id: 2, name: r'name', type: IsarType.string),
-    r'url': PropertySchema(id: 3, name: r'url', type: IsarType.string),
+    r'kind': PropertySchema(id: 2, name: r'kind', type: IsarType.string),
+    r'name': PropertySchema(id: 3, name: r'name', type: IsarType.string),
+    r'signingKey': PropertySchema(
+      id: 4,
+      name: r'signingKey',
+      type: IsarType.string,
+    ),
+    r'url': PropertySchema(id: 5, name: r'url', type: IsarType.string),
   },
 
   estimateSize: _extensionRepoEstimateSize,
@@ -62,7 +68,14 @@ int _extensionRepoEstimateSize(
   Map<Type, List<int>> allOffsets,
 ) {
   var bytesCount = offsets.last;
+  bytesCount += 3 + object.kind.length * 3;
   bytesCount += 3 + object.name.length * 3;
+  {
+    final value = object.signingKey;
+    if (value != null) {
+      bytesCount += 3 + value.length * 3;
+    }
+  }
   bytesCount += 3 + object.url.length * 3;
   return bytesCount;
 }
@@ -75,8 +88,10 @@ void _extensionRepoSerialize(
 ) {
   writer.writeDateTime(offsets[0], object.createdAt);
   writer.writeBool(offsets[1], object.enabled);
-  writer.writeString(offsets[2], object.name);
-  writer.writeString(offsets[3], object.url);
+  writer.writeString(offsets[2], object.kind);
+  writer.writeString(offsets[3], object.name);
+  writer.writeString(offsets[4], object.signingKey);
+  writer.writeString(offsets[5], object.url);
 }
 
 ExtensionRepo _extensionRepoDeserialize(
@@ -89,8 +104,10 @@ ExtensionRepo _extensionRepoDeserialize(
     createdAt: reader.readDateTimeOrNull(offsets[0]),
     enabled: reader.readBoolOrNull(offsets[1]) ?? true,
     id: id,
-    name: reader.readString(offsets[2]),
-    url: reader.readString(offsets[3]),
+    kind: reader.readStringOrNull(offsets[2]) ?? 'mihon',
+    name: reader.readString(offsets[3]),
+    signingKey: reader.readStringOrNull(offsets[4]),
+    url: reader.readString(offsets[5]),
   );
   return object;
 }
@@ -107,8 +124,12 @@ P _extensionRepoDeserializeProp<P>(
     case 1:
       return (reader.readBoolOrNull(offset) ?? true) as P;
     case 2:
-      return (reader.readString(offset)) as P;
+      return (reader.readStringOrNull(offset) ?? 'mihon') as P;
     case 3:
+      return (reader.readString(offset)) as P;
+    case 4:
+      return (reader.readStringOrNull(offset)) as P;
+    case 5:
       return (reader.readString(offset)) as P;
     default:
       throw IsarError('Unknown property with id $propertyId');
@@ -484,6 +505,150 @@ extension ExtensionRepoQueryFilter
     });
   }
 
+  QueryBuilder<ExtensionRepo, ExtensionRepo, QAfterFilterCondition> kindEqualTo(
+    String value, {
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.equalTo(
+          property: r'kind',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<ExtensionRepo, ExtensionRepo, QAfterFilterCondition>
+  kindGreaterThan(
+    String value, {
+    bool include = false,
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.greaterThan(
+          include: include,
+          property: r'kind',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<ExtensionRepo, ExtensionRepo, QAfterFilterCondition>
+  kindLessThan(
+    String value, {
+    bool include = false,
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.lessThan(
+          include: include,
+          property: r'kind',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<ExtensionRepo, ExtensionRepo, QAfterFilterCondition> kindBetween(
+    String lower,
+    String upper, {
+    bool includeLower = true,
+    bool includeUpper = true,
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.between(
+          property: r'kind',
+          lower: lower,
+          includeLower: includeLower,
+          upper: upper,
+          includeUpper: includeUpper,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<ExtensionRepo, ExtensionRepo, QAfterFilterCondition>
+  kindStartsWith(String value, {bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.startsWith(
+          property: r'kind',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<ExtensionRepo, ExtensionRepo, QAfterFilterCondition>
+  kindEndsWith(String value, {bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.endsWith(
+          property: r'kind',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<ExtensionRepo, ExtensionRepo, QAfterFilterCondition>
+  kindContains(String value, {bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.contains(
+          property: r'kind',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<ExtensionRepo, ExtensionRepo, QAfterFilterCondition> kindMatches(
+    String pattern, {
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.matches(
+          property: r'kind',
+          wildcard: pattern,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<ExtensionRepo, ExtensionRepo, QAfterFilterCondition>
+  kindIsEmpty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.equalTo(property: r'kind', value: ''),
+      );
+    });
+  }
+
+  QueryBuilder<ExtensionRepo, ExtensionRepo, QAfterFilterCondition>
+  kindIsNotEmpty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.greaterThan(property: r'kind', value: ''),
+      );
+    });
+  }
+
   QueryBuilder<ExtensionRepo, ExtensionRepo, QAfterFilterCondition> nameEqualTo(
     String value, {
     bool caseSensitive = true,
@@ -624,6 +789,165 @@ extension ExtensionRepoQueryFilter
     return QueryBuilder.apply(this, (query) {
       return query.addFilterCondition(
         FilterCondition.greaterThan(property: r'name', value: ''),
+      );
+    });
+  }
+
+  QueryBuilder<ExtensionRepo, ExtensionRepo, QAfterFilterCondition>
+  signingKeyIsNull() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        const FilterCondition.isNull(property: r'signingKey'),
+      );
+    });
+  }
+
+  QueryBuilder<ExtensionRepo, ExtensionRepo, QAfterFilterCondition>
+  signingKeyIsNotNull() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        const FilterCondition.isNotNull(property: r'signingKey'),
+      );
+    });
+  }
+
+  QueryBuilder<ExtensionRepo, ExtensionRepo, QAfterFilterCondition>
+  signingKeyEqualTo(String? value, {bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.equalTo(
+          property: r'signingKey',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<ExtensionRepo, ExtensionRepo, QAfterFilterCondition>
+  signingKeyGreaterThan(
+    String? value, {
+    bool include = false,
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.greaterThan(
+          include: include,
+          property: r'signingKey',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<ExtensionRepo, ExtensionRepo, QAfterFilterCondition>
+  signingKeyLessThan(
+    String? value, {
+    bool include = false,
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.lessThan(
+          include: include,
+          property: r'signingKey',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<ExtensionRepo, ExtensionRepo, QAfterFilterCondition>
+  signingKeyBetween(
+    String? lower,
+    String? upper, {
+    bool includeLower = true,
+    bool includeUpper = true,
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.between(
+          property: r'signingKey',
+          lower: lower,
+          includeLower: includeLower,
+          upper: upper,
+          includeUpper: includeUpper,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<ExtensionRepo, ExtensionRepo, QAfterFilterCondition>
+  signingKeyStartsWith(String value, {bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.startsWith(
+          property: r'signingKey',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<ExtensionRepo, ExtensionRepo, QAfterFilterCondition>
+  signingKeyEndsWith(String value, {bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.endsWith(
+          property: r'signingKey',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<ExtensionRepo, ExtensionRepo, QAfterFilterCondition>
+  signingKeyContains(String value, {bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.contains(
+          property: r'signingKey',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<ExtensionRepo, ExtensionRepo, QAfterFilterCondition>
+  signingKeyMatches(String pattern, {bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.matches(
+          property: r'signingKey',
+          wildcard: pattern,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<ExtensionRepo, ExtensionRepo, QAfterFilterCondition>
+  signingKeyIsEmpty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.equalTo(property: r'signingKey', value: ''),
+      );
+    });
+  }
+
+  QueryBuilder<ExtensionRepo, ExtensionRepo, QAfterFilterCondition>
+  signingKeyIsNotEmpty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.greaterThan(property: r'signingKey', value: ''),
       );
     });
   }
@@ -809,6 +1133,18 @@ extension ExtensionRepoQuerySortBy
     });
   }
 
+  QueryBuilder<ExtensionRepo, ExtensionRepo, QAfterSortBy> sortByKind() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'kind', Sort.asc);
+    });
+  }
+
+  QueryBuilder<ExtensionRepo, ExtensionRepo, QAfterSortBy> sortByKindDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'kind', Sort.desc);
+    });
+  }
+
   QueryBuilder<ExtensionRepo, ExtensionRepo, QAfterSortBy> sortByName() {
     return QueryBuilder.apply(this, (query) {
       return query.addSortBy(r'name', Sort.asc);
@@ -818,6 +1154,19 @@ extension ExtensionRepoQuerySortBy
   QueryBuilder<ExtensionRepo, ExtensionRepo, QAfterSortBy> sortByNameDesc() {
     return QueryBuilder.apply(this, (query) {
       return query.addSortBy(r'name', Sort.desc);
+    });
+  }
+
+  QueryBuilder<ExtensionRepo, ExtensionRepo, QAfterSortBy> sortBySigningKey() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'signingKey', Sort.asc);
+    });
+  }
+
+  QueryBuilder<ExtensionRepo, ExtensionRepo, QAfterSortBy>
+  sortBySigningKeyDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'signingKey', Sort.desc);
     });
   }
 
@@ -873,6 +1222,18 @@ extension ExtensionRepoQuerySortThenBy
     });
   }
 
+  QueryBuilder<ExtensionRepo, ExtensionRepo, QAfterSortBy> thenByKind() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'kind', Sort.asc);
+    });
+  }
+
+  QueryBuilder<ExtensionRepo, ExtensionRepo, QAfterSortBy> thenByKindDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'kind', Sort.desc);
+    });
+  }
+
   QueryBuilder<ExtensionRepo, ExtensionRepo, QAfterSortBy> thenByName() {
     return QueryBuilder.apply(this, (query) {
       return query.addSortBy(r'name', Sort.asc);
@@ -882,6 +1243,19 @@ extension ExtensionRepoQuerySortThenBy
   QueryBuilder<ExtensionRepo, ExtensionRepo, QAfterSortBy> thenByNameDesc() {
     return QueryBuilder.apply(this, (query) {
       return query.addSortBy(r'name', Sort.desc);
+    });
+  }
+
+  QueryBuilder<ExtensionRepo, ExtensionRepo, QAfterSortBy> thenBySigningKey() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'signingKey', Sort.asc);
+    });
+  }
+
+  QueryBuilder<ExtensionRepo, ExtensionRepo, QAfterSortBy>
+  thenBySigningKeyDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'signingKey', Sort.desc);
     });
   }
 
@@ -912,11 +1286,27 @@ extension ExtensionRepoQueryWhereDistinct
     });
   }
 
+  QueryBuilder<ExtensionRepo, ExtensionRepo, QDistinct> distinctByKind({
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addDistinctBy(r'kind', caseSensitive: caseSensitive);
+    });
+  }
+
   QueryBuilder<ExtensionRepo, ExtensionRepo, QDistinct> distinctByName({
     bool caseSensitive = true,
   }) {
     return QueryBuilder.apply(this, (query) {
       return query.addDistinctBy(r'name', caseSensitive: caseSensitive);
+    });
+  }
+
+  QueryBuilder<ExtensionRepo, ExtensionRepo, QDistinct> distinctBySigningKey({
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addDistinctBy(r'signingKey', caseSensitive: caseSensitive);
     });
   }
 
@@ -949,9 +1339,21 @@ extension ExtensionRepoQueryProperty
     });
   }
 
+  QueryBuilder<ExtensionRepo, String, QQueryOperations> kindProperty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addPropertyName(r'kind');
+    });
+  }
+
   QueryBuilder<ExtensionRepo, String, QQueryOperations> nameProperty() {
     return QueryBuilder.apply(this, (query) {
       return query.addPropertyName(r'name');
+    });
+  }
+
+  QueryBuilder<ExtensionRepo, String?, QQueryOperations> signingKeyProperty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addPropertyName(r'signingKey');
     });
   }
 

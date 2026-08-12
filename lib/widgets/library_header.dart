@@ -3,13 +3,9 @@ import 'package:flutter/material.dart';
 import '../theme/app_theme.dart';
 import 'icon_button_round.dart';
 
-/// A page header used by Library, Snippets, Search, Settings.
-/// Title (displayMedium), optional subtitle (small, secondary), optional
-/// trailing actions, optional leading widget.
-///
-/// The screen passes [titleSize] (which should already be set to 2× the
-/// default in one-hand mode) and [shrinkProgress] (0..1) which the
-/// header multiplies the title size by to gradually shrink on scroll.
+/// A page header used by the main tabs and settings sub-screens.
+/// Compact Figma "ReadLoom" style: 24px/w700 title with an optional
+/// 12px muted subtitle, optional trailing actions, optional leading widget.
 class LibraryHeader extends StatelessWidget {
   final String title;
   final String? subtitle;
@@ -18,8 +14,6 @@ class LibraryHeader extends StatelessWidget {
   final bool showBackButton;
   final VoidCallback? onBack;
   final EdgeInsets padding;
-  final double titleSize;
-  final double shrinkProgress;
 
   const LibraryHeader({
     super.key,
@@ -29,26 +23,27 @@ class LibraryHeader extends StatelessWidget {
     this.leading,
     this.showBackButton = false,
     this.onBack,
-    this.padding = const EdgeInsets.fromLTRB(24, 16, 16, 12),
-    this.titleSize = 32,
-    this.shrinkProgress = 0.0,
+    this.padding = const EdgeInsets.fromLTRB(20, 8, 16, 12),
   });
 
   @override
   Widget build(BuildContext context) {
     final c = context.colors;
-    final p = shrinkProgress.clamp(0.0, 1.0);
-    final fontSize = titleSize * (1.0 - 0.5 * p);
-    final subtitleOpacity = (1.0 - p).clamp(0.0, 1.0);
+    // Figma SubScreenHeader: compact 18px title + px-4 py-3 when back is shown.
+    final effectivePadding = showBackButton &&
+            padding == const EdgeInsets.fromLTRB(20, 8, 16, 12)
+        ? const EdgeInsets.fromLTRB(16, 12, 16, 12)
+        : padding;
+    final titleSize = showBackButton ? 18.0 : 24.0;
     return Padding(
-      padding: padding,
+      padding: effectivePadding,
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.center,
         children: [
           if (showBackButton) ...[
             IconButtonRound(
               icon: Icons.arrow_back_ios_new,
-              size: 40,
+              size: 38,
               variant: IconButtonVariant.tonal,
               onPressed: onBack ?? () => Navigator.maybePop(context),
             ),
@@ -68,19 +63,21 @@ class LibraryHeader extends StatelessWidget {
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
                     color: c.textPrimary,
-                    fontSize: fontSize,
-                    fontWeight: FontWeight.w600,
-                    letterSpacing: -0.5,
-                    height: 1.1,
+                    fontSize: titleSize,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: showBackButton ? 0 : -0.3,
+                    height: 1.2,
                   ),
                 ),
                 if (subtitle != null) ...[
-                  const SizedBox(height: 4),
+                  const SizedBox(height: 2),
                   Text(
                     subtitle!,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
                     style: TextStyle(
-                      color: c.textSecondary.withValues(alpha: subtitleOpacity),
-                      fontSize: 14,
+                      color: c.textSecondary,
+                      fontSize: 12,
                       fontWeight: FontWeight.w400,
                     ),
                   ),

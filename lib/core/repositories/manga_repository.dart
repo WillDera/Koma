@@ -345,6 +345,7 @@ class MangaRepository {
     sourceId: m.sourceId,
     inLibrary: m.inLibrary,
     readingStatus: m.readingStatus,
+    memo: m.memo,
     createdAt: m.createdAt,
     updatedAt: m.updatedAt,
   );
@@ -362,6 +363,7 @@ class MangaRepository {
     sourceId: m.sourceId,
     inLibrary: m.inLibrary,
     readingStatus: m.readingStatus,
+    memo: m.memo,
     createdAt: m.createdAt,
     updatedAt: m.updatedAt,
   );
@@ -377,6 +379,8 @@ class MangaRepository {
     isRead: c.isRead,
     lastPageRead: c.lastPageRead,
     scrollPosition: c.scrollPosition,
+    chapterNumber: c.chapterNumber,
+    isBookmarked: c.isBookmarked,
     isDownloaded: c.isDownloaded,
     isOpened: c.isOpened,
     readAt: c.readAt,
@@ -394,6 +398,8 @@ class MangaRepository {
     isRead: c.isRead,
     lastPageRead: c.lastPageRead,
     scrollPosition: c.scrollPosition,
+    chapterNumber: c.chapterNumber,
+    isBookmarked: c.isBookmarked,
     isDownloaded: c.isDownloaded,
     isOpened: c.isOpened,
     readAt: c.readAt,

@@ -5,24 +5,8 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../../core/providers.dart';
 import '../../core/models/manga.dart';
 import '../../core/models/manga_chapter.dart';
-import '../../core/repositories/repositories.dart';
-import '../../eval/models/m_source.dart';
-
-/// Resolve the hex sourceId used by the DalvikServer cache from any source
-/// identifier (hex sourceId or old Mihon numeric ID). Callers that only have
-/// [Manga.sourceId] (the old numeric ID) use this to get the correct ID.
-Future<String> _resolveSourceId(Repositories repos, String sourceId) async {
-  final installed = await repos.extensions.getInstalledExtensions();
-  // First try a direct match (hex sourceId or already correct)
-  for (final ext in installed) {
-    if (ext.sourceId == sourceId) return sourceId;
-  }
-  // Fallback: look up by old Mihon numeric ID (stored in ext.id)
-  for (final ext in installed) {
-    if (ext.id == sourceId) return ext.sourceId;
-  }
-  return sourceId;
-}
+import '../../core/services/extension_source_resolve.dart';
+import '../../core/utils/chapter_recognition.dart';
 
 /// Stream of [Manga?] for a given manga ID. Backed by Isar's watchObject —
 /// re-emits every time the manga row is written via put(). fireImmediately=true
@@ -66,18 +50,13 @@ final updateMangaDetailProvider =
       );
       if (params.isInit && existingChapters.isNotEmpty) return;
 
-      // Translate the old Mihon numeric ID to our hex sourceId from the cache
-      final extSourceId = await _resolveSourceId(repos, manga.sourceId);
-
-      final source = MSource(
-        id: extSourceId,
-        sourceId: extSourceId,
-        name: '',
-        lang: 'en',
-        baseUrl: '',
-        sourceType: SourceType.mihon,
+      final source = await resolveExtensionMSource(repos, manga.sourceId);
+      final result = await service.getMangaDetail(
+        source,
+        manga.url,
+        memo: manga.memo,
+        title: manga.name.isNotEmpty ? manga.name : null,
       );
-      final result = await service.getMangaDetail(source, manga.url);
 
       final mmanga = result.manga;
       final chapters = result.chapters;
@@ -85,13 +64,18 @@ final updateMangaDetailProvider =
       // Update manga metadata from network response. This triggers the
       // watchObject stream for this manga.
       if (mmanga != null) {
+        final remoteTitle = mmanga.title.trim();
         final updatedManga = manga.copyWith(
+          name: remoteTitle.isNotEmpty ? remoteTitle : manga.name,
           imageUrl: mmanga.thumbnailUrl ?? manga.imageUrl,
           author: mmanga.author ?? manga.author,
           artist: mmanga.artist ?? manga.artist,
           description: mmanga.description ?? manga.description,
           status: mmanga.status,
           genres: mmanga.genres.isNotEmpty ? mmanga.genres : manga.genres,
+          memo: (mmanga.memo != null && mmanga.memo!.isNotEmpty)
+              ? mmanga.memo
+              : manga.memo,
           updatedAt: DateTime.now(),
         );
         await repos.manga.updateManga(updatedManga);
@@ -112,6 +96,11 @@ final updateMangaDetailProvider =
           if (url.isEmpty) continue;
 
           final existing = existingByUrl[url];
+          final recognized = ChapterRecognition.parseChapterNumber(
+            manga.name,
+            ch.name,
+            ch.chapterNumber.toDouble(),
+          );
           if (existing != null) {
             // Update metadata on existing row, preserve read/download state
             merged.add(
@@ -120,6 +109,8 @@ final updateMangaDetailProvider =
                 scanlator: ch.scanlator ?? existing.scanlator,
                 dateUpload: ch.dateUpload,
                 index: i,
+                chapterNumber: recognized,
+                memo: ch.memo ?? existing.memo,
               ),
             );
           } else {
@@ -133,6 +124,8 @@ final updateMangaDetailProvider =
                 scanlator: ch.scanlator,
                 dateUpload: ch.dateUpload,
                 index: i,
+                chapterNumber: recognized,
+                memo: ch.memo,
               ),
             );
           }
@@ -251,16 +244,19 @@ class MangaDetailNotifier extends Notifier<MangaDetailState> {
     required String sourceId,
     required String url,
     String? title,
+    String? memo,
   }) {
     _boundSourceId = sourceId;
     _boundUrl = url;
+    final seed = <String, dynamic>{
+      if (title != null && title.isNotEmpty) 'title': title,
+      if (memo != null && memo.isNotEmpty) 'memo': memo,
+    };
     state = MangaDetailState(
       loading: true,
       sortMode: state.sortMode,
       filterModes: state.filterModes,
-      details: title != null && title.isNotEmpty
-          ? <String, dynamic>{'title': title}
-          : null,
+      details: seed.isNotEmpty ? seed : null,
     );
   }
 

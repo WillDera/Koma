@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:google_fonts/google_fonts.dart';
 
 import 'tokens/app_colors.dart';
 import 'tokens/app_spacing.dart';
@@ -38,8 +39,12 @@ class AppTheme {
   static const Color sepiaAccent = AppColors.sepiaAccent;
 
   // ─── Public entry points ───────────────────────────────────────────────
-  static ThemeData lightTheme({Color? accent, String? fontFamily}) {
-    final a = accent ?? AppColors.lightAccent;
+  static ThemeData lightTheme({
+    Color? accent,
+    String? fontFamily,
+    ColorScheme? dynamicScheme,
+  }) {
+    final a = accent ?? dynamicScheme?.primary ?? AppColors.lightAccent;
     return _buildTheme(
       brightness: Brightness.light,
       bg: AppColors.lightBg,
@@ -53,9 +58,10 @@ class AppTheme {
       textTertiary: AppColors.lightTextTertiary,
       accent: a,
       accentMuted: _muted(a, AppColors.lightSurface),
-      onAccent: _onAccentFor(a),
+      onAccent: dynamicScheme?.onPrimary ?? _onAccentFor(a),
       // null = let the platform default font apply (Use device font).
       fontFamily: fontFamily,
+      dynamicScheme: dynamicScheme,
     );
   }
 
@@ -63,8 +69,9 @@ class AppTheme {
     Color? accent,
     bool amoled = false,
     String? fontFamily,
+    ColorScheme? dynamicScheme,
   }) {
-    final a = accent ?? AppColors.darkAccent;
+    final a = accent ?? dynamicScheme?.primary ?? AppColors.darkAccent;
     // null = let the platform default font apply (Use device font).
     final ff = fontFamily;
     if (amoled) {
@@ -81,8 +88,9 @@ class AppTheme {
         textTertiary: AppColors.amoledTextTertiary,
         accent: a,
         accentMuted: _muted(a, AppColors.amoledSurface),
-        onAccent: _onAccentFor(a),
+        onAccent: dynamicScheme?.onPrimary ?? _onAccentFor(a),
         fontFamily: ff,
+        dynamicScheme: dynamicScheme,
       );
     }
     return _buildTheme(
@@ -98,13 +106,18 @@ class AppTheme {
       textTertiary: AppColors.darkTextTertiary,
       accent: a,
       accentMuted: _muted(a, AppColors.darkSurface),
-      onAccent: _onAccentFor(a),
+      onAccent: dynamicScheme?.onPrimary ?? _onAccentFor(a),
       fontFamily: ff,
+      dynamicScheme: dynamicScheme,
     );
   }
 
-  static ThemeData sepiaTheme({Color? accent, String? fontFamily}) {
-    final a = accent ?? AppColors.sepiaAccent;
+  static ThemeData sepiaTheme({
+    Color? accent,
+    String? fontFamily,
+    ColorScheme? dynamicScheme,
+  }) {
+    final a = accent ?? dynamicScheme?.primary ?? AppColors.sepiaAccent;
     return _buildTheme(
       brightness: Brightness.light,
       bg: AppColors.sepiaBg,
@@ -118,9 +131,10 @@ class AppTheme {
       textTertiary: AppColors.sepiaTextTertiary,
       accent: a,
       accentMuted: _muted(a, AppColors.sepiaSurface),
-      onAccent: _onAccentFor(a),
+      onAccent: dynamicScheme?.onPrimary ?? _onAccentFor(a),
       // null = let the platform default font apply (Use device font).
       fontFamily: fontFamily,
+      dynamicScheme: dynamicScheme,
     );
   }
 
@@ -154,33 +168,66 @@ class AppTheme {
     required Color accentMuted,
     required Color onAccent,
     required String? fontFamily,
+    ColorScheme? dynamicScheme,
   }) {
     final textTheme = AppType.ui(
       fontFamily: fontFamily,
     ).apply(bodyColor: textPrimary, displayColor: textPrimary);
 
-    final colorScheme = ColorScheme(
-      brightness: brightness,
-      primary: accent,
-      onPrimary: onAccent,
-      secondary: accent,
-      onSecondary: onAccent,
-      tertiary: accent,
-      onTertiary: onAccent,
-      error: AppColors.danger,
-      onError: Colors.white,
-      surface: surface,
-      onSurface: textPrimary,
-      surfaceContainerHighest: surfaceMuted,
-      outline: border,
-      outlineVariant: border,
-      shadow: Colors.black,
-      scrim: Colors.black,
-      inverseSurface: textPrimary,
-      onInverseSurface: bg,
-      inversePrimary: accentMuted,
-      surfaceTint: accent,
-    );
+    // Register Inter with google_fonts when chosen; null keeps OEM Default.
+    final themeFontFamily = fontFamily == null
+        ? null
+        : (fontFamily == AppType.uiFont
+              ? GoogleFonts.inter().fontFamily
+              : fontFamily);
+
+    // Material You when available: keep dynamic accent roles, overlay Koma
+    // brand surfaces (Mihon Monet + AMOLED-style surface override).
+    final colorScheme = dynamicScheme != null
+        ? dynamicScheme.copyWith(
+            brightness: brightness,
+            primary: accent,
+            onPrimary: onAccent,
+            secondary: dynamicScheme.secondary,
+            onSecondary: dynamicScheme.onSecondary,
+            tertiary: dynamicScheme.tertiary,
+            onTertiary: dynamicScheme.onTertiary,
+            error: AppColors.danger,
+            onError: Colors.white,
+            surface: surface,
+            onSurface: textPrimary,
+            surfaceContainerHighest: surfaceMuted,
+            outline: border,
+            outlineVariant: border,
+            shadow: Colors.black,
+            scrim: Colors.black,
+            inverseSurface: textPrimary,
+            onInverseSurface: bg,
+            inversePrimary: accentMuted,
+            surfaceTint: accent,
+          )
+        : ColorScheme(
+            brightness: brightness,
+            primary: accent,
+            onPrimary: onAccent,
+            secondary: accent,
+            onSecondary: onAccent,
+            tertiary: accent,
+            onTertiary: onAccent,
+            error: AppColors.danger,
+            onError: Colors.white,
+            surface: surface,
+            onSurface: textPrimary,
+            surfaceContainerHighest: surfaceMuted,
+            outline: border,
+            outlineVariant: border,
+            shadow: Colors.black,
+            scrim: Colors.black,
+            inverseSurface: textPrimary,
+            onInverseSurface: bg,
+            inversePrimary: accentMuted,
+            surfaceTint: accent,
+          );
 
     return ThemeData(
       useMaterial3: true,
@@ -188,8 +235,9 @@ class AppTheme {
       colorScheme: colorScheme,
       scaffoldBackgroundColor: bg,
       canvasColor: bg,
-      // null => Flutter uses the platform default device font.
-      fontFamily: fontFamily,
+      // KomaAndroidSystemFont is registered from Android's active typeface.
+      // null remains a safe fallback when that physical font cannot be read.
+      fontFamily: themeFontFamily,
       textTheme: textTheme,
       primaryTextTheme: textTheme,
       splashFactory: InkSparkle.splashFactory,
@@ -383,10 +431,13 @@ class AppTheme {
         }),
       ),
       progressIndicatorTheme: ProgressIndicatorThemeData(
+        // Opt into latest Material 3 progress look (track gap + round caps).
+        year2023: false,
         color: accent,
         linearTrackColor: border,
         circularTrackColor: border,
-        linearMinHeight: 2,
+        strokeCap: StrokeCap.round,
+        linearMinHeight: 3,
       ),
       tabBarTheme: TabBarThemeData(
         labelColor: textPrimary,
@@ -445,6 +496,13 @@ class AppTheme {
           bgElevated: bgElevated,
           surface: surface,
           surfaceMuted: surfaceMuted,
+          iconWell: brightness == Brightness.dark
+              ? (bg == AppColors.amoledBg
+                    ? AppColors.amoledIconWell
+                    : AppColors.darkIconWell)
+              : (bg == AppColors.sepiaBg
+                    ? AppColors.sepiaIconWell
+                    : AppColors.lightIconWell),
           border: border,
           borderStrong: borderStrong,
           textPrimary: textPrimary,
@@ -467,6 +525,8 @@ class KomaColors extends ThemeExtension<KomaColors> {
   final Color bgElevated;
   final Color surface;
   final Color surfaceMuted;
+  /// Header/action icon button well (Figma `#1e1e2a` / `#e8e8f0`).
+  final Color iconWell;
   final Color border;
   final Color borderStrong;
   final Color textPrimary;
@@ -481,6 +541,7 @@ class KomaColors extends ThemeExtension<KomaColors> {
     required this.bgElevated,
     required this.surface,
     required this.surfaceMuted,
+    required this.iconWell,
     required this.border,
     required this.borderStrong,
     required this.textPrimary,
@@ -497,6 +558,7 @@ class KomaColors extends ThemeExtension<KomaColors> {
     Color? bgElevated,
     Color? surface,
     Color? surfaceMuted,
+    Color? iconWell,
     Color? border,
     Color? borderStrong,
     Color? textPrimary,
@@ -511,6 +573,7 @@ class KomaColors extends ThemeExtension<KomaColors> {
       bgElevated: bgElevated ?? this.bgElevated,
       surface: surface ?? this.surface,
       surfaceMuted: surfaceMuted ?? this.surfaceMuted,
+      iconWell: iconWell ?? this.iconWell,
       border: border ?? this.border,
       borderStrong: borderStrong ?? this.borderStrong,
       textPrimary: textPrimary ?? this.textPrimary,
@@ -530,6 +593,7 @@ class KomaColors extends ThemeExtension<KomaColors> {
       bgElevated: Color.lerp(bgElevated, other.bgElevated, t)!,
       surface: Color.lerp(surface, other.surface, t)!,
       surfaceMuted: Color.lerp(surfaceMuted, other.surfaceMuted, t)!,
+      iconWell: Color.lerp(iconWell, other.iconWell, t)!,
       border: Color.lerp(border, other.border, t)!,
       borderStrong: Color.lerp(borderStrong, other.borderStrong, t)!,
       textPrimary: Color.lerp(textPrimary, other.textPrimary, t)!,
@@ -554,6 +618,7 @@ extension KomaColorsAccess on BuildContext {
       bgElevated: AppColors.lightBgElevated,
       surface: AppColors.lightSurface,
       surfaceMuted: AppColors.lightSurfaceMuted,
+      iconWell: AppColors.lightIconWell,
       border: AppColors.lightBorder,
       borderStrong: AppColors.lightBorderStrong,
       textPrimary: AppColors.lightTextPrimary,

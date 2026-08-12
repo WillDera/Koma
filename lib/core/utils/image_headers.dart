@@ -1,6 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../providers.dart';
+import '../services/extension_client_settings.dart';
 import '../services/http/m_client.dart';
 
 /// Returns image request headers for a manga source identified by [baseUrl].
@@ -33,8 +34,8 @@ final imageHeadersProvider = Provider.family<Map<String, String>, String?>((
 });
 
 /// Resolves [sourceId] to an [ExtensionSource] from Isar and returns image
-/// request headers (Referer from baseUrl + User-Agent). Returns only
-/// User-Agent when the source is not found.
+/// request headers (Referer from baseUrl + User-Agent, respecting a per-source
+/// UA override). Returns only User-Agent when the source is not found.
 ///
 /// Use this in display sites that only have a [sourceId] (library, history,
 /// discover manga cards). Sites that already have the source object should
@@ -43,10 +44,21 @@ final sourceImageHeadersProvider =
     FutureProvider.family<Map<String, String>, String>((ref, sourceId) async {
       final repos = ref.read(repositoriesProvider);
       final source = await repos.extensions.getBySourceId(sourceId);
+      final settings = await ExtensionClientSettings.load(sourceId);
+      final ua = settings.userAgent.isNotEmpty
+          ? settings.userAgent
+          : kBrowserUserAgent;
       final baseUrl = source?.baseUrl;
-      final headers = <String, String>{'User-Agent': kBrowserUserAgent};
+      final headers = <String, String>{'User-Agent': ua};
       if (baseUrl != null && baseUrl.isNotEmpty) {
         headers['Referer'] = baseUrl.endsWith('/') ? baseUrl : '$baseUrl/';
       }
       return headers;
     });
+
+/// Per-source cover decode budget from [ExtensionClientSettings.coverQuality].
+final sourceCoverMaxBytesProvider =
+    FutureProvider.family<int, String>((ref, sourceId) async {
+  final settings = await ExtensionClientSettings.load(sourceId);
+  return settings.coverMaxBytes;
+});

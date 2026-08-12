@@ -44,7 +44,6 @@ class PaginationKey {
   final double lineHeight;
   final TextAlign textAlign;
   final String? fontFamily;
-  final bool useDeviceFont;
   final bool bionicReading;
 
   const PaginationKey({
@@ -53,7 +52,6 @@ class PaginationKey {
     required this.lineHeight,
     required this.textAlign,
     required this.fontFamily,
-    required this.useDeviceFont,
     required this.bionicReading,
   });
 
@@ -64,8 +62,7 @@ class PaginationKey {
       fontSize: prov.fontSize,
       lineHeight: prov.lineHeight,
       textAlign: prov.textAlign,
-      fontFamily: prov.useDeviceFont ? null : prov.readingFontFamily,
-      useDeviceFont: prov.useDeviceFont,
+      fontFamily: prov.effectiveReadingFontFamily,
       bionicReading: prov.bionicReading,
     );
   }
@@ -78,7 +75,6 @@ class PaginationKey {
       other.lineHeight == lineHeight &&
       other.textAlign == textAlign &&
       other.fontFamily == fontFamily &&
-      other.useDeviceFont == useDeviceFont &&
       other.bionicReading == bionicReading;
 
   @override
@@ -88,7 +84,6 @@ class PaginationKey {
     lineHeight,
     textAlign,
     fontFamily,
-    useDeviceFont,
     bionicReading,
   );
 }

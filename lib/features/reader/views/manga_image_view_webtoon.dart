@@ -35,7 +35,7 @@ class MangaImageViewWebtoon extends StatelessWidget {
       itemPositionsListener: itemPositionsListener,
       scrollDirection: Axis.vertical,
       itemCount: pages.length + 1, // +1 for bottom spacer
-      minCacheExtent: 2000,
+      minCacheExtent: 1200,
       itemBuilder: (context, index) {
         if (index >= pages.length) {
           return const SizedBox(height: 200); // bottom spacer
@@ -47,7 +47,16 @@ class MangaImageViewWebtoon extends StatelessWidget {
             readerMode: props.settings.readingMode,
           );
         }
-        return ReaderPageImage(page: page, webtoon: isWebtoon);
+        return KeyedSubtree(
+          key: ValueKey(
+            'webtoon-$index-r${props.pageRetryTokens[index] ?? 0}',
+          ),
+          child: ReaderPageImage(
+            page: page,
+            webtoon: isWebtoon,
+            onRetry: () => props.onRetryPage(index),
+          ),
+        );
       },
     );
   }

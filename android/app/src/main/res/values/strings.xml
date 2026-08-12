@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="source_settings_title">Source settings</string>
+    <string name="source_settings_missing">Missing source id</string>
+    <string name="source_settings_unavailable">This source has no settings</string>
+    <string name="webview_title">WebView</string>
+    <string name="webview_required">WebView is required to solve site challenges</string>
+    <string name="webview_url_failed">Could not open WebView URL</string>
+    <string name="webview_back">Back</string>
+    <string name="webview_forward">Forward</string>
+    <string name="webview_refresh">Refresh</string>
+    <string name="webview_clear_cookies">Clear cookies</string>
+    <string name="webview_cookies_cleared">Cookies cleared</string>
+    <string name="webview_open_browser">Open in browser</string>
+</resources>

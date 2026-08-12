@@ -32,7 +32,13 @@ class ExtensionRepository {
   }
 
   Future<void> insertExtensionSource(ExtensionSource src) async {
-    await _isar.writeTxn(() => _isar.extensionSources.put(_srcFromModel(src)));
+    // Upsert on the unique sourceId index. Using put() with
+    // id = int.tryParse(logicalId) broke JS updates: non-numeric catalog ids
+    // (and wrongly-parsed numeric ones) failed to replace the existing row,
+    // so version/sourceCode never stuck after "Update".
+    await _isar.writeTxn(
+      () => _isar.extensionSources.putBySourceId(_srcFromModel(src)),
+    );
   }
 
   Future<void> deleteExtensionSource(String sourceId) async {
@@ -84,8 +90,10 @@ class ExtensionRepository {
   // ── Conversions ────────────────────────────────────────────────────
 
   static ExtensionSource _srcToModel(i.ExtensionSource s) => ExtensionSource(
-    id: s.sourceId,
-    sourceId: s.sourceId, // logical ID is what callers expect
+    // Prefer Mihon Source.id when present so resolveSourceId / library pills
+    // match manga rows that still store the long numeric id.
+    id: s.nativeId.isNotEmpty ? s.nativeId : s.sourceId,
+    sourceId: s.sourceId,
     name: s.name,
     version: s.version,
     versionLast: s.versionLast,
@@ -96,6 +104,14 @@ class ExtensionRepository {
     baseUrl: s.baseUrl,
     sourceCodeUrl: s.sourceCodeUrl,
     repoUrl: s.repoUrl,
+    apiUrl: s.apiUrl,
+    hasCloudflare: s.hasCloudflare,
+    itemType: s.itemType,
+    sourceCode: s.sourceCode,
+    sourceCodeLanguage: s.sourceCodeLanguage,
+    pkgName: s.pkgName,
+    versionCode: s.versionCode,
+    signatureHash: s.signatureHash,
     isInstalled: s.isInstalled,
     isActive: s.isActive,
     isNsfw: s.isNsfw,
@@ -107,10 +123,10 @@ class ExtensionRepository {
 
   static i.ExtensionSource _srcFromModel(ExtensionSource s) =>
       i.ExtensionSource(
-        // Preserve the Isar row PK when updating (id != 0), else let
-        // Isar autoIncrement. sourceId is always set from the model's id.
-        sourceId: s.id,
-        id: int.tryParse(s.id),
+        // Logical id is sourceId (hex / mangayomi numeric string / pkg).
+        // Never treat it as the Isar autoIncrement PK — putBySourceId upserts.
+        sourceId: s.sourceId.isNotEmpty ? s.sourceId : s.id,
+        nativeId: (s.id.isNotEmpty && s.id != s.sourceId) ? s.id : '',
         name: s.name,
         version: s.version,
         versionLast: s.versionLast,
@@ -121,12 +137,19 @@ class ExtensionRepository {
         baseUrl: s.baseUrl,
         sourceCodeUrl: s.sourceCodeUrl,
         repoUrl: s.repoUrl,
+        apiUrl: s.apiUrl,
+        hasCloudflare: s.hasCloudflare,
+        itemType: s.itemType,
+        sourceCode: s.sourceCode,
+        pkgName: s.pkgName,
+        versionCode: s.versionCode,
+        signatureHash: s.signatureHash,
         isInstalled: s.isInstalled,
         isActive: s.isActive,
         isNsfw: s.isNsfw,
         isPinned: s.isPinned,
         isObsolete: s.isObsolete,
-        sourceCodeLanguage: 'mihon',
+        sourceCodeLanguage: s.sourceCodeLanguage,
         createdAt: s.createdAt,
         updatedAt: s.updatedAt,
       );
@@ -137,6 +160,8 @@ class ExtensionRepository {
     url: r.url,
     enabled: r.enabled,
     createdAt: r.createdAt,
+    signingKey: r.signingKey,
+    kind: r.kind,
   );
 
   static i.ExtensionRepo _repoFromModel(ExtensionRepo r) => i.ExtensionRepo(
@@ -145,5 +170,7 @@ class ExtensionRepository {
     url: r.url,
     enabled: r.enabled,
     createdAt: r.createdAt,
+    signingKey: r.signingKey,
+    kind: r.kind,
   );
 }

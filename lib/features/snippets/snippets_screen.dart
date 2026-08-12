@@ -20,6 +20,7 @@ import '../../widgets/icon_button_round.dart';
 import '../../widgets/library_header.dart';
 import '../../widgets/loading_skeleton.dart';
 import '../../widgets/one_hand_spacer.dart';
+import '../../widgets/horizontal_tab_swipe.dart';
 import '../../widgets/screen_chrome.dart';
 import '../../widgets/segmented_control.dart';
 import '../../widgets/snippet_card.dart';
@@ -38,36 +39,74 @@ class SnippetsScreen extends ConsumerStatefulWidget {
 
 class _SnippetsScreenState extends ConsumerState<SnippetsScreen> {
   final ScrollController _scrollCtrl = ScrollController();
-  double _scrollProgress = 0;
+  final TextEditingController _searchCtrl = TextEditingController();
   int _tab = 0;
+  String _searchQuery = '';
+  /// Local book filter key: null = all books; otherwise bookId as string or
+  /// `title:<sourceTitle>` for snippets without a bookId.
+  String? _filterBookKey;
 
   @override
   void initState() {
     super.initState();
-    _scrollCtrl.addListener(_onScroll);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       ref.read(snippetsProvider.notifier).loadSnippets();
       ref.read(bookmarksProvider.notifier).loadBookmarks();
     });
   }
 
-  void _onScroll() {
-    if (!_scrollCtrl.hasClients) return;
-    final max = _scrollCtrl.position.maxScrollExtent;
-    final p = max <= 0 ? 0.0 : (_scrollCtrl.offset / max).clamp(0.0, 1.0);
-    if ((p - _scrollProgress).abs() > 0.01) {
-      setState(() => _scrollProgress = p);
-    }
-  }
-
   @override
   void dispose() {
-    _scrollCtrl.removeListener(_onScroll);
     _scrollCtrl.dispose();
+    _searchCtrl.dispose();
     super.dispose();
   }
 
-  bool get _oneHand => ref.watch(themeProvider).oneHandMode;
+  List<Snippet> _applyLocalFilters(List<Snippet> items) {
+    var out = items;
+    final q = _searchQuery.trim().toLowerCase();
+    if (q.isNotEmpty) {
+      out = out.where((s) {
+        final hay = [
+          s.text,
+          s.note ?? '',
+          s.sourceTitle ?? '',
+          ...s.tags,
+        ].join(' ').toLowerCase();
+        return hay.contains(q);
+      }).toList();
+    }
+    final key = _filterBookKey;
+    if (key != null) {
+      out = out.where((s) => _bookKeyFor(s) == key).toList();
+    }
+    return out;
+  }
+
+  String _bookKeyFor(Snippet s) {
+    if (s.bookId != null) return 'id:${s.bookId}';
+    final title = (s.sourceTitle ?? '').trim();
+    if (title.isNotEmpty) return 'title:$title';
+    return 'none';
+  }
+
+  String _bookLabelFor(Snippet s) {
+    final title = (s.sourceTitle ?? '').trim();
+    if (title.isNotEmpty) return title;
+    if (s.bookId != null) return 'Book ${s.bookId}';
+    return 'Untitled';
+  }
+
+  List<({String key, String label})> _uniqueBooks(List<Snippet> all) {
+    final seen = <String>{};
+    final out = <({String key, String label})>[];
+    for (final s in all) {
+      final key = _bookKeyFor(s);
+      if (key == 'none' || !seen.add(key)) continue;
+      out.add((key: key, label: _bookLabelFor(s)));
+    }
+    return out;
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -76,22 +115,35 @@ class _SnippetsScreenState extends ConsumerState<SnippetsScreen> {
     final bp = ref.watch(bookmarksProvider);
     final navClearance = MediaQuery.paddingOf(context).bottom + 84;
     return ScreenBackdrop(
-      child: Stack(
-        children: [
-          SafeArea(bottom: false, child: _body(context, p, bp)),
-          if (!p.selectionMode && _tab == 0)
-            Positioned(
-              left: leftHanded ? 20 : null,
-              right: leftHanded ? null : 20,
-              bottom: navClearance,
-              child: AethelgardFab(
-                iconData: AppIcons.add,
-                onPressed: () => _createSnippet(context),
+      child: HorizontalTabSwipe(
+        tabIndex: _tab,
+        tabCount: 2,
+        onTabChanged: _setTab,
+        child: Stack(
+          children: [
+            SafeArea(bottom: false, child: _body(context, p, bp)),
+            if (!p.selectionMode && _tab == 0)
+              Positioned(
+                left: leftHanded ? 20 : null,
+                right: leftHanded ? null : 20,
+                bottom: navClearance,
+                child: AethelgardFab(
+                  iconData: AppIcons.add,
+                  onPressed: () => _createSnippet(context),
+                ),
               ),
-            ),
-        ],
+          ],
+        ),
       ),
     );
+  }
+
+  void _setTab(int v) {
+    if (_tab == v) return;
+    setState(() => _tab = v);
+    if (v == 1) {
+      ref.read(bookmarksProvider.notifier).loadBookmarks();
+    }
   }
 
   Widget _body(BuildContext context, SnippetsState p, BookmarksState bp) {
@@ -106,11 +158,7 @@ class _SnippetsScreenState extends ConsumerState<SnippetsScreen> {
         padding: EdgeInsets.zero,
         children: [
           const OneHandSpacer(),
-          LibraryHeader(
-            title: 'Snippets',
-            titleSize: _oneHand ? 64 : 32,
-            shrinkProgress: _oneHand ? _scrollProgress : 0.0,
-          ),
+          const LibraryHeader(title: 'Snippets', subtitle: '0 snippets'),
           _buildTabBar(),
           const SizedBox(height: 60),
           EmptyState(
@@ -134,34 +182,28 @@ class _SnippetsScreenState extends ConsumerState<SnippetsScreen> {
       child: SegmentedControl<int>(
         segments: const {0: 'Snippets', 1: 'Bookmarks'},
         value: _tab,
-        onChanged: (v) {
-          setState(() => _tab = v);
-          if (v == 1) {
-            ref.read(bookmarksProvider.notifier).loadBookmarks();
-          }
-        },
+        onChanged: _setTab,
       ),
     );
   }
 
   Widget _buildSnippetsTab(BuildContext context, SnippetsState p) {
-    final items = p.snippets;
+    final base = p.snippets;
+    final items = _applyLocalFilters(base);
     final hasFilter =
         p.filterTag != null ||
         p.filterCollectionId != null ||
-        p.filterCollectionId == -1;
+        p.filterCollectionId == -1 ||
+        _searchQuery.trim().isNotEmpty ||
+        _filterBookKey != null;
 
-    if (items.isEmpty && !hasFilter && p.collections.isEmpty) {
+    if (p.allSnippets.isEmpty && p.collections.isEmpty) {
       return ListView(
         controller: _scrollCtrl,
         padding: EdgeInsets.zero,
         children: [
           const OneHandSpacer(),
-          LibraryHeader(
-            title: 'Snippets',
-            titleSize: _oneHand ? 64 : 32,
-            shrinkProgress: _oneHand ? _scrollProgress : 0.0,
-          ),
+          const LibraryHeader(title: 'Snippets', subtitle: '0 snippets'),
           _buildTabBar(),
           const SizedBox(height: 60),
           EmptyState(
@@ -176,32 +218,45 @@ class _SnippetsScreenState extends ConsumerState<SnippetsScreen> {
       );
     }
 
+    final books = _uniqueBooks(p.allSnippets);
+
     return ListView(
       controller: _scrollCtrl,
       padding: EdgeInsets.zero,
       physics: const AlwaysScrollableScrollPhysics(),
       children: [
         const OneHandSpacer(),
-        _buildHeader(p),
+        _buildHeader(p, count: items.length),
         _buildTabBar(),
-        if (!p.selectionMode)
-          StaggeredEntrance(
-            child: FeaturePanel(
-              icon: AppIcons.note,
-              title: 'Captured thoughts',
-              subtitle:
-                  'Highlights, notes, and quotes with just enough structure to find them again.',
-              stats: [
-                PanelStat(value: '${p.snippets.length}', label: 'Saved'),
-                PanelStat(value: '${p.allTags.length}', label: 'Tags'),
-                PanelStat(
-                  value: hasFilter ? 'Filtered' : 'Uncollected',
-                  label: 'View',
-                ),
-              ],
+        if (!p.selectionMode) ...[
+          Padding(
+            padding: const EdgeInsets.fromLTRB(20, 4, 20, 10),
+            child: TextField(
+              controller: _searchCtrl,
+              onChanged: (v) => setState(() => _searchQuery = v),
+              onSubmitted: (_) => FocusScope.of(context).unfocus(),
+              textInputAction: TextInputAction.search,
+              decoration: InputDecoration(
+                hintText: 'Search snippets...',
+                prefixIcon: const Icon(Icons.search, size: 18),
+                suffixIcon: _searchQuery.isNotEmpty
+                    ? IconButton(
+                        icon: const Icon(Icons.clear, size: 18),
+                        onPressed: () {
+                          _searchCtrl.clear();
+                          setState(() => _searchQuery = '');
+                          FocusScope.of(context).unfocus();
+                        },
+                      )
+                    : null,
+              ),
             ),
           ),
-        if (!p.selectionMode) ...[
+          _BookFilterChips(
+            books: books,
+            selectedKey: _filterBookKey,
+            onSelected: (key) => setState(() => _filterBookKey = key),
+          ),
           _CollectionFilterBar(
             collections: p.collections,
             selectedId: p.filterCollectionId,
@@ -219,15 +274,17 @@ class _SnippetsScreenState extends ConsumerState<SnippetsScreen> {
             height: 200,
             child: EmptyState(
               icon: AppIcons.note,
-              title: 'No matching snippets',
-              subtitle: 'Try a different tag or remove the filter.',
+              title: hasFilter ? 'No matching snippets' : 'No snippets yet',
+              subtitle: hasFilter
+                  ? 'Try a different filter or clear search.'
+                  : 'Highlight text while reading, or tap + to create one.',
             ),
           )
         else ...[
           SectionLabel(title: _sectionTitle(p), meta: '${items.length}'),
           ...items.indexed.map(
             (entry) => Padding(
-              padding: const EdgeInsets.fromLTRB(20, 0, 20, 12),
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
               child: StaggeredEntrance(
                 index: entry.$1 + 1,
                 child: SnippetCard(
@@ -279,12 +336,11 @@ class _SnippetsScreenState extends ConsumerState<SnippetsScreen> {
     return col?.name ?? 'Collection';
   }
 
-  Widget _buildHeader(SnippetsState p) {
+  Widget _buildHeader(SnippetsState p, {required int count}) {
     final sn = ref.read(snippetsProvider.notifier);
     if (p.selectionMode) {
       return LibraryHeader(
         title: '${p.selectedIds.length} selected',
-        titleSize: _oneHand ? 64 : 32,
         actions: [
           IconButtonRound(
             icon: Icons.select_all_rounded,
@@ -339,8 +395,7 @@ class _SnippetsScreenState extends ConsumerState<SnippetsScreen> {
     }
     return LibraryHeader(
       title: 'Snippets',
-      titleSize: _oneHand ? 64 : 32,
-      shrinkProgress: _oneHand ? _scrollProgress : 0.0,
+      subtitle: '$count snippet${count == 1 ? '' : 's'}',
       actions: [
         IconButtonRound(
           icon: Icons.checklist_rtl_rounded,
@@ -636,8 +691,7 @@ class _SnippetsScreenState extends ConsumerState<SnippetsScreen> {
         const OneHandSpacer(),
         LibraryHeader(
           title: 'Bookmarks',
-          titleSize: _oneHand ? 64 : 32,
-          shrinkProgress: _oneHand ? _scrollProgress : 0.0,
+          subtitle: '${bookmarks.length} bookmark${bookmarks.length == 1 ? '' : 's'}',
         ),
         _buildTabBar(),
         if (bp.loading && bookmarks.isEmpty)
@@ -675,20 +729,28 @@ class _SnippetsScreenState extends ConsumerState<SnippetsScreen> {
     final repos = ref.read(repositoriesProvider);
     final chapter = await repos.manga.getMangaChapter(bookmark.chapterId);
     if (chapter == null || !context.mounted) return;
-    final book = await repos.books.getBook(bookmark.bookId);
-    if (book == null || !context.mounted) return;
+    // Bookmarks store manga ids in [Bookmark.bookId] — look up manga, not ebook.
+    final manga = await repos.manga.getMangaById(bookmark.bookId);
+    if (manga == null || !context.mounted) {
+      if (context.mounted) {
+        StashToast.show(
+          context,
+          message: 'Manga no longer in library',
+          icon: Icons.error_outline,
+        );
+      }
+      return;
+    }
     context.pushNamed(
       Routes.mangaReader,
-      extra:
-          (
-                mangaId: bookmark.bookId,
-                sourceId: book.source,
-                mangaUrl: book.sourceUrl ?? '',
-                chapterUrl: chapter.url,
-                chapterName: chapter.name,
-                pageNumber: bookmark.pageNumber,
-              )
-              as MangaReaderArgs,
+      extra: (
+        mangaId: bookmark.bookId,
+        sourceId: manga.sourceId,
+        mangaUrl: manga.url,
+        chapterUrl: chapter.url,
+        chapterName: chapter.name,
+        pageNumber: bookmark.pageNumber,
+      ),
     );
   }
 
@@ -733,6 +795,53 @@ Color _parseHexColor(String hex) {
   final value = int.tryParse(cleaned.substring(0, 6), radix: 16);
   if (value == null) return const Color(0xFFFFE8A8);
   return Color(value + 0xFF000000);
+}
+
+class _BookFilterChips extends StatelessWidget {
+  final List<({String key, String label})> books;
+  final String? selectedKey;
+  final ValueChanged<String?> onSelected;
+
+  const _BookFilterChips({
+    required this.books,
+    required this.selectedKey,
+    required this.onSelected,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    if (books.isEmpty) return const SizedBox.shrink();
+    final c = context.colors;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+      child: SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        child: Row(
+          children: [
+            _Chip(
+              label: 'All Books',
+              selected: selectedKey == null,
+              color: c.accent,
+              filled: true,
+              onSelected: () => onSelected(null),
+            ),
+            for (final book in books) ...[
+              const SizedBox(width: 8),
+              _Chip(
+                label: book.label,
+                selected: selectedKey == book.key,
+                color: c.accent,
+                filled: true,
+                onSelected: () {
+                  onSelected(selectedKey == book.key ? null : book.key);
+                },
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
 }
 
 class _CollectionFilterBar extends StatelessWidget {
@@ -796,38 +905,54 @@ class _Chip extends StatelessWidget {
   final bool selected;
   final Color color;
   final VoidCallback onSelected;
+  final bool filled;
 
   const _Chip({
     required this.label,
     required this.selected,
     required this.color,
     required this.onSelected,
+    this.filled = false,
   });
 
   @override
   Widget build(BuildContext context) {
     final c = context.colors;
-    final bg = selected ? color.withValues(alpha: 0.18) : c.surfaceMuted;
-    final fg = selected ? color : c.textSecondary;
-    final border = selected
-        ? Border.all(color: color.withValues(alpha: 0.6))
-        : null;
+    final Color bg;
+    final Color fg;
+    Border? border;
+    if (filled && selected) {
+      bg = color;
+      fg = c.onAccent;
+      border = null;
+    } else if (selected) {
+      bg = color.withValues(alpha: 0.18);
+      fg = color;
+      border = Border.all(color: color.withValues(alpha: 0.6));
+    } else {
+      bg = c.surfaceMuted;
+      fg = c.textSecondary;
+      border = null;
+    }
     return GestureDetector(
       onTap: onSelected,
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 180),
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+        constraints: const BoxConstraints(maxWidth: 140),
         decoration: BoxDecoration(
           color: bg,
-          borderRadius: BorderRadius.circular(20),
+          borderRadius: BorderRadius.circular(999),
           border: border,
         ),
         child: Text(
           label,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
           style: TextStyle(
             color: fg,
-            fontSize: 13,
-            fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
+            fontSize: 12,
+            fontWeight: selected ? FontWeight.w600 : FontWeight.w400,
           ),
         ),
       ),

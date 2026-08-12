@@ -1,3 +1,21 @@
+import '../utils/language.dart';
+
+/// `sourceCodeLanguage` values.
+///
+/// Installed sources persist [mihon], [js], or [dart]. Catalog index entries
+/// may also use [unsupported] (rejected at install).
+class SourceCodeLanguage {
+  static const mihon = 'mihon';
+  static const js = 'js';
+  static const dart = 'dart';
+  static const unsupported = 'unsupported';
+
+  static bool isJs(String? v) => v == js || v == 'javascript';
+  static bool isMihon(String? v) => v == mihon;
+  static bool isDart(String? v) => v == dart;
+  static bool isInstallable(String? v) => isJs(v) || isMihon(v) || isDart(v);
+}
+
 class ExtensionSource {
   final String id;
   final String sourceId;
@@ -11,6 +29,28 @@ class ExtensionSource {
   final String? baseUrl;
   final String? sourceCodeUrl;
   final String? repoUrl;
+
+  /// Mangayomi JS API base (e.g. MangaDex). Null/empty when unused.
+  final String? apiUrl;
+
+  /// Whether the source sits behind Cloudflare (mangayomi).
+  final bool hasCloudflare;
+
+  /// Product kind: `manga` / `anime` / `novel`. Koma is manga-only UI;
+  /// field is persisted for index/JS fidelity.
+  final String itemType;
+
+  /// JS/Dart body for [SourceCodeLanguage.js] / [SourceCodeLanguage.dart];
+  /// empty for Mihon APKs.
+  final String sourceCode;
+
+  /// [SourceCodeLanguage.mihon], [SourceCodeLanguage.js], or
+  /// [SourceCodeLanguage.dart].
+  final String sourceCodeLanguage;
+
+  final String pkgName;
+  final int versionCode;
+  final String signatureHash;
   final bool isInstalled;
   final bool isActive;
   final bool isNsfw;
@@ -19,10 +59,26 @@ class ExtensionSource {
   final DateTime createdAt;
   final DateTime updatedAt;
 
-  /// True when a newer version is available in the repo index. `versionLast`
-  /// is written by [checkForUpdates] on app start / index fetch.
-  bool get isUpdateAvailable =>
-      versionLast != null && versionLast!.isNotEmpty && versionLast != version;
+  /// True when a newer version is available in the source's repo index.
+  /// `versionLast` is written by [checkForUpdates] on app start / index fetch.
+  bool get isUpdateAvailable {
+    final latest = versionLast;
+    if (latest == null || latest.isEmpty) return false;
+    return compareVersions(version, latest) < 0;
+  }
+
+  /// Mihon Untrusted: inactive install awaiting trust, with signing metadata.
+  bool get isUntrusted =>
+      isInstalled &&
+      !isActive &&
+      pkgName.isNotEmpty &&
+      signatureHash.isNotEmpty &&
+      !isJs &&
+      !isDart;
+
+  bool get isJs => SourceCodeLanguage.isJs(sourceCodeLanguage);
+
+  bool get isDart => SourceCodeLanguage.isDart(sourceCodeLanguage);
 
   ExtensionSource({
     required this.id,
@@ -37,6 +93,14 @@ class ExtensionSource {
     this.baseUrl,
     this.sourceCodeUrl,
     this.repoUrl,
+    this.apiUrl,
+    this.hasCloudflare = false,
+    this.itemType = 'manga',
+    this.sourceCode = '',
+    this.sourceCodeLanguage = SourceCodeLanguage.mihon,
+    this.pkgName = '',
+    this.versionCode = 0,
+    this.signatureHash = '',
     this.isInstalled = true,
     this.isActive = true,
     this.isNsfw = false,
@@ -60,6 +124,14 @@ class ExtensionSource {
     String? baseUrl,
     String? sourceCodeUrl,
     String? repoUrl,
+    String? apiUrl,
+    bool? hasCloudflare,
+    String? itemType,
+    String? sourceCode,
+    String? sourceCodeLanguage,
+    String? pkgName,
+    int? versionCode,
+    String? signatureHash,
     bool? isInstalled,
     bool? isActive,
     bool? isNsfw,
@@ -81,6 +153,14 @@ class ExtensionSource {
       baseUrl: baseUrl ?? this.baseUrl,
       sourceCodeUrl: sourceCodeUrl ?? this.sourceCodeUrl,
       repoUrl: repoUrl ?? this.repoUrl,
+      apiUrl: apiUrl ?? this.apiUrl,
+      hasCloudflare: hasCloudflare ?? this.hasCloudflare,
+      itemType: itemType ?? this.itemType,
+      sourceCode: sourceCode ?? this.sourceCode,
+      sourceCodeLanguage: sourceCodeLanguage ?? this.sourceCodeLanguage,
+      pkgName: pkgName ?? this.pkgName,
+      versionCode: versionCode ?? this.versionCode,
+      signatureHash: signatureHash ?? this.signatureHash,
       isInstalled: isInstalled ?? this.isInstalled,
       isActive: isActive ?? this.isActive,
       isNsfw: isNsfw ?? this.isNsfw,
@@ -104,6 +184,14 @@ class ExtensionSource {
     'base_url': baseUrl,
     'source_code_url': sourceCodeUrl,
     'repo_url': repoUrl,
+    'api_url': apiUrl,
+    'has_cloudflare': hasCloudflare ? 1 : 0,
+    'item_type': itemType,
+    'source_code': sourceCode,
+    'source_code_language': sourceCodeLanguage,
+    'pkg_name': pkgName,
+    'version_code': versionCode,
+    'signature_hash': signatureHash,
     'is_installed': isInstalled ? 1 : 0,
     'is_active': isActive ? 1 : 0,
     'is_nsfw': isNsfw ? 1 : 0,
@@ -127,6 +215,16 @@ class ExtensionSource {
         baseUrl: json['base_url'] as String?,
         sourceCodeUrl: json['source_code_url'] as String?,
         repoUrl: json['repo_url'] as String?,
+        apiUrl: json['api_url'] as String?,
+        hasCloudflare: (json['has_cloudflare'] as int? ?? 0) == 1 ||
+            json['has_cloudflare'] == true,
+        itemType: json['item_type'] as String? ?? 'manga',
+        sourceCode: json['source_code'] as String? ?? '',
+        sourceCodeLanguage:
+            json['source_code_language'] as String? ?? SourceCodeLanguage.mihon,
+        pkgName: json['pkg_name'] as String? ?? '',
+        versionCode: (json['version_code'] as num?)?.toInt() ?? 0,
+        signatureHash: json['signature_hash'] as String? ?? '',
         isInstalled: (json['is_installed'] as int? ?? 0) == 1,
         isActive: (json['is_active'] as int? ?? 1) == 1,
         isNsfw: (json['is_nsfw'] as int? ?? 0) == 1,

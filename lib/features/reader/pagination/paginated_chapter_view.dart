@@ -4,7 +4,9 @@ import '../../../core/models/highlight.dart';
 import '../../../theme/app_theme.dart';
 import '../../../theme/theme_state.dart';
 import '../../../theme/tokens/app_type.dart';
+import '../html/reading_document.dart';
 import 'chapter_paginator.dart';
+import 'empty_selection_menu.dart';
 import 'reading_spans.dart';
 
 /// Renders exactly one page of a chapter, with no scroll view.
@@ -19,6 +21,10 @@ import 'reading_spans.dart';
 class PaginatedChapterView extends StatelessWidget {
   /// Full extracted plain text of the chapter.
   final String text;
+
+  /// Structured document for rich styles / images. When null, falls back to
+  /// plain [text] painting.
+  final ReadingDocument? document;
 
   /// The slice of [text] this page shows.
   final PageBreak page;
@@ -38,9 +44,15 @@ class PaginatedChapterView extends StatelessWidget {
   final bool ttsActive;
   final int ttsStart;
   final int ttsEnd;
+  final int focusStart;
+  final int focusEnd;
+  final double focusAlpha;
 
   /// Rebuild discriminator so edits to highlights re-run selection state.
   final int highlightVersion;
+
+  /// Content width used to size image WidgetSpans (must match paginator).
+  final double? contentWidth;
 
   /// Fires with chapter-relative offsets, or null when the selection clears.
   final void Function(int start, int end)? onSelected;
@@ -50,6 +62,7 @@ class PaginatedChapterView extends StatelessWidget {
   const PaginatedChapterView({
     super.key,
     required this.text,
+    this.document,
     required this.page,
     required this.chapterTitle,
     required this.themeProv,
@@ -59,7 +72,11 @@ class PaginatedChapterView extends StatelessWidget {
     this.ttsActive = false,
     this.ttsStart = 0,
     this.ttsEnd = 0,
+    this.focusStart = 0,
+    this.focusEnd = 0,
+    this.focusAlpha = 0,
     this.highlightVersion = 0,
+    this.contentWidth,
     this.onSelected,
     this.onSelectionCleared,
     this.onSelectionCollapsed,
@@ -102,25 +119,53 @@ class PaginatedChapterView extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final baseStyle = ReadingSpans.style(themeProv, context.colors.textPrimary);
+    final c = context.colors;
+    final width = contentWidth ?? MediaQuery.sizeOf(context).width;
+    final doc = document;
+    final children = doc != null
+        ? ReadingSpans.buildFromDocument(
+            doc: doc,
+            prov: themeProv,
+            baseStyle: baseStyle,
+            brightness: Theme.of(context).brightness,
+            highlights: highlights,
+            ttsActive: ttsActive,
+            ttsStart: ttsStart,
+            ttsEnd: ttsEnd,
+            focusStart: focusStart,
+            focusEnd: focusEnd,
+            focusAlpha: focusAlpha,
+            rangeStart: page.start,
+            rangeEnd: page.end,
+            contentWidth: width,
+            includeImages: true,
+            linkColor: c.accent,
+            onLinkTap: ReadingSpans.openLink,
+          )
+        : ReadingSpans.build(
+            text: text,
+            prov: themeProv,
+            baseStyle: baseStyle,
+            brightness: Theme.of(context).brightness,
+            highlights: highlights,
+            ttsActive: ttsActive,
+            ttsStart: ttsStart,
+            ttsEnd: ttsEnd,
+            focusStart: focusStart,
+            focusEnd: focusEnd,
+            focusAlpha: focusAlpha,
+            rangeStart: page.start,
+            rangeEnd: page.end,
+          );
 
     final body = SelectableText.rich(
       key: ValueKey('page-${page.start}-${page.end}-$highlightVersion'),
       TextSpan(
         style: baseStyle,
-        children: ReadingSpans.build(
-          text: text,
-          prov: themeProv,
-          baseStyle: baseStyle,
-          brightness: Theme.of(context).brightness,
-          highlights: highlights,
-          ttsActive: ttsActive,
-          ttsStart: ttsStart,
-          ttsEnd: ttsEnd,
-          rangeStart: page.start,
-          rangeEnd: page.end,
-        ),
+        children: children,
       ),
       textAlign: themeProv.textAlign,
+      contextMenuBuilder: emptyTextSelectionContextMenu,
       onSelectionChanged: (selection, cause) {
         if (selection.isValid && !selection.isCollapsed) {
           // SelectableText reports offsets into the spans it rendered, which

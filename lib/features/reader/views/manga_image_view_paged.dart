@@ -45,6 +45,8 @@ class MangaImageViewPaged extends StatelessWidget {
           final leftIdx = spreadIndex * 2;
           final rightIdx = leftIdx + 1;
           return _KeepAlivePage(
+            pageIndex: leftIdx,
+            currentPage: props.currentPage,
             child: Row(
               children: [
                 Expanded(
@@ -72,7 +74,11 @@ class MangaImageViewPaged extends StatelessWidget {
       allowImplicitScrolling: true,
       itemCount: pages.length,
       onPageChanged: props.onPageChanged,
-      itemBuilder: (_, i) => _KeepAlivePage(child: _buildPage(context, i)),
+      itemBuilder: (_, i) => _KeepAlivePage(
+        pageIndex: i,
+        currentPage: props.currentPage,
+        child: _buildPage(context, i),
+      ),
     );
   }
 
@@ -93,8 +99,9 @@ class MangaImageViewPaged extends StatelessWidget {
     if (page.localPath != null) {
       imageProvider = FileImage(File(page.localPath!));
       resolvedFilePath = page.localPath;
-    } else if (page.resolvedFilePath != null &&
-        File(page.resolvedFilePath!).existsSync()) {
+    } else if (page.resolvedFilePath != null) {
+      // Trust the path written by SubsamplingScaleImageView after the first
+      // resolve — avoid sync filesystem checks on the UI isolate.
       imageProvider = FileImage(File(page.resolvedFilePath!));
       resolvedFilePath = page.resolvedFilePath;
     } else if (page.imageUrl.isNotEmpty) {
@@ -117,6 +124,9 @@ class MangaImageViewPaged extends StatelessWidget {
     return Padding(
       padding: EdgeInsets.symmetric(horizontal: hPad, vertical: vPad),
       child: SubsamplingScaleImageView(
+        key: ValueKey(
+          'page-$index-r${props.pageRetryTokens[index] ?? 0}',
+        ),
         image: imageProvider,
         resolvedFilePath: resolvedFilePath,
         preloadData: page,
@@ -134,11 +144,21 @@ class MangaImageViewPaged extends StatelessWidget {
   }
 }
 
-/// Keeps visited pages alive in the [PageView] so flipping back does not
-/// dispose/rebuild the subsampling viewer (visible reload flash).
+/// Keeps nearby pages alive so flipping back does not dispose the
+/// subsampling viewer. Windowed to ±[_keepRadius] of the current page to
+/// bound RAM on long chapters.
 class _KeepAlivePage extends StatefulWidget {
   final Widget child;
-  const _KeepAlivePage({required this.child});
+  final int pageIndex;
+  final ValueNotifier<int> currentPage;
+
+  static const int _keepRadius = 2;
+
+  const _KeepAlivePage({
+    required this.child,
+    required this.pageIndex,
+    required this.currentPage,
+  });
 
   @override
   State<_KeepAlivePage> createState() => _KeepAlivePageState();
@@ -147,7 +167,33 @@ class _KeepAlivePage extends StatefulWidget {
 class _KeepAlivePageState extends State<_KeepAlivePage>
     with AutomaticKeepAliveClientMixin {
   @override
-  bool get wantKeepAlive => true;
+  bool get wantKeepAlive =>
+      (widget.pageIndex - widget.currentPage.value).abs() <=
+      _KeepAlivePage._keepRadius;
+
+  @override
+  void initState() {
+    super.initState();
+    widget.currentPage.addListener(_onCurrentPage);
+  }
+
+  @override
+  void didUpdateWidget(covariant _KeepAlivePage oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.currentPage != widget.currentPage) {
+      oldWidget.currentPage.removeListener(_onCurrentPage);
+      widget.currentPage.addListener(_onCurrentPage);
+    }
+    updateKeepAlive();
+  }
+
+  void _onCurrentPage() => updateKeepAlive();
+
+  @override
+  void dispose() {
+    widget.currentPage.removeListener(_onCurrentPage);
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -240,7 +286,10 @@ class _BrokenPage extends StatelessWidget {
           TextButton.icon(
             onPressed: onRetry,
             icon: const Icon(Icons.refresh, color: Colors.white54),
-            label: const Text('Retry', style: TextStyle(color: Colors.white54)),
+            label: const Text(
+              'Reload image',
+              style: TextStyle(color: Colors.white54),
+            ),
           ),
         ],
       ),

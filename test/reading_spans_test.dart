@@ -30,6 +30,9 @@ void main() {
     bool ttsActive = false,
     int ttsStart = 0,
     int ttsEnd = 0,
+    int focusStart = 0,
+    int focusEnd = 0,
+    double focusAlpha = 0,
     int rangeStart = 0,
     int? rangeEnd,
   }) {
@@ -42,6 +45,9 @@ void main() {
       ttsActive: ttsActive,
       ttsStart: ttsStart,
       ttsEnd: ttsEnd,
+      focusStart: focusStart,
+      focusEnd: focusEnd,
+      focusAlpha: focusAlpha,
       rangeStart: rangeStart,
       rangeEnd: rangeEnd,
     );
@@ -114,6 +120,34 @@ void main() {
       final spans = build(text, ttsActive: true, ttsStart: 5, ttsEnd: 5);
       expect(flatten(spans), text);
       expect(spans.every((s) => s.style?.backgroundColor == null), isTrue);
+    });
+
+    test('a focus flash range gets a background', () {
+      final spans = build(
+        text,
+        focusStart: 4,
+        focusEnd: 9,
+        focusAlpha: 0.55,
+      );
+      final decorated = spans.where((s) => s.style?.backgroundColor != null);
+      expect(decorated, isNotEmpty);
+      expect(flatten(decorated.toList()), 'quick');
+    });
+
+    test('zero focus alpha paints nothing', () {
+      final spans = build(text, focusStart: 4, focusEnd: 9, focusAlpha: 0);
+      expect(spans.every((s) => s.style?.backgroundColor == null), isTrue);
+    });
+
+    test('focus flash preserves full text with highlights', () {
+      final spans = build(
+        text,
+        highlights: [hl(16, 19)],
+        focusStart: 4,
+        focusEnd: 9,
+        focusAlpha: 0.4,
+      );
+      expect(flatten(spans), text);
     });
   });
 

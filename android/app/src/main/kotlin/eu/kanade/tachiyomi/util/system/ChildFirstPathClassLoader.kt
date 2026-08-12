@@ -7,8 +7,10 @@ import java.net.URL
 import java.util.Enumeration
 
 /**
- * Parent-last classloader matching Mihon's approach exactly.
- * Order: system → child (APK) → parent (app).
+ * Parent-last classloader matching Mihon's approach, with one host override:
+ * [keiyoushi.utils] WebView helpers always load from the app ClassLoader so our
+ * ServiceWorker stub for loadDataWithBaseURL is used (extension APK has an
+ * unpatched copy that would otherwise win under child-first).
  */
 class ChildFirstPathClassLoader(
     dexPath: String,
@@ -20,6 +22,19 @@ class ChildFirstPathClassLoader(
 
     override fun loadClass(name: String?, resolve: Boolean): Class<*> {
         var c = findLoadedClass(name)
+
+        // Host WebView MUST win — never fall through to the extension's copy.
+        if (c == null && name != null && prefersHostWebView(name)) {
+            val host = parent
+                ?: throw ClassNotFoundException("no parent ClassLoader for $name")
+            c = host.loadClass(name)
+            android.util.Log.d(
+                "ChildFirstCL",
+                "host WebView class $name loader=${c.classLoader}",
+            )
+            if (resolve) resolveClass(c)
+            return c
+        }
 
         if (c == null && systemClassLoader != null) {
             try {
@@ -83,6 +98,24 @@ class ChildFirstPathClassLoader(
             getResource(name)?.openStream()
         } catch (_: IOException) {
             return null
+        }
+    }
+
+    companion object {
+        /** Host-shipped keiyoushi WebView.kt symbols (see keiyoushi/utils/WebView.kt). */
+        fun prefersHostWebView(name: String): Boolean {
+            if (!name.startsWith("keiyoushi.utils.")) return false
+            val simple = name.removePrefix("keiyoushi.utils.")
+            // Match Kotlin file facade, nested classes, and any WebView* type.
+            return simple == "WebViewKt" ||
+                simple.startsWith("WebViewKt\$") ||
+                simple.startsWith("WebView") ||
+                simple == "RenderProcessGoneException" ||
+                simple == "WebViewTimeoutException" ||
+                simple.startsWith("ScopeWebViewClient") ||
+                simple.startsWith("LoggingWebChromeClient") ||
+                simple.contains("ServiceWorkerStub") ||
+                simple == "InjectServiceWorkerStubKt" // if top-level was split
         }
     }
 }

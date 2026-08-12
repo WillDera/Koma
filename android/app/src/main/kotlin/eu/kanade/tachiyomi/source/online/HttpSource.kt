@@ -52,7 +52,7 @@ abstract class HttpSource : CatalogueSource {
     }
 
     protected open fun headersBuilder(): Headers.Builder = Headers.Builder().apply {
-        add("User-Agent", "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36")
+        add("User-Agent", network.defaultUserAgentProvider())
     }
 
     override fun toString(): String = "$name (${lang.uppercase()})"

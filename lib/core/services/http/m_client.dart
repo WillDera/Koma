@@ -59,7 +59,11 @@ class MClient {
 
   /// Builds an [InterceptedClient] with the Cloudflare retry policy and the
   /// cookie/logging interceptors.
+  /// [source] is accepted for Dart-extension / mangayomi ABI parity
+  /// (`Client(source)`); cookie/CF behaviour is host-based and does not
+  /// currently branch on the extension source object.
   static InterceptedClient init({
+    Object? source,
     Map<String, dynamic>? reqcopyWith,
     bool showCloudFlareError = true,
   }) {
@@ -321,6 +325,9 @@ Future<void> webviewServer() async {
       (HttpRequest request) {
         if (request.method == 'POST' && request.uri.path == '/resolve_cf') {
           _handleResolveCf(request);
+        } else if (request.method == 'POST' &&
+            request.uri.path == '/evaluateJavascriptViaWebview') {
+          _evaluateJavascriptViaWebview(request);
         } else {
           request.response
             ..statusCode = HttpStatus.notFound
@@ -448,6 +455,82 @@ void _handleResolveCf(HttpRequest request) async {
       ..write(jsonEncode({'result': isCloudFlare}))
       ..close();
   } catch (e) {
+    request.response
+      ..statusCode = HttpStatus.badRequest
+      ..write(jsonEncode({'error': 'Invalid JSON'}))
+      ..close();
+  }
+}
+
+/// Handles `POST /evaluateJavascriptViaWebview`. Loads [url] in a headless
+/// WebView, runs [scripts] on load-stop, and returns whatever the page posts
+/// back via the `setResponse` JS handler. Port of mangayomi's handler.
+Future<void> _evaluateJavascriptViaWebview(HttpRequest request) async {
+  try {
+    final body = await utf8.decoder.bind(request).join();
+    final data = jsonDecode(body) as Map<String, dynamic>;
+    final url = data['url'] as String;
+    final headers =
+        (data['headers'] as Map<String, dynamic>?)?.map(
+          (key, value) => MapEntry(key, value.toString()),
+        ) ??
+        {};
+    final scripts =
+        (data['scripts'] as List<dynamic>?)
+            ?.map((e) => e.toString())
+            .toList() ??
+        [];
+    final time = data['time'] as int? ?? 30;
+
+    int t = 0;
+    bool timeOut = false;
+    bool isOk = false;
+    String response = '';
+    webview.HeadlessInAppWebView? headlessWebView;
+    try {
+      headlessWebView = webview.HeadlessInAppWebView(
+        webViewEnvironment: webViewEnvironment,
+        onWebViewCreated: (controller) {
+          controller.addJavaScriptHandler(
+            handlerName: 'setResponse',
+            callback: (args) {
+              response = args[0] as String;
+              isOk = true;
+            },
+          );
+        },
+        initialUrlRequest: webview.URLRequest(
+          url: webview.WebUri(url),
+          headers: headers,
+        ),
+        onLoadStop: (controller, loadedUrl) async {
+          for (final script in scripts) {
+            await controller.platform.evaluateJavascript(source: script);
+          }
+        },
+      );
+
+      await headlessWebView.run();
+
+      await Future.doWhile(() async {
+        timeOut = time == t;
+        if (timeOut || isOk) {
+          return false;
+        }
+        await Future.delayed(const Duration(seconds: 1));
+        t++;
+        return true;
+      });
+    } finally {
+      try {
+        await headlessWebView?.dispose();
+      } catch (_) {}
+    }
+    request.response
+      ..headers.contentType = ContentType.json
+      ..write(jsonEncode({'result': response}))
+      ..close();
+  } catch (_) {
     request.response
       ..statusCode = HttpStatus.badRequest
       ..write(jsonEncode({'error': 'Invalid JSON'}))

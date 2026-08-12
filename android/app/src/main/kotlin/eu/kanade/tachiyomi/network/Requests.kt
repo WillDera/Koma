@@ -10,7 +10,7 @@ import java.util.concurrent.TimeUnit
 
 val DEFAULT_HEADERS: Headers
     get() = Headers.Builder()
-        .add("User-Agent", "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36")
+        .add("User-Agent", NetworkHelper.FALLBACK_USER_AGENT)
         .build()
 
 val DEFAULT_CACHE_CONTROL: CacheControl
