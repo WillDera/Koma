@@ -1781,9 +1781,18 @@ class _MangaLibraryCard extends ConsumerWidget {
               height: 1.3,
             ),
           ),
-          if (extensionName != null && extensionName!.isNotEmpty)
+          if (!showSourcePills &&
+              extensionName != null &&
+              extensionName!.isNotEmpty)
             Text(
               extensionName!,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(color: c.textSecondary, fontSize: 11),
+            )
+          else if (manga.author != null && manga.author!.isNotEmpty)
+            Text(
+              manga.author!,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: TextStyle(color: c.textSecondary, fontSize: 11),
@@ -1926,13 +1935,15 @@ class _MangaLibraryRow extends ConsumerWidget {
                         fontWeight: FontWeight.w600,
                       ),
                     ),
-                    const SizedBox(height: 2),
-                    Text(
-                      extensionName ?? manga.sourceId,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(color: c.textSecondary, fontSize: 12),
-                    ),
+                    if (!showSourcePills) ...[
+                      const SizedBox(height: 2),
+                      Text(
+                        extensionName ?? manga.sourceId,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(color: c.textSecondary, fontSize: 12),
+                      ),
+                    ],
                     if (manga.author != null && manga.author!.isNotEmpty) ...[
                       const SizedBox(height: 4),
                       Text(
