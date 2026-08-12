@@ -84,6 +84,8 @@ class _MangaReaderScreenState extends ConsumerState<MangaReaderScreen>
   bool _isBookmarked = false;
   final List<TransformationController> _zoomCtrls = [];
   Timer? _saveTimer;
+  Timer? _readingTimer;
+  int _elapsedReadingSeconds = 0;
 
   /// The full chapter list for this manga (cached for navigation lookups).
   List<MangaChapter> _chapters = [];
@@ -165,6 +167,7 @@ class _MangaReaderScreenState extends ConsumerState<MangaReaderScreen>
     _isNextChapterPreloading = false;
     _saveTimer?.cancel();
     _saveTimer = null;
+    _stopReadingTimer();
     _flushPageProgress();
     _restoreSystemUI();
     WakelockPlus.disable();
@@ -255,10 +258,12 @@ class _MangaReaderScreenState extends ConsumerState<MangaReaderScreen>
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.paused) {
+      _stopReadingTimer();
       _flushPageProgress();
       WakelockPlus.disable();
     } else if (state == AppLifecycleState.resumed) {
       _applyWakelock();
+      if (!_loading && _error == null) _startReadingTimer();
     }
   }
 
@@ -438,11 +443,9 @@ class _MangaReaderScreenState extends ConsumerState<MangaReaderScreen>
         });
         await _initProgress();
         if (!_isLive(session)) return;
+        _startReadingTimer();
         _proactivePreload();
         _updateBookmarkState();
-        if (widget.pageNumber != null) {
-          _jumpToPageByNumber(widget.pageNumber!);
-        }
         return;
       }
 
@@ -475,11 +478,9 @@ class _MangaReaderScreenState extends ConsumerState<MangaReaderScreen>
 
       await _initProgress();
       if (!_isLive(session)) return;
+      _startReadingTimer();
       _proactivePreload();
       _updateBookmarkState();
-      if (widget.pageNumber != null) {
-        _jumpToPageByNumber(widget.pageNumber!);
-      }
     } catch (e) {
       if (!_isLive(session)) return;
       setState(() {
@@ -569,6 +570,13 @@ class _MangaReaderScreenState extends ConsumerState<MangaReaderScreen>
   Future<void> _initProgress() async {
     if (_currentChapter == null || _pages.isEmpty) return;
     _showNavigationOverlay = true;
+
+    // A bookmark deep link outranks stored progress — restoring last-read too
+    // would queue a second post-frame jump that lands afterwards and wins.
+    // Fall through only when the bookmarked page isn't part of this chapter.
+    final bookmarked = widget.pageNumber;
+    if (bookmarked != null && _jumpToPageByNumber(bookmarked)) return;
+
     final ch = _currentChapter;
     if (ch == null || ch.lastPageRead <= 0) return;
 
@@ -633,6 +641,28 @@ class _MangaReaderScreenState extends ConsumerState<MangaReaderScreen>
     _saveTimer?.cancel();
     _saveTimer = null;
     _saveProgress();
+  }
+
+  void _startReadingTimer() {
+    if (_readingTimer != null) return;
+    _readingTimer = Timer.periodic(const Duration(seconds: 30), (_) {
+      _elapsedReadingSeconds += 30;
+      unawaited(
+        ref.read(statsServiceProvider).trackReading(widget.mangaId ?? 0, 30),
+      );
+    });
+  }
+
+  void _stopReadingTimer() {
+    _readingTimer?.cancel();
+    _readingTimer = null;
+    final remainder = _elapsedReadingSeconds % 30;
+    if (remainder > 0) {
+      unawaited(
+        ref.read(statsServiceProvider).trackReading(widget.mangaId ?? 0, remainder),
+      );
+    }
+    _elapsedReadingSeconds = 0;
   }
 
   void _toggleToolbar() => _showToolbar.value = !_showToolbar.value;
@@ -740,16 +770,23 @@ class _MangaReaderScreenState extends ConsumerState<MangaReaderScreen>
     _schedulePageSave(clamped);
   }
 
-  void _jumpToPageByNumber(int chapterRelativePage) {
-    if (_pages.isEmpty) return;
+  /// Jumps to [chapterRelativePage] of the chapter being read (bookmark deep
+  /// link). Returns false when that page isn't in the loaded chapter.
+  ///
+  /// Goes through [_jumpToFlatIndex] rather than [_goToPage] because this runs
+  /// before the reader's first frame: the [PageController] and
+  /// [ItemScrollController] have no clients yet, so an immediate jump is
+  /// silently dropped and the reader stays on whatever page it opened at.
+  bool _jumpToPageByNumber(int chapterRelativePage) {
+    if (_pages.isEmpty) return false;
     final target = _pages.indexWhere((p) {
       if (p.isTransitionPage) return false;
       return p.chapter?.id == _currentChapter?.id &&
           p.mangaPage?.index == chapterRelativePage;
     });
-    if (target >= 0) {
-      _goToPage(target);
-    }
+    if (target < 0) return false;
+    _jumpToFlatIndex(target, animate: false);
+    return true;
   }
 
   /// Saves the chapter-relative page index (not the flat list index),
@@ -909,7 +946,10 @@ class _MangaReaderScreenState extends ConsumerState<MangaReaderScreen>
           mangaUrl: widget.mangaUrl,
           chapterUrl: chapter.url,
           chapterName: chapter.name,
-          pageNumber: widget.pageNumber,
+          // A bookmark's page number belongs to the chapter it was made in.
+          // Carrying it into a different chapter would drop the reader at that
+          // page instead of the new chapter's own last-read position.
+          pageNumber: null,
         ),
       );
     });

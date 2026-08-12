@@ -36,10 +36,10 @@ abstract final class CatalogCardLayout {
   static double childAspectRatio(LibraryCardVariant variant) {
     final v = gridVariant(variant);
     if (v == LibraryCardVariant.overlay) return AppSpacing.coverAspectRatio;
-    if (v == LibraryCardVariant.compact) return 0.62;
-    // Comfortable grid carries a 2-line title + 1-line subtitle under the
-    // 2:3 cover, so cells need extra vertical room.
-    return 0.50;
+    if (v == LibraryCardVariant.compact) return 0.70;
+    // Grid: title + optional subtitle under a 2:3 cover. Higher ratio = shorter
+    // cells (height = width / ratio).
+    return 0.58;
   }
 
   static SliverGridDelegateWithFixedCrossAxisCount gridDelegate({
