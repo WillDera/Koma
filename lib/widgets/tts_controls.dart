@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
+import '../core/services/piper_voice_service.dart';
 import '../features/reader/tts/tts_engine.dart';
 import '../features/reader/tts_provider.dart';
+import '../features/settings/piper_voice_ui.dart';
 import '../theme/app_theme.dart';
 import '../theme/tokens/glass_blur.dart';
 import 'icon_button_round.dart';
@@ -165,8 +167,16 @@ class _TtsSettingsSheetState extends State<TtsSettingsSheet> {
   Future<void> _onEngineChanged(TtsEngineType type) async {
     setState(() {
       _engineType = type;
-      _rate = type == TtsEngineType.device ? 0.5 : 0.88;
-      _pitch = type == TtsEngineType.device ? 1.0 : -0.02;
+      _rate = switch (type) {
+        TtsEngineType.device => 0.5,
+        TtsEngineType.edge => 0.88,
+        TtsEngineType.piper => 1.0,
+      };
+      _pitch = switch (type) {
+        TtsEngineType.device => 1.0,
+        TtsEngineType.edge => -0.02,
+        TtsEngineType.piper => 0.0,
+      };
     });
     await widget.provider.setEngineType(
       type,
@@ -236,15 +246,20 @@ class _TtsSettingsSheetState extends State<TtsSettingsSheet> {
                   ),
                   const SizedBox(height: 6),
                   SegmentedButton<TtsEngineType>(
-                    segments: const [
-                      ButtonSegment(
+                    segments: [
+                      const ButtonSegment(
                         value: TtsEngineType.device,
                         label: Text('Device'),
                       ),
-                      ButtonSegment(
+                      const ButtonSegment(
                         value: TtsEngineType.edge,
                         label: Text('Edge'),
                       ),
+                      if (PiperPlatform.isSupported)
+                        const ButtonSegment(
+                          value: TtsEngineType.piper,
+                          label: Text('Piper'),
+                        ),
                     ],
                     selected: {_engineType},
                     onSelectionChanged: (selected) =>
@@ -253,6 +268,19 @@ class _TtsSettingsSheetState extends State<TtsSettingsSheet> {
                 ],
               ),
             ),
+
+            if (_engineType == TtsEngineType.piper) ...[
+              const SizedBox(height: 12),
+              PiperVoiceSettingsSection(
+                onCatalogChanged: () async {
+                  await widget.provider.setEngineType(
+                    TtsEngineType.piper,
+                    restartIfPlaying: false,
+                  );
+                  if (mounted) setState(() {});
+                },
+              ),
+            ],
 
             if (widget.provider.voices.isNotEmpty) ...[
               const SizedBox(height: 12),
@@ -315,8 +343,16 @@ class _TtsSettingsSheetState extends State<TtsSettingsSheet> {
                   ),
                   Slider(
                     value: _rate,
-                    min: _engineType == TtsEngineType.device ? 0.0 : 0.25,
-                    max: _engineType == TtsEngineType.device ? 1.0 : 2.0,
+                    min: switch (_engineType) {
+                      TtsEngineType.device => 0.0,
+                      TtsEngineType.edge => 0.25,
+                      TtsEngineType.piper => 0.25,
+                    },
+                    max: switch (_engineType) {
+                      TtsEngineType.device => 1.0,
+                      TtsEngineType.edge => 2.0,
+                      TtsEngineType.piper => 2.0,
+                    },
                     divisions: _engineType == TtsEngineType.device ? 20 : 35,
                     activeColor: c.accent,
                     onChanged: (v) => setState(() => _rate = v),
@@ -336,11 +372,27 @@ class _TtsSettingsSheetState extends State<TtsSettingsSheet> {
                   ),
                   Slider(
                     value: _pitch.clamp(
-                      _engineType == TtsEngineType.device ? 0.5 : -0.5,
-                      _engineType == TtsEngineType.device ? 2.0 : 0.5,
+                      switch (_engineType) {
+                        TtsEngineType.device => 0.5,
+                        TtsEngineType.edge => -0.5,
+                        TtsEngineType.piper => -0.5,
+                      },
+                      switch (_engineType) {
+                        TtsEngineType.device => 2.0,
+                        TtsEngineType.edge => 0.5,
+                        TtsEngineType.piper => 0.5,
+                      },
                     ),
-                    min: _engineType == TtsEngineType.device ? 0.5 : -0.5,
-                    max: _engineType == TtsEngineType.device ? 2.0 : 0.5,
+                    min: switch (_engineType) {
+                      TtsEngineType.device => 0.5,
+                      TtsEngineType.edge => -0.5,
+                      TtsEngineType.piper => -0.5,
+                    },
+                    max: switch (_engineType) {
+                      TtsEngineType.device => 2.0,
+                      TtsEngineType.edge => 0.5,
+                      TtsEngineType.piper => 0.5,
+                    },
                     divisions: _engineType == TtsEngineType.device ? 15 : 20,
                     activeColor: c.accent,
                     onChanged: (v) => setState(() => _pitch = v),
