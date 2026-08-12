@@ -67,3 +67,5 @@ android/piper/piper1-gpl/
 android/piper/onnxruntime/
 .commandcode/
 .kilo/
+!README.md
+*.md
