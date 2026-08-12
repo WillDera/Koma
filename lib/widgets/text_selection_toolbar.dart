@@ -1,10 +1,10 @@
-import 'dart:ui';
 
 import 'package:flutter/material.dart';
 
 import '../theme/app_theme.dart';
 import '../theme/tokens/app_colors.dart';
 import '../theme/tokens/app_motion.dart';
+import '../theme/tokens/glass_blur.dart';
 import '../theme/tokens/app_spacing.dart';
 import 'animated_press.dart';
 
@@ -43,11 +43,9 @@ class ReaderSelectionToolbar extends StatelessWidget {
       right: 16,
       bottom: 120,
       child: Center(
-        child: ClipRRect(
+        child: GlassBlur.layer(
           borderRadius: AppSpacing.brPill,
-          child: BackdropFilter(
-            filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
-            child: AnimatedContainer(
+          child: AnimatedContainer(
               duration: AppMotion.base,
               curve: AppMotion.standard,
               padding: const EdgeInsets.all(6),
@@ -58,34 +56,36 @@ class ReaderSelectionToolbar extends StatelessWidget {
                   isDark: c.bg.computeLuminance() < 0.5,
                 ),
               ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  _ToolAction(
-                    icon: Icons.format_color_fill,
-                    label: 'Mark',
-                    iconColor: highlightColor,
-                    onTap: () => onHighlight(defaultHighlightColor),
-                  ),
-                  _Divider(),
-                  _ToolAction(
-                    icon: Icons.edit_note,
-                    label: 'Snippet',
-                    onTap: onNote,
-                  ),
-                  _Divider(),
-                  _ToolAction(icon: Icons.copy, label: 'Copy', onTap: onCopy),
-                  _Divider(),
-                  _ToolAction(
-                    icon: Icons.ios_share,
-                    label: 'Share',
-                    onTap: onShare,
-                  ),
-                ],
+              child: FittedBox(
+                fit: BoxFit.scaleDown,
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    _ToolAction(
+                      icon: Icons.format_color_fill,
+                      label: 'Mark',
+                      iconColor: highlightColor,
+                      onTap: () => onHighlight(defaultHighlightColor),
+                    ),
+                    _Divider(),
+                    _ToolAction(
+                      icon: Icons.edit_note,
+                      label: 'Snippet',
+                      onTap: onNote,
+                    ),
+                    _Divider(),
+                    _ToolAction(icon: Icons.copy, label: 'Copy', onTap: onCopy),
+                    _Divider(),
+                    _ToolAction(
+                      icon: Icons.ios_share,
+                      label: 'Share',
+                      onTap: onShare,
+                    ),
+                  ],
+                ),
               ),
             ),
           ),
-        ),
       ),
     );
   }
@@ -110,7 +110,7 @@ class _ToolAction extends StatelessWidget {
       onTap: onTap,
       scaleDown: 0.92,
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [

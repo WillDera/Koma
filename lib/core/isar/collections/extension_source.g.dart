@@ -17,63 +17,95 @@ const ExtensionSourceSchema = CollectionSchema(
   name: r'ExtensionSource',
   id: -4149751665871021609,
   properties: {
-    r'apkPath': PropertySchema(id: 0, name: r'apkPath', type: IsarType.string),
-    r'baseUrl': PropertySchema(id: 1, name: r'baseUrl', type: IsarType.string),
+    r'apiUrl': PropertySchema(id: 0, name: r'apiUrl', type: IsarType.string),
+    r'apkPath': PropertySchema(id: 1, name: r'apkPath', type: IsarType.string),
+    r'baseUrl': PropertySchema(id: 2, name: r'baseUrl', type: IsarType.string),
     r'className': PropertySchema(
-      id: 2,
+      id: 3,
       name: r'className',
       type: IsarType.string,
     ),
     r'createdAt': PropertySchema(
-      id: 3,
+      id: 4,
       name: r'createdAt',
       type: IsarType.dateTime,
     ),
-    r'iconUrl': PropertySchema(id: 4, name: r'iconUrl', type: IsarType.string),
-    r'isActive': PropertySchema(id: 5, name: r'isActive', type: IsarType.bool),
+    r'hasCloudflare': PropertySchema(
+      id: 5,
+      name: r'hasCloudflare',
+      type: IsarType.bool,
+    ),
+    r'iconUrl': PropertySchema(id: 6, name: r'iconUrl', type: IsarType.string),
+    r'isActive': PropertySchema(id: 7, name: r'isActive', type: IsarType.bool),
     r'isInstalled': PropertySchema(
-      id: 6,
+      id: 8,
       name: r'isInstalled',
       type: IsarType.bool,
     ),
-    r'isNsfw': PropertySchema(id: 7, name: r'isNsfw', type: IsarType.bool),
+    r'isNsfw': PropertySchema(id: 9, name: r'isNsfw', type: IsarType.bool),
     r'isObsolete': PropertySchema(
-      id: 8,
+      id: 10,
       name: r'isObsolete',
       type: IsarType.bool,
     ),
-    r'isPinned': PropertySchema(id: 9, name: r'isPinned', type: IsarType.bool),
+    r'isPinned': PropertySchema(id: 11, name: r'isPinned', type: IsarType.bool),
     r'isUpdateAvailable': PropertySchema(
-      id: 10,
+      id: 12,
       name: r'isUpdateAvailable',
       type: IsarType.bool,
     ),
-    r'lang': PropertySchema(id: 11, name: r'lang', type: IsarType.string),
-    r'name': PropertySchema(id: 12, name: r'name', type: IsarType.string),
-    r'repoUrl': PropertySchema(id: 13, name: r'repoUrl', type: IsarType.string),
+    r'itemType': PropertySchema(
+      id: 13,
+      name: r'itemType',
+      type: IsarType.string,
+    ),
+    r'lang': PropertySchema(id: 14, name: r'lang', type: IsarType.string),
+    r'name': PropertySchema(id: 15, name: r'name', type: IsarType.string),
+    r'nativeId': PropertySchema(
+      id: 16,
+      name: r'nativeId',
+      type: IsarType.string,
+    ),
+    r'pkgName': PropertySchema(id: 17, name: r'pkgName', type: IsarType.string),
+    r'repoUrl': PropertySchema(id: 18, name: r'repoUrl', type: IsarType.string),
+    r'signatureHash': PropertySchema(
+      id: 19,
+      name: r'signatureHash',
+      type: IsarType.string,
+    ),
+    r'sourceCode': PropertySchema(
+      id: 20,
+      name: r'sourceCode',
+      type: IsarType.string,
+    ),
     r'sourceCodeLanguage': PropertySchema(
-      id: 14,
+      id: 21,
       name: r'sourceCodeLanguage',
       type: IsarType.string,
     ),
     r'sourceCodeUrl': PropertySchema(
-      id: 15,
+      id: 22,
       name: r'sourceCodeUrl',
       type: IsarType.string,
     ),
     r'sourceId': PropertySchema(
-      id: 16,
+      id: 23,
       name: r'sourceId',
       type: IsarType.string,
     ),
     r'updatedAt': PropertySchema(
-      id: 17,
+      id: 24,
       name: r'updatedAt',
       type: IsarType.dateTime,
     ),
-    r'version': PropertySchema(id: 18, name: r'version', type: IsarType.string),
+    r'version': PropertySchema(id: 25, name: r'version', type: IsarType.string),
+    r'versionCode': PropertySchema(
+      id: 26,
+      name: r'versionCode',
+      type: IsarType.long,
+    ),
     r'versionLast': PropertySchema(
-      id: 19,
+      id: 27,
       name: r'versionLast',
       type: IsarType.string,
     ),
@@ -114,6 +146,12 @@ int _extensionSourceEstimateSize(
   Map<Type, List<int>> allOffsets,
 ) {
   var bytesCount = offsets.last;
+  {
+    final value = object.apiUrl;
+    if (value != null) {
+      bytesCount += 3 + value.length * 3;
+    }
+  }
   bytesCount += 3 + object.apkPath.length * 3;
   {
     final value = object.baseUrl;
@@ -128,14 +166,19 @@ int _extensionSourceEstimateSize(
       bytesCount += 3 + value.length * 3;
     }
   }
+  bytesCount += 3 + object.itemType.length * 3;
   bytesCount += 3 + object.lang.length * 3;
   bytesCount += 3 + object.name.length * 3;
+  bytesCount += 3 + object.nativeId.length * 3;
+  bytesCount += 3 + object.pkgName.length * 3;
   {
     final value = object.repoUrl;
     if (value != null) {
       bytesCount += 3 + value.length * 3;
     }
   }
+  bytesCount += 3 + object.signatureHash.length * 3;
+  bytesCount += 3 + object.sourceCode.length * 3;
   bytesCount += 3 + object.sourceCodeLanguage.length * 3;
   {
     final value = object.sourceCodeUrl;
@@ -160,26 +203,34 @@ void _extensionSourceSerialize(
   List<int> offsets,
   Map<Type, List<int>> allOffsets,
 ) {
-  writer.writeString(offsets[0], object.apkPath);
-  writer.writeString(offsets[1], object.baseUrl);
-  writer.writeString(offsets[2], object.className);
-  writer.writeDateTime(offsets[3], object.createdAt);
-  writer.writeString(offsets[4], object.iconUrl);
-  writer.writeBool(offsets[5], object.isActive);
-  writer.writeBool(offsets[6], object.isInstalled);
-  writer.writeBool(offsets[7], object.isNsfw);
-  writer.writeBool(offsets[8], object.isObsolete);
-  writer.writeBool(offsets[9], object.isPinned);
-  writer.writeBool(offsets[10], object.isUpdateAvailable);
-  writer.writeString(offsets[11], object.lang);
-  writer.writeString(offsets[12], object.name);
-  writer.writeString(offsets[13], object.repoUrl);
-  writer.writeString(offsets[14], object.sourceCodeLanguage);
-  writer.writeString(offsets[15], object.sourceCodeUrl);
-  writer.writeString(offsets[16], object.sourceId);
-  writer.writeDateTime(offsets[17], object.updatedAt);
-  writer.writeString(offsets[18], object.version);
-  writer.writeString(offsets[19], object.versionLast);
+  writer.writeString(offsets[0], object.apiUrl);
+  writer.writeString(offsets[1], object.apkPath);
+  writer.writeString(offsets[2], object.baseUrl);
+  writer.writeString(offsets[3], object.className);
+  writer.writeDateTime(offsets[4], object.createdAt);
+  writer.writeBool(offsets[5], object.hasCloudflare);
+  writer.writeString(offsets[6], object.iconUrl);
+  writer.writeBool(offsets[7], object.isActive);
+  writer.writeBool(offsets[8], object.isInstalled);
+  writer.writeBool(offsets[9], object.isNsfw);
+  writer.writeBool(offsets[10], object.isObsolete);
+  writer.writeBool(offsets[11], object.isPinned);
+  writer.writeBool(offsets[12], object.isUpdateAvailable);
+  writer.writeString(offsets[13], object.itemType);
+  writer.writeString(offsets[14], object.lang);
+  writer.writeString(offsets[15], object.name);
+  writer.writeString(offsets[16], object.nativeId);
+  writer.writeString(offsets[17], object.pkgName);
+  writer.writeString(offsets[18], object.repoUrl);
+  writer.writeString(offsets[19], object.signatureHash);
+  writer.writeString(offsets[20], object.sourceCode);
+  writer.writeString(offsets[21], object.sourceCodeLanguage);
+  writer.writeString(offsets[22], object.sourceCodeUrl);
+  writer.writeString(offsets[23], object.sourceId);
+  writer.writeDateTime(offsets[24], object.updatedAt);
+  writer.writeString(offsets[25], object.version);
+  writer.writeLong(offsets[26], object.versionCode);
+  writer.writeString(offsets[27], object.versionLast);
 }
 
 ExtensionSource _extensionSourceDeserialize(
@@ -189,26 +240,34 @@ ExtensionSource _extensionSourceDeserialize(
   Map<Type, List<int>> allOffsets,
 ) {
   final object = ExtensionSource(
-    apkPath: reader.readString(offsets[0]),
-    baseUrl: reader.readStringOrNull(offsets[1]),
-    className: reader.readString(offsets[2]),
-    createdAt: reader.readDateTimeOrNull(offsets[3]),
-    iconUrl: reader.readStringOrNull(offsets[4]),
+    apiUrl: reader.readStringOrNull(offsets[0]),
+    apkPath: reader.readString(offsets[1]),
+    baseUrl: reader.readStringOrNull(offsets[2]),
+    className: reader.readString(offsets[3]),
+    createdAt: reader.readDateTimeOrNull(offsets[4]),
+    hasCloudflare: reader.readBoolOrNull(offsets[5]) ?? false,
+    iconUrl: reader.readStringOrNull(offsets[6]),
     id: id,
-    isActive: reader.readBoolOrNull(offsets[5]) ?? true,
-    isInstalled: reader.readBoolOrNull(offsets[6]) ?? true,
-    isNsfw: reader.readBoolOrNull(offsets[7]) ?? false,
-    isObsolete: reader.readBoolOrNull(offsets[8]) ?? false,
-    isPinned: reader.readBoolOrNull(offsets[9]) ?? false,
-    lang: reader.readString(offsets[11]),
-    name: reader.readString(offsets[12]),
-    repoUrl: reader.readStringOrNull(offsets[13]),
-    sourceCodeLanguage: reader.readStringOrNull(offsets[14]) ?? 'mihon',
-    sourceCodeUrl: reader.readStringOrNull(offsets[15]),
-    sourceId: reader.readString(offsets[16]),
-    updatedAt: reader.readDateTimeOrNull(offsets[17]),
-    version: reader.readString(offsets[18]),
-    versionLast: reader.readStringOrNull(offsets[19]),
+    isActive: reader.readBoolOrNull(offsets[7]) ?? true,
+    isInstalled: reader.readBoolOrNull(offsets[8]) ?? true,
+    isNsfw: reader.readBoolOrNull(offsets[9]) ?? false,
+    isObsolete: reader.readBoolOrNull(offsets[10]) ?? false,
+    isPinned: reader.readBoolOrNull(offsets[11]) ?? false,
+    itemType: reader.readStringOrNull(offsets[13]) ?? 'manga',
+    lang: reader.readString(offsets[14]),
+    name: reader.readString(offsets[15]),
+    nativeId: reader.readStringOrNull(offsets[16]) ?? '',
+    pkgName: reader.readStringOrNull(offsets[17]) ?? '',
+    repoUrl: reader.readStringOrNull(offsets[18]),
+    signatureHash: reader.readStringOrNull(offsets[19]) ?? '',
+    sourceCode: reader.readStringOrNull(offsets[20]) ?? '',
+    sourceCodeLanguage: reader.readStringOrNull(offsets[21]) ?? 'mihon',
+    sourceCodeUrl: reader.readStringOrNull(offsets[22]),
+    sourceId: reader.readString(offsets[23]),
+    updatedAt: reader.readDateTimeOrNull(offsets[24]),
+    version: reader.readString(offsets[25]),
+    versionCode: reader.readLongOrNull(offsets[26]) ?? 0,
+    versionLast: reader.readStringOrNull(offsets[27]),
   );
   return object;
 }
@@ -221,44 +280,60 @@ P _extensionSourceDeserializeProp<P>(
 ) {
   switch (propertyId) {
     case 0:
-      return (reader.readString(offset)) as P;
+      return (reader.readStringOrNull(offset)) as P;
     case 1:
-      return (reader.readStringOrNull(offset)) as P;
-    case 2:
       return (reader.readString(offset)) as P;
-    case 3:
-      return (reader.readDateTimeOrNull(offset)) as P;
-    case 4:
+    case 2:
       return (reader.readStringOrNull(offset)) as P;
+    case 3:
+      return (reader.readString(offset)) as P;
+    case 4:
+      return (reader.readDateTimeOrNull(offset)) as P;
     case 5:
-      return (reader.readBoolOrNull(offset) ?? true) as P;
+      return (reader.readBoolOrNull(offset) ?? false) as P;
     case 6:
-      return (reader.readBoolOrNull(offset) ?? true) as P;
+      return (reader.readStringOrNull(offset)) as P;
     case 7:
-      return (reader.readBoolOrNull(offset) ?? false) as P;
+      return (reader.readBoolOrNull(offset) ?? true) as P;
     case 8:
-      return (reader.readBoolOrNull(offset) ?? false) as P;
+      return (reader.readBoolOrNull(offset) ?? true) as P;
     case 9:
       return (reader.readBoolOrNull(offset) ?? false) as P;
     case 10:
-      return (reader.readBool(offset)) as P;
+      return (reader.readBoolOrNull(offset) ?? false) as P;
     case 11:
-      return (reader.readString(offset)) as P;
+      return (reader.readBoolOrNull(offset) ?? false) as P;
     case 12:
-      return (reader.readString(offset)) as P;
+      return (reader.readBool(offset)) as P;
     case 13:
-      return (reader.readStringOrNull(offset)) as P;
+      return (reader.readStringOrNull(offset) ?? 'manga') as P;
     case 14:
-      return (reader.readStringOrNull(offset) ?? 'mihon') as P;
+      return (reader.readString(offset)) as P;
     case 15:
-      return (reader.readStringOrNull(offset)) as P;
+      return (reader.readString(offset)) as P;
     case 16:
-      return (reader.readString(offset)) as P;
+      return (reader.readStringOrNull(offset) ?? '') as P;
     case 17:
-      return (reader.readDateTimeOrNull(offset)) as P;
+      return (reader.readStringOrNull(offset) ?? '') as P;
     case 18:
-      return (reader.readString(offset)) as P;
+      return (reader.readStringOrNull(offset)) as P;
     case 19:
+      return (reader.readStringOrNull(offset) ?? '') as P;
+    case 20:
+      return (reader.readStringOrNull(offset) ?? '') as P;
+    case 21:
+      return (reader.readStringOrNull(offset) ?? 'mihon') as P;
+    case 22:
+      return (reader.readStringOrNull(offset)) as P;
+    case 23:
+      return (reader.readString(offset)) as P;
+    case 24:
+      return (reader.readDateTimeOrNull(offset)) as P;
+    case 25:
+      return (reader.readString(offset)) as P;
+    case 26:
+      return (reader.readLongOrNull(offset) ?? 0) as P;
+    case 27:
       return (reader.readStringOrNull(offset)) as P;
     default:
       throw IsarError('Unknown property with id $propertyId');
@@ -473,6 +548,165 @@ extension ExtensionSourceQueryWhere
 
 extension ExtensionSourceQueryFilter
     on QueryBuilder<ExtensionSource, ExtensionSource, QFilterCondition> {
+  QueryBuilder<ExtensionSource, ExtensionSource, QAfterFilterCondition>
+  apiUrlIsNull() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        const FilterCondition.isNull(property: r'apiUrl'),
+      );
+    });
+  }
+
+  QueryBuilder<ExtensionSource, ExtensionSource, QAfterFilterCondition>
+  apiUrlIsNotNull() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        const FilterCondition.isNotNull(property: r'apiUrl'),
+      );
+    });
+  }
+
+  QueryBuilder<ExtensionSource, ExtensionSource, QAfterFilterCondition>
+  apiUrlEqualTo(String? value, {bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.equalTo(
+          property: r'apiUrl',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<ExtensionSource, ExtensionSource, QAfterFilterCondition>
+  apiUrlGreaterThan(
+    String? value, {
+    bool include = false,
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.greaterThan(
+          include: include,
+          property: r'apiUrl',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<ExtensionSource, ExtensionSource, QAfterFilterCondition>
+  apiUrlLessThan(
+    String? value, {
+    bool include = false,
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.lessThan(
+          include: include,
+          property: r'apiUrl',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<ExtensionSource, ExtensionSource, QAfterFilterCondition>
+  apiUrlBetween(
+    String? lower,
+    String? upper, {
+    bool includeLower = true,
+    bool includeUpper = true,
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.between(
+          property: r'apiUrl',
+          lower: lower,
+          includeLower: includeLower,
+          upper: upper,
+          includeUpper: includeUpper,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<ExtensionSource, ExtensionSource, QAfterFilterCondition>
+  apiUrlStartsWith(String value, {bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.startsWith(
+          property: r'apiUrl',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<ExtensionSource, ExtensionSource, QAfterFilterCondition>
+  apiUrlEndsWith(String value, {bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.endsWith(
+          property: r'apiUrl',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<ExtensionSource, ExtensionSource, QAfterFilterCondition>
+  apiUrlContains(String value, {bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.contains(
+          property: r'apiUrl',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<ExtensionSource, ExtensionSource, QAfterFilterCondition>
+  apiUrlMatches(String pattern, {bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.matches(
+          property: r'apiUrl',
+          wildcard: pattern,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<ExtensionSource, ExtensionSource, QAfterFilterCondition>
+  apiUrlIsEmpty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.equalTo(property: r'apiUrl', value: ''),
+      );
+    });
+  }
+
+  QueryBuilder<ExtensionSource, ExtensionSource, QAfterFilterCondition>
+  apiUrlIsNotEmpty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.greaterThan(property: r'apiUrl', value: ''),
+      );
+    });
+  }
+
   QueryBuilder<ExtensionSource, ExtensionSource, QAfterFilterCondition>
   apkPathEqualTo(String value, {bool caseSensitive = true}) {
     return QueryBuilder.apply(this, (query) {
@@ -988,6 +1222,15 @@ extension ExtensionSourceQueryFilter
   }
 
   QueryBuilder<ExtensionSource, ExtensionSource, QAfterFilterCondition>
+  hasCloudflareEqualTo(bool value) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.equalTo(property: r'hasCloudflare', value: value),
+      );
+    });
+  }
+
+  QueryBuilder<ExtensionSource, ExtensionSource, QAfterFilterCondition>
   iconUrlIsNull() {
     return QueryBuilder.apply(this, (query) {
       return query.addFilterCondition(
@@ -1269,6 +1512,147 @@ extension ExtensionSourceQueryFilter
     return QueryBuilder.apply(this, (query) {
       return query.addFilterCondition(
         FilterCondition.equalTo(property: r'isUpdateAvailable', value: value),
+      );
+    });
+  }
+
+  QueryBuilder<ExtensionSource, ExtensionSource, QAfterFilterCondition>
+  itemTypeEqualTo(String value, {bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.equalTo(
+          property: r'itemType',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<ExtensionSource, ExtensionSource, QAfterFilterCondition>
+  itemTypeGreaterThan(
+    String value, {
+    bool include = false,
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.greaterThan(
+          include: include,
+          property: r'itemType',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<ExtensionSource, ExtensionSource, QAfterFilterCondition>
+  itemTypeLessThan(
+    String value, {
+    bool include = false,
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.lessThan(
+          include: include,
+          property: r'itemType',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<ExtensionSource, ExtensionSource, QAfterFilterCondition>
+  itemTypeBetween(
+    String lower,
+    String upper, {
+    bool includeLower = true,
+    bool includeUpper = true,
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.between(
+          property: r'itemType',
+          lower: lower,
+          includeLower: includeLower,
+          upper: upper,
+          includeUpper: includeUpper,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<ExtensionSource, ExtensionSource, QAfterFilterCondition>
+  itemTypeStartsWith(String value, {bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.startsWith(
+          property: r'itemType',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<ExtensionSource, ExtensionSource, QAfterFilterCondition>
+  itemTypeEndsWith(String value, {bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.endsWith(
+          property: r'itemType',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<ExtensionSource, ExtensionSource, QAfterFilterCondition>
+  itemTypeContains(String value, {bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.contains(
+          property: r'itemType',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<ExtensionSource, ExtensionSource, QAfterFilterCondition>
+  itemTypeMatches(String pattern, {bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.matches(
+          property: r'itemType',
+          wildcard: pattern,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<ExtensionSource, ExtensionSource, QAfterFilterCondition>
+  itemTypeIsEmpty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.equalTo(property: r'itemType', value: ''),
+      );
+    });
+  }
+
+  QueryBuilder<ExtensionSource, ExtensionSource, QAfterFilterCondition>
+  itemTypeIsNotEmpty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.greaterThan(property: r'itemType', value: ''),
       );
     });
   }
@@ -1556,6 +1940,288 @@ extension ExtensionSourceQueryFilter
   }
 
   QueryBuilder<ExtensionSource, ExtensionSource, QAfterFilterCondition>
+  nativeIdEqualTo(String value, {bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.equalTo(
+          property: r'nativeId',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<ExtensionSource, ExtensionSource, QAfterFilterCondition>
+  nativeIdGreaterThan(
+    String value, {
+    bool include = false,
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.greaterThan(
+          include: include,
+          property: r'nativeId',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<ExtensionSource, ExtensionSource, QAfterFilterCondition>
+  nativeIdLessThan(
+    String value, {
+    bool include = false,
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.lessThan(
+          include: include,
+          property: r'nativeId',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<ExtensionSource, ExtensionSource, QAfterFilterCondition>
+  nativeIdBetween(
+    String lower,
+    String upper, {
+    bool includeLower = true,
+    bool includeUpper = true,
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.between(
+          property: r'nativeId',
+          lower: lower,
+          includeLower: includeLower,
+          upper: upper,
+          includeUpper: includeUpper,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<ExtensionSource, ExtensionSource, QAfterFilterCondition>
+  nativeIdStartsWith(String value, {bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.startsWith(
+          property: r'nativeId',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<ExtensionSource, ExtensionSource, QAfterFilterCondition>
+  nativeIdEndsWith(String value, {bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.endsWith(
+          property: r'nativeId',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<ExtensionSource, ExtensionSource, QAfterFilterCondition>
+  nativeIdContains(String value, {bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.contains(
+          property: r'nativeId',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<ExtensionSource, ExtensionSource, QAfterFilterCondition>
+  nativeIdMatches(String pattern, {bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.matches(
+          property: r'nativeId',
+          wildcard: pattern,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<ExtensionSource, ExtensionSource, QAfterFilterCondition>
+  nativeIdIsEmpty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.equalTo(property: r'nativeId', value: ''),
+      );
+    });
+  }
+
+  QueryBuilder<ExtensionSource, ExtensionSource, QAfterFilterCondition>
+  nativeIdIsNotEmpty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.greaterThan(property: r'nativeId', value: ''),
+      );
+    });
+  }
+
+  QueryBuilder<ExtensionSource, ExtensionSource, QAfterFilterCondition>
+  pkgNameEqualTo(String value, {bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.equalTo(
+          property: r'pkgName',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<ExtensionSource, ExtensionSource, QAfterFilterCondition>
+  pkgNameGreaterThan(
+    String value, {
+    bool include = false,
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.greaterThan(
+          include: include,
+          property: r'pkgName',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<ExtensionSource, ExtensionSource, QAfterFilterCondition>
+  pkgNameLessThan(
+    String value, {
+    bool include = false,
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.lessThan(
+          include: include,
+          property: r'pkgName',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<ExtensionSource, ExtensionSource, QAfterFilterCondition>
+  pkgNameBetween(
+    String lower,
+    String upper, {
+    bool includeLower = true,
+    bool includeUpper = true,
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.between(
+          property: r'pkgName',
+          lower: lower,
+          includeLower: includeLower,
+          upper: upper,
+          includeUpper: includeUpper,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<ExtensionSource, ExtensionSource, QAfterFilterCondition>
+  pkgNameStartsWith(String value, {bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.startsWith(
+          property: r'pkgName',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<ExtensionSource, ExtensionSource, QAfterFilterCondition>
+  pkgNameEndsWith(String value, {bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.endsWith(
+          property: r'pkgName',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<ExtensionSource, ExtensionSource, QAfterFilterCondition>
+  pkgNameContains(String value, {bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.contains(
+          property: r'pkgName',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<ExtensionSource, ExtensionSource, QAfterFilterCondition>
+  pkgNameMatches(String pattern, {bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.matches(
+          property: r'pkgName',
+          wildcard: pattern,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<ExtensionSource, ExtensionSource, QAfterFilterCondition>
+  pkgNameIsEmpty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.equalTo(property: r'pkgName', value: ''),
+      );
+    });
+  }
+
+  QueryBuilder<ExtensionSource, ExtensionSource, QAfterFilterCondition>
+  pkgNameIsNotEmpty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.greaterThan(property: r'pkgName', value: ''),
+      );
+    });
+  }
+
+  QueryBuilder<ExtensionSource, ExtensionSource, QAfterFilterCondition>
   repoUrlIsNull() {
     return QueryBuilder.apply(this, (query) {
       return query.addFilterCondition(
@@ -1710,6 +2376,288 @@ extension ExtensionSourceQueryFilter
     return QueryBuilder.apply(this, (query) {
       return query.addFilterCondition(
         FilterCondition.greaterThan(property: r'repoUrl', value: ''),
+      );
+    });
+  }
+
+  QueryBuilder<ExtensionSource, ExtensionSource, QAfterFilterCondition>
+  signatureHashEqualTo(String value, {bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.equalTo(
+          property: r'signatureHash',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<ExtensionSource, ExtensionSource, QAfterFilterCondition>
+  signatureHashGreaterThan(
+    String value, {
+    bool include = false,
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.greaterThan(
+          include: include,
+          property: r'signatureHash',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<ExtensionSource, ExtensionSource, QAfterFilterCondition>
+  signatureHashLessThan(
+    String value, {
+    bool include = false,
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.lessThan(
+          include: include,
+          property: r'signatureHash',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<ExtensionSource, ExtensionSource, QAfterFilterCondition>
+  signatureHashBetween(
+    String lower,
+    String upper, {
+    bool includeLower = true,
+    bool includeUpper = true,
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.between(
+          property: r'signatureHash',
+          lower: lower,
+          includeLower: includeLower,
+          upper: upper,
+          includeUpper: includeUpper,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<ExtensionSource, ExtensionSource, QAfterFilterCondition>
+  signatureHashStartsWith(String value, {bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.startsWith(
+          property: r'signatureHash',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<ExtensionSource, ExtensionSource, QAfterFilterCondition>
+  signatureHashEndsWith(String value, {bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.endsWith(
+          property: r'signatureHash',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<ExtensionSource, ExtensionSource, QAfterFilterCondition>
+  signatureHashContains(String value, {bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.contains(
+          property: r'signatureHash',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<ExtensionSource, ExtensionSource, QAfterFilterCondition>
+  signatureHashMatches(String pattern, {bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.matches(
+          property: r'signatureHash',
+          wildcard: pattern,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<ExtensionSource, ExtensionSource, QAfterFilterCondition>
+  signatureHashIsEmpty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.equalTo(property: r'signatureHash', value: ''),
+      );
+    });
+  }
+
+  QueryBuilder<ExtensionSource, ExtensionSource, QAfterFilterCondition>
+  signatureHashIsNotEmpty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.greaterThan(property: r'signatureHash', value: ''),
+      );
+    });
+  }
+
+  QueryBuilder<ExtensionSource, ExtensionSource, QAfterFilterCondition>
+  sourceCodeEqualTo(String value, {bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.equalTo(
+          property: r'sourceCode',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<ExtensionSource, ExtensionSource, QAfterFilterCondition>
+  sourceCodeGreaterThan(
+    String value, {
+    bool include = false,
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.greaterThan(
+          include: include,
+          property: r'sourceCode',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<ExtensionSource, ExtensionSource, QAfterFilterCondition>
+  sourceCodeLessThan(
+    String value, {
+    bool include = false,
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.lessThan(
+          include: include,
+          property: r'sourceCode',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<ExtensionSource, ExtensionSource, QAfterFilterCondition>
+  sourceCodeBetween(
+    String lower,
+    String upper, {
+    bool includeLower = true,
+    bool includeUpper = true,
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.between(
+          property: r'sourceCode',
+          lower: lower,
+          includeLower: includeLower,
+          upper: upper,
+          includeUpper: includeUpper,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<ExtensionSource, ExtensionSource, QAfterFilterCondition>
+  sourceCodeStartsWith(String value, {bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.startsWith(
+          property: r'sourceCode',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<ExtensionSource, ExtensionSource, QAfterFilterCondition>
+  sourceCodeEndsWith(String value, {bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.endsWith(
+          property: r'sourceCode',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<ExtensionSource, ExtensionSource, QAfterFilterCondition>
+  sourceCodeContains(String value, {bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.contains(
+          property: r'sourceCode',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<ExtensionSource, ExtensionSource, QAfterFilterCondition>
+  sourceCodeMatches(String pattern, {bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.matches(
+          property: r'sourceCode',
+          wildcard: pattern,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<ExtensionSource, ExtensionSource, QAfterFilterCondition>
+  sourceCodeIsEmpty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.equalTo(property: r'sourceCode', value: ''),
+      );
+    });
+  }
+
+  QueryBuilder<ExtensionSource, ExtensionSource, QAfterFilterCondition>
+  sourceCodeIsNotEmpty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.greaterThan(property: r'sourceCode', value: ''),
       );
     });
   }
@@ -2370,6 +3318,61 @@ extension ExtensionSourceQueryFilter
   }
 
   QueryBuilder<ExtensionSource, ExtensionSource, QAfterFilterCondition>
+  versionCodeEqualTo(int value) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.equalTo(property: r'versionCode', value: value),
+      );
+    });
+  }
+
+  QueryBuilder<ExtensionSource, ExtensionSource, QAfterFilterCondition>
+  versionCodeGreaterThan(int value, {bool include = false}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.greaterThan(
+          include: include,
+          property: r'versionCode',
+          value: value,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<ExtensionSource, ExtensionSource, QAfterFilterCondition>
+  versionCodeLessThan(int value, {bool include = false}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.lessThan(
+          include: include,
+          property: r'versionCode',
+          value: value,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<ExtensionSource, ExtensionSource, QAfterFilterCondition>
+  versionCodeBetween(
+    int lower,
+    int upper, {
+    bool includeLower = true,
+    bool includeUpper = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.between(
+          property: r'versionCode',
+          lower: lower,
+          includeLower: includeLower,
+          upper: upper,
+          includeUpper: includeUpper,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<ExtensionSource, ExtensionSource, QAfterFilterCondition>
   versionLastIsNull() {
     return QueryBuilder.apply(this, (query) {
       return query.addFilterCondition(
@@ -2537,6 +3540,19 @@ extension ExtensionSourceQueryLinks
 
 extension ExtensionSourceQuerySortBy
     on QueryBuilder<ExtensionSource, ExtensionSource, QSortBy> {
+  QueryBuilder<ExtensionSource, ExtensionSource, QAfterSortBy> sortByApiUrl() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'apiUrl', Sort.asc);
+    });
+  }
+
+  QueryBuilder<ExtensionSource, ExtensionSource, QAfterSortBy>
+  sortByApiUrlDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'apiUrl', Sort.desc);
+    });
+  }
+
   QueryBuilder<ExtensionSource, ExtensionSource, QAfterSortBy> sortByApkPath() {
     return QueryBuilder.apply(this, (query) {
       return query.addSortBy(r'apkPath', Sort.asc);
@@ -2588,6 +3604,20 @@ extension ExtensionSourceQuerySortBy
   sortByCreatedAtDesc() {
     return QueryBuilder.apply(this, (query) {
       return query.addSortBy(r'createdAt', Sort.desc);
+    });
+  }
+
+  QueryBuilder<ExtensionSource, ExtensionSource, QAfterSortBy>
+  sortByHasCloudflare() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'hasCloudflare', Sort.asc);
+    });
+  }
+
+  QueryBuilder<ExtensionSource, ExtensionSource, QAfterSortBy>
+  sortByHasCloudflareDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'hasCloudflare', Sort.desc);
     });
   }
 
@@ -2687,6 +3717,20 @@ extension ExtensionSourceQuerySortBy
     });
   }
 
+  QueryBuilder<ExtensionSource, ExtensionSource, QAfterSortBy>
+  sortByItemType() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'itemType', Sort.asc);
+    });
+  }
+
+  QueryBuilder<ExtensionSource, ExtensionSource, QAfterSortBy>
+  sortByItemTypeDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'itemType', Sort.desc);
+    });
+  }
+
   QueryBuilder<ExtensionSource, ExtensionSource, QAfterSortBy> sortByLang() {
     return QueryBuilder.apply(this, (query) {
       return query.addSortBy(r'lang', Sort.asc);
@@ -2713,6 +3757,33 @@ extension ExtensionSourceQuerySortBy
     });
   }
 
+  QueryBuilder<ExtensionSource, ExtensionSource, QAfterSortBy>
+  sortByNativeId() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'nativeId', Sort.asc);
+    });
+  }
+
+  QueryBuilder<ExtensionSource, ExtensionSource, QAfterSortBy>
+  sortByNativeIdDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'nativeId', Sort.desc);
+    });
+  }
+
+  QueryBuilder<ExtensionSource, ExtensionSource, QAfterSortBy> sortByPkgName() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'pkgName', Sort.asc);
+    });
+  }
+
+  QueryBuilder<ExtensionSource, ExtensionSource, QAfterSortBy>
+  sortByPkgNameDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'pkgName', Sort.desc);
+    });
+  }
+
   QueryBuilder<ExtensionSource, ExtensionSource, QAfterSortBy> sortByRepoUrl() {
     return QueryBuilder.apply(this, (query) {
       return query.addSortBy(r'repoUrl', Sort.asc);
@@ -2723,6 +3794,34 @@ extension ExtensionSourceQuerySortBy
   sortByRepoUrlDesc() {
     return QueryBuilder.apply(this, (query) {
       return query.addSortBy(r'repoUrl', Sort.desc);
+    });
+  }
+
+  QueryBuilder<ExtensionSource, ExtensionSource, QAfterSortBy>
+  sortBySignatureHash() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'signatureHash', Sort.asc);
+    });
+  }
+
+  QueryBuilder<ExtensionSource, ExtensionSource, QAfterSortBy>
+  sortBySignatureHashDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'signatureHash', Sort.desc);
+    });
+  }
+
+  QueryBuilder<ExtensionSource, ExtensionSource, QAfterSortBy>
+  sortBySourceCode() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'sourceCode', Sort.asc);
+    });
+  }
+
+  QueryBuilder<ExtensionSource, ExtensionSource, QAfterSortBy>
+  sortBySourceCodeDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'sourceCode', Sort.desc);
     });
   }
 
@@ -2796,6 +3895,20 @@ extension ExtensionSourceQuerySortBy
   }
 
   QueryBuilder<ExtensionSource, ExtensionSource, QAfterSortBy>
+  sortByVersionCode() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'versionCode', Sort.asc);
+    });
+  }
+
+  QueryBuilder<ExtensionSource, ExtensionSource, QAfterSortBy>
+  sortByVersionCodeDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'versionCode', Sort.desc);
+    });
+  }
+
+  QueryBuilder<ExtensionSource, ExtensionSource, QAfterSortBy>
   sortByVersionLast() {
     return QueryBuilder.apply(this, (query) {
       return query.addSortBy(r'versionLast', Sort.asc);
@@ -2812,6 +3925,19 @@ extension ExtensionSourceQuerySortBy
 
 extension ExtensionSourceQuerySortThenBy
     on QueryBuilder<ExtensionSource, ExtensionSource, QSortThenBy> {
+  QueryBuilder<ExtensionSource, ExtensionSource, QAfterSortBy> thenByApiUrl() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'apiUrl', Sort.asc);
+    });
+  }
+
+  QueryBuilder<ExtensionSource, ExtensionSource, QAfterSortBy>
+  thenByApiUrlDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'apiUrl', Sort.desc);
+    });
+  }
+
   QueryBuilder<ExtensionSource, ExtensionSource, QAfterSortBy> thenByApkPath() {
     return QueryBuilder.apply(this, (query) {
       return query.addSortBy(r'apkPath', Sort.asc);
@@ -2863,6 +3989,20 @@ extension ExtensionSourceQuerySortThenBy
   thenByCreatedAtDesc() {
     return QueryBuilder.apply(this, (query) {
       return query.addSortBy(r'createdAt', Sort.desc);
+    });
+  }
+
+  QueryBuilder<ExtensionSource, ExtensionSource, QAfterSortBy>
+  thenByHasCloudflare() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'hasCloudflare', Sort.asc);
+    });
+  }
+
+  QueryBuilder<ExtensionSource, ExtensionSource, QAfterSortBy>
+  thenByHasCloudflareDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'hasCloudflare', Sort.desc);
     });
   }
 
@@ -2974,6 +4114,20 @@ extension ExtensionSourceQuerySortThenBy
     });
   }
 
+  QueryBuilder<ExtensionSource, ExtensionSource, QAfterSortBy>
+  thenByItemType() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'itemType', Sort.asc);
+    });
+  }
+
+  QueryBuilder<ExtensionSource, ExtensionSource, QAfterSortBy>
+  thenByItemTypeDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'itemType', Sort.desc);
+    });
+  }
+
   QueryBuilder<ExtensionSource, ExtensionSource, QAfterSortBy> thenByLang() {
     return QueryBuilder.apply(this, (query) {
       return query.addSortBy(r'lang', Sort.asc);
@@ -3000,6 +4154,33 @@ extension ExtensionSourceQuerySortThenBy
     });
   }
 
+  QueryBuilder<ExtensionSource, ExtensionSource, QAfterSortBy>
+  thenByNativeId() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'nativeId', Sort.asc);
+    });
+  }
+
+  QueryBuilder<ExtensionSource, ExtensionSource, QAfterSortBy>
+  thenByNativeIdDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'nativeId', Sort.desc);
+    });
+  }
+
+  QueryBuilder<ExtensionSource, ExtensionSource, QAfterSortBy> thenByPkgName() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'pkgName', Sort.asc);
+    });
+  }
+
+  QueryBuilder<ExtensionSource, ExtensionSource, QAfterSortBy>
+  thenByPkgNameDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'pkgName', Sort.desc);
+    });
+  }
+
   QueryBuilder<ExtensionSource, ExtensionSource, QAfterSortBy> thenByRepoUrl() {
     return QueryBuilder.apply(this, (query) {
       return query.addSortBy(r'repoUrl', Sort.asc);
@@ -3010,6 +4191,34 @@ extension ExtensionSourceQuerySortThenBy
   thenByRepoUrlDesc() {
     return QueryBuilder.apply(this, (query) {
       return query.addSortBy(r'repoUrl', Sort.desc);
+    });
+  }
+
+  QueryBuilder<ExtensionSource, ExtensionSource, QAfterSortBy>
+  thenBySignatureHash() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'signatureHash', Sort.asc);
+    });
+  }
+
+  QueryBuilder<ExtensionSource, ExtensionSource, QAfterSortBy>
+  thenBySignatureHashDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'signatureHash', Sort.desc);
+    });
+  }
+
+  QueryBuilder<ExtensionSource, ExtensionSource, QAfterSortBy>
+  thenBySourceCode() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'sourceCode', Sort.asc);
+    });
+  }
+
+  QueryBuilder<ExtensionSource, ExtensionSource, QAfterSortBy>
+  thenBySourceCodeDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'sourceCode', Sort.desc);
     });
   }
 
@@ -3083,6 +4292,20 @@ extension ExtensionSourceQuerySortThenBy
   }
 
   QueryBuilder<ExtensionSource, ExtensionSource, QAfterSortBy>
+  thenByVersionCode() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'versionCode', Sort.asc);
+    });
+  }
+
+  QueryBuilder<ExtensionSource, ExtensionSource, QAfterSortBy>
+  thenByVersionCodeDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'versionCode', Sort.desc);
+    });
+  }
+
+  QueryBuilder<ExtensionSource, ExtensionSource, QAfterSortBy>
   thenByVersionLast() {
     return QueryBuilder.apply(this, (query) {
       return query.addSortBy(r'versionLast', Sort.asc);
@@ -3099,6 +4322,14 @@ extension ExtensionSourceQuerySortThenBy
 
 extension ExtensionSourceQueryWhereDistinct
     on QueryBuilder<ExtensionSource, ExtensionSource, QDistinct> {
+  QueryBuilder<ExtensionSource, ExtensionSource, QDistinct> distinctByApiUrl({
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addDistinctBy(r'apiUrl', caseSensitive: caseSensitive);
+    });
+  }
+
   QueryBuilder<ExtensionSource, ExtensionSource, QDistinct> distinctByApkPath({
     bool caseSensitive = true,
   }) {
@@ -3126,6 +4357,13 @@ extension ExtensionSourceQueryWhereDistinct
   distinctByCreatedAt() {
     return QueryBuilder.apply(this, (query) {
       return query.addDistinctBy(r'createdAt');
+    });
+  }
+
+  QueryBuilder<ExtensionSource, ExtensionSource, QDistinct>
+  distinctByHasCloudflare() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addDistinctBy(r'hasCloudflare');
     });
   }
 
@@ -3178,6 +4416,14 @@ extension ExtensionSourceQueryWhereDistinct
     });
   }
 
+  QueryBuilder<ExtensionSource, ExtensionSource, QDistinct> distinctByItemType({
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addDistinctBy(r'itemType', caseSensitive: caseSensitive);
+    });
+  }
+
   QueryBuilder<ExtensionSource, ExtensionSource, QDistinct> distinctByLang({
     bool caseSensitive = true,
   }) {
@@ -3194,11 +4440,44 @@ extension ExtensionSourceQueryWhereDistinct
     });
   }
 
+  QueryBuilder<ExtensionSource, ExtensionSource, QDistinct> distinctByNativeId({
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addDistinctBy(r'nativeId', caseSensitive: caseSensitive);
+    });
+  }
+
+  QueryBuilder<ExtensionSource, ExtensionSource, QDistinct> distinctByPkgName({
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addDistinctBy(r'pkgName', caseSensitive: caseSensitive);
+    });
+  }
+
   QueryBuilder<ExtensionSource, ExtensionSource, QDistinct> distinctByRepoUrl({
     bool caseSensitive = true,
   }) {
     return QueryBuilder.apply(this, (query) {
       return query.addDistinctBy(r'repoUrl', caseSensitive: caseSensitive);
+    });
+  }
+
+  QueryBuilder<ExtensionSource, ExtensionSource, QDistinct>
+  distinctBySignatureHash({bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addDistinctBy(
+        r'signatureHash',
+        caseSensitive: caseSensitive,
+      );
+    });
+  }
+
+  QueryBuilder<ExtensionSource, ExtensionSource, QDistinct>
+  distinctBySourceCode({bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addDistinctBy(r'sourceCode', caseSensitive: caseSensitive);
     });
   }
 
@@ -3246,6 +4525,13 @@ extension ExtensionSourceQueryWhereDistinct
   }
 
   QueryBuilder<ExtensionSource, ExtensionSource, QDistinct>
+  distinctByVersionCode() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addDistinctBy(r'versionCode');
+    });
+  }
+
+  QueryBuilder<ExtensionSource, ExtensionSource, QDistinct>
   distinctByVersionLast({bool caseSensitive = true}) {
     return QueryBuilder.apply(this, (query) {
       return query.addDistinctBy(r'versionLast', caseSensitive: caseSensitive);
@@ -3258,6 +4544,12 @@ extension ExtensionSourceQueryProperty
   QueryBuilder<ExtensionSource, int, QQueryOperations> idProperty() {
     return QueryBuilder.apply(this, (query) {
       return query.addPropertyName(r'id');
+    });
+  }
+
+  QueryBuilder<ExtensionSource, String?, QQueryOperations> apiUrlProperty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addPropertyName(r'apiUrl');
     });
   }
 
@@ -3283,6 +4575,13 @@ extension ExtensionSourceQueryProperty
   createdAtProperty() {
     return QueryBuilder.apply(this, (query) {
       return query.addPropertyName(r'createdAt');
+    });
+  }
+
+  QueryBuilder<ExtensionSource, bool, QQueryOperations>
+  hasCloudflareProperty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addPropertyName(r'hasCloudflare');
     });
   }
 
@@ -3329,6 +4628,12 @@ extension ExtensionSourceQueryProperty
     });
   }
 
+  QueryBuilder<ExtensionSource, String, QQueryOperations> itemTypeProperty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addPropertyName(r'itemType');
+    });
+  }
+
   QueryBuilder<ExtensionSource, String, QQueryOperations> langProperty() {
     return QueryBuilder.apply(this, (query) {
       return query.addPropertyName(r'lang');
@@ -3341,9 +4646,34 @@ extension ExtensionSourceQueryProperty
     });
   }
 
+  QueryBuilder<ExtensionSource, String, QQueryOperations> nativeIdProperty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addPropertyName(r'nativeId');
+    });
+  }
+
+  QueryBuilder<ExtensionSource, String, QQueryOperations> pkgNameProperty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addPropertyName(r'pkgName');
+    });
+  }
+
   QueryBuilder<ExtensionSource, String?, QQueryOperations> repoUrlProperty() {
     return QueryBuilder.apply(this, (query) {
       return query.addPropertyName(r'repoUrl');
+    });
+  }
+
+  QueryBuilder<ExtensionSource, String, QQueryOperations>
+  signatureHashProperty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addPropertyName(r'signatureHash');
+    });
+  }
+
+  QueryBuilder<ExtensionSource, String, QQueryOperations> sourceCodeProperty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addPropertyName(r'sourceCode');
     });
   }
 
@@ -3377,6 +4707,12 @@ extension ExtensionSourceQueryProperty
   QueryBuilder<ExtensionSource, String, QQueryOperations> versionProperty() {
     return QueryBuilder.apply(this, (query) {
       return query.addPropertyName(r'version');
+    });
+  }
+
+  QueryBuilder<ExtensionSource, int, QQueryOperations> versionCodeProperty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addPropertyName(r'versionCode');
     });
   }
 

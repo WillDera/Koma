@@ -110,8 +110,15 @@ class AppType {
   static const String _mono = 'JetBrainsMono';
 
   static TextTheme ui({String? fontFamily}) {
-    final base = _platformTextTheme();
-    return _withFontFamily(base, fontFamily);
+    final sized = _platformTextTheme();
+    // null = platform Default (system / OEM font — Mihon parity).
+    if (fontFamily == null) return sized;
+    // Inter must be loaded via google_fonts; a bare family name never
+    // resolves and looked identical to system Default (toggle no-op).
+    if (fontFamily == _ui) {
+      return GoogleFonts.interTextTheme(sized);
+    }
+    return _withFontFamily(sized, fontFamily);
   }
 
   /// Reading body — used in ReaderScreen for chapter content.
@@ -148,6 +155,18 @@ class AppType {
         letterSpacing: 0.05,
       );
     }
+    // Families registered at runtime (the device system font, via FontLoader)
+    // are not in the Google Fonts catalogue and getFont throws on them.
+    if (!GoogleFonts.asMap().containsKey(fontFamily)) {
+      return TextStyle(
+        fontFamily: fontFamily,
+        fontSize: fontSize,
+        height: lineHeight,
+        color: color,
+        fontWeight: FontWeight.w400,
+        letterSpacing: 0.05,
+      );
+    }
     // Use GoogleFonts.getFont which loads & caches any supported font.
     return GoogleFonts.getFont(
       fontFamily,
@@ -169,12 +188,16 @@ class AppType {
     );
   }
 
-  /// Small-caps label — Aethelgard "label-caps" style. Used for metadata,
-  /// navigation labels, and section headers that need a distinct texture
-  /// from body text. 12px / 700 / 0.05em letter-spacing.
-  static TextStyle labelCaps({double fontSize = 12, Color? color}) {
+  /// Small-caps label — used for metadata, nav labels, section headers.
+  /// Pass [fontFamily] explicitly for Inter; leave null for platform default
+  /// (Use device font / Mihon-style inheritance).
+  static TextStyle labelCaps({
+    double fontSize = 12,
+    Color? color,
+    String? fontFamily,
+  }) {
     return TextStyle(
-      fontFamily: _ui,
+      fontFamily: fontFamily,
       fontSize: fontSize,
       height: 16 / 12,
       fontWeight: FontWeight.w700,

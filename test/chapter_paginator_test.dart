@@ -14,7 +14,6 @@ void main() {
     lineHeight: 1.5,
     textAlign: TextAlign.left,
     fontFamily: null,
-    useDeviceFont: true,
     bionicReading: false,
   );
 
@@ -219,7 +218,6 @@ void main() {
         double? lineHeight,
         TextAlign? textAlign,
         String? fontFamily,
-        bool? useDeviceFont,
         bool? bionicReading,
       }) {
         return PaginationKey(
@@ -228,7 +226,6 @@ void main() {
           lineHeight: lineHeight ?? 1.5,
           textAlign: textAlign ?? TextAlign.left,
           fontFamily: fontFamily,
-          useDeviceFont: useDeviceFont ?? true,
           bionicReading: bionicReading ?? false,
         );
       }
@@ -237,7 +234,6 @@ void main() {
       expect(vary(lineHeight: 1.6), isNot(base));
       expect(vary(textAlign: TextAlign.justify), isNot(base));
       expect(vary(fontFamily: 'Literata'), isNot(base));
-      expect(vary(useDeviceFont: false), isNot(base));
       expect(vary(bionicReading: true), isNot(base));
     });
 
@@ -247,11 +243,6 @@ void main() {
       expect(key.fontSize, 18);
       expect(key.lineHeight, 1.8);
       expect(key.viewport, viewport);
-    });
-
-    test('useDeviceFont drops the family so measurement matches rendering', () {
-      const device = ThemeState(useDeviceFont: true);
-      expect(PaginationKey.from(device, viewport).fontFamily, isNull);
     });
   });
 

@@ -41,11 +41,6 @@ class NavDrawer extends StatelessWidget {
       label: 'Discover',
     ),
     DrawerNavItem(
-      icon: AppIcons.search,
-      activeIcon: AppIcons.searchActive,
-      label: 'Search',
-    ),
-    DrawerNavItem(
       icon: AppIcons.settings,
       activeIcon: AppIcons.settingsActive,
       label: 'Settings',
@@ -80,7 +75,6 @@ class NavDrawer extends StatelessWidget {
                 Text(
                   'Koma',
                   style: TextStyle(
-                    fontFamily: AppType.uiFont,
                     fontSize: 22,
                     height: 28 / 22,
                     fontWeight: FontWeight.w700,
@@ -89,7 +83,7 @@ class NavDrawer extends StatelessWidget {
                 ),
                 const SizedBox(height: 4),
                 Text(
-                  'Cinematic Neo-Noir',
+                  'Your personal library',
                   style: AppType.labelCaps(fontSize: 12, color: c.textTertiary),
                 ),
               ],

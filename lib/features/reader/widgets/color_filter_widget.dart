@@ -25,9 +25,16 @@ class ColorFilterWidget extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final hasTint = tint != null && tintOpacity > 0;
+    // Identity filter (default brightness/contrast/saturation, no tint) —
+    // skip ColorFiltered so page tiles aren't forced through an extra layer.
+    final isIdentity =
+        brightness == 1.0 && contrast == 1.0 && saturation == 1.0 && !hasTint;
+    if (isIdentity) return child;
+
     final matrix = _buildColorMatrix();
     final filter = ColorFilter.matrix(matrix);
-    final tintFilter = tint != null && tintOpacity > 0
+    final tintFilter = hasTint
         ? ColorFilter.mode(
             tint!.withValues(alpha: tintOpacity),
             BlendMode.srcOver,

@@ -1,3 +1,6 @@
+import 'package:koma/core/services/keiyoushi_service.dart'
+    show coerceMemoJson;
+
 class Manga {
   final int id;
   final String name;
@@ -11,6 +14,11 @@ class Manga {
   final String sourceId;
   final bool inLibrary;
   final int readingStatus;
+
+  /// Source-side `SManga.memo` JSON (e.g. allanime `{"slug":...}`).
+  /// Round-tripped on detail fetch / library reopen (Mihon parity).
+  final String? memo;
+
   final DateTime createdAt;
   final DateTime updatedAt;
 
@@ -27,6 +35,7 @@ class Manga {
     required this.sourceId,
     this.inLibrary = false,
     this.readingStatus = 0,
+    this.memo,
     DateTime? createdAt,
     DateTime? updatedAt,
   }) : genres = List.unmodifiable(genres ?? const []),
@@ -46,6 +55,7 @@ class Manga {
     String? sourceId,
     bool? inLibrary,
     int? readingStatus,
+    String? memo,
     DateTime? createdAt,
     DateTime? updatedAt,
   }) {
@@ -62,6 +72,7 @@ class Manga {
       sourceId: sourceId ?? this.sourceId,
       inLibrary: inLibrary ?? this.inLibrary,
       readingStatus: readingStatus ?? this.readingStatus,
+      memo: memo ?? this.memo,
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
     );
@@ -80,6 +91,7 @@ class Manga {
     'source_id': sourceId,
     'in_library': inLibrary ? 1 : 0,
     'reading_status': readingStatus,
+    'memo': memo,
     'created_at': createdAt.toIso8601String(),
     'updated_at': updatedAt.toIso8601String(),
   };
@@ -97,6 +109,7 @@ class Manga {
     sourceId: json['source_id'] as String? ?? '',
     inLibrary: (json['in_library'] as int? ?? 0) == 1,
     readingStatus: json['reading_status'] as int? ?? 0,
+    memo: coerceMemoJson(json['memo']),
     createdAt: json['created_at'] != null
         ? DateTime.parse(json['created_at'] as String)
         : DateTime.now(),

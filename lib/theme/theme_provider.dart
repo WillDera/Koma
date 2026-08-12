@@ -1,10 +1,12 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-import '../../core/services/system_font_service.dart';
+import '../core/models/custom_font.dart';
+import '../core/services/custom_font_service.dart';
 import 'app_theme.dart';
 import 'theme_state.dart';
 import 'tokens/app_type.dart';
@@ -20,6 +22,8 @@ export 'theme_state.dart';
 /// Persistence uses SharedPreferences (matches mangayomi's Isar Settings
 /// pattern but scoped to the key-value pairs we actually use).
 class ThemeNotifier extends Notifier<ThemeState> {
+  final CustomFontService _fontService = CustomFontService.instance;
+
   static const _keyThemeMode = 'theme_mode';
   static const _keySepiaMode = 'sepia_mode';
   static const _keyFontFamily = 'font_family';
@@ -28,6 +32,7 @@ class ThemeNotifier extends Notifier<ThemeState> {
   static const _keyLineHeight = 'line_height';
   static const _keyAccentIndex = 'accent_index';
   static const _keyCustomAccentHex = 'custom_accent_hex';
+  static const _keyFollowSystemAccent = 'follow_system_accent';
   static const _keyReadingFont = 'reading_font';
   static const _keyPageWidth = 'page_width';
   static const _keyTextAlign = 'text_align';
@@ -37,12 +42,17 @@ class ThemeNotifier extends Notifier<ThemeState> {
   static const _keyHandMode = 'hand_mode';
   static const _keyOneHandMode = 'one_hand_mode';
   static const _keyBionicReading = 'bionic_reading';
-  static const _keyUseDeviceFont = 'use_device_font';
   static const _keyAmoledMode = 'amoled_mode';
+  static const _keyUiFontId = 'ui_font_id';
+  static const _keyReadingFontId = 'reading_font_id';
   static const _keyShowNsfwExtensions = 'show_nsfw_extensions';
   static const _keyShowObsoleteExtensions = 'show_obsolete_extensions';
   static const _keyImmersiveAutoHide = 'immersive_auto_hide';
   static const _keyPageStyle = 'page_style';
+
+  /// Full Material You schemes from [DynamicColorBuilder] (not persisted).
+  ColorScheme? lightDynamicScheme;
+  ColorScheme? darkDynamicScheme;
 
   @override
   ThemeState build() {
@@ -54,6 +64,10 @@ class ThemeNotifier extends Notifier<ThemeState> {
   /// Load persisted preferences from disk. Called once at startup.
   Future<void> init() async {
     final prefs = await SharedPreferences.getInstance();
+    final customFonts = await _fontService.listFonts();
+    final uiFontId = _nonEmpty(prefs.getString(_keyUiFontId));
+    final readingFontId = _nonEmpty(prefs.getString(_keyReadingFontId));
+
     state = ThemeState(
       themeMode: ThemeMode.values[prefs.getInt(_keyThemeMode) ?? 0],
       sepiaMode: prefs.getBool(_keySepiaMode) ?? false,
@@ -63,7 +77,8 @@ class ThemeNotifier extends Notifier<ThemeState> {
       lineHeight: prefs.getDouble(_keyLineHeight) ?? 1.65,
       accent: AccentPreset.values[prefs.getInt(_keyAccentIndex) ?? 0],
       customAccentHex: prefs.getString(_keyCustomAccentHex),
-      readingFont: ReadingFont.values[prefs.getInt(_keyReadingFont) ?? 1],
+      followSystemAccent: prefs.getBool(_keyFollowSystemAccent) ?? true,
+      readingFont: ReadingFont.values[prefs.getInt(_keyReadingFont) ?? 0],
       pageWidth: prefs.getDouble(_keyPageWidth) ?? 680,
       textAlign: TextAlign.values[prefs.getInt(_keyTextAlign) ?? 0],
       hyphenation: prefs.getBool(_keyHyphenation) ?? true,
@@ -72,8 +87,10 @@ class ThemeNotifier extends Notifier<ThemeState> {
       handMode: HandMode.values[prefs.getInt(_keyHandMode) ?? 1],
       oneHandMode: prefs.getBool(_keyOneHandMode) ?? false,
       bionicReading: prefs.getBool(_keyBionicReading) ?? false,
-      useDeviceFont: prefs.getBool(_keyUseDeviceFont) ?? false,
       amoledMode: prefs.getBool(_keyAmoledMode) ?? false,
+      customFonts: customFonts,
+      uiFontId: _validFontId(uiFontId, customFonts),
+      readingFontId: _validFontId(readingFontId, customFonts),
       showNsfwExtensions: prefs.getBool(_keyShowNsfwExtensions) ?? false,
       showObsoleteExtensions:
           prefs.getBool(_keyShowObsoleteExtensions) ?? false,
@@ -84,48 +101,147 @@ class ThemeNotifier extends Notifier<ThemeState> {
             PageStyle.values.length - 1,
           )],
     );
-    if (state.useDeviceFont) {
-      unawaited(_resolveSystemFont());
-    }
+
+    await _ensureSelectedFontsLoaded();
   }
 
   static String? _nonEmpty(String? s) => s != null && s.isNotEmpty ? s : null;
 
-  Future<String?> _resolveSystemFont() async {
-    if (state.systemFontFamily != null) return state.systemFontFamily;
-    final font = await SystemFontService().getSystemTypeface();
-    if (font != null) {
-      state = state.copyWith(systemFontFamily: font);
+  static String? _validFontId(String? id, List<CustomFont> catalog) {
+    if (id == null) return null;
+    for (final font in catalog) {
+      if (font.id == id) return id;
     }
-    return font;
+    return null;
+  }
+
+  Future<void> _ensureSelectedFontsLoaded() async {
+    if (state.uiFontId != null) {
+      await _fontService.ensureLoadedById(state.uiFontId!, state.customFonts);
+    }
+    if (state.readingFontId != null) {
+      await _fontService.ensureLoadedById(
+        state.readingFontId!,
+        state.customFonts,
+      );
+    }
+  }
+
+  /// Called from [DynamicColorBuilder] whenever wallpaper/system colors change.
+  void setDynamicColorSchemes(ColorScheme? light, ColorScheme? dark) {
+    lightDynamicScheme = light;
+    darkDynamicScheme = dark;
+    final lp = light?.primary;
+    final dp = dark?.primary;
+    if (lp == state.lightDynamicPrimary && dp == state.darkDynamicPrimary) {
+      return;
+    }
+    state = state.copyWith(
+      lightDynamicPrimary: () => lp,
+      darkDynamicPrimary: () => dp,
+    );
   }
 
   // ── Theme convenience getters (forwarded from state) ───────────────
 
-  /// Live light theme built from the current accent color.
+  ColorScheme? get _activeDynamicScheme {
+    if (!state.followSystemAccent || state.customAccentHex != null) {
+      return null;
+    }
+    return state.isDarkMode ? darkDynamicScheme : lightDynamicScheme;
+  }
+
+  ColorScheme? get _lightDynamicForTheme {
+    if (!state.followSystemAccent || state.customAccentHex != null) {
+      return null;
+    }
+    return lightDynamicScheme;
+  }
+
+  ColorScheme? get _darkDynamicForTheme {
+    if (!state.followSystemAccent || state.customAccentHex != null) {
+      return null;
+    }
+    return darkDynamicScheme;
+  }
+
+  /// Live light theme built from the current accent / Material You colors.
   ThemeData get lightTheme => AppTheme.lightTheme(
     accent: state.accentColor,
-    fontFamily: _fontFamilyForMode(),
+    fontFamily: state.uiFontFamily,
+    dynamicScheme: _lightDynamicForTheme,
   );
   ThemeData get darkTheme => AppTheme.darkTheme(
     accent: state.accentColor,
     amoled: state.amoledMode,
-    fontFamily: _fontFamilyForMode(),
+    fontFamily: state.uiFontFamily,
+    dynamicScheme: _darkDynamicForTheme,
   );
   ThemeData get sepiaTheme => AppTheme.sepiaTheme(
     accent: state.accentColor,
-    fontFamily: _fontFamilyForMode(),
+    fontFamily: state.uiFontFamily,
+    dynamicScheme: _activeDynamicScheme,
   );
-
-  String? _fontFamilyForMode() {
-    if (!state.useDeviceFont) return AppType.uiFont;
-    return state.systemFontFamily;
-  }
 
   ThemeData get currentTheme {
     if (state.sepiaMode) return sepiaTheme;
     if (state.isDark) return darkTheme;
     return lightTheme;
+  }
+
+  // ── Custom fonts ─────────────────────────────────────────────────
+
+  Future<CustomFont?> importCustomFonts(List<File> files) async {
+    final font = await _fontService.importFiles(files);
+    if (font == null) return null;
+    final catalog = [...state.customFonts, font];
+    state = state.copyWith(customFonts: catalog);
+    return font;
+  }
+
+  Future<void> deleteCustomFont(String id) async {
+    await _fontService.deleteFont(id);
+    final catalog = state.customFonts.where((f) => f.id != id).toList();
+    final clearUi = state.uiFontId == id;
+    final clearReading = state.readingFontId == id;
+    state = state.copyWith(
+      customFonts: catalog,
+      uiFontId: clearUi ? () => null : null,
+      readingFontId: clearReading ? () => null : null,
+    );
+    final prefs = await SharedPreferences.getInstance();
+    if (clearUi) {
+      await prefs.remove(_keyUiFontId);
+    }
+    if (clearReading) {
+      await prefs.remove(_keyReadingFontId);
+    }
+  }
+
+  Future<void> setUiFontId(String? id) async {
+    if (id != null) {
+      await _fontService.ensureLoadedById(id, state.customFonts);
+    }
+    state = state.copyWith(uiFontId: () => id);
+    final prefs = await SharedPreferences.getInstance();
+    if (id == null) {
+      await prefs.remove(_keyUiFontId);
+    } else {
+      await prefs.setString(_keyUiFontId, id);
+    }
+  }
+
+  Future<void> setReadingFontId(String? id) async {
+    if (id != null) {
+      await _fontService.ensureLoadedById(id, state.customFonts);
+    }
+    state = state.copyWith(readingFontId: () => id);
+    final prefs = await SharedPreferences.getInstance();
+    if (id == null) {
+      await prefs.remove(_keyReadingFontId);
+    } else {
+      await prefs.setString(_keyReadingFontId, id);
+    }
   }
 
   // ── Mutators ───────────────────────────────────────────────────────
@@ -167,11 +283,28 @@ class ThemeNotifier extends Notifier<ThemeState> {
     await prefs.setDouble(_keyLineHeight, height);
   }
 
+  Future<void> setFollowSystemAccent(bool value) async {
+    state = state.copyWith(
+      followSystemAccent: value,
+      customAccentHex: value ? () => null : null,
+    );
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_keyFollowSystemAccent, value);
+    if (value) {
+      await prefs.remove(_keyCustomAccentHex);
+    }
+  }
+
   Future<void> setAccent(AccentPreset accent) async {
-    state = state.copyWith(accent: accent, customAccentHex: () => null);
+    state = state.copyWith(
+      accent: accent,
+      customAccentHex: () => null,
+      followSystemAccent: false,
+    );
     final prefs = await SharedPreferences.getInstance();
     await prefs.setInt(_keyAccentIndex, accent.index);
     await prefs.remove(_keyCustomAccentHex);
+    await prefs.setBool(_keyFollowSystemAccent, false);
   }
 
   Future<void> setCustomAccentHex(String? hex) async {
@@ -181,19 +314,27 @@ class ThemeNotifier extends Notifier<ThemeState> {
       if (parsed == null) return;
       resolved = hex.trim();
     }
-    state = state.copyWith(customAccentHex: () => resolved);
+    state = state.copyWith(
+      customAccentHex: () => resolved,
+      followSystemAccent: resolved != null ? false : state.followSystemAccent,
+    );
     final prefs = await SharedPreferences.getInstance();
     if (resolved == null) {
       await prefs.remove(_keyCustomAccentHex);
     } else {
       await prefs.setString(_keyCustomAccentHex, resolved);
+      await prefs.setBool(_keyFollowSystemAccent, false);
     }
   }
 
   Future<void> setReadingFont(ReadingFont font) async {
-    state = state.copyWith(readingFont: font);
+    state = state.copyWith(
+      readingFont: font,
+      readingFontId: () => null,
+    );
     final prefs = await SharedPreferences.getInstance();
     await prefs.setInt(_keyReadingFont, font.index);
+    await prefs.remove(_keyReadingFontId);
   }
 
   Future<void> setPageWidth(double width) async {
@@ -242,15 +383,6 @@ class ThemeNotifier extends Notifier<ThemeState> {
     state = state.copyWith(bionicReading: value);
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool(_keyBionicReading, value);
-  }
-
-  Future<void> setUseDeviceFont(bool value) async {
-    state = state.copyWith(useDeviceFont: value);
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setBool(_keyUseDeviceFont, value);
-    if (value) {
-      unawaited(_resolveSystemFont());
-    }
   }
 
   Future<void> setAmoledMode(bool value) async {

@@ -3,6 +3,7 @@ import '../models/m_source.dart';
 import '../models/m_manga.dart';
 import '../models/m_chapter.dart';
 import '../models/m_pages.dart';
+import '../models/manga_browse_page.dart';
 import '../models/filter_list.dart';
 import '../models/source_preference.dart';
 import '../../core/services/keiyoushi_service.dart';
@@ -15,17 +16,29 @@ class KeiyoushiExtensionService implements ExtensionService {
   @override
   String get type => 'mihon';
 
+  MangaBrowsePage _toBrowsePage(
+    ({List<Map<String, dynamic>> mangas, bool hasNextPage}) result,
+  ) {
+    return MangaBrowsePage(
+      list: result.mangas.map((m) => MManga.fromMap(m)).toList(),
+      hasNextPage: result.hasNextPage,
+    );
+  }
+
   @override
-  Future<List<MManga>> getPopular(int page, {required MSource source}) async {
+  Future<MangaBrowsePage> getPopular(
+    int page, {
+    required MSource source,
+  }) async {
     final result = await _keiyoushi.getPopularManga(
       sourceId: source.sourceId,
       page: page,
     );
-    return result.mangas.map((m) => MManga.fromMap(m)).toList();
+    return _toBrowsePage(result);
   }
 
   @override
-  Future<List<MManga>> getLatestUpdates(
+  Future<MangaBrowsePage> getLatestUpdates(
     int page, {
     required MSource source,
   }) async {
@@ -33,7 +46,7 @@ class KeiyoushiExtensionService implements ExtensionService {
       sourceId: source.sourceId,
       page: page,
     );
-    return result.mangas.map((m) => MManga.fromMap(m)).toList();
+    return _toBrowsePage(result);
   }
 
   @override
@@ -43,7 +56,7 @@ class KeiyoushiExtensionService implements ExtensionService {
   }
 
   @override
-  Future<List<MManga>> search(
+  Future<MangaBrowsePage> search(
     MSource source,
     int page,
     String query, {
@@ -55,24 +68,38 @@ class KeiyoushiExtensionService implements ExtensionService {
       page: page,
       filters: filters?.toJson(),
     );
-    return result.mangas.map((m) => MManga.fromMap(m)).toList();
+    return _toBrowsePage(result);
   }
 
   @override
-  Future<MManga?> getDetail(MSource source, String url) async {
+  Future<MManga?> getDetail(
+    MSource source,
+    String url, {
+    String? memo,
+    String? title,
+  }) async {
     final result = await _keiyoushi.getMangaDetails(
       sourceId: source.sourceId,
       url: url,
+      memo: memo,
+      title: title,
     );
     if (result.isEmpty) return null;
     return MManga.fromMap(result);
   }
 
   @override
-  Future<List<MChapter>> getChapterList(MSource source, String url) async {
+  Future<List<MChapter>> getChapterList(
+    MSource source,
+    String url, {
+    String? memo,
+    String? title,
+  }) async {
     final result = await _keiyoushi.getChapterList(
       sourceId: source.sourceId,
       url: url,
+      memo: memo,
+      title: title,
     );
     return result.map((c) => MChapter.fromMap(c)).toList();
   }
@@ -80,11 +107,15 @@ class KeiyoushiExtensionService implements ExtensionService {
   @override
   Future<({MManga? manga, List<MChapter> chapters})> getMangaDetail(
     MSource source,
-    String url,
-  ) async {
+    String url, {
+    String? memo,
+    String? title,
+  }) async {
     final result = await _keiyoushi.getMangaUpdate(
       sourceId: source.sourceId,
       url: url,
+      memo: memo,
+      title: title,
     );
     final details = result.details;
     final manga = details.isNotEmpty ? MManga.fromMap(details) : null;
@@ -97,8 +128,20 @@ class KeiyoushiExtensionService implements ExtensionService {
     final result = await _keiyoushi.getPageList(
       sourceId: source.sourceId,
       url: chapter.url,
+      memo: chapter.memo,
     );
-    return [MPages.fromList(result)];
+    // Dalvik returns `imageUrl`; normalize to MPage.`url`.
+    final normalized = <Map<String, dynamic>>[
+      for (var i = 0; i < result.length; i++)
+        {
+          'index': result[i]['index'] ?? i,
+          'url': (result[i]['url'] as String?) ??
+              (result[i]['imageUrl'] as String?) ??
+              '',
+          if (result[i]['headers'] != null) 'headers': result[i]['headers'],
+        },
+    ];
+    return [MPages.fromList(normalized)];
   }
 
   @override

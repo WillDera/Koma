@@ -7,6 +7,7 @@ import 'package:flutter_native_splash/flutter_native_splash.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:workmanager/workmanager.dart';
 
 import 'app.dart';
@@ -91,6 +92,8 @@ void main() {
     // Start the library chapter poller (reads its enabled/interval prefs and
     // schedules a periodic check if auto-update is on).
     await container.read(libraryUpdateProvider.notifier).init();
+    // Restore persisted chapter download queue (Mihon DownloadStore parity).
+    unawaited(container.read(downloadManagerProvider.notifier).restore());
 
     runApp(
       UncontrolledProviderScope(
@@ -120,6 +123,8 @@ void main() {
 
 /// Check all repos for extension updates and store versionLast flags.
 /// Ported from mangayomi's fetchItemSourcesListProvider on app start.
+/// When `extension_auto_update_enabled` is set, also downloads replacements
+/// (Mangayomi autoUpdateExtensions parity).
 Future<void> _checkExtensionUpdates(ExtensionManager mgr) async {
   try {
     final repos = await mgr.listRepos();
@@ -132,6 +137,10 @@ Future<void> _checkExtensionUpdates(ExtensionManager mgr) async {
       } catch (_) {
         // One repo failing shouldn't block the others (mangayomi pattern).
       }
+    }
+    final prefs = await SharedPreferences.getInstance();
+    if (prefs.getBool('extension_auto_update_enabled') ?? false) {
+      await mgr.autoInstallAvailableUpdates();
     }
   } catch (_) {}
 }

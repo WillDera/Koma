@@ -12,21 +12,29 @@ String completeLanguageName(String lang) {
 
 /// Compare two semantic version strings.
 /// Returns -1 if v1 < v2, 0 if equal, 1 if v1 > v2.
-/// Ported from mangayomi's compareVersions() in services/fetch_sources_list.dart.
+///
+/// Numeric per-segment compare (0.2.20 > 0.1.25, 0.10.0 > 0.9.0). Do not
+/// use padRight digit padding — that incorrectly ranks `0.9` above `0.10`.
 int compareVersions(String v1, String v2) {
-  final v1Parts = v1.split('.');
-  final v2Parts = v2.split('.');
-  final minLength = v1Parts.length < v2Parts.length
-      ? v1Parts.length
-      : v2Parts.length;
-
-  for (var i = 0; i < minLength; i++) {
-    final v1Value = int.parse(v1Parts[i].padRight(2, '0'));
-    final v2Value = int.parse(v2Parts[i].padRight(2, '0'));
-    final comparison = v1Value.compareTo(v2Value);
-    if (comparison != 0) return comparison;
+  List<int> parts(String v) {
+    var s = v.trim();
+    if (s.startsWith('v') || s.startsWith('V')) s = s.substring(1);
+    return s.split('.').map((p) {
+      final m = RegExp(r'^\d+').firstMatch(p.trim());
+      return m != null ? int.parse(m.group(0)!) : 0;
+    }).toList();
   }
-  return v1Parts.length.compareTo(v2Parts.length);
+
+  final a = parts(v1);
+  final b = parts(v2);
+  final n = a.length > b.length ? a.length : b.length;
+  for (var i = 0; i < n; i++) {
+    final x = i < a.length ? a[i] : 0;
+    final y = i < b.length ? b[i] : 0;
+    final c = x.compareTo(y);
+    if (c != 0) return c;
+  }
+  return 0;
 }
 
 final languagesMap = {

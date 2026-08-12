@@ -4,13 +4,13 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import 'library_update_service.dart';
 
-/// Wraps flutter_local_notifications for the two system-notification use
-/// cases: library new-chapter alerts and extension-update alerts.
+/// Wraps flutter_local_notifications for library, extension, and download
+/// alerts.
 ///
 /// Notifications are only posted when the corresponding user toggle is on
-/// (persisted in SharedPreferences). The library poller may run from a
-/// WorkManager background isolate, so this service must be fully self
-/// contained — it initializes its own plugin instance and never touches
+/// (persisted in SharedPreferences). The library poller / download worker may
+/// run from a WorkManager background isolate, so this service must be fully
+/// self contained — it initializes its own plugin instance and never touches
 /// Riverpod state.
 class NotificationService {
   NotificationService._();
@@ -22,6 +22,11 @@ class NotificationService {
 
   static const _channelLibrary = 'library_updates';
   static const _channelExtensions = 'extension_updates';
+  static const _channelDownloadProgress = 'downloader_progress';
+  static const _channelDownloadError = 'downloader_error';
+
+  static const _idDownloadProgress = 1100;
+  static const _idDownloadError = 1101;
 
   final FlutterLocalNotificationsPlugin _plugin =
       FlutterLocalNotificationsPlugin();
@@ -75,6 +80,84 @@ class NotificationService {
       channelName: 'Plugin updates',
       channelDescription: 'New extension versions available',
     );
+  }
+
+  /// Ongoing progress for the chapter download queue (Mihon DownloadNotifier).
+  Future<void> notifyDownloadProgress({
+    required String mangaTitle,
+    required String chapterName,
+    required int done,
+    required int total,
+    required int pending,
+  }) async {
+    await init();
+    final progressText = total > 0 ? '$done/$total' : '…';
+    final title = mangaTitle.isEmpty ? 'Downloading' : mangaTitle;
+    final body = pending > 1
+        ? '$chapterName · $progressText · $pending in queue'
+        : '$chapterName · $progressText';
+    final details = AndroidNotificationDetails(
+      _channelDownloadProgress,
+      'Download progress',
+      channelDescription: 'Chapter download progress',
+      importance: Importance.low,
+      priority: Priority.low,
+      onlyAlertOnce: true,
+      ongoing: true,
+      showProgress: total > 0,
+      maxProgress: total > 0 ? total : 0,
+      progress: total > 0 ? done : 0,
+      category: AndroidNotificationCategory.progress,
+    );
+    await _plugin.show(
+      id: _idDownloadProgress,
+      title: title,
+      body: body,
+      notificationDetails: NotificationDetails(android: details),
+    );
+  }
+
+  Future<void> notifyDownloadPaused(int pending) async {
+    await init();
+    final details = AndroidNotificationDetails(
+      _channelDownloadProgress,
+      'Download progress',
+      channelDescription: 'Chapter download progress',
+      importance: Importance.low,
+      priority: Priority.low,
+      onlyAlertOnce: true,
+      ongoing: false,
+    );
+    await _plugin.show(
+      id: _idDownloadProgress,
+      title: 'Downloads paused',
+      body: pending <= 0
+          ? 'Queue empty'
+          : '$pending chapter${pending == 1 ? '' : 's'} remaining',
+      notificationDetails: NotificationDetails(android: details),
+    );
+  }
+
+  Future<void> notifyDownloadError(String message) async {
+    await init();
+    const details = AndroidNotificationDetails(
+      _channelDownloadError,
+      'Download errors',
+      channelDescription: 'Chapter download failures',
+      importance: Importance.defaultImportance,
+      priority: Priority.defaultPriority,
+    );
+    await _plugin.show(
+      id: _idDownloadError,
+      title: 'Download failed',
+      body: message,
+      notificationDetails: NotificationDetails(android: details),
+    );
+  }
+
+  Future<void> dismissDownloadProgress() async {
+    if (!_initialized) return;
+    await _plugin.cancel(id: _idDownloadProgress);
   }
 
   Future<void> _show({

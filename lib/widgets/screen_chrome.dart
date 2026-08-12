@@ -5,6 +5,9 @@ import '../theme/app_theme.dart';
 import '../theme/tokens/app_motion.dart';
 import '../theme/tokens/app_spacing.dart';
 
+/// Flat screen background in the Figma "ReadLoom" style — a single solid
+/// fill, no gradient washes. Kept as a widget so screens share one entry
+/// point.
 class ScreenBackdrop extends StatelessWidget {
   final Widget child;
 
@@ -12,47 +15,11 @@ class ScreenBackdrop extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final c = context.colors;
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    return Stack(
-      children: [
-        Positioned.fill(child: ColoredBox(color: c.bg)),
-        Positioned.fill(
-          child: IgnorePointer(
-            child: DecoratedBox(
-              decoration: BoxDecoration(
-                gradient: RadialGradient(
-                  center: const Alignment(-0.85, -0.92),
-                  radius: 1.05,
-                  colors: [
-                    c.accent.withValues(alpha: isDark ? 0.22 : 0.14),
-                    c.accent.withValues(alpha: 0.0),
-                  ],
-                  stops: const [0.0, 0.68],
-                ),
-              ),
-            ),
-          ),
-        ),
-        Positioned.fill(
-          child: IgnorePointer(
-            child: DecoratedBox(
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  begin: Alignment.topCenter,
-                  end: Alignment.bottomCenter,
-                  colors: [
-                    c.surfaceMuted.withValues(alpha: isDark ? 0.10 : 0.34),
-                    c.bg.withValues(alpha: 0.0),
-                    c.accentMuted.withValues(alpha: isDark ? 0.08 : 0.16),
-                  ],
-                ),
-              ),
-            ),
-          ),
-        ),
-        child,
-      ],
+    // Material ancestor required by TextField / ink widgets on overlay
+    // routes that sit above the shell without a Scaffold (e.g. Search).
+    return Material(
+      color: context.colors.bg,
+      child: child,
     );
   }
 }
@@ -61,6 +28,11 @@ class StaggeredEntrance extends StatefulWidget {
   final Widget child;
   final int index;
   final Offset offset;
+
+  /// Caps staggered delay so large lists don't schedule dozens of tickers
+  /// (item 50 would otherwise wait ~1.75s). History previously capped locally;
+  /// this is shared for library/discover/snippets.
+  static const int maxStaggerIndex = 8;
 
   const StaggeredEntrance({
     super.key,
@@ -92,7 +64,8 @@ class _StaggeredEntranceState extends State<StaggeredEntrance>
       begin: widget.offset,
       end: Offset.zero,
     ).animate(curved);
-    Future<void>.delayed(Duration(milliseconds: 35 * widget.index), () {
+    final capped = widget.index.clamp(0, StaggeredEntrance.maxStaggerIndex);
+    Future<void>.delayed(Duration(milliseconds: 35 * capped), () {
       if (mounted) _controller.forward();
     });
   }
@@ -253,26 +226,37 @@ class PanelStat extends StatelessWidget {
   }
 }
 
+/// Figma-style section label: 11px / w600 / uppercase / letterspaced,
+/// tinted with [color] (defaults to the accent).
 class SectionLabel extends StatelessWidget {
   final String title;
   final String? meta;
   final Widget? action;
+  final Color? color;
 
-  const SectionLabel({super.key, required this.title, this.meta, this.action});
+  const SectionLabel({
+    super.key,
+    required this.title,
+    this.meta,
+    this.action,
+    this.color,
+  });
 
   @override
   Widget build(BuildContext context) {
     final c = context.colors;
+    final tint = color ?? c.accent;
     return Padding(
       padding: const EdgeInsets.fromLTRB(20, 8, 20, 10),
       child: Row(
         children: [
           Text(
-            title,
+            title.toUpperCase(),
             style: TextStyle(
-              color: c.textPrimary,
-              fontSize: 18,
-              fontWeight: FontWeight.w800,
+              color: tint,
+              fontSize: 11,
+              fontWeight: FontWeight.w600,
+              letterSpacing: 0.8,
               height: 1.1,
             ),
           ),
@@ -281,13 +265,13 @@ class SectionLabel extends StatelessWidget {
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
               decoration: BoxDecoration(
-                color: c.accentMuted,
+                color: tint.withValues(alpha: 0.13),
                 borderRadius: AppSpacing.brPill,
               ),
               child: Text(
                 meta!,
                 style: TextStyle(
-                  color: c.accent,
+                  color: tint,
                   fontSize: 11,
                   fontWeight: FontWeight.w700,
                 ),

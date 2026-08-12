@@ -26,7 +26,9 @@ import '../../widgets/toast.dart';
 import '../../widgets/tts_controls.dart';
 import 'pagination/paginated_reader_body.dart';
 import 'pagination/reading_spans.dart';
+import 'pagination/rich_chapter_body.dart';
 import 'reader_provider.dart';
+import 'tts/tts_engine.dart';
 import 'tts_provider.dart';
 
 class ReaderScreen extends ConsumerStatefulWidget {
@@ -76,7 +78,7 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
   /// end is derived from the selected text, so only the start is tracked.
   int? _selStart;
 
-  bool _showUI = true;
+  final ValueNotifier<bool> _showUI = ValueNotifier<bool>(true);
   bool _toolbarVisible = false;
 
   /// Pending dismissal of the quick toolbar after its selection went away.
@@ -100,16 +102,55 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
 
   late final AnimationController _toolbarCtrl;
   late final AnimationController _colorCtrl;
+  late final AnimationController _focusCtrl;
 
   Timer? _uiHideTimer;
   static const _autoHideDelay = Duration(seconds: 3);
+
+  /// Transient snippet-arrival flash range into chapter plain text.
+  int _focusStart = 0;
+  int _focusEnd = 0;
+  bool _snippetFocusArmed = false;
+  bool _snippetScrollSeekDone = false;
+  bool _snippetCharConsumed = false;
+
+  /// False until this screen's [loadBook] finishes. Prevents painting the
+  /// leftover [readerProvider] chapter (often scrolled to the end) before
+  /// the snippet target is applied.
+  bool _sessionReady = false;
+
+  /// Successful layout-settle frames at the snippet scroll target.
+  int _snippetSeekSettleCount = 0;
+
+  /// Total post-frame attempts (including waiting for the scroll view).
+  int _snippetSeekAttempts = 0;
+  static const _snippetSeekSettleFrames = 6;
+  static const _snippetSeekMaxAttempts = 40;
 
   @override
   void initState() {
     super.initState();
     _toolbarCtrl = AnimationController(vsync: this, duration: AppMotion.sheet);
     _colorCtrl = AnimationController(vsync: this, duration: AppMotion.base);
+    _focusCtrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1500),
+    );
+    _focusCtrl.addStatusListener((status) {
+      if (status == AnimationStatus.completed && mounted) {
+        setState(() {
+          _focusStart = 0;
+          _focusEnd = 0;
+          _highlightVersion++;
+        });
+      }
+    });
     _ttsProvider = TtsProvider()..addListener(_onTtsChanged);
+    ref.listenManual<int>(
+      readerProvider.select((state) => state.currentIndex),
+      (_, next) => _onChapterChanged(next),
+    );
+    unawaited(_ttsProvider!.loadPrefs());
     Future.microtask(() => _loadAndRestore());
   }
 
@@ -126,8 +167,8 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
 
   void _resetUiHideTimer() {
     _cancelUiHideTimer();
-    if (!_showUI) {
-      setState(() => _showUI = true);
+    if (!_showUI.value) {
+      _showUI.value = true;
     }
     _applySystemUiMode();
     if (ref.read(themeProvider).immersiveAutoHide &&
@@ -139,7 +180,7 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
             !_toolbarVisible &&
             !_colorPickerVisible &&
             !(_ttsProvider?.isActive ?? false)) {
-          setState(() => _showUI = false);
+          _showUI.value = false;
           _applySystemUiMode();
         }
       });
@@ -149,7 +190,7 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
   void _applySystemUiMode() {
     if (!mounted) return;
     final showSystemUi =
-        _showUI ||
+        _showUI.value ||
         _toolbarVisible ||
         _colorPickerVisible ||
         (_ttsProvider?.isActive ?? false);
@@ -165,40 +206,139 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
   }
 
   Future<void> _loadAndRestore() async {
+    // Char offsets are authoritative for snippet jumps; skip pixel scroll so
+    // we don't briefly land at the wrong place before the char seek runs.
     await _provider!.loadBook(
       widget.bookId,
       targetChapterId: widget.snippetChapterId,
-      targetScrollOffset: widget.snippetScrollOffset,
+      targetScrollOffset: widget.snippetStartOffset != null
+          ? null
+          : widget.snippetScrollOffset,
     );
     if (!mounted) return;
+    // Reset so a seek that ran against stale pre-load content cannot win.
+    _snippetScrollSeekDone = false;
+    _snippetSeekSettleCount = 0;
+    _snippetSeekAttempts = 0;
+    _lastSeenChapterIndex = -1;
+    setState(() => _sessionReady = true);
+    _onChapterChanged(_provider!.currentIndex);
     _restoreScrollPosition();
   }
 
-  void _restoreScrollPosition() {
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) return;
-      if (_scrollController.hasClients) {
-        final pos = _provider!.scrollPosition;
-        if (pos > 0) {
-          _scrollController.jumpTo(
-            pos.clamp(0, _scrollController.position.maxScrollExtent),
-          );
-        }
-      }
+  /// Peak flash opacity during snippet-arrival animation (0→peak→0).
+  double get _focusAlpha {
+    if (_focusEnd <= _focusStart) return 0;
+    return _focusAlphaForValue(_focusCtrl.value);
+  }
+
+  double _focusAlphaForValue(double t) {
+    if (_focusEnd <= _focusStart) return 0;
+    if (t < 0.2) return (t / 0.2) * 0.55;
+    if (t < 0.5) return 0.55;
+    return ((1.0 - (t - 0.5) / 0.5).clamp(0.0, 1.0)) * 0.55;
+  }
+
+  void _armSnippetFocusIfNeeded() {
+    if (_snippetFocusArmed) return;
+    final start = widget.snippetStartOffset;
+    final end = widget.snippetEndOffset;
+    if (start == null || end == null || end <= start) return;
+    final ch = _provider?.currentChapter;
+    if (widget.snippetChapterId != null && ch?.id != widget.snippetChapterId) {
+      return;
+    }
+    _snippetFocusArmed = true;
+    setState(() {
+      _focusStart = start;
+      _focusEnd = end;
+      _highlightVersion++;
     });
+    _focusCtrl.forward(from: 0);
+    // Remounting the body (highlightVersion) can collapse maxScrollExtent
+    // briefly and clamp the offset — re-assert the snippet jump next frames.
+    if (widget.snippetStartOffset != null) {
+      _snippetScrollSeekDone = false;
+      _snippetSeekSettleCount = 0;
+      _snippetSeekAttempts = 0;
+      _seekScrollForSnippetOrResume();
+    }
+  }
+
+  /// Scroll mode: jump to [snippetStartOffset] via char/length ratio, falling
+  /// back to the provider's pixel scroll for older snippets without offsets.
+  void _seekScrollForSnippetOrResume() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || !_sessionReady) return;
+
+      final start = widget.snippetStartOffset;
+
+      bool retry() {
+        _snippetSeekAttempts++;
+        if (_snippetSeekAttempts < _snippetSeekMaxAttempts) {
+          _seekScrollForSnippetOrResume();
+          return true;
+        }
+        return false;
+      }
+
+      if (!_scrollController.hasClients) {
+        // Content not attached yet (still swapping off the spinner).
+        if (start != null && !_snippetScrollSeekDone) retry();
+        return;
+      }
+
+      // Snippet jump wins over saved reading progress (often the chapter end
+      // after the user finished scrolling the chapter).
+      if (start != null) {
+        if (_snippetScrollSeekDone) return;
+        final text = _currentText;
+        final extent = _scrollController.position.maxScrollExtent;
+        if (text.isEmpty || extent <= 0) {
+          retry();
+          return;
+        }
+        final ratio = start.clamp(0, text.length) / text.length;
+        final target = (ratio * extent).clamp(0.0, extent);
+        if ((_scrollController.offset - target).abs() > 1.0) {
+          _scrollController.jumpTo(target);
+          _snippetSeekSettleCount = 0; // extent moved us; resettle
+        } else {
+          _snippetSeekSettleCount++;
+        }
+        // Keep correcting across layout settles / focus remount frames.
+        if (_snippetSeekSettleCount < _snippetSeekSettleFrames) {
+          retry();
+          return;
+        }
+        _snippetScrollSeekDone = true;
+        _armSnippetFocusIfNeeded();
+        return;
+      }
+
+      final pos = _provider?.scrollPosition ?? 0;
+      _scrollController.jumpTo(
+        pos.clamp(0.0, _scrollController.position.maxScrollExtent),
+      );
+    });
+  }
+
+  void _restoreScrollPosition() {
+    _seekScrollForSnippetOrResume();
   }
 
   /// Called from the Consumer builder when the current chapter index
   /// changes (e.g. next/prev). Drops the scroll to the position saved
   /// for that chapter — or 0 if it has never been visited.
   void _onChapterChanged(int newIndex) {
+    if (!_sessionReady) return;
     if (newIndex == _lastSeenChapterIndex) return;
     _lastSeenChapterIndex = newIndex;
     _lastScrollOffset = 0;
     // Load highlights for this chapter.
     final ch = _provider?.chapters;
     if (ch != null && newIndex >= 0 && newIndex < ch.length) {
-      final repos = ref.watch(repositoriesProvider);
+      final repos = ref.read(repositoriesProvider);
       final targetChapterId = ch[newIndex].id;
       repos.books.getHighlightsForChapter(targetChapterId).then((hl) {
         // Stale response: user may have navigated again while this loaded.
@@ -216,42 +356,29 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
     // Re-init TTS for the new chapter if TTS was active.
     if (_ttsProvider != null && _ttsListening && ch != null) {
       final tts = _ttsProvider!;
+      final chapter = ch[newIndex];
+      final text = TextExtractor.extractCached(chapter.id, chapter.content);
       tts.stop();
-      tts.init(
-        TextExtractor.extractCached(ch[newIndex].id, ch[newIndex].content),
-      );
-      tts.play();
+      unawaited(() async {
+        await tts.init(text, chapterId: chapter.id.toString());
+        if (!_ttsListening) return;
+        tts.playFromCurrent();
+        _prefetchNextChapterAudio();
+      }());
     }
-    // Jump to the saved scroll position for this chapter.  The
-    // provider's _scrollPosition may be 0 for an unvisited chapter,
-    // but a snippet-jump sets a specific offset (startOffset) that
-    // should be used instead.
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted || !_scrollController.hasClients) return;
-      final pos = _provider?.scrollPosition ?? 0;
-      if (pos > 0) {
-        _scrollController.jumpTo(
-          pos.clamp(0, _scrollController.position.maxScrollExtent),
-        );
-      }
-    });
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted || !_scrollController.hasClients) return;
-      final pos = _provider?.scrollPosition ?? 0;
-      _scrollController.jumpTo(
-        pos.clamp(0, _scrollController.position.maxScrollExtent),
-      );
-    });
+    // Jump to the saved scroll position for this chapter — or the snippet
+    // character offset when opening from a snippet link.
+    _seekScrollForSnippetOrResume();
   }
 
   bool _didHandleBack = false;
 
   void _onTtsChanged() {
     if (!mounted) return;
-    // ponytail: defer rebuild to avoid setState during build
+    // Highlight rebuilds via ListenableBuilder around the text only —
+    // avoid a full-screen setState on every sentence tick.
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
-      setState(() {});
       _applySystemUiMode();
       _scrollToTtsSentence();
       _autoAdvanceChapterOnTtsEnd();
@@ -279,7 +406,9 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
 
   void _autoAdvanceChapterOnTtsEnd() {
     final tts = _ttsProvider;
-    if (tts == null || tts.isPlaying || tts.isPaused) return;
+    if (tts == null || tts.isPlaying || tts.isPaused || tts.isBuffering) {
+      return;
+    }
     // ponytail: simple end-of-chapter detection
     if (tts.currentIndex >= tts.totalSentences - 1 && tts.totalSentences > 0) {
       final p = _provider;
@@ -287,6 +416,18 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
         p.goToNextChapter();
       }
     }
+  }
+
+  void _prefetchNextChapterAudio() {
+    final tts = _ttsProvider;
+    final p = _provider;
+    if (tts == null || p == null) return;
+    if (!tts.optimistic || tts.engineType != TtsEngineType.edge) return;
+    final next = p.currentIndex + 1;
+    if (next >= p.chapters.length) return;
+    final chapter = p.chapters[next];
+    final text = TextExtractor.extractCached(chapter.id, chapter.content);
+    tts.prefetchChapter(chapter.id.toString(), text);
   }
 
   String get _currentText {
@@ -315,7 +456,9 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
     _ttsProvider?.dispose();
     _scrollController.dispose();
     _toolbarCtrl.dispose();
+    _showUI.dispose();
     _colorCtrl.dispose();
+    _focusCtrl.dispose();
     super.dispose();
   }
 
@@ -333,7 +476,7 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
       if (mounted) {
         setState(() {
           _lastScrollOffset = 0;
-          _showUI = true;
+          _showUI.value = true;
         });
       }
       HapticFeedback.lightImpact();
@@ -345,7 +488,7 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
       if (mounted) {
         setState(() {
           _lastScrollOffset = 0;
-          _showUI = true;
+          _showUI.value = true;
         });
       }
       HapticFeedback.lightImpact();
@@ -364,19 +507,24 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
       _provider?.updateScrollPosition(currentOffset);
 
       // Hide UI chrome while scrolling down, show on scroll up.
+      // Only transition chrome / SystemChrome on the edge — calling
+      // setEnabledSystemUIMode on every scroll-up tick makes flings stutter.
       final diff = currentOffset - _lastScrollOffset;
       if (diff > 8 && currentOffset > 80) {
-        if (_showUI) {
-          setState(() => _showUI = false);
-          _hideToolbar();
+        if (_showUI.value) {
+          _showUI.value = false;
+          if (_toolbarVisible) {
+            _hideToolbar();
+          } else {
+            _applySystemUiMode();
+          }
         }
         _lastScrollOffset = currentOffset;
       } else if (diff < -4 || currentOffset <= 0) {
-        if (!_showUI) {
-          setState(() => _showUI = true);
+        if (!_showUI.value) {
+          _showUI.value = true;
           _resetUiHideTimer();
         }
-        _applySystemUiMode();
         _lastScrollOffset = currentOffset;
       }
     }
@@ -401,7 +549,7 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
         provider.goToPreviousChapter();
         setState(() {
           _lastScrollOffset = 0;
-          _showUI = true;
+          _showUI.value = true;
         });
         _scheduleDirectionReset();
         _resetUiHideTimer();
@@ -411,7 +559,7 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
         provider.goToNextChapter();
         setState(() {
           _lastScrollOffset = 0;
-          _showUI = true;
+          _showUI.value = true;
         });
         _scheduleDirectionReset();
         _resetUiHideTimer();
@@ -453,6 +601,7 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
   }
 
   void _hideToolbar() {
+    if (!_toolbarVisible && !_colorPickerVisible) return;
     _selectionLostTimer?.cancel();
     _selectionLostTimer = null;
     _toolbarCtrl.reverse();
@@ -480,7 +629,7 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
     return Padding(
       padding: EdgeInsets.fromLTRB(
         pad,
-        MediaQuery.of(context).padding.top + (_showUI ? 88 : 32),
+        MediaQuery.of(context).padding.top + 32,
         pad,
         MediaQuery.of(context).padding.bottom + 16,
       ),
@@ -496,6 +645,23 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
             ttsActive: _ttsProvider?.isActive ?? false,
             ttsStart: _ttsProvider?.currentSentenceOffset ?? 0,
             ttsEnd: _ttsProvider?.currentSentenceEnd ?? 0,
+            contentListenable: _ttsProvider,
+            ttsActiveForBuild: () => _ttsProvider?.isActive ?? false,
+            ttsStartForBuild: () => _ttsProvider?.currentSentenceOffset ?? 0,
+            ttsEndForBuild: () => _ttsProvider?.currentSentenceEnd ?? 0,
+            focusStart: _focusStart,
+            focusEnd: _focusEnd,
+            focusAlpha: _focusAlpha,
+            focusAnimation: _focusCtrl,
+            focusAlphaForValue: _focusAlphaForValue,
+            // Snippet jump beats stored reading progress (which is often past
+            // the clipped passage). Consumed after the first successful seed.
+            overrideCharOffset: _snippetCharConsumed
+                ? null
+                : widget.snippetStartOffset,
+            onOverrideApplied: () {
+              _snippetCharConsumed = true;
+            },
             charOffsetFor: (i) => _provider?.readingOffsetFor(i),
             pixelOffsetFor: (i) => i < provider.chapters.length
                 ? provider.chapters[i].scrollPosition
@@ -533,6 +699,7 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
             },
             onPositionChanged: (pos, charOffset, {required exact}) {
               _provider?.updateReadingOffset(charOffset);
+              _armSnippetFocusIfNeeded();
             },
           ),
         ),
@@ -544,8 +711,7 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
   Widget build(BuildContext context) {
     final themeProv = ref.watch(themeProvider);
     final provider = ref.watch(readerProvider);
-    _onChapterChanged(provider.currentIndex);
-    if (provider.loading) {
+    if (provider.loading || !_sessionReady) {
       return Scaffold(
         backgroundColor: themeProv.isSepia
             ? AppColors.sepiaBg
@@ -579,18 +745,21 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
           : SystemUiOverlayStyle.dark,
       child: Scaffold(
         backgroundColor: themeProv.bgColor,
-        bottomNavigationBar: ReaderBottomBar(
-          visible: _showUI && !_toolbarVisible,
-          onChapters: () =>
-              _openChapters(context, ref.read(readerProvider.notifier)),
-          onPrevious: () =>
-              ref.read(readerProvider.notifier).goToPreviousChapter(),
-          onNext: () => ref.read(readerProvider.notifier).goToNextChapter(),
-          canGoNext: provider.currentIndex < provider.chapters.length - 1,
-          canGoPrevious: provider.currentIndex > 0,
-          currentIndex: provider.currentIndex,
-          totalChapters: provider.chapters.length,
-          readingTimeRemaining: readingTime,
+        bottomNavigationBar: ValueListenableBuilder<bool>(
+          valueListenable: _showUI,
+          builder: (_, showUI, _) => ReaderBottomBar(
+            visible: showUI && !_toolbarVisible,
+            onChapters: () =>
+                _openChapters(context, ref.read(readerProvider.notifier)),
+            onPrevious: () =>
+                ref.read(readerProvider.notifier).goToPreviousChapter(),
+            onNext: () => ref.read(readerProvider.notifier).goToNextChapter(),
+            canGoNext: provider.currentIndex < provider.chapters.length - 1,
+            canGoPrevious: provider.currentIndex > 0,
+            currentIndex: provider.currentIndex,
+            totalChapters: provider.chapters.length,
+            readingTimeRemaining: readingTime,
+          ),
         ),
         body: Stack(
           children: [
@@ -614,10 +783,10 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
                           onNotification: _onScrollNotification,
                           child: SingleChildScrollView(
                             controller: _scrollController,
+                            primary: false,
                             padding: EdgeInsets.fromLTRB(
                               _horizontalPadding(themeProv.pageWidth),
-                              MediaQuery.of(context).padding.top +
-                                  (_showUI ? 88 : 32),
+                              MediaQuery.of(context).padding.top + 32,
                               _horizontalPadding(themeProv.pageWidth),
                               MediaQuery.of(context).padding.bottom + 16,
                             ),
@@ -658,85 +827,95 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
                                         ),
                                       );
                                     },
-                                    child: Column(
+                                    child: RepaintBoundary(
                                       key: ValueKey('chapter-${chapter.id}'),
-                                      crossAxisAlignment:
-                                          CrossAxisAlignment.start,
-                                      children: [
-                                        // Chapter title
-                                        Text(
-                                          chapter.title,
-                                          style:
-                                              AppType.reading(
-                                                fontSize: themeProv.fontSize,
-                                                lineHeight:
-                                                    themeProv.lineHeight,
-                                                color:
-                                                    context.colors.textTertiary,
-                                              ).copyWith(
-                                                fontStyle: FontStyle.italic,
-                                                fontWeight: FontWeight.w500,
-                                                letterSpacing: 0.1,
-                                              ),
-                                        ),
-                                        const SizedBox(height: 28),
-                                        SelectableText.rich(
-                                          key: ValueKey(
-                                            'content-$_highlightVersion',
+                                      child: Column(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
+                                        children: [
+                                          // Chapter title
+                                          Text(
+                                            chapter.title,
+                                            style:
+                                                AppType.reading(
+                                                  fontSize: themeProv.fontSize,
+                                                  lineHeight:
+                                                      themeProv.lineHeight,
+                                                  color: context
+                                                      .colors
+                                                      .textTertiary,
+                                                ).copyWith(
+                                                  fontStyle: FontStyle.italic,
+                                                  fontWeight: FontWeight.w500,
+                                                  letterSpacing: 0.1,
+                                                ),
                                           ),
-                                          TextSpan(
-                                            style: _readingStyle(themeProv),
-                                            children: _buildReadingSpans(
-                                              themeProv,
-                                              TextExtractor.extractCached(
-                                                chapter.id,
-                                                chapter.content,
-                                              ),
-                                              ttsActive:
-                                                  _ttsProvider?.isActive ??
-                                                  false,
-                                              ttsStart:
-                                                  _ttsProvider
-                                                      ?.currentSentenceOffset ??
-                                                  0,
-                                              ttsEnd:
-                                                  _ttsProvider
-                                                      ?.currentSentenceEnd ??
-                                                  0,
-                                            ),
-                                          ),
-                                          textAlign: themeProv.textAlign,
-                                          onSelectionChanged: (selection, cause) {
-                                            if (selection.isValid &&
-                                                !selection.isCollapsed) {
-                                              final content =
-                                                  TextExtractor.extractCached(
+                                          const SizedBox(height: 28),
+                                          ListenableBuilder(
+                                            listenable: Listenable.merge([
+                                              _ttsProvider!,
+                                              _focusCtrl,
+                                            ]),
+                                            builder: (_, _) {
+                                              final doc =
+                                                  TextExtractor.documentCached(
                                                     chapter.id,
                                                     chapter.content,
                                                   );
-                                              if (selection.end <=
-                                                  content.length) {
-                                                // Scroll mode renders the whole chapter,
-                                                // so these offsets are already chapter-
-                                                // relative.
-                                                _selStart = selection.start;
-                                                _selectedText = content
-                                                    .substring(
-                                                      selection.start,
-                                                      selection.end,
-                                                    );
-                                                _showToolbar(Offset.zero);
-                                              }
-                                            } else {
-                                              // Cleared or collapsed: either way the
-                                              // selection the toolbar acts on is gone.
-                                              _hideToolbarOnSelectionLost();
-                                            }
-                                          },
-                                        ),
-                                        const SizedBox(height: 80),
-                                      ],
-                                    ), // Column
+                                              return RichChapterBody(
+                                                document: doc,
+                                                themeProv: themeProv,
+                                                baseStyle: _readingStyle(
+                                                  themeProv,
+                                                ),
+                                                brightness: Theme.of(
+                                                  context,
+                                                ).brightness,
+                                                highlights: _highlights,
+                                                ttsActive:
+                                                    _ttsProvider?.isActive ??
+                                                    false,
+                                                ttsStart:
+                                                    _ttsProvider
+                                                        ?.currentSentenceOffset ??
+                                                    0,
+                                                ttsEnd:
+                                                    _ttsProvider
+                                                        ?.currentSentenceEnd ??
+                                                    0,
+                                                focusStart: _focusStart,
+                                                focusEnd: _focusEnd,
+                                                focusAlpha: _focusAlpha,
+                                                contentKey:
+                                                    'content-$_highlightVersion-${chapter.id}',
+                                                textAlign: themeProv.textAlign,
+                                                onSelectionChanged:
+                                                    (selection) {
+                                                      final content =
+                                                          doc.plainText;
+                                                      if (selection.end <=
+                                                          content.length) {
+                                                        _selStart =
+                                                            selection.start;
+                                                        _selectedText = content
+                                                            .substring(
+                                                              selection.start,
+                                                              selection.end,
+                                                            );
+                                                        _showToolbar(
+                                                          Offset.zero,
+                                                        );
+                                                      }
+                                                    },
+                                                onSelectionCleared:
+                                                    _hideToolbarOnSelectionLost,
+                                              );
+                                            },
+                                          ),
+                                          const SizedBox(height: 80),
+                                        ],
+                                      ),
+                                    ), // RepaintBoundary
                                   ), // AnimatedSwitcher
                                 ), // ClipRect
                               ), // ConstrainedBox
@@ -751,22 +930,28 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
               top: 0,
               left: 0,
               right: 0,
-              child: ReaderTopBar(
-                bookTitle: book.title,
-                chapterTitle: chapter.title,
-                progress: progress,
-                visible: _showUI,
-                onBack: () async {
-                  _ttsProvider?.stop();
-                  if (_provider != null) {
-                    await _provider!.stopReadingTimer();
-                  }
-                  _didHandleBack = true;
-                  if (mounted) Navigator.pop(context);
-                },
-                onSettings: () => ReaderSettingsSheet.show(context),
-                onTtsToggle: _toggleTts,
-                isTtsActive: _ttsProvider?.isActive ?? false,
+              child: ValueListenableBuilder<bool>(
+                valueListenable: _showUI,
+                builder: (_, showUI, _) => ListenableBuilder(
+                  listenable: _ttsProvider!,
+                  builder: (_, _) => ReaderTopBar(
+                    bookTitle: book.title,
+                    chapterTitle: chapter.title,
+                    progress: progress,
+                    visible: showUI,
+                    onBack: () async {
+                      _ttsProvider?.stop();
+                      if (_provider != null) {
+                        await _provider!.stopReadingTimer();
+                      }
+                      _didHandleBack = true;
+                      if (context.mounted) Navigator.pop(context);
+                    },
+                    onSettings: () => ReaderSettingsSheet.show(context),
+                    onTtsToggle: _toggleTts,
+                    isTtsActive: _ttsProvider?.isActive ?? false,
+                  ),
+                ),
               ),
             ),
 
@@ -855,70 +1040,88 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
                   ),
                 ),
               ),
-            // TTS controls overlay
-            if (_ttsProvider != null && _ttsProvider!.isActive)
-              Positioned(
-                bottom: 0,
-                left: 0,
-                right: 0,
-                child: TtsControls(provider: _ttsProvider!),
+            // TTS controls overlay — must stay Positioned so an inactive
+            // SizedBox.shrink never becomes a non-positioned Stack child
+            // (that collapses the whole body to 0×0).
+            Positioned(
+              bottom: 0,
+              left: 0,
+              right: 0,
+              child: ListenableBuilder(
+                listenable: _ttsProvider!,
+                builder: (_, _) {
+                  if (!_ttsProvider!.isActive) {
+                    return const SizedBox.shrink();
+                  }
+                  return TtsControls(provider: _ttsProvider!);
+                },
               ),
+            ),
           ],
         ),
       ),
     );
   }
 
-  void _toggleTts() {
+  Future<void> _toggleTts() async {
     final tts = _ttsProvider;
     if (tts == null) return;
+    await tts.loadPrefs();
+    if (!mounted) return;
+
     if (tts.isActive) {
       tts.stop();
       _ttsListening = false;
-    } else {
-      final text = _currentText;
-      if (text.isEmpty) return;
-      tts.init(text);
-      // ponytail: start from user's rough scroll position
-      if (_scrollController.hasClients) {
-        final ratio =
-            _scrollController.offset /
-            _scrollController.position.maxScrollExtent.clamp(
-              1,
-              double.infinity,
-            );
-        final idx = (ratio * tts.totalSentences).round().clamp(
-          0,
-          tts.totalSentences - 1,
-        );
+      return;
+    }
+
+    if (tts.rememberSelection) {
+      await _startTtsFromScroll();
+      return;
+    }
+
+    final shouldStart = await TtsSettingsSheet.show(
+      context,
+      tts,
+      startOnClose: true,
+    );
+    if (!mounted || !shouldStart) return;
+    await _startTtsFromScroll();
+  }
+
+  Future<void> _startTtsFromScroll() async {
+    final tts = _ttsProvider;
+    if (tts == null) return;
+    final text = _currentText;
+    if (text.isEmpty) return;
+    final chapterId = _provider?.currentChapter?.id.toString();
+
+    await tts.init(text, chapterId: chapterId);
+    if (!mounted) return;
+
+    if (_scrollController.hasClients &&
+        tts.totalSentences > 0 &&
+        _scrollController.position.maxScrollExtent > 0) {
+      final ratio =
+          (_scrollController.offset /
+                  _scrollController.position.maxScrollExtent)
+              .clamp(0.0, 1.0);
+      final idx = (ratio * tts.totalSentences).round().clamp(
+        0,
+        tts.totalSentences - 1,
+      );
+      if (idx > 0) {
         tts.seekToSentence(idx);
       }
-      tts.play();
-      _ttsListening = true;
     }
+
+    tts.playFromCurrent();
+    _ttsListening = true;
+    _prefetchNextChapterAudio();
   }
 
   TextStyle _readingStyle(ThemeState themeProv) {
     return ReadingSpans.style(themeProv, context.colors.textPrimary);
-  }
-
-  List<TextSpan> _buildReadingSpans(
-    ThemeState themeProv,
-    String text, {
-    bool ttsActive = false,
-    int ttsStart = 0,
-    int ttsEnd = 0,
-  }) {
-    return ReadingSpans.build(
-      text: text,
-      prov: themeProv,
-      baseStyle: _readingStyle(themeProv),
-      brightness: Theme.of(context).brightness,
-      highlights: _highlights,
-      ttsActive: ttsActive,
-      ttsStart: ttsStart,
-      ttsEnd: ttsEnd,
-    );
   }
 
   double _horizontalPadding(double maxWidth) {
@@ -937,6 +1140,7 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
   Future<void> _saveHighlight(String color) async {
     final p = _provider!;
     if (_selectedText == null || _selectedText!.trim().isEmpty) return;
+    final focusScope = FocusScope.of(context);
     try {
       final repos = ref.watch(repositoriesProvider);
       final ch = p.currentChapter;
@@ -1015,21 +1219,23 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
         );
       }
     } finally {
-      // Cycle to the next highlight color for the next mark.
-      _advanceHighlightColor();
-      // Discard the old selection so the next long-press can create
-      // fresh selection handles.
-      // The highlight toolbar just saved — hide it, then increment the
-      // SelectableText key so the widget unmounts/remounts cleanly,
-      // discarding the old selection state.  Next long-press creates
-      // new handles.
-      _hideToolbar();
-      _selectedText = null;
-      _selStart = null;
-      setState(() => _highlightVersion++);
-      // Dismiss keyboard/selection focus so the next long-press
-      // creates a fresh set of selection handles.
-      FocusScope.of(context).unfocus();
+      if (mounted) {
+        // Cycle to the next highlight color for the next mark.
+        _advanceHighlightColor();
+        // Discard the old selection so the next long-press can create
+        // fresh selection handles.
+        // The highlight toolbar just saved — hide it, then increment the
+        // SelectableText key so the widget unmounts/remounts cleanly,
+        // discarding the old selection state.  Next long-press creates
+        // new handles.
+        _hideToolbar();
+        _selectedText = null;
+        _selStart = null;
+        setState(() => _highlightVersion++);
+        // Dismiss keyboard/selection focus so the next long-press
+        // creates a fresh set of selection handles.
+        focusScope.unfocus();
+      }
     }
   }
 
@@ -1166,7 +1372,7 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
         provider.navigateToChapter(i);
         setState(() {
           _lastScrollOffset = 0;
-          _showUI = true;
+          _showUI.value = true;
         });
       },
       onPrevious: () => provider.goToPreviousChapter(),

@@ -5,15 +5,17 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/models/manga.dart';
 import '../../core/providers.dart';
-import '../../core/utils/custom_extended_image_provider.dart';
+import '../../core/services/extension_source_resolve.dart';
 import '../../core/utils/image_headers.dart';
 import '../../eval/dispatch_service.dart';
 import '../../eval/models/filter_list.dart';
 import '../../eval/models/m_manga.dart';
 import '../../eval/models/m_source.dart';
 import '../../theme/app_theme.dart';
-import '../../theme/tokens/app_spacing.dart';
-import '../../widgets/animated_press.dart';
+import '../../widgets/catalog_card_layout.dart';
+import '../../widgets/catalog_cover_card.dart';
+import '../../widgets/horizontal_tab_swipe.dart';
+import '../../widgets/library_book_card.dart';
 import 'manga_detail_screen.dart';
 
 class SourceBrowseScreen extends ConsumerStatefulWidget {
@@ -21,11 +23,20 @@ class SourceBrowseScreen extends ConsumerStatefulWidget {
   final String sourceName;
   final String? baseUrl;
 
+  /// Initial catalogue tab: `popular` (default) or `latest`.
+  final String initialTab;
+
+  /// When set, opens catalogue search with this query (Global Search source
+  /// header → browse-with-query; Mihon BrowseSourceScreen parity).
+  final String? initialQuery;
+
   const SourceBrowseScreen({
     super.key,
     required this.sourceId,
     required this.sourceName,
     this.baseUrl,
+    this.initialTab = 'popular',
+    this.initialQuery,
   });
 
   @override
@@ -35,7 +46,7 @@ class SourceBrowseScreen extends ConsumerStatefulWidget {
 class _SourceBrowseScreenState extends ConsumerState<SourceBrowseScreen>
     with SingleTickerProviderStateMixin {
   late final ExtensionDispatchService _service;
-  late final MSource _source;
+  MSource? _source;
   final _scrollCtrl = ScrollController();
 
   late final TabController _tabCtrl;
@@ -46,12 +57,14 @@ class _SourceBrowseScreenState extends ConsumerState<SourceBrowseScreen>
   int _page = 1;
   String? _error;
   String _tab = 'popular';
+  bool _booting = true;
 
   bool _searchActive = false;
   String _searchQuery = '';
   List<MManga> _searchResults = [];
   bool _searchLoading = false;
   Timer? _searchTimer;
+  late final TextEditingController _searchCtrl;
 
   List<Filter> _filters = [];
   Map<String, dynamic> _filterValues = {};
@@ -60,16 +73,14 @@ class _SourceBrowseScreenState extends ConsumerState<SourceBrowseScreen>
   @override
   void initState() {
     super.initState();
+    _searchCtrl = TextEditingController(text: widget.initialQuery ?? '');
     _service = ref.read(extensionServiceProvider);
-    _source = MSource(
-      id: widget.sourceId,
-      sourceId: widget.sourceId,
-      name: widget.sourceName,
-      lang: 'en',
-      baseUrl: widget.baseUrl ?? '',
-      sourceType: SourceType.mihon,
+    _tabCtrl = TabController(
+      length: 2,
+      vsync: this,
+      initialIndex: widget.initialTab == 'latest' ? 1 : 0,
     );
-    _tabCtrl = TabController(length: 2, vsync: this);
+    _tab = widget.initialTab == 'latest' ? 'latest' : 'popular';
     _scrollCtrl.addListener(_onScroll);
     _tabCtrl.addListener(() {
       if (!_tabCtrl.indexIsChanging) {
@@ -86,13 +97,57 @@ class _SourceBrowseScreenState extends ConsumerState<SourceBrowseScreen>
         }
       }
     });
-    _loadPage();
-    _loadFilters();
+    unawaited(_bootstrap());
+  }
+
+  Future<void> _bootstrap() async {
+    try {
+      final source = await resolveExtensionMSource(
+        ref.read(repositoriesProvider),
+        widget.sourceId,
+        name: widget.sourceName,
+        baseUrl: widget.baseUrl,
+      );
+      if (!mounted) return;
+      _source = source;
+      setState(() => _booting = false);
+
+      final initialQ = widget.initialQuery?.trim() ?? '';
+      if (initialQ.isNotEmpty) {
+        setState(() {
+          _searchActive = true;
+          _searchQuery = initialQ;
+        });
+        // Sequential: shared QuickJS must not run filters + search together.
+        await _loadFilters();
+        if (!mounted) return;
+        await _performSearch(initialQ);
+      } else {
+        await _loadPage();
+        if (!mounted) return;
+        unawaited(_loadFilters());
+      }
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _booting = false;
+        _error = '$e';
+      });
+    }
+  }
+
+  MSource get _requireSource {
+    final s = _source;
+    if (s == null) {
+      throw StateError('Source not ready');
+    }
+    return s;
   }
 
   @override
   void dispose() {
     _searchTimer?.cancel();
+    _searchCtrl.dispose();
     _tabCtrl.dispose();
     _scrollCtrl.removeListener(_onScroll);
     _scrollCtrl.dispose();
@@ -114,6 +169,7 @@ class _SourceBrowseScreenState extends ConsumerState<SourceBrowseScreen>
       _searchActive = !_searchActive;
       if (!_searchActive) {
         _searchQuery = '';
+        _searchCtrl.clear();
         _searchResults = [];
       }
     });
@@ -145,23 +201,27 @@ class _SourceBrowseScreenState extends ConsumerState<SourceBrowseScreen>
   }
 
   Future<void> _loadPage() async {
-    if (_loading) return;
+    if (_loading || _source == null) return;
     setState(() => _loading = true);
     try {
-      final result = switch (_tab) {
-        'latest' => await _service.getLatestUpdates(_page, source: _source),
-        _ => await _service.getPopular(_page, source: _source),
+      final source = _requireSource;
+      final page = switch (_tab) {
+        'latest' => await _service.getLatestUpdates(_page, source: source),
+        _ => await _service.getPopular(_page, source: source),
       };
       if (!mounted) return;
       setState(() {
-        _mangas.addAll(result);
-        _hasNext = result.length >= 25;
+        _mangas.addAll(page.list);
+        _hasNext = page.hasNextPage;
         _page++;
         _error = null;
       });
     } catch (e) {
       if (!mounted) return;
-      setState(() => _error = '$e');
+      setState(() {
+        _error = '$e';
+        _hasNext = false;
+      });
     } finally {
       if (mounted) setState(() => _loading = false);
     }
@@ -178,8 +238,9 @@ class _SourceBrowseScreenState extends ConsumerState<SourceBrowseScreen>
   }
 
   Future<void> _loadFilters() async {
+    if (_source == null) return;
     try {
-      final fl = await _service.getFilterList(_source);
+      final fl = await _service.getFilterList(_requireSource);
       if (!mounted) return;
       final values = <String, dynamic>{};
       for (final f in fl.filters) {
@@ -192,11 +253,9 @@ class _SourceBrowseScreenState extends ConsumerState<SourceBrowseScreen>
         _error = null;
       });
     } catch (e) {
+      // Filters are optional — don't replace catalogue errors with filter noise.
       if (mounted) {
-        setState(() {
-          _filtersLoaded = true;
-          _error = 'Failed to load filters: $e';
-        });
+        setState(() => _filtersLoaded = true);
       }
     }
   }
@@ -251,6 +310,7 @@ class _SourceBrowseScreenState extends ConsumerState<SourceBrowseScreen>
   }
 
   Future<void> _performSearch(String query) async {
+    if (_source == null) return;
     final hasFilters = _filters.isNotEmpty;
     if (query.isEmpty && !hasFilters) {
       _mangas = [];
@@ -265,15 +325,15 @@ class _SourceBrowseScreenState extends ConsumerState<SourceBrowseScreen>
     setState(() => _searchLoading = true);
     try {
       final filterList = _buildFilterList();
-      final mangas = await _service.search(
-        _source,
+      final page = await _service.search(
+        _requireSource,
         1,
         query,
         filters: filterList,
       );
       if (!mounted) return;
       setState(() {
-        _searchResults = mangas;
+        _searchResults = page.list;
         _searchLoading = false;
       });
     } catch (e) {
@@ -287,7 +347,7 @@ class _SourceBrowseScreenState extends ConsumerState<SourceBrowseScreen>
   }
 
   FilterList? _buildFilterList() {
-    if (_filterValues.isEmpty) return null;
+    if (_filters.isEmpty) return null;
     final built = <Filter>[];
     for (final f in _filters) {
       final builtFilter = _buildFilterFromValue(f, _filterValues);
@@ -302,40 +362,52 @@ class _SourceBrowseScreenState extends ConsumerState<SourceBrowseScreen>
     switch (f.type) {
       case FilterType.text:
         return Filter(
-          key: f.name,
+          key: f.key,
           name: f.name,
           type: f.type,
           value: value as String? ?? '',
+          filterTypeId: f.filterTypeId,
+          typeName: f.typeName,
         );
       case FilterType.check:
         return Filter(
-          key: f.name,
+          key: f.key,
           name: f.name,
           type: f.type,
           value: value as bool? ?? false,
+          options: f.options,
+          filterTypeId: f.filterTypeId,
+          typeName: f.typeName,
         );
       case FilterType.triState:
         return Filter(
-          key: f.name,
-          name: f.name,
-          type: f.type,
-          value: value as int? ?? 0,
-        );
-      case FilterType.select:
-        return Filter(
-          key: f.name,
+          key: f.key,
           name: f.name,
           type: f.type,
           value: value as int? ?? 0,
           options: f.options,
+          filterTypeId: f.filterTypeId,
+          typeName: f.typeName,
+        );
+      case FilterType.select:
+        return Filter(
+          key: f.key,
+          name: f.name,
+          type: f.type,
+          value: value as int? ?? 0,
+          options: f.options,
+          filterTypeId: f.filterTypeId,
+          typeName: f.typeName,
         );
       case FilterType.sort:
         return Filter(
-          key: f.name,
+          key: f.key,
           name: f.name,
           type: f.type,
           value: value,
           options: f.options,
+          filterTypeId: f.filterTypeId,
+          typeName: f.typeName,
         );
       case FilterType.group:
         final subValuesList = value as List<Map<String, dynamic>>? ?? [];
@@ -349,30 +421,197 @@ class _SourceBrowseScreenState extends ConsumerState<SourceBrowseScreen>
           if (builtSub != null) subFilters.add(builtSub);
         }
         return Filter(
-          key: f.name,
+          key: f.key,
           name: f.name,
           type: f.type,
           subFilters: subFilters,
+          filterTypeId: f.filterTypeId,
+          typeName: f.typeName,
         );
       case FilterType.header:
       case FilterType.separator:
-        return null;
+        return Filter(
+          key: f.key,
+          name: f.name,
+          type: f.type,
+          filterTypeId: f.filterTypeId,
+          typeName: f.typeName,
+        );
     }
+  }
+
+
+  VoidCallback _openManga(MManga m) {
+    return () async {
+      final repos = ref.read(repositoriesProvider);
+      final existing = await repos.manga.getMangaByKey(
+        widget.sourceId,
+        m.url,
+      );
+      if (existing != null) {
+        if (!mounted) return;
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (_) => MangaDetailScreen(
+              sourceId: widget.sourceId,
+              url: m.url,
+              title: m.title,
+              manga: existing,
+              memo: m.memo,
+            ),
+          ),
+        );
+        return;
+      }
+      final manga = Manga(
+        id: 0,
+        name: m.title,
+        url: m.url,
+        imageUrl: m.thumbnailUrl,
+        author: m.author,
+        artist: m.artist,
+        description: m.description,
+        status: m.status,
+        genres: m.genres,
+        sourceId: widget.sourceId,
+        memo: m.memo,
+      );
+      final id = await repos.manga.insertManga(manga);
+      if (!mounted) return;
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => MangaDetailScreen(
+            sourceId: widget.sourceId,
+            url: m.url,
+            title: m.title,
+            manga: manga.copyWith(id: id),
+            memo: m.memo,
+          ),
+        ),
+      );
+    };
+  }
+
+  Widget _catalogMangaBody({
+    required List<MManga> mangas,
+    required Map<String, String> headers,
+    ScrollController? controller,
+    bool hasNext = false,
+    Future<void> Function()? onRefresh,
+    int? coverMaxBytes,
+  }) {
+    final library = ref.watch(libraryProvider);
+    final libraryUrls = <String>{
+      for (final m in library.mangas)
+        if (m.sourceId == widget.sourceId) m.url,
+    };
+    final gridView = library.isGridView;
+    final variant = gridView
+        ? CatalogCardLayout.gridVariant(library.cardVariant)
+        : LibraryCardVariant.list;
+    final columns = library.gridColumns;
+
+    Widget child;
+    if (gridView) {
+      child = GridView.builder(
+        controller: controller,
+        padding: CatalogCardLayout.paddingFor(variant).resolve(TextDirection.ltr).add(
+          const EdgeInsets.symmetric(vertical: 12),
+        ),
+        gridDelegate: CatalogCardLayout.gridDelegate(
+          columns: columns,
+          variant: variant,
+        ),
+        itemCount: mangas.length + (hasNext ? 1 : 0),
+        itemBuilder: (_, i) {
+          if (i >= mangas.length) {
+            return const Center(
+              child: SizedBox(
+                width: 24,
+                height: 24,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              ),
+            );
+          }
+          final m = mangas[i];
+          return CatalogCoverCard(
+            title: m.title,
+            imageUrl: m.thumbnailUrl,
+            headers: headers,
+            variant: variant,
+            showBadge: false,
+            inLibrary: libraryUrls.contains(m.url),
+            coverMaxBytes: coverMaxBytes,
+            onTap: _openManga(m),
+          );
+        },
+      );
+    } else {
+      child = ListView.builder(
+        controller: controller,
+        padding: const EdgeInsets.only(bottom: 24),
+        itemCount: mangas.length + (hasNext ? 1 : 0),
+        itemBuilder: (_, i) {
+          if (i >= mangas.length) {
+            return const Padding(
+              padding: EdgeInsets.all(16),
+              child: Center(
+                child: SizedBox(
+                  width: 24,
+                  height: 24,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                ),
+              ),
+            );
+          }
+          final m = mangas[i];
+          return CatalogCoverCard(
+            title: m.title,
+            subtitle: m.author,
+            imageUrl: m.thumbnailUrl,
+            headers: headers,
+            variant: LibraryCardVariant.list,
+            showBadge: false,
+            inLibrary: libraryUrls.contains(m.url),
+            coverMaxBytes: coverMaxBytes,
+            onTap: _openManga(m),
+          );
+        },
+      );
+    }
+    if (onRefresh == null) return child;
+    return RefreshIndicator(onRefresh: onRefresh, child: child);
   }
 
   @override
   Widget build(BuildContext context) {
     final c = context.colors;
-    final headers = ref.watch(
-      imageHeadersProvider(_source.baseUrl.isNotEmpty ? _source.baseUrl : null),
+    final headersAsync = ref.watch(sourceImageHeadersProvider(widget.sourceId));
+    final coverBytesAsync =
+        ref.watch(sourceCoverMaxBytesProvider(widget.sourceId));
+    final resolvedHeaders = headersAsync.maybeWhen(
+      data: (h) => h,
+      orElse: () {
+        final baseUrl = _source?.baseUrl ?? widget.baseUrl ?? '';
+        return ref.read(
+          imageHeadersProvider(baseUrl.isNotEmpty ? baseUrl : null),
+        );
+      },
     );
+    final coverMaxBytes = coverBytesAsync.asData?.value;
+    final headers = resolvedHeaders;
     return Scaffold(
       backgroundColor: c.bg,
       appBar: AppBar(
         backgroundColor: c.bg,
         title: _searchActive
             ? TextField(
-                autofocus: true,
+                controller: _searchCtrl,
+                autofocus:
+                    widget.initialQuery == null ||
+                    widget.initialQuery!.trim().isEmpty,
                 decoration: InputDecoration(
                   hintText: 'Search...',
                   border: InputBorder.none,
@@ -380,7 +619,11 @@ class _SourceBrowseScreenState extends ConsumerState<SourceBrowseScreen>
                 ),
                 style: TextStyle(color: c.textPrimary),
                 onChanged: _onSearchChanged,
-                onSubmitted: (v) => _performSearch(v),
+                onSubmitted: (v) {
+                  FocusScope.of(context).unfocus();
+                  _performSearch(v);
+                },
+                textInputAction: TextInputAction.search,
               )
             : Text(widget.sourceName),
         actions: [
@@ -395,12 +638,12 @@ class _SourceBrowseScreenState extends ConsumerState<SourceBrowseScreen>
                   ? Icons.arrow_upward_rounded
                   : Icons.arrow_downward_rounded,
             ),
-            onPressed: _toggleSort,
+            onPressed: _booting ? null : _toggleSort,
             tooltip: _tab == 'popular' ? 'Sort: Popular' : 'Sort: Latest',
           ),
           IconButton(
             icon: Icon(_searchActive ? Icons.close : Icons.search),
-            onPressed: _toggleSearch,
+            onPressed: _booting ? null : _toggleSearch,
           ),
         ],
         bottom: _searchActive
@@ -416,106 +659,59 @@ class _SourceBrowseScreenState extends ConsumerState<SourceBrowseScreen>
                 ],
               ),
       ),
-      body: _searchActive
-          ? _buildSearchBody(c, headers)
-          : _mangas.isEmpty && !_loading && _error == null
-          ? ListView(
-              children: [
-                if (_error != null)
+      body: HorizontalTabSwipe(
+        tabIndex: _tabCtrl.index,
+        tabCount: 2,
+        onTabChanged: (i) {
+          if (_booting || _searchActive) return;
+          _tabCtrl.animateTo(i);
+        },
+        child: _booting
+            ? const Center(child: CircularProgressIndicator())
+            : _searchActive
+            ? _buildSearchBody(c, headers, coverMaxBytes)
+            : _error != null && _mangas.isEmpty && !_loading
+            ? ListView(
+                children: [
                   Padding(
                     padding: const EdgeInsets.all(16),
                     child: Text(
                       _error!,
-                      style: TextStyle(color: c.accent, fontSize: 12),
+                      style: TextStyle(color: c.accent, fontSize: 13),
                     ),
                   ),
-                const SizedBox(height: 120),
-                const Center(child: Text('Nothing found')),
-              ],
-            )
-          : RefreshIndicator(
-              onRefresh: _refresh,
-              child: GridView.builder(
+                  Center(
+                    child: TextButton(
+                      onPressed: _refresh,
+                      child: const Text('Retry'),
+                    ),
+                  ),
+                ],
+              )
+            : _mangas.isEmpty && !_loading
+            ? ListView(
+                children: [
+                  const SizedBox(height: 120),
+                  const Center(child: Text('Nothing found')),
+                ],
+              )
+            : _catalogMangaBody(
+                mangas: _mangas,
+                headers: headers,
                 controller: _scrollCtrl,
-                padding: const EdgeInsets.all(16),
-                gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                  crossAxisCount: 3,
-                  mainAxisSpacing: 12,
-                  crossAxisSpacing: 12,
-                  childAspectRatio: 0.65,
-                ),
-                itemCount: _mangas.length + (_hasNext ? 1 : 0),
-                itemBuilder: (_, i) {
-                  if (i >= _mangas.length) {
-                    return const Center(
-                      child: SizedBox(
-                        width: 24,
-                        height: 24,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      ),
-                    );
-                  }
-                  final m = _mangas[i];
-                  return _MangaGridCard(
-                    manga: m,
-                    headers: headers,
-                    onTap: () async {
-                      final repos = ref.read(repositoriesProvider);
-                      final existing = await repos.manga.getMangaByKey(
-                        widget.sourceId,
-                        m.url,
-                      );
-                      if (existing != null) {
-                        if (!context.mounted) return;
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (_) => MangaDetailScreen(
-                              sourceId: widget.sourceId,
-                              url: m.url,
-                              title: m.title,
-                              manga: existing,
-                              memo: m.memo,
-                            ),
-                          ),
-                        );
-                        return;
-                      }
-                      final manga = Manga(
-                        id: 0,
-                        name: m.title,
-                        url: m.url,
-                        imageUrl: m.thumbnailUrl,
-                        author: m.author,
-                        artist: m.artist,
-                        description: m.description,
-                        status: m.status,
-                        genres: m.genres,
-                        sourceId: widget.sourceId,
-                      );
-                      final id = await repos.manga.insertManga(manga);
-                      if (!context.mounted) return;
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (_) => MangaDetailScreen(
-                            sourceId: widget.sourceId,
-                            url: m.url,
-                            title: m.title,
-                            manga: manga.copyWith(id: id),
-                            memo: m.memo,
-                          ),
-                        ),
-                      );
-                    },
-                  );
-                },
+                hasNext: _hasNext && _error == null,
+                onRefresh: _refresh,
+                coverMaxBytes: coverMaxBytes,
               ),
-            ),
+      ),
     );
   }
 
-  Widget _buildSearchBody(KomaColors c, Map<String, String> headers) {
+  Widget _buildSearchBody(
+    KomaColors c,
+    Map<String, String> headers,
+    int? coverMaxBytes,
+  ) {
     if (_searchLoading) {
       return const Center(child: CircularProgressIndicator(strokeWidth: 2));
     }
@@ -536,142 +732,10 @@ class _SourceBrowseScreenState extends ConsumerState<SourceBrowseScreen>
         ],
       );
     }
-    return GridView.builder(
-      padding: const EdgeInsets.all(16),
-      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-        crossAxisCount: 3,
-        mainAxisSpacing: 12,
-        crossAxisSpacing: 12,
-        childAspectRatio: 0.65,
-      ),
-      itemCount: _searchResults.length,
-      itemBuilder: (_, i) {
-        final m = _searchResults[i];
-        return _MangaGridCard(
-          manga: m,
-          headers: headers,
-          onTap: () async {
-            final repos = ref.read(repositoriesProvider);
-            final existing = await repos.manga.getMangaByKey(
-              widget.sourceId,
-              m.url,
-            );
-            if (existing != null) {
-              if (!context.mounted) return;
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (_) => MangaDetailScreen(
-                    sourceId: widget.sourceId,
-                    url: m.url,
-                    title: m.title,
-                    manga: existing,
-                    memo: m.memo,
-                  ),
-                ),
-              );
-              return;
-            }
-            final manga = Manga(
-              id: 0,
-              name: m.title,
-              url: m.url,
-              imageUrl: m.thumbnailUrl,
-              author: m.author,
-              artist: m.artist,
-              description: m.description,
-              status: m.status,
-              genres: m.genres,
-              sourceId: widget.sourceId,
-            );
-            final id = await repos.manga.insertManga(manga);
-            if (!context.mounted) return;
-            Navigator.push(
-              context,
-              MaterialPageRoute(
-                builder: (_) => MangaDetailScreen(
-                  sourceId: widget.sourceId,
-                  url: m.url,
-                  title: m.title,
-                  manga: manga.copyWith(id: id),
-                  memo: m.memo,
-                ),
-              ),
-            );
-          },
-        );
-      },
-    );
-  }
-}
-
-class _MangaGridCard extends StatelessWidget {
-  final MManga manga;
-  final VoidCallback onTap;
-  final Map<String, String>? headers;
-
-  const _MangaGridCard({
-    required this.manga,
-    required this.onTap,
-    this.headers,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final c = context.colors;
-    final title = manga.title;
-    final thumb = manga.thumbnailUrl;
-    return AnimatedPress(
-      onTap: onTap,
-      child: Container(
-        decoration: BoxDecoration(
-          color: c.surface,
-          borderRadius: AppSpacing.brMd,
-          border: Border.all(color: c.border, width: 0.5),
-        ),
-        clipBehavior: Clip.antiAlias,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Expanded(
-              child: thumb != null && thumb.isNotEmpty
-                  ? Image(
-                      image: CustomExtendedNetworkImageProvider(
-                        thumb,
-                        headers: headers,
-                        showCloudFlareError: true,
-                      ),
-                      width: double.infinity,
-                      fit: BoxFit.cover,
-                      errorBuilder: (_, _, _) => _placeholder(c),
-                    )
-                  : _placeholder(c),
-            ),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(8, 6, 8, 8),
-              child: Text(
-                title,
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  color: c.textPrimary,
-                  fontSize: 12,
-                  fontWeight: FontWeight.w500,
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _placeholder(KomaColors c) {
-    return Container(
-      color: c.surfaceMuted,
-      child: Center(
-        child: Icon(Icons.image_outlined, size: 32, color: c.textTertiary),
-      ),
+    return _catalogMangaBody(
+      mangas: _searchResults,
+      headers: headers,
+      coverMaxBytes: coverMaxBytes,
     );
   }
 }

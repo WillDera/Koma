@@ -18,4 +18,20 @@
     <style name="NormalTheme" parent="@android:style/Theme.Light.NoTitleBar">
         <item name="android:windowBackground">?android:colorBackground</item>
     </style>
+    <!-- AppCompat theme for SourcePreferencesActivity (PreferenceFragmentCompat).
+         NoActionBar: activity hosts an explicit Toolbar so prefs never draw under it. -->
+    <style name="Theme.Koma.SourcePreferences" parent="Theme.AppCompat.DayNight.NoActionBar">
+        <item name="preferenceTheme">@style/PreferenceThemeOverlay</item>
+        <item name="colorPrimary">#C44C4C</item>
+        <item name="colorPrimaryDark">#A33C3C</item>
+        <item name="colorAccent">#C44C4C</item>
+        <item name="android:statusBarColor">#A33C3C</item>
+    </style>
+    <!-- Same chrome as SourcePreferences for interactive CF / captcha WebView. -->
+    <style name="Theme.Koma.SourceWebView" parent="Theme.AppCompat.DayNight.NoActionBar">
+        <item name="colorPrimary">#C44C4C</item>
+        <item name="colorPrimaryDark">#A33C3C</item>
+        <item name="colorAccent">#C44C4C</item>
+        <item name="android:statusBarColor">#A33C3C</item>
+    </style>
 </resources>
