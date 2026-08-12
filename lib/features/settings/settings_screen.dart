@@ -16,6 +16,7 @@ import '../../core/services/metadata_enrichment_service.dart';
 import '../../core/services/source_service.dart';
 import '../../router/router.dart';
 import 'custom_font_ui.dart';
+import 'open_source_licenses_sheet.dart';
 import '../../theme/app_theme.dart';
 import '../../theme/theme_provider.dart';
 import '../../theme/tokens/app_colors.dart';
@@ -2517,7 +2518,7 @@ class _AboutSection extends StatelessWidget {
                 ),
                 const SizedBox(height: 4),
                 Text(
-                  'Version 2.37.23 · build 2.37.23+290',
+                  'Version 2.37.24 · build 2.37.24+291',
                   style: TextStyle(color: c.textSecondary, fontSize: 13),
                 ),
                 const SizedBox(height: 10),
@@ -2612,7 +2613,7 @@ class _AboutSection extends StatelessWidget {
               icon: Icons.info_outline,
               iconColor: _muted,
               title: 'Koma',
-              subtitle: 'Version 2.37.23 · build 2.37.23+290',
+              subtitle: 'Version 2.37.24 · build 2.37.24+291',
             ),
             SettingsRow(
               icon: Icons.favorite_outline,
@@ -2625,6 +2626,7 @@ class _AboutSection extends StatelessWidget {
               iconColor: _muted,
               title: 'Open source licenses',
               trailing: const Icon(Icons.chevron_right, size: 18),
+              onTap: () => OpenSourceLicensesSheet.show(context),
             ),
           ],
         ),

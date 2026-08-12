@@ -12,6 +12,7 @@ import android.provider.MediaStore
 import android.util.Log
 import androidx.core.content.FileProvider
 import androidx.core.content.pm.PackageInfoCompat
+import com.koma.koma.piper.PiperMethodChannel
 import eu.kanade.tachiyomi.extension.DalvikRuntimeManager
 import eu.kanade.tachiyomi.extension.DalvikServer
 import io.flutter.embedding.android.FlutterActivity
@@ -23,9 +24,19 @@ import java.security.MessageDigest
 
 class MainActivity : FlutterActivity() {
 
+    private var piperChannel: PiperMethodChannel? = null
+
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
         DalvikRuntimeManager.initialize(applicationContext)
+        val piper = PiperMethodChannel(applicationContext)
+        piper.register(
+            MethodChannel(
+                flutterEngine.dartExecutor.binaryMessenger,
+                "com.koma.koma/piper",
+            ),
+        )
+        piperChannel = piper
         MethodChannel(
             flutterEngine.dartExecutor.binaryMessenger,
             "eu.kanade.tachiyomi/keiyoushi",
