@@ -23,7 +23,7 @@ class ReadingSpans {
   /// The base text style for reading content.
   static TextStyle style(ThemeState prov, Color textColor) {
     return AppType.fontStyle(
-      fontFamily: prov.useDeviceFont ? null : prov.readingFontFamily,
+      fontFamily: prov.effectiveReadingFontFamily,
       fontSize: prov.fontSize,
       lineHeight: prov.lineHeight,
       color: textColor,

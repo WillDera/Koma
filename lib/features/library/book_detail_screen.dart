@@ -130,10 +130,7 @@ class _DetailBody extends ConsumerWidget {
                             style: Theme.of(context).textTheme.headlineMedium
                                 ?.copyWith(
                                   color: c.textPrimary,
-                                  fontFamily: theme.useDeviceFont
-                                      ? null
-                                      : (theme.readingFontFamily ??
-                                          AppType.readingFont),
+                                  fontFamily: theme.uiFontFamily,
                                   height: 1.15,
                                 ),
                           ),

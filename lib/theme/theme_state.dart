@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../core/models/custom_font.dart';
 import 'tokens/app_colors.dart';
 import 'tokens/app_type.dart';
 
@@ -29,9 +30,10 @@ class ThemeState {
     this.handMode = HandMode.right,
     this.oneHandMode = false,
     this.bionicReading = false,
-    this.useDeviceFont = true,
     this.amoledMode = false,
-    this.systemFontFamily,
+    this.customFonts = const [],
+    this.uiFontId,
+    this.readingFontId,
     this.showNsfwExtensions = false,
     this.showObsoleteExtensions = false,
     this.immersiveAutoHide = false,
@@ -63,9 +65,17 @@ class ThemeState {
   final HandMode handMode;
   final bool oneHandMode;
   final bool bionicReading;
-  final bool useDeviceFont;
   final bool amoledMode;
-  final String? systemFontFamily;
+
+  /// User-imported font families (manifest from [CustomFontService]).
+  final List<CustomFont> customFonts;
+
+  /// When null, UI uses built-in Inter. Otherwise a [CustomFont.id].
+  final String? uiFontId;
+
+  /// When null, [readingFont] enum supplies the face. Otherwise a [CustomFont.id].
+  final String? readingFontId;
+
   final bool showNsfwExtensions;
   final bool showObsoleteExtensions;
   final bool immersiveAutoHide;
@@ -75,6 +85,42 @@ class ThemeState {
   final PageStyle pageStyle;
 
   // ── Derived getters ────────────────────────────────────────────────
+
+  CustomFont? customFontById(String id) {
+    for (final font in customFonts) {
+      if (font.id == id) return font;
+    }
+    return null;
+  }
+
+  /// Resolved UI font family for [ThemeData].
+  String get uiFontFamily {
+    if (uiFontId != null) {
+      return customFontById(uiFontId!)?.registeredFamily ?? AppType.uiFont;
+    }
+    return AppType.uiFont;
+  }
+
+  String get uiFontLabel {
+    if (uiFontId != null) {
+      return customFontById(uiFontId!)?.displayName ?? 'Custom';
+    }
+    return 'Inter';
+  }
+
+  String? get effectiveReadingFontFamily {
+    if (readingFontId != null) {
+      return customFontById(readingFontId!)?.registeredFamily;
+    }
+    return readingFont.googleFontFamily;
+  }
+
+  String get readingFontLabel {
+    if (readingFontId != null) {
+      return customFontById(readingFontId!)?.displayName ?? 'Custom';
+    }
+    return readingFont.label;
+  }
 
   Color get accentColor {
     if (customAccentHex != null && customAccentHex!.isNotEmpty) {
@@ -122,8 +168,6 @@ class ThemeState {
     return isDarkMode ? AppColors.darkBg : AppColors.lightBg;
   }
 
-  String? get readingFontFamily => readingFont.googleFontFamily;
-
   FontWeight get bionicBoldWeight => FontWeight.w700;
 
   double get bionicBoldFraction => 0.4;
@@ -160,9 +204,10 @@ class ThemeState {
     HandMode? handMode,
     bool? oneHandMode,
     bool? bionicReading,
-    bool? useDeviceFont,
     bool? amoledMode,
-    String? Function()? systemFontFamily,
+    List<CustomFont>? customFonts,
+    String? Function()? uiFontId,
+    String? Function()? readingFontId,
     bool? showNsfwExtensions,
     bool? showObsoleteExtensions,
     bool? immersiveAutoHide,
@@ -195,11 +240,10 @@ class ThemeState {
       handMode: handMode ?? this.handMode,
       oneHandMode: oneHandMode ?? this.oneHandMode,
       bionicReading: bionicReading ?? this.bionicReading,
-      useDeviceFont: useDeviceFont ?? this.useDeviceFont,
       amoledMode: amoledMode ?? this.amoledMode,
-      systemFontFamily: systemFontFamily != null
-          ? systemFontFamily()
-          : this.systemFontFamily,
+      customFonts: customFonts ?? this.customFonts,
+      uiFontId: uiFontId != null ? uiFontId() : this.uiFontId,
+      readingFontId: readingFontId != null ? readingFontId() : this.readingFontId,
       showNsfwExtensions: showNsfwExtensions ?? this.showNsfwExtensions,
       showObsoleteExtensions:
           showObsoleteExtensions ?? this.showObsoleteExtensions,
