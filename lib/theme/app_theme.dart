@@ -235,7 +235,8 @@ class AppTheme {
       colorScheme: colorScheme,
       scaffoldBackgroundColor: bg,
       canvasColor: bg,
-      // null => Flutter uses the platform default device font.
+      // KomaAndroidSystemFont is registered from Android's active typeface.
+      // null remains a safe fallback when that physical font cannot be read.
       fontFamily: themeFontFamily,
       textTheme: textTheme,
       primaryTextTheme: textTheme,

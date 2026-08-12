@@ -15,6 +15,7 @@ import '../../core/services/library_update_prefs.dart';
 import '../../core/services/metadata_enrichment_service.dart';
 import '../../core/services/source_service.dart';
 import '../../router/router.dart';
+import 'custom_font_ui.dart';
 import '../../theme/app_theme.dart';
 import '../../theme/theme_provider.dart';
 import '../../theme/tokens/app_colors.dart';
@@ -105,7 +106,7 @@ class _ThemePreviewPill extends ConsumerWidget {
                   ),
                   const SizedBox(height: 2),
                   Text(
-                    '${theme.readingFont.label} · ${theme.fontSize.toInt()}px · ${theme.lineHeight.toStringAsFixed(2)}× leading',
+                    '${theme.readingFontLabel} · ${theme.fontSize.toInt()}px · ${theme.lineHeight.toStringAsFixed(2)}× leading',
                     style: TextStyle(
                       color: c.textSecondary,
                       fontSize: 11,
@@ -291,14 +292,18 @@ class _AppearanceSection extends ConsumerWidget {
               ),
             ),
             SettingsRow(
-              title: 'Use device font',
-              subtitle:
-                  'On: Android system UI font. Off: Inter (visible difference)',
-              trailing: Switch(
-                value: theme.useDeviceFont,
-                activeThumbColor: c.accent,
-                onChanged: tn.setUseDeviceFont,
-              ),
+              title: 'App font',
+              subtitle: theme.uiFontLabel,
+              trailing: const Icon(Icons.chevron_right, size: 18),
+              onTap: () => CustomFontUi.showAppFontPicker(context, ref),
+            ),
+            SettingsRow(
+              title: 'Imported fonts',
+              subtitle: theme.customFonts.isEmpty
+                  ? 'Add TTF/OTF files for UI and reading'
+                  : '${theme.customFonts.length} font(s) on device',
+              trailing: const Icon(Icons.chevron_right, size: 18),
+              onTap: () => CustomFontUi.showManageFonts(context, ref),
             ),
           ],
         ),
@@ -1081,9 +1086,9 @@ class _TypographySection extends ConsumerWidget {
               icon: Icons.text_fields,
               iconColor: green,
               title: 'Reading font',
-              subtitle: p.readingFont.label,
+              subtitle: p.readingFontLabel,
               trailing: const Icon(Icons.chevron_right, size: 18),
-              onTap: () => _showFontPicker(context, ref, p),
+              onTap: () => CustomFontUi.showReadingFontPicker(context, ref),
             ),
           ],
         ),
@@ -1192,79 +1197,6 @@ class _TypographySection extends ConsumerWidget {
       case TextAlign.end:
         return 'End';
     }
-  }
-
-  void _showFontPicker(BuildContext context, WidgetRef ref, ThemeState p) {
-    final tn = ref.read(themeProvider.notifier);
-    StashSheet.show<void>(
-      context,
-      title: 'Reading font',
-      subtitle: 'Choose a face for long-form reading.',
-      initialChildSize: 0.7,
-      maxChildSize: 0.95,
-      child: ListView(
-        padding: const EdgeInsets.fromLTRB(20, 8, 20, 32),
-        children: [
-          for (final f in ReadingFont.values) ...[
-            AnimatedPress(
-              onTap: () {
-                tn.setReadingFont(f);
-                Navigator.pop(context);
-              },
-              child: Container(
-                margin: const EdgeInsets.only(bottom: 8),
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  color: p.readingFont == f
-                      ? context.colors.accentMuted
-                      : context.colors.surface,
-                  borderRadius: AppSpacing.brLg,
-                  border: Border.all(
-                    color: p.readingFont == f
-                        ? context.colors.accent
-                        : context.colors.border,
-                    width: p.readingFont == f ? 1.2 : 0.5,
-                  ),
-                ),
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            f.label,
-                            style: TextStyle(
-                              color: context.colors.textPrimary,
-                              fontSize: 16,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                          Padding(
-                            padding: const EdgeInsets.only(top: 4),
-                            child: Text(
-                              'Aa — long-form sample text',
-                              style: AppType.fontStyle(
-                                fontFamily: f.googleFontFamily,
-                                fontSize: 15,
-                                lineHeight: 1.4,
-                                color: context.colors.textSecondary,
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    if (p.readingFont == f)
-                      Icon(Icons.check, color: context.colors.accent, size: 20),
-                  ],
-                ),
-              ),
-            ),
-          ],
-        ],
-      ),
-    );
   }
 
   void _showAlignPicker(BuildContext context, WidgetRef ref, ThemeState p) {
@@ -2585,7 +2517,7 @@ class _AboutSection extends StatelessWidget {
                 ),
                 const SizedBox(height: 4),
                 Text(
-                  'Version 2.37.19 · build 2.37.19+286',
+                  'Version 2.37.22 · build 2.37.22+289',
                   style: TextStyle(color: c.textSecondary, fontSize: 13),
                 ),
                 const SizedBox(height: 10),
@@ -2680,7 +2612,7 @@ class _AboutSection extends StatelessWidget {
               icon: Icons.info_outline,
               iconColor: _muted,
               title: 'Koma',
-              subtitle: 'Version 2.37.19 · build 2.37.19+286',
+              subtitle: 'Version 2.37.22 · build 2.37.22+289',
             ),
             SettingsRow(
               icon: Icons.favorite_outline,

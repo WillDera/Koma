@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../features/settings/custom_font_ui.dart';
 import '../theme/app_theme.dart';
 import '../theme/theme_provider.dart';
 import '../theme/tokens/app_spacing.dart';
@@ -73,7 +74,8 @@ class _ReaderSettingsSheetState extends ConsumerState<ReaderSettingsSheet> {
               const SizedBox(height: 8),
               Text(
                 'Koma is a calm, focused place to read what matters, save what moves you, and revisit it any time.',
-                style: AppType.reading(
+                style: AppType.fontStyle(
+                  fontFamily: p.effectiveReadingFontFamily,
                   fontSize: p.fontSize,
                   lineHeight: p.lineHeight,
                   color: c.textSecondary,
@@ -137,7 +139,7 @@ class _ReaderSettingsSheetState extends ConsumerState<ReaderSettingsSheet> {
         _SectionLabel('Typography'),
         const SizedBox(height: 12),
         AnimatedPress(
-          onTap: () => _showFontPicker(context, p, tn),
+          onTap: () => CustomFontUi.showReadingFontPicker(context, ref),
           child: Container(
             padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
             decoration: BoxDecoration(
@@ -160,7 +162,7 @@ class _ReaderSettingsSheetState extends ConsumerState<ReaderSettingsSheet> {
                   ),
                 ),
                 Text(
-                  p.readingFont.label,
+                  p.readingFontLabel,
                   style: TextStyle(color: c.textTertiary, fontSize: 13),
                 ),
                 const SizedBox(width: 4),
@@ -284,39 +286,6 @@ class _ReaderSettingsSheetState extends ConsumerState<ReaderSettingsSheet> {
           onChanged: (v) => tn.setImmersiveAutoHide(v),
         ),
       ],
-    );
-  }
-
-  void _showFontPicker(BuildContext context, ThemeState p, ThemeNotifier tn) {
-    showDialog(
-      context: context,
-      builder: (ctx) {
-        final c = ctx.colors;
-        return AlertDialog(
-          backgroundColor: c.surface,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(18),
-            side: BorderSide(color: c.border, width: 0.5),
-          ),
-          content: SizedBox(
-            width: double.maxFinite,
-            child: ListView(
-              shrinkWrap: true,
-              children: [
-                for (final font in ReadingFont.values)
-                  _PickerOption(
-                    label: font.label,
-                    selected: p.readingFont == font,
-                    onTap: () {
-                      tn.setReadingFont(font);
-                      Navigator.of(ctx).pop();
-                    },
-                  ),
-              ],
-            ),
-          ),
-        );
-      },
     );
   }
 
