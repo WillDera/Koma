@@ -9,10 +9,6 @@ android {
     compileSdk = flutter.compileSdkVersion
     ndkVersion = flutter.ndkVersion
 
-    buildFeatures {
-        prefab = true
-    }
-
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
@@ -128,6 +124,8 @@ dependencies {
     implementation("androidx.core:core-ktx:1.15.0")
     // Keiyoushi extensions expect Injekt (dependency injection) at runtime
     implementation("com.github.mihonapp:injekt:91edab2317")
-    // Piper TTS — ONNX Runtime (linked by koma_piper native lib).
+    // Piper TTS — packages libonnxruntime.so into the APK. koma_piper links
+    // against the same version unpacked by src/main/cpp/CMakeLists.txt; keep
+    // ONNXRUNTIME_VERSION there in sync with this coordinate.
     implementation("com.microsoft.onnxruntime:onnxruntime-android:1.22.0")
 }

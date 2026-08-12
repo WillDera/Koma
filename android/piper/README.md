@@ -5,6 +5,7 @@ On-device Piper TTS via [piper1-gpl](https://github.com/OHF-Voice/piper1-gpl) `l
 ## Layout
 
 - `libpiper/` — vendored `piper.cpp` + headers from piper1-gpl (pinned manually).
+- `onnxruntime/` — download cache for the onnxruntime AAR (gitignored, created by CMake).
 - `../app/src/main/cpp/` — JNI bridge (`koma_piper` shared library).
 - `../app/src/main/assets/piper/espeak-ng-data/` — phonemizer data (required at runtime; not a voice model).
 
@@ -14,9 +15,28 @@ Voice models (`.onnx` + `.onnx.json`) are **user-imported** in the app, not ship
 
 - Android NDK (via Flutter `ndkVersion`)
 - CMake 3.22+
-- Network on first native build (ExternalProject fetches espeak-ng)
+- Network on the first native build, to fetch espeak-ng and the onnxruntime AAR
 
-Gradle links `com.microsoft.onnxruntime:onnxruntime-android` via prefab and builds `koma_piper` for `arm64-v8a`.
+`koma_piper` is built for `arm64-v8a` only.
+
+## onnxruntime
+
+The `onnxruntime-android` AAR ships no prefab metadata, so `find_package(onnxruntime)`
+cannot resolve it. Instead, `../app/src/main/cpp/CMakeLists.txt` downloads the AAR from
+Maven Central into `onnxruntime/`, unpacks it, and links against
+`jni/<abi>/libonnxruntime.so` using the bundled `headers/`.
+
+The `.so` that actually ships in the APK comes from the Gradle
+`com.microsoft.onnxruntime:onnxruntime-android` dependency. **`ONNXRUNTIME_VERSION` in
+CMakeLists.txt must match that Gradle coordinate**, otherwise the app links against one
+version and loads another.
+
+## Building espeak-ng
+
+`espeak-ng` is cross-compiled as a static library via `ExternalProject` at the pin used by
+piper1-gpl. Intonation/phoneme data compilation is disabled (`COMPILE_INTONATIONS=OFF`)
+because it requires a host `espeak-ng` binary that does not exist when cross-compiling;
+the data is shipped prebuilt in app assets instead.
 
 ## Refreshing libpiper source
 
