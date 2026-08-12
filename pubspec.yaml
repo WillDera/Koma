@@ -1,7 +1,7 @@
 name: koma
 description: "A hybrid reader + knowledge snippet manager."
 publish_to: 'none'
-version: 2.37.31+298
+version: 2.37.32+299
 
 environment:
   sdk: ^3.12.2
@@ -105,7 +105,12 @@ flutter_icons:
 
 flutter_native_splash:
   color: "#000000"
-  image: "app_icons/hon_black.png"
+  image: "app_icons/hon_sb.png"
   fullscreen: true
   android: true
   android_gravity: center
+  # Android 12+ uses a separate SplashScreen API (defaults to the launcher
+  # icon unless this block is present).
+  android_12:
+    color: "#000000"
+    image: "app_icons/hon_sb.png"
