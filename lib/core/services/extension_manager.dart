@@ -408,6 +408,19 @@ class ExtensionManager {
 
   Future<void> removeRepo(int id) => _repos.extensions.deleteExtensionRepo(id);
 
+  /// Best icon URL for persisting on install — index authoritative, then cache,
+  /// then CDN derivation. Also writes index URLs into [ExtensionIconCache].
+  Future<String> _iconUrlForEntry(ExtensionIndexEntry entry) async {
+    final fromIndex = entry.iconUrl?.trim();
+    if (fromIndex != null && fromIndex.isNotEmpty) {
+      await ExtensionIconCache.instance.put(entry.pkg, fromIndex);
+      return fromIndex;
+    }
+    final cached = await ExtensionIconCache.instance.cachedIconUrl(entry.pkg);
+    if (cached != null && cached.isNotEmpty) return cached;
+    return ExtensionIconCache.iconUrlForPkg(entry.pkg) ?? '';
+  }
+
   /// One-time fetch of the full Keiyoushi `index.json` (~1.3 MB) to populate
   /// the persistent `pkg → iconUrl` cache ([ExtensionIconCache]). Subsequent
   /// calls are no-ops once the cache is populated. Safe to call on app start
@@ -636,7 +649,7 @@ class ExtensionManager {
     required String resolved,
     required ApkSigningInfo signing,
   }) async {
-    final iconUrl = ExtensionIconCache.iconUrlForPkg(entry.pkg) ?? '';
+    final iconUrl = await _iconUrlForEntry(entry);
     final sourceCodeUrl = resolved;
 
     final desc = await _keiyoushi.loadExtension(
@@ -877,6 +890,7 @@ class ExtensionManager {
         versionCode: signing.versionCode,
         signatureHash: signing.primarySignature ?? '',
         isActive: true,
+        iconUrl: await _iconUrlForEntry(entry),
         // Backfill the extension's authoritative baseUrl when the index entry
         // didn't carry one (see install() for the v2-format rationale).
         baseUrl: nativeBaseUrl.isNotEmpty ? nativeBaseUrl : src.baseUrl,
