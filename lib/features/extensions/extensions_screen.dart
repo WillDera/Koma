@@ -2010,35 +2010,51 @@ class _PkgExtensionIconState extends State<_PkgExtensionIcon> {
   @override
   void initState() {
     super.initState();
-    if (widget.iconUrl != null && widget.iconUrl!.isNotEmpty) {
-      _url = widget.iconUrl;
-    } else {
-      _url = ExtensionIconCache.iconUrlForPkg(widget.pkg);
-      _resolveFromCache();
-    }
+    _bootstrapUrl();
+  }
+
+  void _bootstrapUrl() {
+    _failed = false;
+    _url = ExtensionIconCache.initialDisplayUrl(
+      pkg: widget.pkg,
+      iconUrl: widget.iconUrl,
+    );
+    _resolveFromCache();
   }
 
   @override
   void didUpdateWidget(covariant _PkgExtensionIcon oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.iconUrl != widget.iconUrl || oldWidget.pkg != widget.pkg) {
-      _failed = false;
-      if (widget.iconUrl != null && widget.iconUrl!.isNotEmpty) {
-        _url = widget.iconUrl;
-      } else {
-        _url = ExtensionIconCache.iconUrlForPkg(widget.pkg);
-        _resolveFromCache();
-      }
+      _bootstrapUrl();
     }
   }
 
   Future<void> _resolveFromCache() async {
-    if (_url != null && _url!.isNotEmpty) return;
     final cached = await ExtensionIconCache.instance.cachedIconUrl(widget.pkg);
     if (!mounted || _failed) return;
-    if (cached != null && cached.isNotEmpty) {
+    if (cached != null &&
+        cached.isNotEmpty &&
+        cached != _url &&
+        !ExtensionIconCache.isLegacyBrokenIconUrl(cached)) {
       setState(() => _url = cached);
     }
+  }
+
+  Future<void> _retryAfterLoadError() async {
+    if (_failed || !mounted) return;
+    final resolved = await ExtensionIconCache.instance.resolveIconUrl(
+      widget.pkg,
+    );
+    if (!mounted || _failed) return;
+    if (resolved != null &&
+        resolved.isNotEmpty &&
+        resolved != _url &&
+        !ExtensionIconCache.isLegacyBrokenIconUrl(resolved)) {
+      setState(() => _url = resolved);
+      return;
+    }
+    _markFailed();
   }
 
   void _markFailed() {
@@ -2085,7 +2101,9 @@ class _PkgExtensionIconState extends State<_PkgExtensionIcon> {
           height: size,
           gaplessPlayback: true,
           errorBuilder: (_, _, _) {
-            WidgetsBinding.instance.addPostFrameCallback((_) => _markFailed());
+            WidgetsBinding.instance.addPostFrameCallback(
+              (_) => _retryAfterLoadError(),
+            );
             return _placeholder(size, c);
           },
         ),

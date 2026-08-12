@@ -415,25 +415,56 @@ class _PkgExtensionIcon extends StatefulWidget {
 
 class _PkgExtensionIconState extends State<_PkgExtensionIcon> {
   String? _url;
+  bool _failed = false;
 
   @override
   void initState() {
     super.initState();
-    if (widget.iconUrl != null && widget.iconUrl!.isNotEmpty) {
-      _url = widget.iconUrl;
-    } else {
-      _url = ExtensionIconCache.iconUrlForPkg(widget.pkg);
-      _resolveFromCache();
+    _bootstrapUrl();
+  }
+
+  void _bootstrapUrl() {
+    _failed = false;
+    _url = ExtensionIconCache.initialDisplayUrl(
+      pkg: widget.pkg,
+      iconUrl: widget.iconUrl,
+    );
+    _resolveFromCache();
+  }
+
+  @override
+  void didUpdateWidget(covariant _PkgExtensionIcon oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.iconUrl != widget.iconUrl || oldWidget.pkg != widget.pkg) {
+      _bootstrapUrl();
     }
   }
 
   Future<void> _resolveFromCache() async {
-    if (_url != null && _url!.isNotEmpty) return;
     final cached = await ExtensionIconCache.instance.cachedIconUrl(widget.pkg);
-    if (!mounted) return;
-    if (cached != null && cached.isNotEmpty) {
+    if (!mounted || _failed) return;
+    if (cached != null &&
+        cached.isNotEmpty &&
+        cached != _url &&
+        !ExtensionIconCache.isLegacyBrokenIconUrl(cached)) {
       setState(() => _url = cached);
     }
+  }
+
+  Future<void> _retryAfterLoadError() async {
+    if (_failed || !mounted) return;
+    final resolved = await ExtensionIconCache.instance.resolveIconUrl(
+      widget.pkg,
+    );
+    if (!mounted || _failed) return;
+    if (resolved != null &&
+        resolved.isNotEmpty &&
+        resolved != _url &&
+        !ExtensionIconCache.isLegacyBrokenIconUrl(resolved)) {
+      setState(() => _url = resolved);
+      return;
+    }
+    setState(() => _failed = true);
   }
 
   @override
@@ -441,7 +472,7 @@ class _PkgExtensionIconState extends State<_PkgExtensionIcon> {
     final url = _url;
     final size = widget.size;
     final c = widget.colors;
-    if (url == null || url.isEmpty) {
+    if (url == null || url.isEmpty || _failed) {
       return SizedBox(
         width: size,
         height: size,
@@ -467,15 +498,20 @@ class _PkgExtensionIconState extends State<_PkgExtensionIcon> {
           width: size,
           height: size,
           gaplessPlayback: true,
-          errorBuilder: (_, _, _) => SizedBox(
-            width: size,
-            height: size,
-            child: Icon(
-              Icons.extension_rounded,
-              color: c.accent,
-              size: size * 0.75,
-            ),
-          ),
+          errorBuilder: (_, _, _) {
+            WidgetsBinding.instance.addPostFrameCallback(
+              (_) => _retryAfterLoadError(),
+            );
+            return SizedBox(
+              width: size,
+              height: size,
+              child: Icon(
+                Icons.extension_rounded,
+                color: c.accent,
+                size: size * 0.75,
+              ),
+            );
+          },
         ),
       ),
     );
