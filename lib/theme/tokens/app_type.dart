@@ -155,6 +155,18 @@ class AppType {
         letterSpacing: 0.05,
       );
     }
+    // Families registered at runtime (the device system font, via FontLoader)
+    // are not in the Google Fonts catalogue and getFont throws on them.
+    if (!GoogleFonts.asMap().containsKey(fontFamily)) {
+      return TextStyle(
+        fontFamily: fontFamily,
+        fontSize: fontSize,
+        height: lineHeight,
+        color: color,
+        fontWeight: FontWeight.w400,
+        letterSpacing: 0.05,
+      );
+    }
     // Use GoogleFonts.getFont which loads & caches any supported font.
     return GoogleFonts.getFont(
       fontFamily,

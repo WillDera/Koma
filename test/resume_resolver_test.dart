@@ -52,7 +52,6 @@ void main() {
         lineHeight: 1.5,
         textAlign: TextAlign.left,
         fontFamily: null,
-        useDeviceFont: true,
         bionicReading: false,
       ),
     );

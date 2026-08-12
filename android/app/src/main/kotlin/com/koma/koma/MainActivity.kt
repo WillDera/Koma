@@ -4,7 +4,6 @@ import android.content.ContentValues
 import android.content.Intent
 import android.content.pm.PackageInfo
 import android.content.pm.PackageManager
-import android.graphics.Typeface
 import android.media.MediaScannerConnection
 import android.net.Uri
 import android.os.Build
@@ -56,7 +55,6 @@ class MainActivity : FlutterActivity() {
             "com.koma.koma/system",
         ).setMethodCallHandler { call, result ->
             when (call.method) {
-                "getSystemTypeface" -> result.success(resolveSystemTypeface())
                 "getApkSigningInfo" -> {
                     Thread {
                         try {
@@ -378,34 +376,6 @@ class MainActivity : FlutterActivity() {
             chars[j++] = hex[v and 0x0f]
         }
         return String(chars)
-    }
-
-    private fun resolveSystemTypeface(): String {
-        return try {
-            val typeface = Typeface.create("sans-serif", Typeface.NORMAL)
-            val family = typeface.toString()
-            if (family.contains("sans-serif", ignoreCase = true)) {
-                readSystemFontConfig() ?: "sans-serif"
-            } else {
-                family.substringAfterLast('.').ifEmpty { family }
-            }
-        } catch (e: Throwable) {
-            Log.w("SystemFont", "Typeface query failed", e)
-            readSystemFontConfig() ?: "sans-serif"
-        }
-    }
-
-    private fun readSystemFontConfig(): String? {
-        return try {
-            val config = File("/system/etc/fonts.xml").takeIf { it.exists() }?.readText()
-            if (config.isNullOrBlank()) return null
-            val regex = Regex("<family name=\"sans-serif\">([^<]+)</family>")
-            val match = regex.find(config)
-            match?.groupValues?.getOrNull(1)?.trim()?.ifEmpty { null }
-        } catch (e: Throwable) {
-            Log.w("SystemFont", "font config parse failed", e)
-            null
-        }
     }
 
     override fun cleanUpFlutterEngine(flutterEngine: FlutterEngine) {
