@@ -30,6 +30,9 @@ class SegmentedControl<T extends Object> extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final c = context.colors;
+    final segmentStyle = (Theme.of(context).textTheme.labelMedium ??
+            const TextStyle())
+        .copyWith(fontSize: 13, letterSpacing: 0.1);
     final entries = segments.entries.toList();
     final selectedIndex = value == null
         ? -1
@@ -90,13 +93,11 @@ class SegmentedControl<T extends Object> extends StatelessWidget {
                         child: Center(
                           child: AnimatedDefaultTextStyle(
                             duration: AppMotion.base,
-                            style: TextStyle(
+                            style: segmentStyle.copyWith(
                               color: isSelected ? c.onAccent : c.textSecondary,
                               fontWeight: isSelected
                                   ? FontWeight.w600
                                   : FontWeight.w400,
-                              fontSize: 13,
-                              letterSpacing: 0.1,
                             ),
                             child: Text(entry.value),
                           ),

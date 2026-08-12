@@ -228,7 +228,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> with RouteAware {
               crossAxisCount: gridColumns,
               mainAxisSpacing: 12,
               crossAxisSpacing: 12,
-              childAspectRatio: 0.62,
+              childAspectRatio: 0.58,
             ),
             delegate: SliverChildBuilderDelegate(
               (_, _) => LayoutBuilder(
