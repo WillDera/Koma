@@ -29,6 +29,7 @@ import '../../widgets/library_book_card.dart';
 import '../../widgets/library_header.dart';
 import '../../widgets/one_hand_spacer.dart';
 import '../../widgets/reading_streak_card.dart';
+import '../../widgets/reading_calendar_sheet.dart';
 import '../../widgets/screen_chrome.dart';
 import '../../widgets/segmented_control.dart';
 import '../../widgets/settings_section.dart';
@@ -2180,7 +2181,10 @@ class _StatsSectionState extends ConsumerState<_StatsSection> {
         ReadingStreakCard(
           minutesPerDay: _minutesPerDay,
           currentStreak: _streak,
-          onTap: _showWeeklyDetail,
+          onTap: () => showReadingCalendarSheet(
+            context,
+            ref.read(statsServiceProvider),
+          ),
         ),
         _row(c, Icons.menu_book, 'Books completed', _completed),
         if (_genres.isNotEmpty)
@@ -2201,77 +2205,6 @@ class _StatsSectionState extends ConsumerState<_StatsSection> {
         else
           _row(c, Icons.insert_drive_file_outlined, 'Extensions', 0),
       ],
-    );
-  }
-
-  void _showWeeklyDetail() {
-    final dayNames = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
-    final now = DateTime.now();
-    final buf = StringBuffer();
-    int total = 0;
-    for (int i = 6; i >= 0; i--) {
-      final day = now.subtract(Duration(days: i));
-      final mins = _minutesPerDay[6 - i];
-      total += mins;
-      final label = day.weekday - 1 == now.weekday - 1
-          ? 'Today'
-          : dayNames[day.weekday - 1];
-      buf.writeln('$label · ${mins}min');
-    }
-    showDialog(
-      context: context,
-      builder: (ctx) {
-        final c = ctx.colors;
-        return AlertDialog(
-          backgroundColor: c.surface,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(18),
-            side: BorderSide(color: c.border, width: 0.5),
-          ),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                '$_streak day streak',
-                style: TextStyle(
-                  color: c.accent,
-                  fontSize: 18,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-              const SizedBox(height: 2),
-              Text(
-                '$total min this week',
-                style: TextStyle(color: c.textTertiary, fontSize: 13),
-              ),
-              const SizedBox(height: 12),
-              Text(
-                buf.toString().trim(),
-                style: TextStyle(
-                  color: c.textPrimary,
-                  fontSize: 14,
-                  height: 1.6,
-                ),
-              ),
-              const SizedBox(height: 8),
-              Text(
-                'Streak resets when a day has 0 min read.',
-                style: TextStyle(color: c.textTertiary, fontSize: 12),
-              ),
-            ],
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(ctx).pop(),
-              child: Text(
-                'OK',
-                style: TextStyle(color: c.accent, fontWeight: FontWeight.w600),
-              ),
-            ),
-          ],
-        );
-      },
     );
   }
 
@@ -2518,7 +2451,7 @@ class _AboutSection extends StatelessWidget {
                 ),
                 const SizedBox(height: 4),
                 Text(
-                  'Version 2.37.25 · build 2.37.25+292',
+                  'Version 2.37.28 · build 2.37.28+295',
                   style: TextStyle(color: c.textSecondary, fontSize: 13),
                 ),
                 const SizedBox(height: 10),
@@ -2613,7 +2546,7 @@ class _AboutSection extends StatelessWidget {
               icon: Icons.info_outline,
               iconColor: _muted,
               title: 'Koma',
-              subtitle: 'Version 2.37.25 · build 2.37.25+292',
+              subtitle: 'Version 2.37.28 · build 2.37.28+295',
             ),
             SettingsRow(
               icon: Icons.favorite_outline,
