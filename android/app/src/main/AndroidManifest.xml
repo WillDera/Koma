@@ -2,6 +2,8 @@
     <uses-permission android:name="android.permission.INTERNET"/>
     <!-- System notifications (Android 13+ requires runtime grant). -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- In-app APK updates (Mihon AppUpdateChecker / NewUpdateScreen parity). -->
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
     <!-- Gallery write for API ≤28 (MediaStore scoped storage on 29+). -->
     <uses-permission
         android:name="android.permission.WRITE_EXTERNAL_STORAGE"
@@ -70,6 +72,11 @@
         <intent>
             <action android:name="android.intent.action.PROCESS_TEXT"/>
             <data android:mimeType="text/plain"/>
+        </intent>
+        <!-- Package installer for in-app APK updates (API 30+ visibility). -->
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <data android:mimeType="application/vnd.android.package-archive" />
         </intent>
     </queries>
 </manifest>
