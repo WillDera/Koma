@@ -103,6 +103,24 @@ class ExtensionIconCache {
         '/src/$lang/$name/res/mipmap-xhdpi/ic_launcher.png';
   }
 
+  /// URLs that always 404 against Keiyoushi — older DB rows may still hold them.
+  static bool isLegacyBrokenIconUrl(String? url) {
+    if (url == null || url.isEmpty) return true;
+    return url.contains('/repo/icon/');
+  }
+
+  /// Pick the best URL for display: ignore legacy DB values, prefer cache +
+  /// derivation over a broken persisted URL.
+  static String? initialDisplayUrl({required String pkg, String? iconUrl}) {
+    if (pkg.isEmpty) return null;
+    if (iconUrl != null &&
+        iconUrl.isNotEmpty &&
+        !isLegacyBrokenIconUrl(iconUrl)) {
+      return iconUrl;
+    }
+    return iconUrlForPkg(pkg);
+  }
+
   /// Fetch the full Keiyoushi `index.json` (~1.3 MB) once, extract every
   /// `packageName → resources.iconUrl` pair, and persist them. Parsing runs
   /// in a background isolate so the UI isolate never blocks on the large
