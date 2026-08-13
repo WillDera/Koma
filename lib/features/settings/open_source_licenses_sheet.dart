@@ -3,7 +3,7 @@ import 'package:flutter/services.dart';
 
 import '../../theme/app_theme.dart';
 
-/// Open-source license notices (including Piper GPL-3.0).
+/// Open-source license notices (Koma GPL + Piper and other deps).
 class OpenSourceLicensesSheet extends StatelessWidget {
   const OpenSourceLicensesSheet({super.key});
 
@@ -52,27 +52,37 @@ class OpenSourceLicensesSheet extends StatelessWidget {
               ),
               Expanded(
                 child: FutureBuilder<String>(
-                  future: rootBundle.loadString('assets/legal/piper_gpl_notice.txt'),
+                  future: rootBundle.loadString(
+                    'assets/legal/piper_gpl_notice.txt',
+                  ),
                   builder: (context, snapshot) {
                     final piperText = snapshot.data ?? '';
                     return ListView(
                       controller: scrollController,
                       padding: const EdgeInsets.fromLTRB(20, 0, 20, 24),
                       children: [
+                        _heading(c, 'Koma'),
+                        const SizedBox(height: 4),
                         Text(
-                          'Piper TTS (libpiper)',
+                          'Koma is free and open-source software licensed under '
+                          'the GNU General Public License version 3 or later '
+                          '(GPL-3.0-or-later).',
                           style: TextStyle(
-                            color: c.textPrimary,
-                            fontSize: 14,
-                            fontWeight: FontWeight.w600,
+                            color: c.textSecondary,
+                            fontSize: 12,
                           ),
                         ),
+                        const SizedBox(height: 24),
+                        _heading(c, 'Piper TTS (libpiper)'),
                         const SizedBox(height: 4),
                         Text(
                           'On-device neural TTS engine from OHF-Voice/piper1-gpl. '
-                          'Licensed under GNU GPL v3. Voice models are user-provided '
-                          'and are not distributed with Koma.',
-                          style: TextStyle(color: c.textSecondary, fontSize: 12),
+                          'Licensed under GNU GPL v3. Voice models are '
+                          'user-provided and are not distributed with Koma.',
+                          style: TextStyle(
+                            color: c.textSecondary,
+                            fontSize: 12,
+                          ),
                         ),
                         const SizedBox(height: 8),
                         Text(
@@ -91,21 +101,50 @@ class OpenSourceLicensesSheet extends StatelessWidget {
                           ),
                         ],
                         const SizedBox(height: 24),
+                        _heading(c, 'ONNX Runtime'),
+                        const SizedBox(height: 4),
                         Text(
-                          'Other dependencies',
+                          'Microsoft ONNX Runtime (onnxruntime-android 1.22.0). '
+                          'Licensed under MIT.',
                           style: TextStyle(
-                            color: c.textPrimary,
-                            fontSize: 14,
-                            fontWeight: FontWeight.w600,
+                            color: c.textSecondary,
+                            fontSize: 12,
                           ),
                         ),
-                        const SizedBox(height: 8),
+                        const SizedBox(height: 16),
+                        _heading(c, 'eSpeak NG'),
+                        const SizedBox(height: 4),
+                        Text(
+                          'Phonemizer library and espeak-ng-data assets. '
+                          'Licensed under GPL-3.0-or-later (upstream).',
+                          style: TextStyle(
+                            color: c.textSecondary,
+                            fontSize: 12,
+                          ),
+                        ),
+                        const SizedBox(height: 16),
+                        _heading(c, 'Flutter and other packages'),
+                        const SizedBox(height: 4),
                         Text(
                           'Flutter, Riverpod, Isar, just_audio, flutter_tts, '
-                          'ONNX Runtime, espeak-ng, Mihon extension bridge, and '
-                          'other packages listed in pubspec.yaml — each under its '
-                          'own license.',
-                          style: TextStyle(color: c.textSecondary, fontSize: 12),
+                          'Mihon extension bridge, and other packages listed in '
+                          'pubspec.yaml — each under its own license.',
+                          style: TextStyle(
+                            color: c.textSecondary,
+                            fontSize: 12,
+                          ),
+                        ),
+                        const SizedBox(height: 16),
+                        _heading(c, 'Piper voice models'),
+                        const SizedBox(height: 4),
+                        Text(
+                          'Voice models (.onnx / .onnx.json) are imported by the '
+                          'user. They are third-party works and are not covered '
+                          'by Koma’s GPL license grant.',
+                          style: TextStyle(
+                            color: c.textSecondary,
+                            fontSize: 12,
+                          ),
                         ),
                       ],
                     );
@@ -116,6 +155,17 @@ class OpenSourceLicensesSheet extends StatelessWidget {
           ),
         );
       },
+    );
+  }
+
+  Widget _heading(KomaColors c, String title) {
+    return Text(
+      title,
+      style: TextStyle(
+        color: c.textPrimary,
+        fontSize: 14,
+        fontWeight: FontWeight.w600,
+      ),
     );
   }
 }
