@@ -16,6 +16,7 @@ class AppUpdateInstaller {
   final http.Client _client;
 
   File? _apkFile;
+  static const _apkName = 'update.apk';
 
   File? get apkFile => _apkFile;
 
@@ -32,7 +33,7 @@ class AppUpdateInstaller {
     void Function(int progress)? onProgress,
   }) async {
     final dir = await _cacheDir();
-    final file = File('${dir.path}/update.apk');
+    final file = File('${dir.path}/$_apkName');
     if (await file.exists()) {
       await file.delete();
     }
@@ -95,5 +96,18 @@ class AppUpdateInstaller {
     if (apk != null && await apk.exists()) {
       await apk.delete();
     }
+  }
+
+  /// Returns a finished update APK left in cache from a prior session.
+  Future<File?> cachedApkFile() async {
+    final dir = await _cacheDir();
+    final file = File('${dir.path}/$_apkName');
+    if (!await file.exists()) return null;
+    final len = await file.length();
+    return len > 0 ? file : null;
+  }
+
+  void adoptCachedApk(File file) {
+    _apkFile = file;
   }
 }

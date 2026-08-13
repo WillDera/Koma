@@ -69,3 +69,4 @@ android/piper/onnxruntime/
 .kilo/
 !README.md
 *.md
+docs/

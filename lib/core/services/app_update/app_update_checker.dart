@@ -27,6 +27,7 @@ class AppUpdateChecker {
     return _getRelease.awaitCheck(
       AppUpdateArguments(
         versionName: info.version,
+        buildNumber: info.buildNumber,
         repository: repository,
         forceCheck: forceCheck,
       ),

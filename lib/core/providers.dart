@@ -11,6 +11,10 @@ import '../features/snippets/snippets_provider.dart';
 import 'repositories/repositories.dart';
 import 'services/download/chapter_download.dart';
 import 'services/download/download_manager.dart';
+import 'services/app_update/app_release.dart';
+import 'services/app_update/app_update_checker.dart';
+import 'services/app_update/app_update_manager.dart';
+import 'services/app_update/get_application_release.dart';
 import 'services/ebook_service.dart';
 import 'services/extension_manager.dart';
 import 'services/keiyoushi_service.dart';
@@ -148,6 +152,64 @@ class DownloadManagerNotifier extends Notifier<DownloadQueueSnapshot>
 final downloadManagerProvider =
     NotifierProvider<DownloadManagerNotifier, DownloadQueueSnapshot>(
       DownloadManagerNotifier.new,
+    );
+
+/// Snapshot of the in-app update download/install flow.
+class AppUpdateSnapshot {
+  const AppUpdateSnapshot({
+    required this.stage,
+    required this.progress,
+    this.release,
+  });
+
+  final AppUpdateStage stage;
+  final int progress;
+  final AppRelease? release;
+}
+
+/// Holds the singleton [AppUpdateManager] for background update downloads.
+class AppUpdateNotifier extends Notifier<AppUpdateSnapshot> {
+  late final AppUpdateManager manager;
+
+  @override
+  AppUpdateSnapshot build() {
+    manager = AppUpdateManager();
+    void onChange() {
+      state = AppUpdateSnapshot(
+        stage: manager.stage,
+        progress: manager.progress,
+        release: manager.release,
+      );
+    }
+
+    manager.addListener(onChange);
+    ref.onDispose(() {
+      manager.removeListener(onChange);
+      manager.dispose();
+    });
+    unawaited(manager.restoreCachedDownload());
+    return AppUpdateSnapshot(
+      stage: manager.stage,
+      progress: manager.progress,
+      release: manager.release,
+    );
+  }
+
+  Future<AppUpdateResult> checkForUpdate({bool forceCheck = false}) =>
+      AppUpdateChecker().checkForUpdate(forceCheck: forceCheck);
+
+  void offerUpdate(AppRelease release) => manager.offerUpdate(release);
+
+  Future<void> startDownload() => manager.startDownload();
+
+  Future<void> install() => manager.install();
+
+  void clear() => manager.clear();
+}
+
+final appUpdateProvider =
+    NotifierProvider<AppUpdateNotifier, AppUpdateSnapshot>(
+      AppUpdateNotifier.new,
     );
 
 final extensionManagerProvider = Provider<ExtensionManager>(
