@@ -54,11 +54,6 @@ jobs:
           EOF
 
       - run: flutter pub get
-
-      - name: Patch legacy plugin manifests for AGP 8.11
-        run: |
-          find "$HOME/.pub-cache" -path "*/flutter_native_splash-*/android/src/main/AndroidManifest.xml" -print -exec sed -i 's/ package="[^"]*"//' {} \;
-
       - run: flutter build apk --release
 
       - name: Show free disk after build

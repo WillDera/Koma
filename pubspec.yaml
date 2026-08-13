@@ -1,7 +1,7 @@
 name: koma
 description: "A hybrid reader + knowledge snippet manager."
 publish_to: 'none'
-version: 2.37.35+302
+version: 2.37.36+303
 
 environment:
   sdk: ^3.12.2
@@ -38,7 +38,6 @@ dependencies:
   flutter_markdown: ^0.7.6
   google_fonts: ^8.1.0
   kindle_unpack: ^0.1.1
-  flutter_native_splash: ^2.2.16
   flutter_launcher_icons: ^0.9.3
   flutter_tts: ^4.2.5
   just_audio: ^0.9.43
@@ -105,6 +104,8 @@ flutter_icons:
   image_path: "app_icons/hon.png"
   min_sdk_android: 21
 
+# Regenerate native splash assets (one-off; not a runtime dependency):
+#   dart pub add --dev flutter_native_splash && dart run flutter_native_splash:create && dart pub remove flutter_native_splash
 flutter_native_splash:
   color: "#000000"
   image: "app_icons/hon_sb.png"

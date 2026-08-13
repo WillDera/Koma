@@ -3,7 +3,6 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart' as webview;
-import 'package:flutter_native_splash/flutter_native_splash.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
@@ -33,7 +32,9 @@ void main() {
 
   runZonedGuarded(() async {
     final widgetsBinding = WidgetsFlutterBinding.ensureInitialized();
-    FlutterNativeSplash.preserve(widgetsBinding: widgetsBinding);
+    // Keep the native LaunchTheme visible until startup work finishes
+    // (flutter_native_splash is dev-only for asset generation).
+    widgetsBinding.deferFirstFrame();
 
     // Rust metadata engine (Open Library / Google Books) via flutter_rust_bridge.
     await RustLib.init();
@@ -102,7 +103,7 @@ void main() {
       ),
     );
 
-    FlutterNativeSplash.remove();
+    widgetsBinding.allowFirstFrame();
 
     // Surface the extension-update badge once the startup index check has
     // written versionLast flags for every repo (mangayomi parity: it shows a
