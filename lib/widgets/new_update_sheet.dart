@@ -1,16 +1,19 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_markdown/flutter_markdown.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../core/providers.dart';
 import '../core/services/app_update/app_release.dart';
-import '../core/services/app_update/app_update_installer.dart';
+import '../core/services/app_update/app_update_manager.dart';
 import '../theme/app_theme.dart';
 import '../theme/tokens/app_spacing.dart';
 
-enum NewUpdateStage { available, downloading, downloaded, failed }
-
 /// Mihon [NewUpdateScreen] parity: changelog + Download → Install flow.
-class NewUpdateSheet extends StatefulWidget {
+///
+/// Download progress lives in [AppUpdateManager] so closing this sheet does
+/// not cancel the transfer — the system notification shows progress instead.
+class NewUpdateSheet extends ConsumerStatefulWidget {
   const NewUpdateSheet({super.key, required this.release});
 
   final AppRelease release;
@@ -28,54 +31,34 @@ class NewUpdateSheet extends StatefulWidget {
   }
 
   @override
-  State<NewUpdateSheet> createState() => _NewUpdateSheetState();
+  ConsumerState<NewUpdateSheet> createState() => _NewUpdateSheetState();
 }
 
-class _NewUpdateSheetState extends State<NewUpdateSheet> {
-  final _installer = AppUpdateInstaller();
-  NewUpdateStage _stage = NewUpdateStage.available;
-  int _progress = 0;
-
-  Future<void> _onAccept() async {
-    switch (_stage) {
-      case NewUpdateStage.available:
-      case NewUpdateStage.failed:
-        await _startDownload();
-      case NewUpdateStage.downloaded:
-        await _install();
-      case NewUpdateStage.downloading:
-        break;
-    }
+class _NewUpdateSheetState extends ConsumerState<NewUpdateSheet> {
+  @override
+  void initState() {
+    super.initState();
+    ref.read(appUpdateProvider.notifier).offerUpdate(widget.release);
   }
 
-  Future<void> _startDownload() async {
-    setState(() {
-      _stage = NewUpdateStage.downloading;
-      _progress = 0;
-    });
-    try {
-      await _installer.downloadApk(
-        widget.release.downloadLink,
-        onProgress: (p) {
-          if (!mounted) return;
-          setState(() => _progress = p);
-        },
-      );
-      if (!mounted) return;
-      setState(() {
-        _progress = 100;
-        _stage = NewUpdateStage.downloaded;
-      });
-    } catch (_) {
-      await _installer.deleteDownloadedApk();
-      if (!mounted) return;
-      setState(() => _stage = NewUpdateStage.failed);
+  Future<void> _onAccept() async {
+    final notifier = ref.read(appUpdateProvider.notifier);
+    final stage = ref.read(appUpdateProvider).stage;
+    switch (stage) {
+      case AppUpdateStage.available:
+      case AppUpdateStage.failed:
+        await notifier.startDownload();
+      case AppUpdateStage.downloaded:
+        await _install();
+      case AppUpdateStage.downloading:
+      case AppUpdateStage.idle:
+        break;
     }
   }
 
   Future<void> _install() async {
     try {
-      await _installer.installUpdate();
+      await ref.read(appUpdateProvider.notifier).install();
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -90,17 +73,23 @@ class _NewUpdateSheetState extends State<NewUpdateSheet> {
     await launchUrl(uri, mode: LaunchMode.externalApplication);
   }
 
-  String get _acceptLabel => switch (_stage) {
-        NewUpdateStage.available => 'Download',
-        NewUpdateStage.downloading => 'Downloading $_progress%',
-        NewUpdateStage.downloaded => 'Install',
-        NewUpdateStage.failed => 'Retry',
+  String _acceptLabel(AppUpdateStage stage, int progress) => switch (stage) {
+        AppUpdateStage.available => 'Download',
+        AppUpdateStage.downloading => 'Downloading $progress%',
+        AppUpdateStage.downloaded => 'Install',
+        AppUpdateStage.failed => 'Retry',
+        AppUpdateStage.idle => 'Download',
       };
 
   @override
   Widget build(BuildContext context) {
+    final update = ref.watch(appUpdateProvider);
+    final stage = update.release?.version == widget.release.version
+        ? update.stage
+        : AppUpdateStage.available;
+    final progress = update.progress;
     final c = context.colors;
-    final canAccept = _stage != NewUpdateStage.downloading;
+    final canAccept = stage != AppUpdateStage.downloading;
 
     return DraggableScrollableSheet(
       initialChildSize: 0.72,
@@ -167,13 +156,13 @@ class _NewUpdateSheetState extends State<NewUpdateSheet> {
                   ],
                 ),
               ),
-              if (_stage == NewUpdateStage.downloading)
+              if (stage == AppUpdateStage.downloading)
                 Padding(
                   padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
                   child: ClipRRect(
                     borderRadius: BorderRadius.circular(3),
                     child: LinearProgressIndicator(
-                      value: _progress / 100,
+                      value: progress / 100,
                       minHeight: 4,
                       backgroundColor: c.border.withValues(alpha: 0.55),
                       color: c.accent,
@@ -229,6 +218,18 @@ class _NewUpdateSheetState extends State<NewUpdateSheet> {
                         'A new version of Koma is ready to install.',
                         style: TextStyle(color: c.textSecondary, fontSize: 13),
                       ),
+                    if (stage == AppUpdateStage.downloading)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 12),
+                        child: Text(
+                          'You can close this sheet — download continues in the '
+                          'notification shade.',
+                          style: TextStyle(
+                            color: c.textSecondary,
+                            fontSize: 12,
+                          ),
+                        ),
+                      ),
                     const SizedBox(height: 8),
                     Align(
                       alignment: Alignment.centerLeft,
@@ -264,7 +265,7 @@ class _NewUpdateSheetState extends State<NewUpdateSheet> {
                       Expanded(
                         child: FilledButton(
                           onPressed: canAccept ? _onAccept : null,
-                          child: Text(_acceptLabel),
+                          child: Text(_acceptLabel(stage, progress)),
                         ),
                       ),
                     ],

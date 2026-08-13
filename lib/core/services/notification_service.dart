@@ -24,9 +24,17 @@ class NotificationService {
   static const _channelExtensions = 'extension_updates';
   static const _channelDownloadProgress = 'downloader_progress';
   static const _channelDownloadError = 'downloader_error';
+  static const _channelAppUpdateProgress = 'app_update_progress';
+  static const _channelAppUpdateReady = 'app_update_ready';
 
   static const _idDownloadProgress = 1100;
   static const _idDownloadError = 1101;
+  static const _idAppUpdateProgress = 1102;
+  static const _idAppUpdateReady = 1103;
+
+  static const payloadAppUpdateReady = 'app_update_ready';
+
+  void Function(String? payload)? onNotificationTap;
 
   final FlutterLocalNotificationsPlugin _plugin =
       FlutterLocalNotificationsPlugin();
@@ -38,7 +46,10 @@ class NotificationService {
     const settings = InitializationSettings(
       android: AndroidInitializationSettings('app_icon'),
     );
-    await _plugin.initialize(settings: settings);
+    await _plugin.initialize(
+      settings: settings,
+      onDidReceiveNotificationResponse: _onNotificationResponse,
+    );
     if (!kIsWeb && defaultTargetPlatform == TargetPlatform.android) {
       await _plugin
           .resolvePlatformSpecificImplementation<
@@ -158,6 +169,82 @@ class NotificationService {
   Future<void> dismissDownloadProgress() async {
     if (!_initialized) return;
     await _plugin.cancel(id: _idDownloadProgress);
+  }
+
+  /// Ongoing progress while the app-update APK downloads in the background.
+  Future<void> notifyAppUpdateProgress({
+    required int progress,
+    required String version,
+  }) async {
+    await init();
+    final label = version.startsWith('v') ? version : 'v$version';
+    final details = AndroidNotificationDetails(
+      _channelAppUpdateProgress,
+      'App update',
+      channelDescription: 'Koma update download progress',
+      importance: Importance.low,
+      priority: Priority.low,
+      onlyAlertOnce: true,
+      ongoing: true,
+      showProgress: true,
+      maxProgress: 100,
+      progress: progress.clamp(0, 100),
+      category: AndroidNotificationCategory.progress,
+    );
+    await _plugin.show(
+      id: _idAppUpdateProgress,
+      title: 'Downloading Koma update',
+      body: '$label · $progress%',
+      notificationDetails: NotificationDetails(android: details),
+    );
+  }
+
+  /// Shown when the update APK is ready to install.
+  Future<void> notifyAppUpdateReady(String version) async {
+    await init();
+    await dismissAppUpdateProgress();
+    final label = version.startsWith('v') ? version : 'v$version';
+    final details = AndroidNotificationDetails(
+      _channelAppUpdateReady,
+      'App update',
+      channelDescription: 'Koma update ready to install',
+      importance: Importance.defaultImportance,
+      priority: Priority.defaultPriority,
+    );
+    await _plugin.show(
+      id: _idAppUpdateReady,
+      title: 'Update ready to install',
+      body: 'Tap to install $label',
+      notificationDetails: NotificationDetails(android: details),
+      payload: payloadAppUpdateReady,
+    );
+  }
+
+  Future<void> notifyAppUpdateError() async {
+    await init();
+    await dismissAppUpdateProgress();
+    const details = AndroidNotificationDetails(
+      _channelAppUpdateReady,
+      'App update',
+      channelDescription: 'Koma update ready to install',
+      importance: Importance.defaultImportance,
+      priority: Priority.defaultPriority,
+    );
+    await _plugin.show(
+      id: _idAppUpdateReady,
+      title: 'Update download failed',
+      body: 'Open Settings → About → Check for updates to retry.',
+      notificationDetails: NotificationDetails(android: details),
+    );
+  }
+
+  Future<void> dismissAppUpdateProgress() async {
+    if (!_initialized) return;
+    await _plugin.cancel(id: _idAppUpdateProgress);
+  }
+
+  static void _onNotificationResponse(NotificationResponse response) {
+    instance.onNotificationTap?.call(response.payload);
   }
 
   Future<void> _show({

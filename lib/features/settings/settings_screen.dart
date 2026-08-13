@@ -9,6 +9,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../../core/models/source.dart';
 import '../../core/providers.dart';
 import '../../core/services/app_update/app_update_checker.dart';
+import '../../core/services/app_update/app_update_manager.dart';
 import '../../core/services/app_update/get_application_release.dart';
 import '../../core/services/export_service.dart';
 import '../../core/services/extension_manager.dart';
@@ -2586,10 +2587,23 @@ class _AboutSection extends StatelessWidget {
       icon: Icons.system_update_alt_outlined,
     );
     try {
-      final result = await AppUpdateChecker().checkForUpdate(forceCheck: true);
+      final notifier = ProviderScope.containerOf(context)
+          .read(appUpdateProvider.notifier);
+      final update = ProviderScope.containerOf(context).read(appUpdateProvider);
+      if (update.stage == AppUpdateStage.downloaded && update.release != null) {
+        await NewUpdateSheet.show(context, update.release!);
+        return;
+      }
+      if (update.stage == AppUpdateStage.downloading &&
+          update.release != null) {
+        await NewUpdateSheet.show(context, update.release!);
+        return;
+      }
+      final result = await notifier.checkForUpdate(forceCheck: true);
       if (!context.mounted) return;
       switch (result) {
         case NewAppUpdate(:final release):
+          notifier.offerUpdate(release);
           await NewUpdateSheet.show(context, release);
         case NoNewAppUpdate():
           StashToast.show(
@@ -2677,7 +2691,7 @@ class _AboutSection extends StatelessWidget {
                 ),
                 const SizedBox(height: 4),
                 Text(
-                  'Version 2.37.33 · build 2.37.33+300',
+                  'Version 2.37.34 · build 2.37.34+301',
                   style: TextStyle(color: c.textSecondary, fontSize: 13),
                 ),
                 const SizedBox(height: 10),
@@ -2772,7 +2786,7 @@ class _AboutSection extends StatelessWidget {
               icon: Icons.info_outline,
               iconColor: _muted,
               title: 'Koma',
-              subtitle: 'Version 2.37.33 · build 2.37.33+300',
+              subtitle: 'Version 2.37.34 · build 2.37.34+301',
             ),
             if (AppUpdateChecker.updaterEnabled)
               SettingsRow(
