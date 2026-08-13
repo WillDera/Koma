@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?><!-- Notification small icon for flutter_local_notifications. The plugin
+     resolves icons as "drawable" resources, so reference the launcher mipmap
+     here (the raw png in mipmap/ cannot be referenced directly). -->
+<bitmap xmlns:android="http://schemas.android.com/apk/res/android"
+    android:src="@mipmap/launcher_icon"
+    android:gravity="center" />

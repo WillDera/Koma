@@ -2,26 +2,65 @@ name: Build & Release APK
 
 on:
   push:
-    tags:
-      - 'v*'
+    tags: [ 'v*' ]
+
+permissions:
+  contents: write
 
 jobs:
   build:
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
     steps:
+      - name: Free disk space
+        uses: jlumbroso/free-disk-space@main
+        with:
+          # Keep Android SDK — Flutter needs it. Drop the rest.
+          android: false
+          dotnet: true
+          haskell: true
+          large-packages: true
+          docker-images: true
+          swap-storage: true
+          tool-cache: false
+
       - uses: actions/checkout@v4
+
+      - name: Show free disk
+        run: df -h
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '25'
+          cache: gradle
 
       - uses: subosito/flutter-action@v2
         with:
-          flutter-version: '3.44.x'
+          channel: stable
+          cache: true
+
+      # Local gradle.properties requests 8G heap + OOM dumps — too heavy for
+      # GHA (fills the disk mid-assembleRelease). Use a leaner CI profile.
+      - name: CI Gradle memory profile
+        run: |
+          cat > android/gradle.properties <<'EOF'
+          org.gradle.jvmargs=-Xmx4G -XX:MaxMetaspaceSize=1G -XX:ReservedCodeCacheSize=256m
+          org.gradle.daemon=false
+          org.gradle.parallel=true
+          org.gradle.caching=true
+          android.useAndroidX=true
+          android.newDsl=false
+          android.builtInKotlin=false
+          EOF
 
       - run: flutter pub get
+      - run: flutter build apk --release
 
-      - run: flutter build apk --debug
+      - name: Show free disk after build
+        if: always()
+        run: df -h
 
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
-          files: build/app/outputs/flutter-apk/app-debug.apk
+          files: build/app/outputs/flutter-apk/app-release.apk

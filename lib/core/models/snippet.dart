@@ -8,6 +8,9 @@ class Snippet {
   final int? bookId;
   final int? chapterId;
   final int? collectionId;
+  final int? startOffset;
+  final int? endOffset;
+  final double? scrollPosition;
   final List<String> tags;
   final DateTime createdAt;
   final DateTime updatedAt;
@@ -22,11 +25,14 @@ class Snippet {
     this.bookId,
     this.chapterId,
     this.collectionId,
+    this.startOffset,
+    this.endOffset,
+    this.scrollPosition,
     this.tags = const [],
     DateTime? createdAt,
     DateTime? updatedAt,
-  })  : createdAt = createdAt ?? DateTime.now(),
-        updatedAt = updatedAt ?? DateTime.now();
+  }) : createdAt = createdAt ?? DateTime.now(),
+       updatedAt = updatedAt ?? DateTime.now();
 
   Snippet copyWith({
     int? id,
@@ -38,6 +44,9 @@ class Snippet {
     int? bookId,
     int? chapterId,
     int? collectionId,
+    int? startOffset,
+    int? endOffset,
+    double? scrollPosition,
     List<String>? tags,
     DateTime? createdAt,
     DateTime? updatedAt,
@@ -52,6 +61,9 @@ class Snippet {
       bookId: bookId ?? this.bookId,
       chapterId: chapterId ?? this.chapterId,
       collectionId: collectionId ?? this.collectionId,
+      startOffset: startOffset ?? this.startOffset,
+      endOffset: endOffset ?? this.endOffset,
+      scrollPosition: scrollPosition ?? this.scrollPosition,
       tags: tags ?? this.tags,
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
@@ -59,39 +71,44 @@ class Snippet {
   }
 
   Map<String, dynamic> toJson() => {
-        'id': id,
-        'text': text,
-        'note': note,
-        'source_title': sourceTitle,
-        'source_url': sourceUrl,
-        'color': color,
-        'book_id': bookId,
-        'chapter_id': chapterId,
-        'collection_id': collectionId,
-        'tags': tags,
-        'created_at': createdAt.toIso8601String(),
-        'updated_at': updatedAt.toIso8601String(),
-      };
+    'id': id,
+    'text': text,
+    'note': note,
+    'source_title': sourceTitle,
+    'source_url': sourceUrl,
+    'color': color,
+    'book_id': bookId,
+    'chapter_id': chapterId,
+    'collection_id': collectionId,
+    'start_offset': startOffset,
+    'end_offset': endOffset,
+    'scroll_position': scrollPosition,
+    'tags': tags,
+    'created_at': createdAt.toIso8601String(),
+    'updated_at': updatedAt.toIso8601String(),
+  };
 
   factory Snippet.fromJson(Map<String, dynamic> json) => Snippet(
-        id: json['id'] as int,
-        text: json['text'] as String,
-        note: json['note'] as String?,
-        sourceTitle: json['source_title'] as String?,
-        sourceUrl: json['source_url'] as String?,
-        color: json['color'] as String?,
-        bookId: json['book_id'] as int?,
-        chapterId: json['chapter_id'] as int?,
-        collectionId: json['collection_id'] as int?,
-        tags: (json['tags'] as List<dynamic>?)
-                ?.map((e) => e as String)
-                .toList() ??
-            [],
-        createdAt: json['created_at'] != null
-            ? DateTime.parse(json['created_at'] as String)
-            : DateTime.now(),
-        updatedAt: json['updated_at'] != null
-            ? DateTime.parse(json['updated_at'] as String)
-            : DateTime.now(),
-      );
+    id: json['id'] as int,
+    text: json['text'] as String,
+    note: json['note'] as String?,
+    sourceTitle: json['source_title'] as String?,
+    sourceUrl: json['source_url'] as String?,
+    color: json['color'] as String?,
+    bookId: json['book_id'] as int?,
+    chapterId: json['chapter_id'] as int?,
+    collectionId: json['collection_id'] as int?,
+    startOffset: json['start_offset'] as int?,
+    endOffset: json['end_offset'] as int?,
+    scrollPosition: (json['scroll_position'] as num?)?.toDouble(),
+    tags:
+        (json['tags'] as List<dynamic>?)?.map((e) => e as String).toList() ??
+        [],
+    createdAt: json['created_at'] != null
+        ? DateTime.parse(json['created_at'] as String)
+        : DateTime.now(),
+    updatedAt: json['updated_at'] != null
+        ? DateTime.parse(json['updated_at'] as String)
+        : DateTime.now(),
+  );
 }

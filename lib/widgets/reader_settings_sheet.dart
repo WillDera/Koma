@@ -1,4 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+
+import '../features/settings/custom_font_ui.dart';
 import '../theme/app_theme.dart';
 import '../theme/theme_provider.dart';
 import '../theme/tokens/app_spacing.dart';
@@ -7,34 +10,34 @@ import 'animated_press.dart';
 import 'dialog_sheet.dart';
 import 'segmented_control.dart';
 
-class ReaderSettingsSheet extends StatefulWidget {
-  final ThemeProvider themeProvider;
-  const ReaderSettingsSheet({super.key, required this.themeProvider});
+class ReaderSettingsSheet extends ConsumerStatefulWidget {
+  const ReaderSettingsSheet({super.key});
 
-  static Future<void> show(BuildContext context, ThemeProvider prov) {
+  static Future<void> show(BuildContext context) {
     return StashSheet.show<void>(
       context,
       title: 'Reader',
       subtitle: 'Tune typography and theme.',
       initialChildSize: 0.78,
       maxChildSize: 0.95,
-      child: ReaderSettingsSheet(themeProvider: prov),
+      child: const ReaderSettingsSheet(),
     );
   }
 
   @override
-  State<ReaderSettingsSheet> createState() => _ReaderSettingsSheetState();
+  ConsumerState<ReaderSettingsSheet> createState() =>
+      _ReaderSettingsSheetState();
 }
 
-class _ReaderSettingsSheetState extends State<ReaderSettingsSheet> {
+class _ReaderSettingsSheetState extends ConsumerState<ReaderSettingsSheet> {
   @override
   Widget build(BuildContext context) {
-    final p = widget.themeProvider;
+    final p = ref.watch(themeProvider);
+    final tn = ref.read(themeProvider.notifier);
     final c = context.colors;
     return ListView(
       padding: const EdgeInsets.fromLTRB(20, 8, 20, 32),
       children: [
-        // Live preview card
         Container(
           padding: const EdgeInsets.all(20),
           decoration: BoxDecoration(
@@ -57,20 +60,22 @@ class _ReaderSettingsSheetState extends State<ReaderSettingsSheet> {
               const SizedBox(height: 6),
               Text(
                 'Preview',
-                style: AppType.reading(
-                  fontSize: p.fontSize,
-                  lineHeight: p.lineHeight,
-                  color: c.textPrimary,
-                ).copyWith(
-                  fontWeight: FontWeight.w600,
-                  height: p.lineHeight,
-                  fontSize: p.fontSize * 1.1,
-                ),
+                style:
+                    AppType.reading(
+                      fontSize: p.fontSize,
+                      lineHeight: p.lineHeight,
+                      color: c.textPrimary,
+                    ).copyWith(
+                      fontWeight: FontWeight.w600,
+                      height: p.lineHeight,
+                      fontSize: p.fontSize * 1.1,
+                    ),
               ),
               const SizedBox(height: 8),
               Text(
                 'Koma is a calm, focused place to read what matters, save what moves you, and revisit it any time.',
-                style: AppType.reading(
+                style: AppType.fontStyle(
+                  fontFamily: p.effectiveReadingFontFamily,
                   fontSize: p.fontSize,
                   lineHeight: p.lineHeight,
                   color: c.textSecondary,
@@ -89,11 +94,11 @@ class _ReaderSettingsSheetState extends State<ReaderSettingsSheet> {
             ThemeMode.system: 'Auto',
           },
           value: p.themeMode,
-          onChanged: (v) => p.setThemeMode(v),
+          onChanged: (v) => tn.setThemeMode(v),
         ),
         const SizedBox(height: 12),
         AnimatedPress(
-          onTap: () => p.setSepiaMode(!p.sepiaMode),
+          onTap: () => tn.setSepiaMode(!p.sepiaMode),
           child: Container(
             padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
             decoration: BoxDecoration(
@@ -124,10 +129,7 @@ class _ReaderSettingsSheetState extends State<ReaderSettingsSheet> {
                 ),
                 Text(
                   p.sepiaMode ? 'On' : 'Off',
-                  style: TextStyle(
-                    color: c.textTertiary,
-                    fontSize: 12,
-                  ),
+                  style: TextStyle(color: c.textTertiary, fontSize: 12),
                 ),
               ],
             ),
@@ -137,7 +139,7 @@ class _ReaderSettingsSheetState extends State<ReaderSettingsSheet> {
         _SectionLabel('Typography'),
         const SizedBox(height: 12),
         AnimatedPress(
-          onTap: () => _showFontPicker(context, p),
+          onTap: () => CustomFontUi.showReadingFontPicker(context, ref),
           child: Container(
             padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
             decoration: BoxDecoration(
@@ -160,11 +162,8 @@ class _ReaderSettingsSheetState extends State<ReaderSettingsSheet> {
                   ),
                 ),
                 Text(
-                  p.readingFont.label,
-                  style: TextStyle(
-                    color: c.textTertiary,
-                    fontSize: 13,
-                  ),
+                  p.readingFontLabel,
+                  style: TextStyle(color: c.textTertiary, fontSize: 13),
                 ),
                 const SizedBox(width: 4),
                 Icon(Icons.chevron_right, size: 16, color: c.textTertiary),
@@ -179,7 +178,7 @@ class _ReaderSettingsSheetState extends State<ReaderSettingsSheet> {
           min: 13,
           max: 26,
           divisions: 13,
-          onChanged: (v) => p.setFontSize(v),
+          onChanged: (v) => tn.setFontSize(v),
         ),
         _LabelRow('Line height', p.lineHeight.toStringAsFixed(2)),
         Slider(
@@ -187,7 +186,7 @@ class _ReaderSettingsSheetState extends State<ReaderSettingsSheet> {
           min: 1.2,
           max: 2.2,
           divisions: 10,
-          onChanged: (v) => p.setLineHeight(v),
+          onChanged: (v) => tn.setLineHeight(v),
         ),
         const SizedBox(height: 28),
         _SectionLabel('Page'),
@@ -198,11 +197,11 @@ class _ReaderSettingsSheetState extends State<ReaderSettingsSheet> {
           min: 520,
           max: 760,
           divisions: 12,
-          onChanged: (v) => p.setPageWidth(v),
+          onChanged: (v) => tn.setPageWidth(v),
         ),
         const SizedBox(height: 12),
         AnimatedPress(
-          onTap: () => _showAlignPicker(context, p),
+          onTap: () => _showAlignPicker(context, p, tn),
           child: Container(
             padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
             decoration: BoxDecoration(
@@ -228,12 +227,43 @@ class _ReaderSettingsSheetState extends State<ReaderSettingsSheet> {
                   p.textAlign == TextAlign.left
                       ? 'Left'
                       : p.textAlign == TextAlign.justify
-                          ? 'Justify'
-                          : 'Center',
-                  style: TextStyle(
-                    color: c.textTertiary,
-                    fontSize: 13,
+                      ? 'Justify'
+                      : 'Center',
+                  style: TextStyle(color: c.textTertiary, fontSize: 13),
+                ),
+                const SizedBox(width: 4),
+                Icon(Icons.chevron_right, size: 16, color: c.textTertiary),
+              ],
+            ),
+          ),
+        ),
+        const SizedBox(height: 16),
+        AnimatedPress(
+          onTap: () => _showPageStylePicker(context, p, tn),
+          child: Container(
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+            decoration: BoxDecoration(
+              color: c.surface,
+              borderRadius: AppSpacing.brLg,
+              border: Border.all(color: c.border, width: 0.5),
+            ),
+            child: Row(
+              children: [
+                Icon(Icons.auto_stories, size: 18, color: c.textSecondary),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    'Page style',
+                    style: TextStyle(
+                      color: c.textPrimary,
+                      fontSize: 14,
+                      fontWeight: FontWeight.w500,
+                    ),
                   ),
+                ),
+                Text(
+                  p.pageStyle.label,
+                  style: TextStyle(color: c.textTertiary, fontSize: 13),
                 ),
                 const SizedBox(width: 4),
                 Icon(Icons.chevron_right, size: 16, color: c.textTertiary),
@@ -246,46 +276,20 @@ class _ReaderSettingsSheetState extends State<ReaderSettingsSheet> {
           title: 'Bionic reading',
           subtitle: 'Bold first half of each word',
           value: p.bionicReading,
-          onChanged: (v) => p.setBionicReading(v),
+          onChanged: (v) => tn.setBionicReading(v),
+        ),
+        const SizedBox(height: 16),
+        _ToggleRow(
+          title: 'Immersive auto-hide',
+          subtitle: 'Hide UI after 3 seconds of inactivity',
+          value: p.immersiveAutoHide,
+          onChanged: (v) => tn.setImmersiveAutoHide(v),
         ),
       ],
     );
   }
 
-  void _showFontPicker(BuildContext context, ThemeProvider p) {
-    showDialog(
-      context: context,
-      builder: (ctx) {
-        final c = ctx.colors;
-        return AlertDialog(
-          backgroundColor: c.surface,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(18),
-            side: BorderSide(color: c.border, width: 0.5),
-          ),
-          content: SizedBox(
-            width: double.maxFinite,
-            child: ListView(
-              shrinkWrap: true,
-              children: [
-                for (final font in ReadingFont.values)
-                  _PickerOption(
-                    label: font.label,
-                    selected: p.readingFont == font,
-                    onTap: () {
-                      p.setReadingFont(font);
-                      Navigator.of(ctx).pop();
-                    },
-                  ),
-              ],
-            ),
-          ),
-        );
-      },
-    );
-  }
-
-  void _showAlignPicker(BuildContext context, ThemeProvider p) {
+  void _showAlignPicker(BuildContext context, ThemeState p, ThemeNotifier tn) {
     showDialog(
       context: context,
       builder: (ctx) {
@@ -305,7 +309,7 @@ class _ReaderSettingsSheetState extends State<ReaderSettingsSheet> {
                   label: 'Left',
                   selected: p.textAlign == TextAlign.left,
                   onTap: () {
-                    p.setTextAlign(TextAlign.left);
+                    tn.setTextAlign(TextAlign.left);
                     Navigator.of(ctx).pop();
                   },
                 ),
@@ -313,7 +317,7 @@ class _ReaderSettingsSheetState extends State<ReaderSettingsSheet> {
                   label: 'Justify',
                   selected: p.textAlign == TextAlign.justify,
                   onTap: () {
-                    p.setTextAlign(TextAlign.justify);
+                    tn.setTextAlign(TextAlign.justify);
                     Navigator.of(ctx).pop();
                   },
                 ),
@@ -321,10 +325,47 @@ class _ReaderSettingsSheetState extends State<ReaderSettingsSheet> {
                   label: 'Center',
                   selected: p.textAlign == TextAlign.center,
                   onTap: () {
-                    p.setTextAlign(TextAlign.center);
+                    tn.setTextAlign(TextAlign.center);
                     Navigator.of(ctx).pop();
                   },
                 ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  void _showPageStylePicker(
+    BuildContext context,
+    ThemeState p,
+    ThemeNotifier tn,
+  ) {
+    showDialog(
+      context: context,
+      builder: (ctx) {
+        final c = ctx.colors;
+        return AlertDialog(
+          backgroundColor: c.surface,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(18),
+            side: BorderSide(color: c.border, width: 0.5),
+          ),
+          content: SizedBox(
+            width: double.maxFinite,
+            child: ListView(
+              shrinkWrap: true,
+              children: [
+                for (final style in PageStyle.values)
+                  _PickerOption(
+                    label: style.label,
+                    selected: p.pageStyle == style,
+                    onTap: () {
+                      tn.setPageStyle(style);
+                      Navigator.of(ctx).pop();
+                    },
+                  ),
               ],
             ),
           ),
@@ -365,8 +406,7 @@ class _PickerOption extends StatelessWidget {
                   ),
                 ),
               ),
-              if (selected)
-                Icon(Icons.check, size: 20, color: c.accent),
+              if (selected) Icon(Icons.check, size: 20, color: c.accent),
             ],
           ),
         ),
@@ -458,21 +498,13 @@ class _ToggleRow extends StatelessWidget {
               if (subtitle != null)
                 Text(
                   subtitle!,
-                  style: TextStyle(
-                    color: c.textSecondary,
-                    fontSize: 12,
-                  ),
+                  style: TextStyle(color: c.textSecondary, fontSize: 12),
                 ),
             ],
           ),
         ),
-        Switch(
-          value: value,
-          onChanged: onChanged,
-        ),
+        Switch(value: value, onChanged: onChanged),
       ],
     );
   }
 }
-
-

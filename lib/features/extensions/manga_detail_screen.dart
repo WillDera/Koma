@@ -1,149 +1,184 @@
 import 'dart:convert';
 import 'dart:io';
+
 import 'package:crypto/crypto.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import 'package:http/http.dart' as http;
 import 'package:intl/intl.dart';
 import 'package:path_provider/path_provider.dart';
-import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../core/models/manga.dart';
 import '../../core/models/manga_chapter.dart';
-import '../../core/services/database_service.dart';
+import '../../core/providers.dart';
+import '../../core/services/download/chapter_download.dart';
+import '../../core/services/download/download_manager.dart';
+import '../../core/services/extension_source_resolve.dart';
 import '../../core/services/keiyoushi_service.dart';
+import '../../eval/dispatch_service.dart';
+import '../../eval/models/m_chapter.dart';
+import '../../core/services/source_webview_bridge.dart';
+import '../../core/utils/chapter_recognition.dart';
+import '../../core/utils/image_cache.dart';
+import '../../core/utils/image_headers.dart';
+import '../../core/utils/json_coerce.dart';
+import '../../router/router.dart';
+import '../../theme/app_icons.dart';
 import '../../theme/app_theme.dart';
 import '../../theme/tokens/app_spacing.dart';
-import '../library/library_provider.dart';
-import '../reader/manga_reader_screen.dart';
+import '../../theme/tokens/app_type.dart';
 import '../../widgets/animated_press.dart';
 import '../../widgets/icon_button_round.dart';
+import 'manga_detail_providers.dart';
+import 'migrate_search_screen.dart';
 
-enum _ChapterFilter { downloaded, read, unread }
-enum _FilterMode { ignore, include, exclude }
 enum _DownloadMode { all, unread, range }
-enum _SortMode { nameAsc, nameDesc, dateAsc, dateDesc, chapterAsc, chapterDesc }
 
-class MangaDetailScreen extends StatefulWidget {
+/// Normalize a chapter URL for consistent key matching between DB and network.
+String _normalizeUrl(String url) => url.trim().replaceAll(RegExp(r'^/+'), '');
+
+/// Prefer a non-blank remote title; otherwise keep the seeded/catalog title.
+String _preferTitle(String? remote, String fallback) {
+  final t = remote?.trim() ?? '';
+  return t.isNotEmpty ? t : fallback;
+}
+
+Map<String, dynamic> _mergeDetailsPreservingTitle(
+  Map<String, dynamic>? existing,
+  Map<String, dynamic> incoming,
+) {
+  final merged = <String, dynamic>{...?existing, ...incoming};
+  final remoteTitle = (incoming['title'] as String?)?.trim() ?? '';
+  if (remoteTitle.isEmpty) {
+    final keep =
+        (existing?['title'] as String?)?.trim().isNotEmpty == true
+        ? existing!['title']
+        : null;
+    if (keep != null) {
+      merged['title'] = keep;
+    }
+  }
+  return merged;
+}
+
+class MangaDetailScreen extends ConsumerStatefulWidget {
   final String sourceId;
   final String url;
   final String title;
+
+  /// Pre-loaded manga data from library — if set, shown instantly without DB query.
+  final Manga? manga;
+
+  /// Raw JSON of the source-side `SManga.memo` (e.g. allanime `{"slug":...}`).
+  /// Round-tripped to the Dalvik server so `getMangaUpdate`/`getChapterList`
+  /// work for sources that derive URLs from memo.
+  final String? memo;
 
   const MangaDetailScreen({
     super.key,
     required this.sourceId,
     required this.url,
     required this.title,
+    this.manga,
+    this.memo,
   });
 
   @override
-  State<MangaDetailScreen> createState() => _MangaDetailScreenState();
+  ConsumerState<MangaDetailScreen> createState() => _MangaDetailScreenState();
 }
 
-class _MangaDetailScreenState extends State<MangaDetailScreen> {
-  final _service = KeiyoushiService();
-  Map<String, dynamic>? _details;
-  List<Map<String, dynamic>> _chapters = [];
-  Map<String, Map<String, dynamic>> _localChapters = {};
-  bool _loading = true;
-  bool _inLibrary = false;
-  // ignore: unused_field
+class _MangaDetailScreenState extends ConsumerState<MangaDetailScreen> {
+  /// Shared process-scoped services — never construct a fresh KeiyoushiService
+  /// (its init path hits getDalvikPort / a TCP probe).
+  KeiyoushiService get _keiyoushi => ref.read(keiyoushiServiceProvider);
+  ExtensionDispatchService get _dispatch =>
+      ref.read(extensionServiceProvider);
   int? _mangaId;
-  String? _error;
   String? _localThumbnail;
+  bool _inLibrary = false;
 
-  final Map<String, String> _downloadProgress = {}; // url -> queued | done | error
-  bool _offlineMode = false;
+  /// Bumped on every [_init] so in-flight network/Isar work from a previous
+  /// open (or a superseded refresh) cannot mutate the current screen.
+  int _loadGen = 0;
 
-  final Map<_ChapterFilter, _FilterMode> _filterModes = {
-  };
-  _SortMode _sortMode = _SortMode.chapterAsc;
+  /// False until [prepareFor] runs after the first frame. Prevents painting
+  /// the previous manga from the global provider before this screen binds.
+  bool _sessionReady = false;
 
   static const _keySortMode = 'manga_chapter_sort_mode';
 
-  List<Map<String, dynamic>> _sortedChapters(List<Map<String, dynamic>> chapters) {
+  bool get _isCurrentBinding => ref
+      .read(mangaDetailProvider.notifier)
+      .isBoundTo(sourceId: widget.sourceId, url: widget.url);
+
+  List<Map<String, dynamic>> _sortedChapters(
+    List<Map<String, dynamic>> chapters,
+  ) {
+    final sortMode = ref.read(mangaDetailProvider).sortMode;
     final sorted = List<Map<String, dynamic>>.from(chapters);
-    switch (_sortMode) {
-      case _SortMode.nameAsc:
-        sorted.sort((a, b) => (a['name'] as String? ?? '').compareTo(b['name'] as String? ?? ''));
-      case _SortMode.nameDesc:
-        sorted.sort((a, b) => (b['name'] as String? ?? '').compareTo(a['name'] as String? ?? ''));
-      case _SortMode.dateAsc:
-        sorted.sort((a, b) => (a['date_upload'] as int? ?? 0).compareTo(b['date_upload'] as int? ?? 0));
-      case _SortMode.dateDesc:
-        sorted.sort((a, b) => (b['date_upload'] as int? ?? 0).compareTo(a['date_upload'] as int? ?? 0));
-      case _SortMode.chapterAsc:
+    switch (sortMode) {
+      case SortMode.nameAsc:
+        sorted.sort(
+          (a, b) => (a['name'] as String? ?? '').compareTo(
+            b['name'] as String? ?? '',
+          ),
+        );
+      case SortMode.nameDesc:
+        sorted.sort(
+          (a, b) => (b['name'] as String? ?? '').compareTo(
+            a['name'] as String? ?? '',
+          ),
+        );
+      case SortMode.dateAsc:
+        sorted.sort(
+          (a, b) => asIntOr(a['date_upload']).compareTo(
+            asIntOr(b['date_upload']),
+          ),
+        );
+      case SortMode.dateDesc:
+        sorted.sort(
+          (a, b) => asIntOr(b['date_upload']).compareTo(
+            asIntOr(a['date_upload']),
+          ),
+        );
+      case SortMode.chapterAsc:
         final mapping = _chapterNumberMap(sorted);
-        sorted.sort((a, b) => (mapping[a] ?? -1.0).compareTo(mapping[b] ?? -1.0));
-      case _SortMode.chapterDesc:
+        sorted.sort(
+          (a, b) => (mapping[a] ?? -1.0).compareTo(mapping[b] ?? -1.0),
+        );
+      case SortMode.chapterDesc:
         final mapping = _chapterNumberMap(sorted);
-        sorted.sort((a, b) => (mapping[b] ?? -1.0).compareTo(mapping[a] ?? -1.0));
+        sorted.sort(
+          (a, b) => (mapping[b] ?? -1.0).compareTo(mapping[a] ?? -1.0),
+        );
     }
     return sorted;
   }
 
   /// Build a map of chapter map → parsed chapter number.
-  /// Uses source [chapter_number] if valid (> -1), otherwise parses from [name].
-  Map<Map<String, dynamic>, double> _chapterNumberMap(List<Map<String, dynamic>> chapters) {
+  /// Prefers persisted/source [chapter_number], else title-aware recognition.
+  Map<Map<String, dynamic>, double> _chapterNumberMap(
+    List<Map<String, dynamic>> chapters,
+  ) {
     final map = <Map<String, dynamic>, double>{};
+    final title = ref.read(mangaDetailProvider).details?['title'] as String? ??
+        widget.title;
     for (final ch in chapters) {
       final raw = ch['chapter_number'] as num?;
-      map[ch] = raw != null && raw > -1
-          ? raw.toDouble()
-          : _parseChapterNumber(ch['name'] as String? ?? '', ch['chapter_number'] as num?);
+      map[ch] = ChapterRecognition.parseChapterNumber(
+        title,
+        ch['name'] as String? ?? '',
+        raw?.toDouble(),
+      );
     }
     return map;
   }
 
-  /// Port of Mihon's [ChapterRecognition.parseChapterNumber].
-  /// Extracts the chapter number from the name when the source doesn't set it.
-  static double _parseChapterNumber(String name, num? chapterNumber) {
-    if (chapterNumber != null && (chapterNumber == -2 || chapterNumber > -1)) {
-      return chapterNumber.toDouble();
-    }
-    final cleaned = name
-        .toLowerCase()
-        .replaceAll(',', '.')
-        .replaceAll('-', '.')
-        .replaceAll(RegExp(r'\s(?=extra|special|omake)'), '');
-    final matches = _numberRegex.allMatches(cleaned).toList();
-    if (matches.isEmpty) return chapterNumber?.toDouble() ?? -1.0;
-    if (matches.length == 1) return _parseMatch(matches.first);
-    // Multiple numbers: strip volume/season/etc. tags, try "Ch.xx" first
-    final stripped = cleaned.replaceAll(RegExp(r'\b(?:v|ver|vol|version|volume|season|s)[^a-z]?[0-9]+'), '');
-    final basicMatch = _basicRegex.firstMatch(stripped);
-    if (basicMatch != null) return _parseMatch(basicMatch);
-    final fallback = _numberRegex.firstMatch(stripped);
-    return fallback != null ? _parseMatch(fallback) : -1.0;
-  }
-
-  static final _numberRegex = RegExp(r'([0-9]+)(\.[0-9]+)?(\.?[a-z]+)?');
-  static final _basicRegex = RegExp(r'(?<=ch\.) *([0-9]+)(\.[0-9]+)?(\.?[a-z]+)?');
-
-  static double _parseMatch(RegExpMatch m) {
-    final main = double.parse(m.group(1)!);
-    final decimal = m.group(2);
-    final alpha = m.group(3);
-    if (decimal != null) return main + double.parse(decimal);
-    if (alpha != null) return main + _alphaValue(alpha);
-    return main;
-  }
-
-  static double _alphaValue(String alpha) {
-    final a = alpha.startsWith('.') ? alpha.substring(1) : alpha;
-    if (a == 'extra') return 0.99;
-    if (a == 'omake') return 0.98;
-    if (a == 'special') return 0.97;
-    if (a.length == 1) {
-      final n = a.codeUnitAt(0) - 'a'.codeUnitAt(0) + 1;
-      if (n >= 1 && n <= 9) return n / 10.0;
-    }
-    return 0.0;
-  }
-
   void _showSortSheet() {
-    final current = _sortMode;
-    showModalBottomSheet<_SortMode>(
+    final current = ref.read(mangaDetailProvider).sortMode;
+    showModalBottomSheet<SortMode>(
       context: context,
       backgroundColor: Colors.transparent,
       builder: (context) => Container(
@@ -151,7 +186,9 @@ class _MangaDetailScreenState extends State<MangaDetailScreen> {
         decoration: BoxDecoration(
           color: context.colors.surface,
           borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
-          border: Border(top: BorderSide(color: context.colors.border, width: 0.5)),
+          border: Border(
+            top: BorderSide(color: context.colors.border, width: 0.5),
+          ),
         ),
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -180,46 +217,46 @@ class _MangaDetailScreenState extends State<MangaDetailScreen> {
             _SortOption(
               icon: Icons.sort_by_alpha,
               label: 'Name (A-Z)',
-              selected: current == _SortMode.nameAsc,
-              onTap: () => Navigator.pop(context, _SortMode.nameAsc),
+              selected: current == SortMode.nameAsc,
+              onTap: () => Navigator.pop(context, SortMode.nameAsc),
             ),
             _SortOption(
               icon: Icons.sort_by_alpha,
               label: 'Name (Z-A)',
-              selected: current == _SortMode.nameDesc,
-              onTap: () => Navigator.pop(context, _SortMode.nameDesc),
+              selected: current == SortMode.nameDesc,
+              onTap: () => Navigator.pop(context, SortMode.nameDesc),
             ),
             _SortOption(
               icon: Icons.sort,
               label: 'Date (oldest first)',
-              selected: current == _SortMode.dateAsc,
-              onTap: () => Navigator.pop(context, _SortMode.dateAsc),
+              selected: current == SortMode.dateAsc,
+              onTap: () => Navigator.pop(context, SortMode.dateAsc),
             ),
             _SortOption(
               icon: Icons.sort,
               label: 'Date (newest first)',
-              selected: current == _SortMode.dateDesc,
-              onTap: () => Navigator.pop(context, _SortMode.dateDesc),
+              selected: current == SortMode.dateDesc,
+              onTap: () => Navigator.pop(context, SortMode.dateDesc),
             ),
             _SortOption(
               icon: Icons.swap_vert,
               label: 'Chapter (ascending)',
-              selected: current == _SortMode.chapterAsc,
-              onTap: () => Navigator.pop(context, _SortMode.chapterAsc),
+              selected: current == SortMode.chapterAsc,
+              onTap: () => Navigator.pop(context, SortMode.chapterAsc),
             ),
             _SortOption(
               icon: Icons.swap_vert,
               label: 'Chapter (descending)',
-              selected: current == _SortMode.chapterDesc,
-              onTap: () => Navigator.pop(context, _SortMode.chapterDesc),
+              selected: current == SortMode.chapterDesc,
+              onTap: () => Navigator.pop(context, SortMode.chapterDesc),
             ),
           ],
         ),
       ),
     ).then((value) async {
       if (value != null && mounted) {
-        setState(() => _sortMode = value);
-        (await SharedPreferences.getInstance()).setInt(_keySortMode, value.index);
+        final notifier = ref.read(mangaDetailProvider.notifier);
+        await notifier.setSortMode(SortMode.values[value.index]);
       }
     });
   }
@@ -227,19 +264,219 @@ class _MangaDetailScreenState extends State<MangaDetailScreen> {
   @override
   void initState() {
     super.initState();
-    _loadSortMode();
-    _load();
+    // Provider writes are illegal in initState/build. Bind + load after the
+    // first frame; until then show a spinner so stale global state is hidden.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      _loadSortMode();
+      _init();
+    });
+  }
+
+  Future<void> _init() async {
+    if (!mounted) return;
+    final gen = ++_loadGen;
+    ref.read(mangaDetailProvider.notifier).prepareFor(
+      sourceId: widget.sourceId,
+      url: widget.url,
+      title: widget.title,
+      memo: widget.memo ?? widget.manga?.memo,
+    );
+    _mangaId = null;
+    _inLibrary = false;
+    _localThumbnail = null;
+    if (mounted) setState(() => _sessionReady = true);
+
+    final m = widget.manga;
+    if (m != null && m.id > 0) {
+      // Library manga or pre-inserted from source browse
+      await _ensureIsarManga(m);
+      if (!mounted || gen != _loadGen) return;
+      await _loadFromIsarById(m.id);
+      if (!mounted || gen != _loadGen) return;
+      // Fetch fresh data + chapters in background. Mirrors mangayomi's
+      // updateMangaDetailProvider(mangaId, isInit: true): skips network
+      // fetch if chapters are already cached (checked inside).
+      _refreshFromSource(gen: gen);
+    } else if (m != null) {
+      // Source browse / non-library: pre-populate from passed metadata,
+      // no DB write needed — show instantly, fetch fresh data in background.
+      final repos = ref.read(repositoriesProvider);
+      if (!mounted || gen != _loadGen || !_isCurrentBinding) return;
+      final notifier = ref.read(mangaDetailProvider.notifier);
+      notifier
+        ..setDetails({
+          'title': _preferTitle(m.name, widget.title),
+          'thumbnail_url': m.imageUrl,
+          'author': m.author,
+          'artist': m.artist,
+          'description': m.description,
+          'status': m.status,
+          'genre': m.genres.join(', '),
+          if ((widget.memo ?? m.memo) != null)
+            'memo': widget.memo ?? m.memo,
+        })
+        ..setSourceName(
+          (await repos.extensions.getInstalledExtensions())
+                  .where(
+                    (e) =>
+                        e.sourceId == widget.sourceId || e.id == widget.sourceId,
+                  )
+                  .firstOrNull
+                  ?.name ??
+              '',
+        )
+        // Keep loading true — refresh will clear it when finished/skipped.
+        ..setError(null);
+      if (!mounted || gen != _loadGen) return;
+      // Fetch fresh data + chapters in background
+      _refreshFromSource(gen: gen);
+    } else {
+      final repos = ref.read(repositoriesProvider);
+      final existing = await repos.manga.getMangaByKey(
+        widget.sourceId,
+        widget.url,
+      );
+      if (!mounted || gen != _loadGen) return;
+      if (existing != null) {
+        await _ensureIsarManga(existing);
+        if (!mounted || gen != _loadGen) return;
+        await _loadFromIsarById(existing.id);
+        if (!mounted || gen != _loadGen) return;
+        _refreshFromSource(gen: gen);
+      } else {
+        _loadFromIsarByKey(gen: gen);
+      }
+    }
+  }
+
+  /// Ensure manga exists in Isar before loading. Idempotent — if already
+  /// present, returns immediately.
+  Future<void> _ensureIsarManga(Manga manga) async {
+    final repos = ref.read(repositoriesProvider);
+    final existing = await repos.manga.getMangaById(manga.id);
+    if (existing != null) return;
+
+    await repos.manga.insertManga(manga);
+    final chapters = await repos.manga.getMangaChapters(manga.id);
+    if (chapters.isNotEmpty) {
+      await repos.manga.deleteMangaChapters(manga.id);
+      await repos.manga.insertMangaChapters(manga.id, chapters);
+    }
+  }
+
+  /// Load cached manga + chapters from Isar by ID and set up reactive
+  /// listeners. Runs after _ensureIsarForManga guarantees Isar has the data.
+  Future<void> _loadFromIsarById(int mangaId) async {
+    final repos = ref.read(repositoriesProvider);
+    final m = await repos.manga.getMangaById(mangaId);
+    if (m == null || !mounted || !_isCurrentBinding) return;
+    if (m.sourceId != widget.sourceId || m.url != widget.url) return;
+    _mangaId = m.id;
+    _inLibrary = m.inLibrary;
+    final notifier = ref.read(mangaDetailProvider.notifier);
+    notifier
+      ..setDetails({
+        'title': _preferTitle(m.name, widget.title),
+        'thumbnail_url': m.imageUrl,
+        'author': m.author,
+        'artist': m.artist,
+        'description': m.description,
+        'status': m.status,
+        'genre': m.genres.join(', '),
+        if ((widget.memo ?? m.memo) != null)
+          'memo': widget.memo ?? m.memo,
+      })
+      ..setMangaId(m.id)
+      ..setInLibrary(m.inLibrary, m.id);
+    // Do not clear loading here — [_refreshFromSource] clears it after fetch
+    // or when cached chapters mean the network refresh is skipped.
+
+    final chapters = await repos.manga.getMangaChapters(mangaId);
+    if (chapters.isNotEmpty && mounted && _isCurrentBinding) {
+      final chList = chapters
+          .map(
+            (c) => <String, dynamic>{
+              'url': c.url,
+              'name': c.name,
+              'chapter_number': c.chapterNumber,
+              'scanlator': c.scanlator,
+              'date_upload': c.dateUpload,
+              'is_read': c.isRead,
+              'last_page_read': c.lastPageRead,
+              'is_opened': c.isOpened,
+              'is_downloaded': c.isDownloaded,
+              if (c.readAt != null) 'read_at': c.readAt!.toIso8601String(),
+            },
+          )
+          .toList();
+      notifier
+        ..setChapters(chList)
+        ..setLocalChapters({
+          for (final c in chapters)
+            c.url: {
+              'is_read': c.isRead,
+              'last_page_read': c.lastPageRead,
+              'is_downloaded': c.isDownloaded,
+              'is_opened': c.isOpened,
+              'read_at': c.readAt?.toIso8601String(),
+            },
+        });
+    }
+  }
+
+  /// Look up manga by sourceId + url in Isar, then delegate to
+  /// [_loadFromIsarById]. Also loads extension source name.
+  void _loadFromIsarByKey({required int gen}) {
+    final repos = ref.read(repositoriesProvider);
+    repos.manga.getMangaByKey(widget.sourceId, widget.url).then((m) {
+      if (!mounted || gen != _loadGen || !_isCurrentBinding) return;
+      if (m != null) {
+        _loadFromIsarById(m.id).then((_) {
+          if (mounted && gen == _loadGen) _refreshFromSource(gen: gen);
+        });
+        return;
+      }
+      // Non-library manga: still need source name, then show loading
+      repos.extensions.getInstalledExtensions().then((exts) {
+        if (!mounted || gen != _loadGen || !_isCurrentBinding) return;
+        for (final ext in exts) {
+          if (ext.sourceId == widget.sourceId || ext.id == widget.sourceId) {
+            ref.read(mangaDetailProvider.notifier).setSourceName(ext.name);
+            break;
+          }
+        }
+      });
+      // Seed catalog title/memo so the UI isn't blank if refresh fails,
+      // and so getMangaUpdate can hydrate AllAnime-style memo.
+      final seed = <String, dynamic>{
+        if (widget.title.trim().isNotEmpty) 'title': widget.title,
+        if ((widget.memo ?? '').isNotEmpty) 'memo': widget.memo,
+      };
+      if (seed.isNotEmpty) {
+        ref.read(mangaDetailProvider.notifier).setDetails(seed);
+      }
+      // Trigger network fetch since no cached data
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted && gen == _loadGen) _refreshFromSource(gen: gen);
+      });
+    });
   }
 
   Future<void> _loadSortMode() async {
     final prefs = await SharedPreferences.getInstance();
     final index = prefs.getInt(_keySortMode);
-    if (index != null && index < _SortMode.values.length) {
-      _sortMode = _SortMode.values[index];
+    if (index != null && index < SortMode.values.length) {
+      ref
+          .read(mangaDetailProvider.notifier)
+          .setSortMode(SortMode.values[index]);
     }
   }
 
-  Future<void> _cacheThumbnail(String url) async {
+  Future<void> _cacheThumbnail(
+    String url, {
+    Map<String, String>? headers,
+  }) async {
     try {
       final appDir = await getApplicationDocumentsDirectory();
       final hash = sha256.convert(utf8.encode(url)).toString();
@@ -247,7 +484,7 @@ class _MangaDetailScreenState extends State<MangaDetailScreen> {
       if (!await thumbDir.exists()) await thumbDir.create(recursive: true);
       final path = '${thumbDir.path}/$hash.jpg';
       if (File(path).existsSync()) return;
-      final response = await http.get(Uri.parse(url));
+      final response = await http.get(Uri.parse(url), headers: headers);
       if (response.statusCode == 200) {
         await File(path).writeAsBytes(response.bodyBytes);
       }
@@ -256,221 +493,444 @@ class _MangaDetailScreenState extends State<MangaDetailScreen> {
     }
   }
 
-  Future<void> _load() async {
-    setState(() {
-      _loading = true;
-      _offlineMode = false;
-    });
-    final db = context.read<DatabaseService>();
-    final existing = await db.getMangaByKey(widget.sourceId, widget.url);
-
-    if (existing != null) {
-      // Load DB chapters + download keys in parallel; on failure keep spinner
-      // until _refreshFromSource completes.
-      try {
-        final results = await Future.wait([
-          db.getMangaChapters(existing.id),
-          _service.getDownloadedChapterKeys(sourceId: widget.sourceId, mangaUrl: widget.url),
-        ]);
-        final localChs = results[0] as List<MangaChapter>;
-        final downloadedKeys = results[1] as List<String>;
-
-        final chMap = <String, Map<String, dynamic>>{};
-        final downloadProgress = <String, String>{};
-        for (final lc in localChs) {
-          chMap[lc.url] = {
-            'is_read': lc.isRead,
-            'last_page_read': lc.lastPageRead,
-            'is_downloaded': lc.isDownloaded,
-            'is_opened': lc.isOpened,
-            'read_at': lc.readAt?.toIso8601String(),
-          };
-          final key = sha256.convert(utf8.encode(lc.url)).toString().substring(0, 16);
-          if (downloadedKeys.contains(key)) downloadProgress[lc.url] = 'done';
+  /// Fetches fresh data from the extension source and persists to Isar.
+  /// After the write, [mangaDetailStreamProvider] and
+  /// [mangaChaptersStreamProvider] re-emit automatically — the UI updates
+  /// reactively via [_syncManga] / [_syncChapters].
+  Future<void> _refreshFromSource({int? gen}) async {
+    final expectedGen = gen ?? _loadGen;
+    // Mirrors mangayomi's updateMangaDetailProvider: if chapters already
+    // exist in Isar (cached), skip the network fetch. The Isar reactive
+    // streams already have the data.
+    if (_mangaId != null) {
+      final repos = ref.read(repositoriesProvider);
+      final existing = await repos.manga.getMangaChapters(_mangaId!);
+      if (existing.isNotEmpty) {
+        if (mounted && expectedGen == _loadGen && _isCurrentBinding) {
+          ref.read(mangaDetailProvider.notifier).setLoading(false);
         }
-        if (!mounted) return;
-        setState(() {
-          _details = {
-            'title': existing.name,
-            'thumbnail_url': existing.imageUrl,
-            'author': existing.author,
-            'artist': existing.artist,
-            'description': existing.description,
-            'status': existing.status,
-            'genre': existing.genres.join(', '),
-          };
-          _chapters = localChs.map((c) => {
-            'url': c.url,
-            'name': c.name,
-            'chapter_number': c.index.toDouble(),
-            'scanlator': c.scanlator,
-            'date_upload': c.dateUpload,
-          }).toList();
-          _localChapters = chMap;
-          _downloadProgress
-            ..clear()
-            ..addAll(downloadProgress);
-          _inLibrary = true;
-          _mangaId = existing.id;
-          _loading = false;
-        });
-      } catch (_) {
-        // Cache failed — keep spinner, _refreshFromSource will fill data.
+        return;
       }
     }
-
-    _refreshFromSource(db, existing);
-  }
-
-  Future<void> _refreshFromSource(DatabaseService db, Manga? existing) async {
+    if (!mounted || expectedGen != _loadGen || !_isCurrentBinding) return;
+    // Ensure the fetch banner is visible for the whole network round-trip
+    // (seed paths previously cleared loading before this awaited).
+    ref.read(mangaDetailProvider.notifier).setLoading(true);
     try {
-      final results = await Future.wait([
-        _service.getMangaDetails(
-          sourceId: widget.sourceId,
-          url: widget.url,
-        ),
-        _service.getChapterList(
-          sourceId: widget.sourceId,
-          url: widget.url,
-        ),
-      ]);
-      if (!mounted) return;
-      final details = results[0] as Map<String, dynamic>;
-      final chapters = results[1] as List<Map<String, dynamic>>;
+      final repos = ref.read(repositoriesProvider);
+      final mSource = await resolveExtensionMSource(
+        repos,
+        widget.sourceId,
+        name: widget.title,
+      );
+      if (!mounted || expectedGen != _loadGen || !_isCurrentBinding) return;
+
+      final detail = await _dispatch.getMangaDetail(
+        mSource,
+        widget.url,
+        memo: widget.memo ?? widget.manga?.memo,
+        title: widget.title.isNotEmpty
+            ? widget.title
+            : (ref.read(mangaDetailProvider).details?['title'] as String?),
+      );
+      if (!mounted || expectedGen != _loadGen || !_isCurrentBinding) return;
+
+      final mmanga = detail.manga;
+      var details = <String, dynamic>{
+        if (mmanga != null) ...mmanga.toJson(),
+      };
+      var chapters = detail.chapters
+          .map((MChapter ch) => ch.toJson())
+          .toList();
+
+      if (chapters.isEmpty && !mSource.isJs) {
+        try {
+          final fallback = await _keiyoushi.getChapterList(
+            sourceId: widget.sourceId,
+            url: widget.url,
+            memo: widget.memo ?? widget.manga?.memo,
+            title: widget.title,
+          );
+          if (!mounted || expectedGen != _loadGen || !_isCurrentBinding) {
+            return;
+          }
+          if (fallback.isNotEmpty) {
+            chapters = fallback
+                .map((m) => MChapter.fromMap(Map<String, dynamic>.from(m)).toJson())
+                .toList();
+          }
+        } catch (_) {}
+      }
+
       final thumb = details['thumbnail_url'] as String?;
       if (thumb != null && thumb.isNotEmpty) {
-        _cacheThumbnail(thumb);
-      }
-      if (!mounted) return;
-      setState(() {
-        _details = details;
-        _chapters = chapters;
-        _error = null;
-        _loading = false;
-      });
-      if (thumb != null && thumb.isNotEmpty) {
-        precacheImage(NetworkImage(thumb), context);
-      }
-      // Check library status + local chapter data
-      if (existing != null) {
-        final localChs = await db.getMangaChapters(existing.id);
-        final chMap = <String, Map<String, dynamic>>{};
-        for (final lc in localChs) {
-          chMap[lc.url] = {
-            'is_read': lc.isRead,
-            'last_page_read': lc.lastPageRead,
-            'is_downloaded': lc.isDownloaded,
-            'is_opened': lc.isOpened,
-            'read_at': lc.readAt?.toIso8601String(),
-          };
-        }
-        if (!mounted) return;
-        final downloadedKeys = await _service.getDownloadedChapterKeys(
-          sourceId: widget.sourceId,
-          mangaUrl: widget.url,
-        );
-        final downloadProgress = <String, String>{};
-        for (final ch in _chapters) {
-          final url = ch['url'] as String? ?? '';
-          final key = sha256.convert(utf8.encode(url)).toString().substring(0, 16);
-          if (downloadedKeys.contains(key)) {
-            downloadProgress[url] = 'done';
+        // The extension's `thumbnail_url` can be a bare site root (e.g. mangadna
+        // returns `https://mangadna.com/` when the card's `data-src` is empty) —
+        // fetching it yields HTML, not an image. Treat root URLs as "no cover".
+        final uri = Uri.tryParse(thumb);
+        final isRoot = uri != null && (uri.path.isEmpty || uri.path == '/');
+        if (!isRoot) {
+          final headers = await ref.read(
+            sourceImageHeadersProvider(widget.sourceId).future,
+          );
+          if (!mounted || expectedGen != _loadGen || !_isCurrentBinding) {
+            return;
           }
+          _cacheThumbnail(thumb, headers: headers);
+          precacheImage(cachedCover(thumb, headers: headers), context);
         }
-        setState(() {
-          _inLibrary = existing.inLibrary;
-          _mangaId = existing.id;
-          _localChapters = chMap;
-          _downloadProgress
-            ..clear()
-            ..addAll(downloadProgress);
-        });
-        // Phase 3: Sync fresh chapters to DB for next visit
-        await db.insertMangaChapters(existing.id, chapters.asMap().entries.map((e) {
-          final ch = e.value;
-          final url = ch['url'] as String? ?? '';
-          final existingChapter = chMap[url];
-          return MangaChapter(
+      }
+      if (!mounted || expectedGen != _loadGen || !_isCurrentBinding) return;
+      if (_mangaId != null) {
+        await _persistChapters(_mangaId!, details, chapters);
+      }
+      if (!mounted || expectedGen != _loadGen || !_isCurrentBinding) return;
+      final notifier = ref.read(mangaDetailProvider.notifier);
+      final existing = ref.read(mangaDetailProvider).details;
+      notifier
+        ..setDetails(_mergeDetailsPreservingTitle(existing, details))
+        ..setChapters(
+          chapters.map((ch) => Map<String, dynamic>.from(ch)).toList(),
+        )
+        ..setError(null)
+        ..setLoading(false);
+    } catch (e) {
+      if (!mounted || expectedGen != _loadGen || !_isCurrentBinding) return;
+      ref.read(mangaDetailProvider.notifier).setError('$e');
+    } finally {
+      if (mounted && expectedGen == _loadGen && _isCurrentBinding) {
+        ref.read(mangaDetailProvider.notifier).setLoading(false);
+      }
+    }
+  }
+
+  Future<void> _persistChapters(
+    int mangaId,
+    Map<String, dynamic> details,
+    List<Map<String, dynamic>> chapters,
+  ) async {
+    final repos = ref.read(repositoriesProvider);
+    final manga = await repos.manga.getMangaById(mangaId);
+    if (manga == null) return;
+    if (details.isNotEmpty) {
+      final incomingTitle = (details['title'] as String?)?.trim() ?? '';
+      final incomingMemo = details['memo'] as String?;
+      await repos.manga.updateManga(
+        manga.copyWith(
+          name: incomingTitle.isNotEmpty ? incomingTitle : manga.name,
+          imageUrl: details['thumbnail_url'] as String? ?? manga.imageUrl,
+          author: details['author'] as String? ?? manga.author,
+          artist: details['artist'] as String? ?? manga.artist,
+          description: details['description'] as String? ?? manga.description,
+          status: asInt(details['status']) ?? manga.status,
+          genres: (details['genre'] as String? ?? '')
+              .split(',')
+              .map((g) => g.trim())
+              .where((g) => g.isNotEmpty)
+              .toList(),
+          memo: (incomingMemo != null && incomingMemo.isNotEmpty)
+              ? incomingMemo
+              : manga.memo,
+        ),
+      );
+    }
+    if (chapters.isEmpty) return;
+
+    final existingChapters = await repos.manga.getMangaChapters(mangaId);
+    final existingByUrl = <String, MangaChapter>{
+      for (final c in existingChapters)
+        if (c.url.isNotEmpty) c.url.trim(): c,
+    };
+
+    final merged = <MangaChapter>[];
+    final mangaTitle = manga.name;
+    for (var i = 0; i < chapters.length; i++) {
+      final ch = chapters[i];
+      final url = (ch['url'] as String? ?? '').trim();
+      if (url.isEmpty) continue;
+      final name = ch['name'] as String? ?? '';
+      final sourceNum = (ch['chapter_number'] as num?)?.toDouble();
+      final recognized = ChapterRecognition.parseChapterNumber(
+        mangaTitle,
+        name.isNotEmpty ? name : (existingByUrl[url]?.name ?? ''),
+        sourceNum,
+      );
+      final existing = existingByUrl[url];
+      if (existing != null) {
+        merged.add(
+          existing.copyWith(
+            name: name.isNotEmpty ? name : existing.name,
+            scanlator: ch['scanlator'] as String? ?? existing.scanlator,
+            dateUpload: asInt(ch['date_upload']) ?? existing.dateUpload,
+            index: i,
+            chapterNumber: recognized,
+            memo: ch['memo'] as String? ?? existing.memo,
+          ),
+        );
+      } else {
+        merged.add(
+          MangaChapter.withRecognition(
             id: 0,
-            mangaId: existing.id,
-            name: ch['name'] as String? ?? '',
+            mangaId: mangaId,
+            mangaTitle: mangaTitle,
+            name: name,
             url: url,
             scanlator: ch['scanlator'] as String?,
-            dateUpload: ch['date_upload'] as int? ?? 0,
-            index: e.key,
-            isDownloaded: _downloadProgress[url] == 'done',
-            isOpened: existingChapter != null && (existingChapter['is_opened'] as bool? ?? false),
-            readAt: existingChapter != null
-                ? DateTime.tryParse(existingChapter['read_at'] as String? ?? '')
-                : null,
-          );
-        }).toList());
+            dateUpload: asIntOr(ch['date_upload']),
+            index: i,
+            sourceChapterNumber: sourceNum,
+            memo: ch['memo'] as String?,
+          ),
+        );
       }
-    } catch (e) {
-      if (existing != null) {
-        if (!mounted) return;
-        setState(() { _offlineMode = true; _loading = false; });
-      } else {
-        if (!mounted) return;
-        setState(() => _error = '$e');
-      }
-    } finally {
-      if (existing == null && mounted) setState(() => _loading = false);
     }
+    await repos.manga.deleteMangaChapters(mangaId);
+    await repos.manga.insertMangaChapters(mangaId, merged);
+  }
+
+  /// Applies manga metadata to local state during build (called from
+  /// whenData inside ref.watch). No setState needed — ref.watch triggers the
+  /// rebuild automatically when the stream emits a new value.
+  void _applyManga(Manga? manga) {
+    if (manga == null || !mounted || !_isCurrentBinding) return;
+    // Reject emissions for a different row (stale global mangaId).
+    if (manga.sourceId != widget.sourceId || manga.url != widget.url) return;
+    if (_mangaId != null && manga.id != _mangaId) return;
+    final notifier = ref.read(mangaDetailProvider.notifier);
+    notifier
+      ..setDetails({
+        'title': _preferTitle(manga.name, widget.title),
+        'thumbnail_url': manga.imageUrl,
+        'author': manga.author,
+        'artist': manga.artist,
+        'description': manga.description,
+        'status': manga.status,
+        'genre': manga.genres.join(', '),
+        if ((widget.memo ?? manga.memo) != null)
+          'memo': widget.memo ?? manga.memo,
+      })
+      ..setError(null);
+    // Do not touch loading — Isar stream updates must not hide the fetch banner.
+    setState(() {
+      _mangaId = manga.id;
+      _inLibrary = manga.inLibrary;
+    });
+  }
+
+  /// Merges chapter progress from Isar stream into the display chapter maps.
+  /// Also updates localChapters and downloadProgress. Called from whenData
+  /// on the mangaChaptersStreamProvider watch.
+  void _applyChapters(List<MangaChapter> chapters) {
+    if (!mounted || !_isCurrentBinding) return;
+    final chMap = <String, Map<String, dynamic>>{};
+    final downloadProgress = <String, String>{};
+    for (final lc in chapters) {
+      chMap[lc.url] = {
+        'is_read': lc.isRead,
+        'last_page_read': lc.lastPageRead,
+        'is_downloaded': lc.isDownloaded,
+        'is_opened': lc.isOpened,
+        'read_at': lc.readAt?.toIso8601String(),
+      };
+      if (lc.isDownloaded) downloadProgress[lc.url] = 'done';
+    }
+    final notifier = ref.read(mangaDetailProvider.notifier);
+    final existing = notifier.state.chapters;
+    List<Map<String, dynamic>> merged;
+    if (existing.isEmpty) {
+      merged = chapters
+          .map(
+            (c) => <String, dynamic>{
+              'url': c.url,
+              'name': c.name,
+              'chapter_number': c.chapterNumber,
+              'scanlator': c.scanlator,
+              'date_upload': c.dateUpload,
+              'is_read': c.isRead,
+              'last_page_read': c.lastPageRead,
+              'is_opened': c.isOpened,
+              'is_downloaded': c.isDownloaded,
+              'memo': c.memo,
+              if (c.readAt != null) 'read_at': c.readAt!.toIso8601String(),
+            },
+          )
+          .toList();
+    } else {
+      merged = existing.map((ch) {
+        final local = chMap[_normalizeUrl(ch['url'] as String? ?? '')];
+        if (local == null) return ch;
+        return {
+          ...ch,
+          'is_read': local['is_read'],
+          'last_page_read': local['last_page_read'],
+          'is_downloaded': local['is_downloaded'],
+          'is_opened': local['is_opened'],
+          'read_at': local['read_at'],
+        };
+      }).toList();
+    }
+    notifier
+      ..setChapters(merged)
+      ..setLocalChapters(chMap)
+      ..setDownloadProgress(downloadProgress);
   }
 
   Future<void> _addToLibrary() async {
-    final d = _details;
-    if (d == null) return;
-    final db = context.read<DatabaseService>();
-    final manga = Manga(
-      id: 0,
-      name: d['title'] as String? ?? widget.title,
-      url: widget.url,
-      imageUrl: d['thumbnail_url'] as String?,
-      author: d['author'] as String?,
-      artist: d['artist'] as String?,
-      description: d['description'] as String?,
-      status: d['status'] as int? ?? 0,
-      genres: (d['genre'] as String? ?? '').split(',').map((g) => g.trim()).where((g) => g.isNotEmpty).toList(),
-      sourceId: widget.sourceId,
-      inLibrary: true,
-    );
-    final id = await db.insertManga(manga);
-    await db.setMangaInLibrary(id, true);
-    // Save chapters (replace, since chapters may have changed)
-    await db.deleteMangaChapters(id);
-    final chapters = _chapters.asMap().entries.map((e) {
-      final url = e.value['url'] as String? ?? '';
-      final existing = _localChapters[url];
-      return MangaChapter(
+    if (!_isCurrentBinding) return;
+    final repos = ref.read(repositoriesProvider);
+    final gen = _loadGen;
+
+    if (_mangaId != null) {
+      // Ensure chapters are in Isar before marking as library
+      final existingChapters = await repos.manga.getMangaChapters(_mangaId!);
+      if (!mounted || gen != _loadGen || !_isCurrentBinding) return;
+      if (existingChapters.isEmpty) {
+        final detail = ref.read(mangaDetailProvider);
+        if (detail.chapters.isNotEmpty) {
+          final chapterModels = detail.chapters.asMap().entries.map((e) {
+            final url = e.value['url'] as String? ?? '';
+            final local = detail.localChapters[url];
+            final name = e.value['name'] as String? ?? '';
+            return MangaChapter.withRecognition(
+              id: 0,
+              mangaId: _mangaId!,
+              mangaTitle: _preferTitle(
+                detail.details?['title'] as String?,
+                widget.title,
+              ),
+              name: name,
+              url: url,
+              scanlator: e.value['scanlator'] as String?,
+              dateUpload: asIntOr(e.value['date_upload']),
+              index: e.key,
+              isRead: local?['is_read'] as bool? ?? false,
+              lastPageRead: asIntOr(local?['last_page_read']),
+              sourceChapterNumber: e.value['chapter_number'] as num?,
+              isDownloaded: detail.downloadProgress[url] == 'done',
+              isOpened: local?['is_opened'] as bool? ?? false,
+              memo: e.value['memo'] as String?,
+            );
+          }).toList();
+          await repos.manga.deleteMangaChapters(_mangaId!);
+          await repos.manga.insertMangaChapters(_mangaId!, chapterModels);
+        } else {
+          await _refreshFromSource(gen: gen);
+        }
+      }
+      if (!mounted || gen != _loadGen || !_isCurrentBinding || _mangaId == null) {
+        return;
+      }
+      await repos.manga.setMangaInLibrary(_mangaId!, true);
+      final m = await repos.manga.getMangaById(_mangaId!);
+      if (m != null && m.sourceId == widget.sourceId && m.url == widget.url) {
+        final d = ref.read(mangaDetailProvider).details;
+        await repos.manga.updateManga(
+          m.copyWith(
+            name: _preferTitle(d?['title'] as String?, widget.title),
+            imageUrl: d?['thumbnail_url'] as String?,
+            author: d?['author'] as String?,
+            artist: d?['artist'] as String?,
+            description: d?['description'] as String?,
+            status: asIntOr(d?['status']),
+            genres: (d?['genre'] as String? ?? '')
+                .split(',')
+                .map((g) => g.trim())
+                .where((g) => g.isNotEmpty)
+                .toList(),
+            memo: (d?['memo'] as String?)?.isNotEmpty == true
+                ? d!['memo'] as String
+                : (widget.memo ?? m.memo),
+          ),
+        );
+      }
+      if (!mounted || gen != _loadGen) return;
+      setState(() => _inLibrary = true);
+      if (mounted) ref.read(libraryProvider.notifier).loadBooks();
+    } else {
+      // First time insertion — ensure chapters exist before creating manga row
+      var detail = ref.read(mangaDetailProvider);
+      if (detail.chapters.isEmpty) {
+        await _refreshFromSource(gen: gen);
+        if (!mounted || gen != _loadGen || !_isCurrentBinding) return;
+        detail = ref.read(mangaDetailProvider);
+      }
+      final d = detail.details ?? {};
+      final manga = Manga(
         id: 0,
-        mangaId: id,
-        name: e.value['name'] as String? ?? '',
-        url: url,
-        scanlator: e.value['scanlator'] as String?,
-        dateUpload: e.value['date_upload'] as int? ?? 0,
-        index: e.key,
-        isDownloaded: _downloadProgress[url] == 'done',
-        isOpened: existing != null && (existing['is_opened'] as bool? ?? false),
+        name: _preferTitle(d['title'] as String?, widget.title),
+        url: widget.url,
+        imageUrl: d['thumbnail_url'] as String?,
+        author: d['author'] as String?,
+        artist: d['artist'] as String?,
+        description: d['description'] as String?,
+        status: asIntOr(d['status']),
+        genres: (d['genre'] as String? ?? '')
+            .split(',')
+            .map((g) => g.trim())
+            .where((g) => g.isNotEmpty)
+            .toList(),
+        sourceId: widget.sourceId,
+        inLibrary: true,
+        memo: (d['memo'] as String?)?.isNotEmpty == true
+            ? d['memo'] as String
+            : widget.memo,
       );
-    }).toList();
-    await db.insertMangaChapters(id, chapters);
+      final id = await repos.manga.insertManga(manga);
+      if (!mounted || gen != _loadGen || !_isCurrentBinding) return;
+      await repos.manga.deleteMangaChapters(id);
+      final chapterModels = detail.chapters.asMap().entries.map((e) {
+        final url = e.value['url'] as String? ?? '';
+        final local = detail.localChapters[url];
+        return MangaChapter.withRecognition(
+          id: 0,
+          mangaId: id,
+          mangaTitle: _preferTitle(d['title'] as String?, widget.title),
+          name: e.value['name'] as String? ?? '',
+          url: url,
+          scanlator: e.value['scanlator'] as String?,
+          dateUpload: asIntOr(e.value['date_upload']),
+          index: e.key,
+          isRead: local?['is_read'] as bool? ?? false,
+          lastPageRead: asIntOr(local?['last_page_read']),
+          sourceChapterNumber: e.value['chapter_number'] as num?,
+          isDownloaded: detail.downloadProgress[url] == 'done',
+          isOpened: local?['is_opened'] as bool? ?? false,
+          memo: e.value['memo'] as String?,
+        );
+      }).toList();
+      await repos.manga.insertMangaChapters(id, chapterModels);
+      if (!mounted || gen != _loadGen || !_isCurrentBinding) return;
+      setState(() {
+        _inLibrary = true;
+        _mangaId = id;
+      });
+      ref.read(mangaDetailProvider.notifier).setInLibrary(true, id);
+      if (mounted) ref.read(libraryProvider.notifier).loadBooks();
+    }
     if (!mounted) return;
-    setState(() {
-      _inLibrary = true;
-      _mangaId = id;
-    });
-    // Refresh library in case user goes back
-    if (mounted) context.read<LibraryProvider>().loadBooks();
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(const SnackBar(content: Text('Added to library')));
+  }
+
+  Future<void> _removeFromLibrary() async {
+    if (_mangaId == null) return;
+    final repos = ref.read(repositoriesProvider);
+    await repos.manga.setMangaInLibrary(_mangaId!, false);
+    if (mounted) {
+      setState(() => _inLibrary = false);
+      ref.read(libraryProvider.notifier).loadBooks();
+    }
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Added to library')),
-    );
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(const SnackBar(content: Text('Removed from library')));
   }
 
   void _showFilterSheet() {
-    final filters = Map<_ChapterFilter, _FilterMode>.from(_filterModes);
+    final filters = Map<ChapterFilter, FilterMode>.from(
+      ref.read(mangaDetailProvider).filterModes,
+    );
     showModalBottomSheet<void>(
       context: context,
       backgroundColor: Colors.transparent,
@@ -481,8 +941,12 @@ class _MangaDetailScreenState extends State<MangaDetailScreen> {
               padding: const EdgeInsets.fromLTRB(20, 10, 20, 24),
               decoration: BoxDecoration(
                 color: context.colors.surface,
-                borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
-                border: Border(top: BorderSide(color: context.colors.border, width: 0.5)),
+                borderRadius: const BorderRadius.vertical(
+                  top: Radius.circular(24),
+                ),
+                border: Border(
+                  top: BorderSide(color: context.colors.border, width: 0.5),
+                ),
               ),
               child: Column(
                 mainAxisSize: MainAxisSize.min,
@@ -508,34 +972,49 @@ class _MangaDetailScreenState extends State<MangaDetailScreen> {
                     ),
                   ),
                   const SizedBox(height: 6),
-                  _ChapterFilterOption(
+                  ChapterFilterOption(
                     icon: Icons.cloud_download_outlined,
                     label: 'Downloaded',
-                    mode: filters[_ChapterFilter.downloaded] ?? _FilterMode.ignore,
+                    mode:
+                        filters[ChapterFilter.downloaded] ?? FilterMode.ignore,
                     onTap: () {
-                      final next = _nextFilterMode(filters[_ChapterFilter.downloaded] ?? _FilterMode.ignore);
-                      setSheetState(() => filters[_ChapterFilter.downloaded] = next);
-                      setState(() => _filterModes[_ChapterFilter.downloaded] = next);
+                      final next = _nextFilterMode(
+                        filters[ChapterFilter.downloaded] ?? FilterMode.ignore,
+                      );
+                      setSheetState(
+                        () => filters[ChapterFilter.downloaded] = next,
+                      );
+                      ref
+                          .read(mangaDetailProvider.notifier)
+                          .setFilterMode(ChapterFilter.downloaded, next);
                     },
                   ),
-                  _ChapterFilterOption(
+                  ChapterFilterOption(
                     icon: Icons.check_circle_outline_rounded,
                     label: 'Read',
-                    mode: filters[_ChapterFilter.read] ?? _FilterMode.ignore,
+                    mode: filters[ChapterFilter.read] ?? FilterMode.ignore,
                     onTap: () {
-                      final next = _nextFilterMode(filters[_ChapterFilter.read] ?? _FilterMode.ignore);
-                      setSheetState(() => filters[_ChapterFilter.read] = next);
-                      setState(() => _filterModes[_ChapterFilter.read] = next);
+                      final next = _nextFilterMode(
+                        filters[ChapterFilter.read] ?? FilterMode.ignore,
+                      );
+                      setSheetState(() => filters[ChapterFilter.read] = next);
+                      ref
+                          .read(mangaDetailProvider.notifier)
+                          .setFilterMode(ChapterFilter.read, next);
                     },
                   ),
-                  _ChapterFilterOption(
+                  ChapterFilterOption(
                     icon: Icons.radio_button_unchecked_rounded,
                     label: 'Unread',
-                    mode: filters[_ChapterFilter.unread] ?? _FilterMode.ignore,
+                    mode: filters[ChapterFilter.unread] ?? FilterMode.ignore,
                     onTap: () {
-                      final next = _nextFilterMode(filters[_ChapterFilter.unread] ?? _FilterMode.ignore);
-                      setSheetState(() => filters[_ChapterFilter.unread] = next);
-                      setState(() => _filterModes[_ChapterFilter.unread] = next);
+                      final next = _nextFilterMode(
+                        filters[ChapterFilter.unread] ?? FilterMode.ignore,
+                      );
+                      setSheetState(() => filters[ChapterFilter.unread] = next);
+                      ref
+                          .read(mangaDetailProvider.notifier)
+                          .setFilterMode(ChapterFilter.unread, next);
                     },
                   ),
                   const SizedBox(height: 16),
@@ -548,10 +1027,10 @@ class _MangaDetailScreenState extends State<MangaDetailScreen> {
     );
   }
 
-  _FilterMode _nextFilterMode(_FilterMode mode) => switch (mode) {
-    _FilterMode.ignore => _FilterMode.include,
-    _FilterMode.include => _FilterMode.exclude,
-    _FilterMode.exclude => _FilterMode.ignore,
+  FilterMode _nextFilterMode(FilterMode mode) => switch (mode) {
+    FilterMode.ignore => FilterMode.include,
+    FilterMode.include => FilterMode.exclude,
+    FilterMode.exclude => FilterMode.ignore,
   };
 
   Future<void> _showDownloadDialog() async {
@@ -570,8 +1049,12 @@ class _MangaDetailScreenState extends State<MangaDetailScreen> {
               padding: const EdgeInsets.fromLTRB(20, 10, 20, 24),
               decoration: BoxDecoration(
                 color: context.colors.surface,
-                borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
-                border: Border(top: BorderSide(color: context.colors.border, width: 0.5)),
+                borderRadius: const BorderRadius.vertical(
+                  top: Radius.circular(24),
+                ),
+                border: Border(
+                  top: BorderSide(color: context.colors.border, width: 0.5),
+                ),
               ),
               child: Column(
                 mainAxisSize: MainAxisSize.min,
@@ -664,26 +1147,43 @@ class _MangaDetailScreenState extends State<MangaDetailScreen> {
                                 final endText = endController.text.trim();
                                 if (startText.isEmpty || endText.isEmpty) {
                                   ScaffoldMessenger.of(context).showSnackBar(
-                                    const SnackBar(content: Text('Enter both start and end chapter')),
+                                    const SnackBar(
+                                      content: Text(
+                                        'Enter both start and end chapter',
+                                      ),
+                                    ),
                                   );
                                   return;
                                 }
                                 final start = int.tryParse(startText);
                                 final end = int.tryParse(endText);
-                                if (start == null || end == null || start < 1 || end < 1) {
+                                if (start == null ||
+                                    end == null ||
+                                    start < 1 ||
+                                    end < 1) {
                                   ScaffoldMessenger.of(context).showSnackBar(
-                                    const SnackBar(content: Text('Enter valid chapter numbers')),
+                                    const SnackBar(
+                                      content: Text(
+                                        'Enter valid chapter numbers',
+                                      ),
+                                    ),
                                   );
                                   return;
                                 }
                                 if (end < start) {
                                   ScaffoldMessenger.of(context).showSnackBar(
-                                    const SnackBar(content: Text('End must be >= start')),
+                                    const SnackBar(
+                                      content: Text('End must be >= start'),
+                                    ),
                                   );
                                   return;
                                 }
                                 Navigator.pop(context, _DownloadMode.range);
-                                _downloadChapters(_DownloadMode.range, rangeStart: start, rangeEnd: end);
+                                _downloadChapters(
+                                  _DownloadMode.range,
+                                  rangeStart: start,
+                                  rangeEnd: end,
+                                );
                                 return;
                               }
                               Navigator.pop(context, selectedMode);
@@ -708,8 +1208,13 @@ class _MangaDetailScreenState extends State<MangaDetailScreen> {
     }
   }
 
-  Future<void> _downloadChapters(_DownloadMode mode, {int? rangeStart, int? rangeEnd}) async {
-    final chapters = _chapters;
+  Future<void> _downloadChapters(
+    _DownloadMode mode, {
+    int? rangeStart,
+    int? rangeEnd,
+  }) async {
+    final detail = ref.read(mangaDetailProvider);
+    final chapters = detail.chapters;
     if (chapters.isEmpty) return;
 
     List<Map<String, dynamic>> targets;
@@ -718,7 +1223,7 @@ class _MangaDetailScreenState extends State<MangaDetailScreen> {
     } else if (mode == _DownloadMode.unread) {
       targets = chapters.where((ch) {
         final url = ch['url'] as String? ?? '';
-        final local = _localChapters[url];
+        final local = detail.localChapters[url];
         final isRead = local?['is_read'] as bool? ?? false;
         return !isRead;
       }).toList();
@@ -741,128 +1246,325 @@ class _MangaDetailScreenState extends State<MangaDetailScreen> {
       return;
     }
 
-    try {
-      setState(() {
-        for (final t in targets) {
-          final url = t['url'] as String? ?? '';
-          _downloadProgress[url] = 'queued';
-        }
-      });
-      final result = await _service.downloadChapters(
-        sourceId: widget.sourceId,
-        mangaUrl: widget.url,
-        chapters: targets,
+    // Skip chapters already downloaded.
+    targets = targets.where((t) {
+      final url = t['url'] as String? ?? '';
+      final status = detail.downloadProgress[url];
+      if (status == 'done') return false;
+      final local = detail.localChapters[url];
+      return local?['is_downloaded'] != true;
+    }).toList();
+    if (targets.isEmpty) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Selected chapters are already downloaded')),
+        );
+      }
+      return;
+    }
+
+    final mgr = ref.read(downloadManagerProvider.notifier);
+    final mangaMemo = widget.memo ??
+        ref.read(mangaDetailProvider).details?['memo'] as String?;
+    await mgr.downloadChapters(
+      sourceId: widget.sourceId,
+      mangaUrl: widget.url,
+      mangaTitle: widget.title,
+      chapters: targets,
+      mangaId: _mangaId,
+      mangaMemo: mangaMemo,
+    );
+    _syncDownloadProgressFromQueue(mgr.manager);
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Queued ${targets.length} chapter${targets.length == 1 ? '' : 's'}',
+          ),
+          action: SnackBarAction(
+            label: 'Queue',
+            onPressed: () => context.pushNamed(Routes.downloadQueue),
+          ),
+        ),
       );
-      if (!mounted) return;
-      final db = context.read<DatabaseService>();
-      for (final t in targets) {
-        final url = t['url'] as String? ?? '';
-        final done = result.containsKey(url);
-        // Find the local chapter row for this manga + url and mark it
-        if (_mangaId != null && done) {
-          final chUrl = url;
-          final existing = await db.getMangaChapterByUrl(_mangaId!, chUrl);
-          if (existing != null) {
-            await db.markMangaChapterDownloaded(existing.id, true);
-          }
-        }
-      }
-      setState(() {
-        for (final t in targets) {
-          final url = t['url'] as String? ?? '';
-          final done = result.containsKey(url);
-          _downloadProgress[url] = done ? 'done' : 'error';
-          if (done && _localChapters.containsKey(url)) {
-            _localChapters[url] = {
-              ..._localChapters[url]!,
-              'is_downloaded': true,
-            };
-          }
-        }
-      });
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Downloaded ${result.length} chapter(s)')),
-        );
-      }
-    } catch (e) {
-      if (!mounted) return;
-      setState(() {
-        for (final t in targets) {
-          final url = t['url'] as String? ?? '';
-          _downloadProgress[url] = 'error';
-        }
-      });
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Download failed: $e')),
-        );
-      }
     }
   }
 
   Future<void> _downloadSingleChapter(Map<String, dynamic> ch) async {
     final url = ch['url'] as String? ?? '';
-    try {
-      setState(() => _downloadProgress[url] = 'queued');
-      final result = await _service.downloadChapters(
-        sourceId: widget.sourceId,
-        mangaUrl: widget.url,
-        chapters: [ch],
-      );
-      if (!mounted) return;
-      final done = result.containsKey(url);
-      if (_mangaId != null && done) {
-        final db = context.read<DatabaseService>();
-        final existing = await db.getMangaChapterByUrl(_mangaId!, url);
-        if (existing != null) {
-          await db.markMangaChapterDownloaded(existing.id, true);
-        }
+    final notifier = ref.read(downloadManagerProvider.notifier);
+    final mgr = notifier.manager;
+    final existing = mgr.getQueuedByChapterUrl(widget.sourceId, url);
+    if (existing != null) {
+      if (existing.status == DownloadState.error) {
+        existing.status = DownloadState.queue;
+        await notifier.startDownloads();
       }
-      setState(() {
-        _downloadProgress[url] = done ? 'done' : 'error';
-        if (done && _localChapters.containsKey(url)) {
-          _localChapters[url] = {
-            ..._localChapters[url]!,
+      _syncDownloadProgressFromQueue(mgr);
+      return;
+    }
+    await notifier.downloadChapters(
+      sourceId: widget.sourceId,
+      mangaUrl: widget.url,
+      mangaTitle: widget.title,
+      chapters: [ch],
+      mangaId: _mangaId,
+      mangaMemo: widget.memo ??
+          ref.read(mangaDetailProvider).details?['memo'] as String?,
+    );
+    _syncDownloadProgressFromQueue(mgr);
+  }
+
+  void _syncDownloadProgressFromQueue(DownloadManager mgr) {
+    if (!mounted) return;
+    final notifier = ref.read(mangaDetailProvider.notifier);
+    final progress = Map<String, String>.from(
+      ref.read(mangaDetailProvider).downloadProgress,
+    );
+    final localChapters = Map<String, Map<String, dynamic>>.from(
+      ref.read(mangaDetailProvider).localChapters,
+    );
+    var localChanged = false;
+    final activeUrls = <String>{};
+    for (final d in mgr.queue) {
+      if (d.sourceId != widget.sourceId || d.mangaUrl != widget.url) continue;
+      activeUrls.add(d.chapterUrl);
+      final label = downloadProgressLabel(d);
+      if (label != null) progress[d.chapterUrl] = label;
+      if (d.status == DownloadState.downloaded) {
+        progress[d.chapterUrl] = 'done';
+        if (localChapters.containsKey(d.chapterUrl)) {
+          localChapters[d.chapterUrl] = {
+            ...localChapters[d.chapterUrl]!,
             'is_downloaded': true,
           };
+          localChanged = true;
         }
-      });
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('${result.containsKey(url) ? "Downloaded" : "Failed"} ${ch['name'] ?? 'chapter'}')),
-        );
       }
-    } catch (e) {
-      if (!mounted) return;
-      setState(() => _downloadProgress[url] = 'error');
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Download failed: $e')),
-        );
+    }
+    // Drop transient active statuses for chapters that left the queue.
+    final stale = <String>[];
+    for (final entry in progress.entries) {
+      if (activeUrls.contains(entry.key)) continue;
+      if (_isActiveDownload(entry.value)) {
+        stale.add(entry.key);
+      }
+    }
+    for (final url in stale) {
+      if (localChapters[url]?['is_downloaded'] == true) {
+        progress[url] = 'done';
+      } else if (progress[url] != 'done' && progress[url] != 'error') {
+        progress.remove(url);
+      }
+    }
+    notifier.setDownloadProgress(progress);
+    if (localChanged) {
+      notifier.setLocalChapters(localChapters);
+    }
+  }
+
+  /// Parses `"7/24"` style page progress from [downloadProgress] values.
+  static (int done, int total)? _parsePageProgress(String? status) {
+    if (status == null) return null;
+    final m = RegExp(r'^(\d+)/(\d+)$').firstMatch(status);
+    if (m == null) return null;
+    final done = int.tryParse(m.group(1)!);
+    final total = int.tryParse(m.group(2)!);
+    if (done == null || total == null || total <= 0) return null;
+    return (done, total);
+  }
+
+  static bool _isActiveDownload(String? status) =>
+      status == 'queued' || _parsePageProgress(status) != null;
+
+  List<String> _downloadedChapterUrls() {
+    final detail = ref.read(mangaDetailProvider);
+    final urls = <String>{};
+    for (final entry in detail.downloadProgress.entries) {
+      if (entry.value == 'done' && entry.key.isNotEmpty) urls.add(entry.key);
+    }
+    for (final entry in detail.localChapters.entries) {
+      if (entry.value['is_downloaded'] == true && entry.key.isNotEmpty) {
+        urls.add(entry.key);
+      }
+    }
+    for (final ch in detail.chapters) {
+      final url = ch['url'] as String? ?? '';
+      if (url.isEmpty) continue;
+      if (ch['is_downloaded'] == true) urls.add(url);
+    }
+    return urls.toList();
+  }
+
+  Future<void> _clearLocalDownloadFlags(List<String> chapterUrls) async {
+    if (_mangaId == null || chapterUrls.isEmpty) return;
+    final repos = ref.read(repositoriesProvider);
+    for (final url in chapterUrls) {
+      final existing = await repos.manga.getMangaChapterByUrl(_mangaId!, url);
+      if (existing != null) {
+        await repos.manga.markMangaChapterDownloaded(existing.id, false);
       }
     }
   }
 
-  bool _chapterMatchesFilter(Map<String, dynamic> ch) {
-    final modes = _filterModes.values;
-    if (modes.every((m) => m == _FilterMode.ignore)) return true;
+  void _applyDeletedInUi(List<String> chapterUrls) {
+    final notifier = ref.read(mangaDetailProvider.notifier);
+    final progress = Map<String, String>.from(
+      ref.read(mangaDetailProvider).downloadProgress,
+    );
+    final localChapters = Map<String, Map<String, dynamic>>.from(
+      ref.read(mangaDetailProvider).localChapters,
+    );
+    final chapters = ref
+        .read(mangaDetailProvider)
+        .chapters
+        .map((ch) {
+          final url = ch['url'] as String? ?? '';
+          if (!chapterUrls.contains(url)) return ch;
+          return {...ch, 'is_downloaded': false};
+        })
+        .toList();
+    for (final url in chapterUrls) {
+      progress.remove(url);
+      if (localChapters.containsKey(url)) {
+        localChapters[url] = {
+          ...localChapters[url]!,
+          'is_downloaded': false,
+        };
+      }
+    }
+    notifier
+      ..setDownloadProgress(progress)
+      ..setLocalChapters(localChapters)
+      ..setChapters(chapters);
+  }
+
+  Future<void> _deleteDownloadedChapterUrls(
+    List<String> chapterUrls, {
+    required String successMessage,
+  }) async {
+    if (chapterUrls.isEmpty) return;
+    try {
+      final repos = ref.read(repositoriesProvider);
+      final ext = await findInstalledExtension(repos, widget.sourceId);
+      if (ext == null || !ext.isJs) {
+        await _keiyoushi.deleteChapters(
+          sourceId: widget.sourceId,
+          mangaUrl: widget.url,
+          chapterUrls: chapterUrls,
+        );
+      }
+      if (!mounted) return;
+      await _clearLocalDownloadFlags(chapterUrls);
+      if (!mounted) return;
+      _applyDeletedInUi(chapterUrls);
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(successMessage)));
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Delete failed: $e')));
+      }
+    }
+  }
+
+  Future<void> _confirmDeleteSingleChapter(Map<String, dynamic> ch) async {
+    final name = (ch['name'] as String?)?.trim();
+    final label = (name == null || name.isEmpty) ? 'this chapter' : name;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Delete download'),
+        content: Text('Delete download for $label?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    final url = ch['url'] as String? ?? '';
+    if (url.isEmpty) return;
+    await _deleteDownloadedChapterUrls(
+      [url],
+      successMessage: 'Deleted download for $label',
+    );
+  }
+
+  Future<void> _confirmDeleteAllDownloads() async {
+    final urls = _downloadedChapterUrls();
+    if (urls.isEmpty) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('No downloaded chapters')),
+        );
+      }
+      return;
+    }
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Delete downloads'),
+        content: Text(
+          'Delete all downloaded chapters for this title?\n'
+          '(${urls.length} chapter${urls.length == 1 ? '' : 's'})',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    await _deleteDownloadedChapterUrls(
+      urls,
+      successMessage:
+          'Deleted ${urls.length} download${urls.length == 1 ? '' : 's'}',
+    );
+  }
+
+  bool _chapterMatchesFilter(
+    Map<String, dynamic> ch,
+    Map<ChapterFilter, FilterMode> modes,
+    Map<String, Map<String, dynamic>> localChapters,
+  ) {
+    if (modes.values.every((m) => m == FilterMode.ignore)) return true;
 
     final url = ch['url'] as String? ?? '';
-    final local = _localChapters[url];
+    final local = localChapters[url];
     final isRead = local?['is_read'] as bool? ?? false;
-    final isDownloaded = local != null;
+    // Presence in the DB ≠ downloaded; use the persisted download flag.
+    final isDownloaded = local?['is_downloaded'] as bool? ?? false;
 
-    final downloadedMatch = _filterModes[_ChapterFilter.downloaded] == _FilterMode.ignore
-        || (_filterModes[_ChapterFilter.downloaded] == _FilterMode.include) == isDownloaded;
+    final downloadedMatch =
+        modes[ChapterFilter.downloaded] == FilterMode.ignore ||
+        (modes[ChapterFilter.downloaded] == FilterMode.include) == isDownloaded;
     if (!downloadedMatch) return false;
 
-    final readMatch = _filterModes[_ChapterFilter.read] == _FilterMode.ignore
-        || (_filterModes[_ChapterFilter.read] == _FilterMode.include) == isRead;
+    final readMatch =
+        modes[ChapterFilter.read] == FilterMode.ignore ||
+        (modes[ChapterFilter.read] == FilterMode.include) == isRead;
     if (!readMatch) return false;
 
-    final unreadMatch = _filterModes[_ChapterFilter.unread] == _FilterMode.ignore
-        || (_filterModes[_ChapterFilter.unread] == _FilterMode.include) == !isRead;
+    final unreadMatch =
+        modes[ChapterFilter.unread] == FilterMode.ignore ||
+        (modes[ChapterFilter.unread] == FilterMode.include) == !isRead;
     if (!unreadMatch) return false;
 
     return true;
@@ -878,10 +1580,96 @@ class _MangaDetailScreenState extends State<MangaDetailScreen> {
     6: 'On hiatus',
   };
 
+  /// Mode of weekday from recent chapter uploads; N/A when signal is weak.
+  static String _releaseCycleFromChapters(List<Map<String, dynamic>> chapters) {
+    const names = {
+      DateTime.monday: 'Monday',
+      DateTime.tuesday: 'Tuesday',
+      DateTime.wednesday: 'Wednesday',
+      DateTime.thursday: 'Thursday',
+      DateTime.friday: 'Friday',
+      DateTime.saturday: 'Saturday',
+      DateTime.sunday: 'Sunday',
+    };
+    final counts = <int, int>{};
+    for (final ch in chapters) {
+      final date = asIntOr(ch['date_upload']);
+      if (date <= 0) continue;
+      final wd = DateTime.fromMillisecondsSinceEpoch(date).weekday;
+      counts[wd] = (counts[wd] ?? 0) + 1;
+    }
+    final total = counts.values.fold<int>(0, (a, b) => a + b);
+    if (total < 3) return 'N/A';
+    final best = counts.entries.reduce((a, b) => a.value >= b.value ? a : b);
+    if (best.value / total < 0.4) return 'N/A';
+    return 'Every ${names[best.key]}';
+  }
+
   @override
   Widget build(BuildContext context) {
     final c = context.colors;
     final appBarHeight = MediaQuery.of(context).padding.top + kToolbarHeight;
+
+    // Prefer the screen-local id. Never fall back to a stale provider mangaId
+    // from a previously opened title (Discover A → B bug).
+    final mangaId = _mangaId;
+    if (_sessionReady && mangaId != null && _isCurrentBinding) {
+      // Side effects belong in listen, not whenData-during-build (which
+      // writes mangaDetailProvider and trips Riverpod's build-phase guard).
+      ref.listen<AsyncValue<Manga?>>(mangaDetailStreamProvider(mangaId), (
+        _,
+        next,
+      ) {
+        next.whenData(_applyManga);
+      });
+      ref.listen<AsyncValue<List<MangaChapter>>>(
+        mangaChaptersStreamProvider(mangaId),
+        (_, next) {
+          next.whenData(_applyChapters);
+        },
+      );
+    }
+
+    // Mirror global download queue progress into this title's chapter rows.
+    ref.listen(downloadManagerProvider, (_, snap) {
+      _syncDownloadProgressFromQueue(
+        ref.read(downloadManagerProvider.notifier).manager,
+      );
+    });
+
+    if (!_sessionReady) {
+      return Scaffold(
+        backgroundColor: c.bg,
+        body: const Center(child: CircularProgressIndicator()),
+      );
+    }
+
+    final detail = ref.watch(mangaDetailProvider);
+    final filteredChapters = _sortedChapters(
+      detail.chapters
+          .where(
+            (ch) => _chapterMatchesFilter(
+              ch,
+              detail.filterModes,
+              detail.localChapters,
+            ),
+          )
+          .toList(),
+    );
+
+    String lastChapterDate = '';
+    int latestDate = 0;
+    for (final ch in detail.chapters) {
+      final date = asIntOr(ch['date_upload']);
+      if (date > latestDate) latestDate = date;
+    }
+    if (latestDate > 0) {
+      lastChapterDate = DateFormat.yMMMd().format(
+        DateTime.fromMillisecondsSinceEpoch(latestDate),
+      );
+    }
+    final releaseCycle = _releaseCycleFromChapters(detail.chapters);
+
     return Scaffold(
       extendBodyBehindAppBar: true,
       backgroundColor: c.bg,
@@ -899,7 +1687,73 @@ class _MangaDetailScreenState extends State<MangaDetailScreen> {
           IconButton(
             icon: Icon(Icons.download_rounded, color: c.textPrimary),
             tooltip: 'Download chapters',
-            onPressed: _offlineMode ? null : _showDownloadDialog,
+            onPressed: detail.offlineMode ? null : _showDownloadDialog,
+          ),
+          if (_downloadedChapterUrls().isNotEmpty)
+            IconButton(
+              icon: Icon(Icons.delete_outline_rounded, color: c.textPrimary),
+              tooltip: 'Delete downloads',
+              onPressed: _confirmDeleteAllDownloads,
+            ),
+          PopupMenuButton<String>(
+            icon: Icon(Icons.more_vert_rounded, color: c.textPrimary),
+            onSelected: (value) async {
+              if (value == 'webview') {
+                try {
+                  await SourceWebViewBridge.open(
+                    url: widget.url,
+                    sourceId: widget.sourceId,
+                    title: widget.title,
+                    memo: widget.memo ??
+                        detail.details?['memo'] as String?,
+                  );
+                } catch (e) {
+                  if (!mounted) return;
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: Text('WebView failed: $e')),
+                  );
+                }
+              } else if (value == 'migrate') {
+                final mangaId = _mangaId;
+                if (mangaId == null) return;
+                final title = _preferTitle(
+                  detail.details?['title'] as String?,
+                  widget.title,
+                );
+                if (!mounted) return;
+                final target = await Navigator.of(context).push<Manga>(
+                  MaterialPageRoute(
+                    builder: (_) => MigrateSearchScreen(
+                      currentMangaId: mangaId,
+                      currentTitle: title,
+                      excludeSourceId: widget.sourceId,
+                    ),
+                  ),
+                );
+                if (target == null || !mounted) return;
+                context.pushReplacementNamed(
+                  Routes.mangaDetail,
+                  extra: (
+                    sourceId: target.sourceId,
+                    url: target.url,
+                    title: target.name,
+                    manga: target,
+                    memo: target.memo,
+                  ),
+                );
+              }
+            },
+            itemBuilder: (ctx) => [
+              const PopupMenuItem(
+                value: 'webview',
+                child: Text('Open in WebView'),
+              ),
+              if (_inLibrary && _mangaId != null)
+                const PopupMenuItem(
+                  value: 'migrate',
+                  child: Text('Migrate'),
+                ),
+            ],
           ),
         ],
         flexibleSpace: Container(
@@ -907,93 +1761,501 @@ class _MangaDetailScreenState extends State<MangaDetailScreen> {
             gradient: LinearGradient(
               begin: Alignment.topCenter,
               end: Alignment.bottomCenter,
-              colors: [
-                Colors.black.withValues(alpha: 0.6),
-                Colors.transparent,
-              ],
+              colors: [Colors.black.withValues(alpha: 0.6), Colors.transparent],
             ),
           ),
         ),
       ),
-      body: _loading
-          ? const Center(child: CircularProgressIndicator())
-          : _error != null
-              ? Center(
-                  child: Padding(
-                    padding: const EdgeInsets.all(32),
-                    child: Text(_error!, style: TextStyle(color: c.accent)),
-                  ),
-                )
-              : ListView(
-                  padding: EdgeInsets.zero,
-                  children: [
-                      _Header(
-                        details: _details!,
+      body: detail.details != null
+          ? CustomScrollView(
+                  slivers: [
+                    SliverToBoxAdapter(
+                      child: _Header(
+                        details: detail.details!,
                         c: c,
                         inLibrary: _inLibrary,
                         onAddToLibrary: _addToLibrary,
+                        onRemoveFromLibrary: _removeFromLibrary,
                         appBarHeight: appBarHeight,
                         localThumbnail: _localThumbnail,
                         sourceId: widget.sourceId,
                         url: widget.url,
-                      ),
-                    const SizedBox(height: 24),
-                    Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 16),
-                      child: _ChaptersList(
-                        chapters: _sortedChapters(_chapters.where(_chapterMatchesFilter).toList()),
-                        localChapters: _localChapters,
-                        downloadProgress: _downloadProgress,
-                        offlineMode: _offlineMode,
-                        c: c,
-                        sourceId: widget.sourceId,
-                        sortMode: _sortMode,
-                        onSortChanged: _showSortSheet,
-                        onChapterTap: (ch) async {
-                          final url = ch['url'] as String? ?? '';
-                          if (_mangaId != null && url.isNotEmpty && mounted) {
-                            final db = context.read<DatabaseService>();
-                            final existing = await db.getMangaChapterByUrl(_mangaId!, url);
-                            if (existing != null) {
-                              await db.markMangaChapterOpened(existing.id);
-                            }
-                          }
-                          await Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (_) => MangaReaderScreen(
-                                mangaId: _mangaId,
-                                sourceId: widget.sourceId,
-                                mangaUrl: widget.url,
-                                chapterUrl: ch['url'] as String? ?? '',
-                                chapterName: ch['name'] as String? ?? '',
-                              ),
-                            ),
-                          );
-                          if (_mangaId != null && mounted) {
-                            final db = context.read<DatabaseService>();
-                            final localChs = await db.getMangaChapters(_mangaId!);
-                            final chMap = <String, Map<String, dynamic>>{};
-                            for (final lc in localChs) {
-                              chMap[lc.url] = {
-                                'is_read': lc.isRead,
-                                'last_page_read': lc.lastPageRead,
-                                'is_downloaded': lc.isDownloaded,
-                                'is_opened': lc.isOpened,
-                              };
-                            }
-                            setState(() {
-                              _localChapters
-                                ..clear()
-                                ..addAll(chMap);
-                            });
-                          }
-                        },
-                        onDownloadTap: (ch) => _downloadSingleChapter(ch),
+                        sourceName: detail.sourceName,
+                        lastChapterDate: lastChapterDate,
+                        releaseCycle: releaseCycle,
+                        expanded: detail.expanded,
+                        onExpandedChanged: (v) => ref
+                            .read(mangaDetailProvider.notifier)
+                            .setExpanded(v),
+                        fallbackTitle: widget.title,
                       ),
                     ),
-                  ],
+                    SliverToBoxAdapter(child: const SizedBox(height: 16)),
+                    // Between Add to library (header) and Chapters.
+                    if (detail.loading)
+                      SliverToBoxAdapter(
+                        child: Padding(
+                          padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+                          child: Material(
+                            color: c.accent.withValues(alpha: 0.14),
+                            borderRadius: BorderRadius.circular(10),
+                            child: Padding(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 14,
+                                vertical: 10,
+                              ),
+                              child: Row(
+                                children: [
+                                  SizedBox(
+                                    width: 16,
+                                    height: 16,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                      color: c.accent,
+                                    ),
+                                  ),
+                                  const SizedBox(width: 12),
+                                  Expanded(
+                                    child: Text(
+                                      detail.chapters.isEmpty
+                                          ? 'Fetching manga details and chapters…'
+                                          : 'Refreshing manga metadata…',
+                                      style: TextStyle(
+                                        color: c.textPrimary,
+                                        fontSize: 13,
+                                        fontWeight: FontWeight.w500,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    if (detail.error != null)
+                      SliverToBoxAdapter(
+                        child: Padding(
+                          padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+                          child: Text(
+                            detail.error!,
+                            style: TextStyle(color: c.accent, fontSize: 13),
+                          ),
+                        ),
+                      ),
+                    // Chapter header
+                    SliverToBoxAdapter(
+                    child: Padding(
+                      padding: const EdgeInsets.only(bottom: 12),
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: Row(
+                              children: [
+                                Text(
+                                  'Chapters',
+                                  style: TextStyle(
+                                    color: c.textPrimary,
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                                const SizedBox(width: 10),
+                                Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 10,
+                                    vertical: 3,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: c.surfaceMuted,
+                                    borderRadius: AppSpacing.brPill,
+                                  ),
+                                  child: Text(
+                                    '${filteredChapters.length}',
+                                    style: TextStyle(
+                                      color: c.textSecondary,
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                ),
+                                if (detail.offlineMode) ...[
+                                  const SizedBox(width: 8),
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 8,
+                                      vertical: 3,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      color: Colors.orange.withAlpha(30),
+                                      borderRadius: AppSpacing.brPill,
+                                      border: Border.all(
+                                        color: Colors.orange.withAlpha(80),
+                                      ),
+                                    ),
+                                    child: Text(
+                                      'Offline',
+                                      style: TextStyle(
+                                        color: Colors.orange.shade300,
+                                        fontSize: 11,
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ],
+                            ),
+                          ),
+                          IconButton(
+                            icon: Icon(
+                              switch (detail.sortMode) {
+                                SortMode.nameAsc => Icons.sort_by_alpha,
+                                SortMode.nameDesc => Icons.sort_by_alpha,
+                                SortMode.dateAsc => Icons.sort,
+                                SortMode.dateDesc => Icons.sort,
+                                SortMode.chapterAsc => Icons.swap_vert,
+                                SortMode.chapterDesc => Icons.swap_vert,
+                              },
+                              size: 20,
+                              color: c.textSecondary,
+                            ),
+                            tooltip: 'Sort chapters',
+                            onPressed: _showSortSheet,
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                  // Chapter items
+                  filteredChapters.isEmpty
+                      ? SliverFillRemaining(
+                          child: Center(
+                            child: Text(
+                              detail.offlineMode
+                                  ? 'No downloaded chapters'
+                                  : 'No chapters',
+                              style: TextStyle(
+                                color: c.textTertiary,
+                                fontSize: 14,
+                              ),
+                            ),
+                          ),
+                        )
+                      : SliverList.builder(
+                          itemCount: filteredChapters.length,
+                          itemBuilder: (context, index) {
+                            final ch = filteredChapters[index];
+                            return _buildChapterItem(
+                              ch: ch,
+                              c: c,
+                              downloadProgress: detail.downloadProgress,
+                              offlineMode: detail.offlineMode,
+                              onChapterTap: (ch) async {
+                                final url = ch['url'] as String? ?? '';
+                                if (detail.mangaId != null &&
+                                    url.isNotEmpty &&
+                                    mounted) {
+                                  final repos = ref.read(repositoriesProvider);
+                                  final existing = await repos.manga
+                                      .getMangaChapterByUrl(
+                                        detail.mangaId!,
+                                        url,
+                                      );
+                                  if (existing != null) {
+                                    await repos.manga.markMangaChapterOpened(
+                                      existing.id,
+                                    );
+                                  }
+                                }
+                                await context.pushNamed(
+                                  Routes.mangaReader,
+                                  extra:
+                                      (
+                                            mangaId: detail.mangaId,
+                                            sourceId: widget.sourceId,
+                                            mangaUrl: widget.url,
+                                            chapterUrl:
+                                                ch['url'] as String? ?? '',
+                                            chapterName:
+                                                ch['name'] as String? ?? '',
+                                            pageNumber: null,
+                                          )
+                                          as MangaReaderArgs,
+                                );
+                                if (detail.mangaId != null && mounted) {
+                                  final repos = ref.read(repositoriesProvider);
+                                  final localChs = await repos.manga
+                                      .getMangaChapters(detail.mangaId!);
+                                  final chMap =
+                                      <String, Map<String, dynamic>>{};
+                                  for (final lc in localChs) {
+                                    chMap[lc.url] = {
+                                      'is_read': lc.isRead,
+                                      'last_page_read': lc.lastPageRead,
+                                      'is_downloaded': lc.isDownloaded,
+                                      'is_opened': lc.isOpened,
+                                    };
+                                  }
+                                  final chMapNorm =
+                                      <String, Map<String, dynamic>>{};
+                                  for (final lc in localChs) {
+                                    chMapNorm[_normalizeUrl(lc.url)] = {
+                                      'is_read': lc.isRead,
+                                      'last_page_read': lc.lastPageRead,
+                                      'is_downloaded': lc.isDownloaded,
+                                      'is_opened': lc.isOpened,
+                                    };
+                                  }
+                                  final merged = detail.chapters.map((ch) {
+                                    final url = _normalizeUrl(
+                                      ch['url'] as String? ?? '',
+                                    );
+                                    final local = chMapNorm[url];
+                                    final cleaned =
+                                        Map<String, dynamic>.from(ch)
+                                          ..remove('is_read')
+                                          ..remove('last_page_read')
+                                          ..remove('is_downloaded')
+                                          ..remove('is_opened')
+                                          ..remove('read_at');
+                                    if (local != null) cleaned.addAll(local);
+                                    return cleaned;
+                                  }).toList();
+                                  final chMapRebuilt =
+                                      <String, Map<String, dynamic>>{};
+                                  for (final lc in localChs) {
+                                    chMapRebuilt[lc.url] =
+                                        chMapNorm[_normalizeUrl(lc.url)]!;
+                                  }
+                                  final notifier = ref.read(
+                                    mangaDetailProvider.notifier,
+                                  );
+                                  notifier
+                                    ..setChapters(merged)
+                                    ..setLocalChapters(chMapRebuilt);
+                                }
+                              },
+                              onDownloadTap: (ch) => _downloadSingleChapter(ch),
+                              onDeleteTap: (ch) =>
+                                  _confirmDeleteSingleChapter(ch),
+                            );
+                          },
+                        ),
+              ],
+            )
+          : detail.loading
+          ? const Center(child: CircularProgressIndicator())
+          : detail.error != null
+          ? Center(
+              child: Padding(
+                padding: const EdgeInsets.all(32),
+                child: Text(
+                  detail.error!,
+                  style: TextStyle(color: c.accent),
                 ),
+              ),
+            )
+          : const Center(child: Text('Failed to load manga details')),
+    );
+  }
+
+  Widget _buildChapterItem({
+    required Map<String, dynamic> ch,
+    required KomaColors c,
+    required Map<String, String> downloadProgress,
+    required bool offlineMode,
+    required void Function(Map<String, dynamic> ch) onChapterTap,
+    required void Function(Map<String, dynamic> ch)? onDownloadTap,
+    required void Function(Map<String, dynamic> ch)? onDeleteTap,
+  }) {
+    final url = ch['url'] as String? ?? '';
+    final isRead = ch['is_read'] as bool? ?? false;
+    final isOpened = ch['is_opened'] as bool? ?? true;
+    final lastPageRead = asIntOr(ch['last_page_read']);
+    final name = ch['name'] as String? ?? '';
+    final chNum = ch['chapter_number'] as num?;
+    final scanlator = ch['scanlator'] as String?;
+    final dateUpload = asIntOr(ch['date_upload']);
+    final dlStatus = downloadProgress[url];
+    final pageProg = _parsePageProgress(dlStatus);
+    final isNewUpdate = !isOpened;
+
+    final dateStr = dateUpload > 0
+        ? DateFormat.yMMMd().format(
+            DateTime.fromMillisecondsSinceEpoch(dateUpload),
+          )
+        : '';
+
+    return AnimatedPress(
+      onTap: () => onChapterTap(ch),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        decoration: BoxDecoration(
+          border: Border(bottom: BorderSide(color: c.border, width: 0.3)),
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 2,
+              height: 40,
+              margin: const EdgeInsets.only(right: 12),
+              decoration: BoxDecoration(
+                color: isRead ? c.textTertiary.withAlpha(77) : c.accent,
+                borderRadius: BorderRadius.circular(10),
+              ),
+            ),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      if (isNewUpdate) ...[
+                        Container(
+                          margin: const EdgeInsets.only(right: 8),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 6,
+                            vertical: 2,
+                          ),
+                          decoration: BoxDecoration(
+                            color: c.accent,
+                            borderRadius: AppSpacing.brPill,
+                          ),
+                          child: const Text(
+                            'NEW',
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontSize: 10,
+                              fontWeight: FontWeight.w700,
+                              letterSpacing: 0.4,
+                            ),
+                          ),
+                        ),
+                      ],
+                      Expanded(
+                        child: Text(
+                          name,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            color: isRead ? c.textTertiary : c.textPrimary,
+                            fontSize: 14,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  if (!isRead && lastPageRead > 0)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 2),
+                      child: Text(
+                        'Page ${lastPageRead + 1}',
+                        style: TextStyle(color: c.textTertiary, fontSize: 11),
+                      ),
+                    ),
+                  const SizedBox(height: 4),
+                  Row(
+                    children: [
+                      if (chNum != null)
+                        Text(
+                          'Ch. ${chNum.toStringAsFixed(chNum == chNum.truncateToDouble() ? 0 : 1)}',
+                          style: TextStyle(color: c.textTertiary, fontSize: 12),
+                        ),
+                      if (chNum != null && dateStr.isNotEmpty)
+                        Text(
+                          ' · ',
+                          style: TextStyle(color: c.textTertiary, fontSize: 12),
+                        ),
+                      if (dateStr.isNotEmpty)
+                        Text(
+                          dateStr,
+                          style: TextStyle(color: c.textTertiary, fontSize: 12),
+                        ),
+                      if (dateStr.isNotEmpty && scanlator != null)
+                        Text(
+                          ' · ',
+                          style: TextStyle(color: c.textTertiary, fontSize: 12),
+                        ),
+                      if (scanlator != null)
+                        Text(
+                          scanlator,
+                          style: TextStyle(color: c.textTertiary, fontSize: 12),
+                        ),
+                    ],
+                  ),
+                  if (pageProg != null)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 6),
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: LinearProgressIndicator(
+                              value: pageProg.$1 / pageProg.$2,
+                              backgroundColor: c.surfaceMuted,
+                              color: c.accent,
+                              minHeight: 2,
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Text(
+                            '${pageProg.$1}/${pageProg.$2}',
+                            style: TextStyle(
+                              color: c.textTertiary,
+                              fontSize: 11,
+                            ),
+                          ),
+                        ],
+                      ),
+                    )
+                  else if (dlStatus == 'queued')
+                    Padding(
+                      padding: const EdgeInsets.only(top: 6),
+                      child: LinearProgressIndicator(
+                        backgroundColor: c.surfaceMuted,
+                        color: c.accent,
+                        minHeight: 2,
+                      ),
+                    ),
+                ],
+              ),
+            ),
+            if (dlStatus == 'done' || ch['is_downloaded'] == true)
+              IconButtonRound(
+                icon: Icons.delete_outline,
+                size: 32,
+                iconColor: c.textSecondary,
+                onPressed: onDeleteTap == null
+                    ? null
+                    : () => onDeleteTap(ch),
+              )
+            else if (dlStatus == 'error')
+              IconButtonRound(
+                icon: Icons.error_outline,
+                size: 32,
+                iconColor: Colors.redAccent,
+                onPressed: () => onDownloadTap?.call(ch),
+              )
+            else if (_isActiveDownload(dlStatus))
+              const Padding(
+                padding: EdgeInsets.all(4),
+                child: SizedBox(
+                  width: 24,
+                  height: 24,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                ),
+              )
+            else if (!offlineMode)
+              IconButtonRound(
+                icon: Icons.download_rounded,
+                size: 32,
+                onPressed: onDownloadTap == null
+                    ? null
+                    : () => onDownloadTap(ch),
+              ),
+          ],
+        ),
+      ),
     );
   }
 }
@@ -1003,20 +2265,35 @@ class _Header extends StatefulWidget {
   final KomaColors c;
   final bool inLibrary;
   final VoidCallback onAddToLibrary;
+  final VoidCallback onRemoveFromLibrary;
   final double appBarHeight;
   final String? localThumbnail;
   final String sourceId;
   final String url;
+  final String sourceName;
+  final String lastChapterDate;
+  final String releaseCycle;
+  final bool expanded;
+  final ValueChanged<bool> onExpandedChanged;
+  /// Catalog/nav title used when remote details omit or blank the title.
+  final String fallbackTitle;
 
   const _Header({
     required this.details,
     required this.c,
     required this.inLibrary,
     required this.onAddToLibrary,
+    required this.onRemoveFromLibrary,
     this.appBarHeight = 0,
     this.localThumbnail,
     required this.sourceId,
     required this.url,
+    this.sourceName = '',
+    this.lastChapterDate = '',
+    this.releaseCycle = 'N/A',
+    required this.expanded,
+    required this.onExpandedChanged,
+    this.fallbackTitle = '',
   });
 
   @override
@@ -1024,18 +2301,53 @@ class _Header extends StatefulWidget {
 }
 
 class _HeaderState extends State<_Header> {
-  bool _expanded = false;
+  Widget _buildStatusChip(int status, String label) {
+    final (icon, chipColor) = switch (status) {
+      1 => (Icons.auto_awesome_mosaic, widget.c.accent), // Ongoing
+      2 => (Icons.check_circle, const Color(0xFF4CAF50)), // Completed
+      5 => (Icons.cancel, const Color(0xFFC44C4C)), // Cancelled
+      6 => (Icons.pause_circle, Colors.orange), // On hiatus
+      _ => (Icons.help_outline, widget.c.textTertiary), // Unknown
+    };
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      decoration: BoxDecoration(
+        color: chipColor.withValues(alpha: 0.15),
+        borderRadius: AppSpacing.brXs,
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 12, color: chipColor),
+          const SizedBox(width: 4),
+          Text(
+            label,
+            style: TextStyle(
+              color: chipColor,
+              fontSize: 11,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
-    final title = widget.details['title'] as String? ?? '';
+    final rawTitle = widget.details['title'] as String? ?? '';
+    final title = rawTitle.trim().isNotEmpty
+        ? rawTitle
+        : widget.fallbackTitle;
     final thumb = widget.details['thumbnail_url'] as String?;
     final author = widget.details['author'] as String?;
     final artist = widget.details['artist'] as String?;
     final description = widget.details['description'] as String?;
     final genre = widget.details['genre'] as String?;
-    final status = widget.details['status'] as int? ?? 0;
-    final statusLabel = _MangaDetailScreenState._statusLabels[status] ?? 'Unknown';
+    final status = asIntOr(widget.details['status']);
+    final statusLabel =
+        _MangaDetailScreenState._statusLabels[status] ?? 'Unknown';
+    final sourceName = widget.sourceName;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -1052,6 +2364,8 @@ class _HeaderState extends State<_Header> {
             localThumbnail: widget.localThumbnail,
             sourceId: widget.sourceId,
             url: widget.url,
+            sourceName: sourceName,
+            lastChapterDate: widget.lastChapterDate,
           )
         else
           Padding(
@@ -1073,20 +2387,46 @@ class _HeaderState extends State<_Header> {
                 if (artist != null && artist.isNotEmpty)
                   _detailInfoRow(widget.c, 'Artist', artist),
                 const SizedBox(height: 8),
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                  decoration: BoxDecoration(
-                    color: widget.c.accentMuted,
-                    borderRadius: AppSpacing.brXs,
-                  ),
-                  child: Text(
-                    statusLabel,
-                    style: TextStyle(
-                      color: widget.c.accent,
-                      fontSize: 11,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
+                Row(
+                  children: [
+                    _buildStatusChip(status, statusLabel),
+                    if (sourceName.isNotEmpty) ...[
+                      const SizedBox(width: 8),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 3,
+                        ),
+                        decoration: BoxDecoration(
+                          color: widget.c.surfaceMuted,
+                          borderRadius: AppSpacing.brXs,
+                        ),
+                        child: Text(
+                          sourceName,
+                          style: TextStyle(
+                            color: widget.c.textSecondary,
+                            fontSize: 11,
+                          ),
+                        ),
+                      ),
+                    ],
+                    if (widget.lastChapterDate.isNotEmpty) ...[
+                      const SizedBox(width: 8),
+                      AppIcon(
+                        data: AppIcons.calendar,
+                        size: 11,
+                        color: widget.c.textTertiary,
+                      ),
+                      const SizedBox(width: 4),
+                      Text(
+                        widget.lastChapterDate,
+                        style: TextStyle(
+                          color: widget.c.textTertiary,
+                          fontSize: 11,
+                        ),
+                      ),
+                    ],
+                  ],
                 ),
               ],
             ),
@@ -1103,36 +2443,46 @@ class _HeaderState extends State<_Header> {
                   children: [
                     Text(
                       'Description',
-                      style: TextStyle(
+                      style: AppType.labelCaps(
+                        fontSize: 12,
                         color: widget.c.textPrimary,
-                        fontSize: 14,
-                        fontWeight: FontWeight.w600,
                       ),
                     ),
                     TextButton(
-                      onPressed: () => setState(() => _expanded = !_expanded),
+                      onPressed: () =>
+                          widget.onExpandedChanged(!widget.expanded),
                       style: TextButton.styleFrom(
                         padding: EdgeInsets.zero,
                         minimumSize: const Size(0, 0),
                         tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                       ),
                       child: Text(
-                        _expanded ? 'READ LESS' : 'READ MORE',
-                        style: TextStyle(
-                          color: widget.c.accent,
+                        widget.expanded ? 'READ LESS' : 'READ MORE',
+                        style: AppType.labelCaps(
                           fontSize: 12,
-                          fontWeight: FontWeight.w600,
+                          color: widget.c.accent,
                         ),
                       ),
                     ),
                   ],
                 ),
                 const SizedBox(height: 4),
-                Text(
-                  description,
-                  maxLines: _expanded ? null : 4,
-                  overflow: _expanded ? TextOverflow.visible : TextOverflow.ellipsis,
-                  style: TextStyle(color: widget.c.textSecondary, fontSize: 13),
+                AnimatedSize(
+                  duration: const Duration(milliseconds: 280),
+                  curve: Curves.easeInOutCubic,
+                  alignment: Alignment.topCenter,
+                  child: Text(
+                    description,
+                    key: ValueKey(widget.expanded),
+                    maxLines: widget.expanded ? null : 4,
+                    overflow: widget.expanded
+                        ? TextOverflow.visible
+                        : TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: widget.c.textSecondary,
+                      fontSize: 13,
+                    ),
+                  ),
                 ),
               ],
             ),
@@ -1147,58 +2497,138 @@ class _HeaderState extends State<_Header> {
               children: [
                 Text(
                   'Tags',
-                  style: TextStyle(
+                  style: AppType.labelCaps(
+                    fontSize: 12,
                     color: widget.c.textPrimary,
-                    fontSize: 14,
-                    fontWeight: FontWeight.w600,
                   ),
                 ),
                 const SizedBox(height: 8),
-                Wrap(
-                  spacing: 8,
-                  runSpacing: 6,
-                  children: genre
-                      .split(',')
-                      .map((g) => g.trim())
-                      .where((g) => g.isNotEmpty)
-                      .map(
-                        (g) => Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                          decoration: BoxDecoration(
-                            color: widget.c.surfaceMuted,
-                            borderRadius: AppSpacing.brPill,
-                          ),
-                          child: Text(
-                            '${_genreEmoji(g)}$g',
-                            style: TextStyle(
-                              color: widget.c.textSecondary,
-                              fontSize: 13,
-                            ),
+                AnimatedSize(
+                  duration: const Duration(milliseconds: 280),
+                  curve: Curves.easeInOutCubic,
+                  alignment: Alignment.topCenter,
+                  child: widget.expanded
+                      ? LayoutBuilder(
+                          builder: (context, constraints) {
+                            final gap = 8.0;
+                            final tagW =
+                                (constraints.maxWidth - gap * 3) / 4;
+                            final tags = genre
+                                .split(',')
+                                .map((g) => g.trim())
+                                .where((g) => g.isNotEmpty)
+                                .toList();
+                            return Wrap(
+                              spacing: gap,
+                              runSpacing: gap,
+                              children: [
+                                for (final g in tags)
+                                  SizedBox(
+                                    width: tagW,
+                                    child: _tagChip(g),
+                                  ),
+                              ],
+                            );
+                          },
+                        )
+                      : SingleChildScrollView(
+                          scrollDirection: Axis.horizontal,
+                          child: Row(
+                            children: genre
+                                .split(',')
+                                .map((g) => g.trim())
+                                .where((g) => g.isNotEmpty)
+                                .map(
+                                  (g) => Padding(
+                                    padding: const EdgeInsets.only(right: 8),
+                                    child: _tagChip(g),
+                                  ),
+                                )
+                                .toList(),
                           ),
                         ),
-                      )
-                      .toList(),
                 ),
               ],
             ),
           ),
         ],
-        const SizedBox(height: 16),
+        const SizedBox(height: 12),
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 16),
-          child: SizedBox(
-            width: double.infinity,
-            child: OutlinedButton.icon(
-              onPressed: widget.inLibrary ? null : widget.onAddToLibrary,
-              icon: Icon(
-                widget.inLibrary ? Icons.check : Icons.bookmark_add_outlined,
-                size: 18,
+          child: Row(
+            children: [
+              IconButton(
+                tooltip: widget.inLibrary
+                    ? 'Remove from library'
+                    : 'Add to library',
+                onPressed: widget.inLibrary
+                    ? widget.onRemoveFromLibrary
+                    : widget.onAddToLibrary,
+                style: IconButton.styleFrom(
+                  backgroundColor: widget.c.surfaceMuted,
+                  foregroundColor: widget.inLibrary
+                      ? widget.c.accent
+                      : widget.c.textSecondary,
+                ),
+                icon: AnimatedSwitcher(
+                  duration: const Duration(milliseconds: 200),
+                  child: Icon(
+                    widget.inLibrary
+                        ? Icons.favorite
+                        : Icons.favorite_border_rounded,
+                    key: ValueKey(widget.inLibrary),
+                    size: 22,
+                  ),
+                ),
               ),
-              label: Text(widget.inLibrary ? 'In library' : 'Add to library'),
-            ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Release cycle',
+                      style: AppType.labelCaps(
+                        fontSize: 11,
+                        color: widget.c.textTertiary,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      widget.releaseCycle,
+                      style: TextStyle(
+                        color: widget.c.textSecondary,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
           ),
         ),
       ],
+    );
+  }
+
+  Widget _tagChip(String g) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      decoration: BoxDecoration(
+        color: widget.c.surfaceMuted,
+        borderRadius: AppSpacing.brPill,
+      ),
+      child: Text(
+        '${_genreEmoji(g)}$g',
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        textAlign: TextAlign.center,
+        style: TextStyle(
+          color: widget.c.textSecondary,
+          fontSize: 13,
+        ),
+      ),
     );
   }
 
@@ -1270,7 +2700,7 @@ Widget _detailInfoRow(KomaColors c, String label, String value) {
         children: [
           TextSpan(
             text: '$label: ',
-            style: TextStyle(color: c.textTertiary, fontSize: 12),
+            style: AppType.labelCaps(fontSize: 12, color: c.textTertiary),
           ),
           TextSpan(
             text: value,
@@ -1282,13 +2712,14 @@ Widget _detailInfoRow(KomaColors c, String label, String value) {
   );
 }
 
-class _ChapterFilterOption extends StatelessWidget {
+class ChapterFilterOption extends StatelessWidget {
   final IconData icon;
   final String label;
-  final _FilterMode mode;
+  final FilterMode mode;
   final VoidCallback onTap;
 
-  const _ChapterFilterOption({
+  const ChapterFilterOption({
+    super.key,
     required this.icon,
     required this.label,
     required this.mode,
@@ -1302,9 +2733,9 @@ class _ChapterFilterOption extends StatelessWidget {
       button: true,
       label: '$label filter',
       value: switch (mode) {
-        _FilterMode.ignore => 'not applied',
-        _FilterMode.include => 'included',
-        _FilterMode.exclude => 'excluded',
+        FilterMode.ignore => 'not applied',
+        FilterMode.include => 'included',
+        FilterMode.exclude => 'excluded',
       },
       child: AnimatedPress(
         onTap: onTap,
@@ -1387,7 +2818,7 @@ class _DownloadOption extends StatelessWidget {
 }
 
 class _TriStateGlyph extends StatelessWidget {
-  final _FilterMode mode;
+  final FilterMode mode;
 
   const _TriStateGlyph({required this.mode});
 
@@ -1395,9 +2826,9 @@ class _TriStateGlyph extends StatelessWidget {
   Widget build(BuildContext context) {
     final c = context.colors;
     final (color, glyph) = switch (mode) {
-      _FilterMode.ignore => (c.textTertiary, null),
-      _FilterMode.include => (c.accent, Icons.check_rounded),
-      _FilterMode.exclude => (const Color(0xFFC44C4C), Icons.close_rounded),
+      FilterMode.ignore => (c.textTertiary, null),
+      FilterMode.include => (c.accent, Icons.check_rounded),
+      FilterMode.exclude => (const Color(0xFFC44C4C), Icons.close_rounded),
     };
     return AnimatedContainer(
       duration: const Duration(milliseconds: 180),
@@ -1405,7 +2836,7 @@ class _TriStateGlyph extends StatelessWidget {
       height: 24,
       alignment: Alignment.center,
       decoration: BoxDecoration(
-        color: mode == _FilterMode.ignore ? Colors.transparent : color,
+        color: mode == FilterMode.ignore ? Colors.transparent : color,
         borderRadius: BorderRadius.circular(6),
         border: Border.all(color: color, width: 1.5),
       ),
@@ -1448,8 +2879,7 @@ class _SortOption extends StatelessWidget {
                 ),
               ),
             ),
-            if (selected)
-              Icon(Icons.check_rounded, size: 20, color: c.accent),
+            if (selected) Icon(Icons.check_rounded, size: 20, color: c.accent),
           ],
         ),
       ),
@@ -1457,7 +2887,7 @@ class _SortOption extends StatelessWidget {
   }
 }
 
-class _HeroSection extends StatelessWidget {
+class _HeroSection extends ConsumerWidget {
   final String title;
   final String thumb;
   final String? author;
@@ -1468,6 +2898,8 @@ class _HeroSection extends StatelessWidget {
   final String? localThumbnail;
   final String sourceId;
   final String url;
+  final String sourceName;
+  final String lastChapterDate;
 
   const _HeroSection({
     required this.title,
@@ -1480,80 +2912,96 @@ class _HeroSection extends StatelessWidget {
     this.localThumbnail,
     required this.sourceId,
     required this.url,
+    this.sourceName = '',
+    this.lastChapterDate = '',
   });
 
-  Widget _buildImage({required BoxFit fit, double? width, double? height}) {
+  Widget _buildImage(
+    BuildContext context,
+    WidgetRef ref, {
+    required BoxFit fit,
+    double? width,
+    double? height,
+  }) {
     if (localThumbnail != null) {
       return Image.file(
         File(localThumbnail!),
         width: width,
         height: height,
         fit: fit,
-        errorBuilder: (context, exception, stackTrace) => Container(
-          width: width,
-          height: height,
-          color: c.surfaceMuted,
-        ),
+        errorBuilder: (context, exception, stackTrace) =>
+            Container(width: width, height: height, color: c.surfaceMuted),
       );
     }
-    return Image.network(
-      thumb,
+    final headers = ref.watch(sourceImageHeadersProvider(sourceId)).value;
+    // Do not pass both width+height into [cachedCover]/ its [ResizeImage]
+    // path resamples to exact pixels and permanently stretches covers.
+    // Layout size + [BoxFit.cover] crop correctly; decode uses coverProvider's
+    // maxBytes path (aspect preserved).
+    return Image(
+      image: cachedCover(thumb, headers: headers),
       width: width,
       height: height,
       fit: fit,
-      errorBuilder: (context, exception, stackTrace) => Container(
-        width: width,
-        height: height,
-        color: c.surfaceMuted,
-      ),
+      alignment: Alignment.topCenter,
+      errorBuilder: (context, exception, stackTrace) =>
+          Container(width: width, height: height, color: c.surfaceMuted),
     );
   }
 
   @override
-  Widget build(BuildContext context) {
-    final height = appBarHeight + 24 + 300 + 24;
+  Widget build(BuildContext context, WidgetRef ref) {
+    // Mihon MangaAndSourceTitlesSmall: MangaCover.Book maxWidth 100.dp, ratio 2:3.
+    const coverWidth = 100.0;
+    const coverHeight = 150.0; // 100 * 3/2
+    final height = appBarHeight + 24 + coverHeight + 24;
     return SizedBox(
       height: height,
-        child: Stack(
-          children: [
-            Positioned.fill(
-              child: _buildImage(fit: BoxFit.cover),
-            ),
-            Positioned(
-              left: 0,
-              right: 0,
-              top: 0,
-              bottom: 0,
-              child: Container(
-                decoration: BoxDecoration(
-                   gradient: LinearGradient(
-                     begin: Alignment.topCenter,
-                     end: Alignment.bottomCenter,
-                     colors: [
-                       Colors.black.withValues(alpha: 0.15),
-                       Colors.black.withValues(alpha: 0.45),
-                       Colors.black.withValues(alpha: 0.85),
-                       Colors.black,
-                     ],
-                     stops: const [0.0, 0.35, 0.7, 1.0],
-                   ),
+      child: Stack(
+        children: [
+          Positioned.fill(child: _buildImage(context, ref, fit: BoxFit.cover)),
+          Positioned(
+            left: 0,
+            right: 0,
+            top: 0,
+            bottom: 0,
+            child: Container(
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  colors: [
+                    Colors.black.withValues(alpha: 0.15),
+                    Colors.black.withValues(alpha: 0.45),
+                    Colors.black.withValues(alpha: 0.85),
+                    Colors.black,
+                  ],
+                  stops: const [0.0, 0.35, 0.7, 1.0],
                 ),
               ),
             ),
-            Positioned(
-              left: 16,
-              right: 16,
-              top: appBarHeight + 24,
-              bottom: 24,
-              child: Row(
-                children: [
-                  Hero(
-                    tag: 'manga-thumbnail-$sourceId-$url',
-                    child: ClipRRect(
-                      borderRadius: AppSpacing.brMd,
-                      child: _buildImage(width: 160, height: 300, fit: BoxFit.cover),
+          ),
+          Positioned(
+            left: 16,
+            right: 16,
+            top: appBarHeight + 24,
+            bottom: 24,
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Hero(
+                  tag: 'manga-thumbnail-$sourceId-$url',
+                  child: ClipRRect(
+                    borderRadius: AppSpacing.brSm,
+                    child: _buildImage(
+                      context,
+                      ref,
+                      width: coverWidth,
+                      height: coverHeight,
+                      fit: BoxFit.cover,
                     ),
                   ),
+                ),
                 const SizedBox(width: 16),
                 Expanded(
                   child: Column(
@@ -1582,20 +3030,67 @@ class _HeroSection extends StatelessWidget {
                       if (artist?.isNotEmpty == true)
                         _detailInfoRow(c, 'Artist', artist!),
                       const SizedBox(height: 8),
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                        decoration: BoxDecoration(
-                          color: c.accentMuted,
-                          borderRadius: AppSpacing.brXs,
-                        ),
-                        child: Text(
-                          statusLabel,
-                          style: TextStyle(
-                            color: c.accent,
-                            fontSize: 11,
-                            fontWeight: FontWeight.w600,
+                      Wrap(
+                        crossAxisAlignment: WrapCrossAlignment.center,
+                        spacing: 8,
+                        runSpacing: 4,
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 8,
+                              vertical: 3,
+                            ),
+                            decoration: BoxDecoration(
+                              color: c.accentMuted,
+                              borderRadius: AppSpacing.brXs,
+                            ),
+                            child: Text(
+                              statusLabel,
+                              style: TextStyle(
+                                color: c.accent,
+                                fontSize: 11,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
                           ),
-                        ),
+                          if (sourceName.isNotEmpty)
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 8,
+                                vertical: 3,
+                              ),
+                              decoration: BoxDecoration(
+                                color: c.surfaceMuted.withValues(alpha: 0.5),
+                                borderRadius: AppSpacing.brXs,
+                              ),
+                              child: Text(
+                                sourceName,
+                                style: TextStyle(
+                                  color: Colors.white70,
+                                  fontSize: 11,
+                                ),
+                              ),
+                            ),
+                          if (lastChapterDate.isNotEmpty)
+                            Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                AppIcon(
+                                  data: AppIcons.calendar,
+                                  size: 11,
+                                  color: Colors.white54,
+                                ),
+                                const SizedBox(width: 4),
+                                Text(
+                                  lastChapterDate,
+                                  style: TextStyle(
+                                    color: Colors.white54,
+                                    fontSize: 11,
+                                  ),
+                                ),
+                              ],
+                            ),
+                        ],
                       ),
                     ],
                   ),
@@ -1605,279 +3100,6 @@ class _HeroSection extends StatelessWidget {
           ),
         ],
       ),
-    );
-  }
-}
-
-class _ChaptersList extends StatelessWidget {
-  final List<Map<String, dynamic>> chapters;
-  final Map<String, Map<String, dynamic>> localChapters;
-  final Map<String, String> downloadProgress;
-  final bool offlineMode;
-  final KomaColors c;
-  final String sourceId;
-  final void Function(Map<String, dynamic> ch) onChapterTap;
-  final void Function(Map<String, dynamic> ch)? onDownloadTap;
-  final _SortMode sortMode;
-  final VoidCallback? onSortChanged;
-
-  const _ChaptersList({
-    required this.chapters,
-    required this.localChapters,
-    required this.downloadProgress,
-    required this.offlineMode,
-    required this.c,
-    required this.sourceId,
-    required this.onChapterTap,
-    this.onDownloadTap,
-    this.sortMode = _SortMode.chapterAsc,
-    this.onSortChanged,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    if (chapters.isEmpty) {
-      return Center(
-        child: Text(
-          offlineMode ? 'No downloaded chapters' : 'No chapters',
-          style: TextStyle(color: c.textTertiary, fontSize: 14),
-        ),
-      );
-    }
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-         Padding(
-           padding: const EdgeInsets.only(bottom: 12),
-           child: Row(
-             children: [
-               Expanded(
-                 child: Row(
-                   children: [
-                     Text(
-                       'Chapters',
-                       style: TextStyle(
-                         color: c.textPrimary,
-                         fontSize: 16,
-                         fontWeight: FontWeight.w600,
-                       ),
-                     ),
-                     const SizedBox(width: 10),
-                     Container(
-                       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
-                       decoration: BoxDecoration(
-                         color: c.surfaceMuted,
-                         borderRadius: AppSpacing.brPill,
-                       ),
-                       child: Text(
-                         '${chapters.length}',
-                         style: TextStyle(
-                           color: c.textSecondary,
-                           fontSize: 12,
-                           fontWeight: FontWeight.w600,
-                         ),
-                       ),
-                     ),
-                     if (offlineMode) ...[
-                       const SizedBox(width: 8),
-                       Container(
-                         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                         decoration: BoxDecoration(
-                           color: Colors.orange.withAlpha(30),
-                           borderRadius: AppSpacing.brPill,
-                           border: Border.all(color: Colors.orange.withAlpha(80)),
-                         ),
-                         child: Text(
-                           'Offline',
-                           style: TextStyle(
-                             color: Colors.orange.shade300,
-                             fontSize: 11,
-                             fontWeight: FontWeight.w600,
-                           ),
-                         ),
-                       ),
-                     ],
-                   ],
-                 ),
-               ),
-               IconButton(
-                 icon: Icon(
-                   switch (sortMode) {
-                     _SortMode.nameAsc => Icons.sort_by_alpha,
-                     _SortMode.nameDesc => Icons.sort_by_alpha,
-                     _SortMode.dateAsc => Icons.sort,
-                     _SortMode.dateDesc => Icons.sort,
-                     _SortMode.chapterAsc => Icons.swap_vert,
-                     _SortMode.chapterDesc => Icons.swap_vert,
-                   },
-                   size: 20,
-                   color: c.textSecondary,
-                 ),
-                 tooltip: 'Sort chapters',
-                 onPressed: onSortChanged,
-               ),
-             ],
-           ),
-         ),
-         ...chapters.map((ch) {
-           final url = ch['url'] as String? ?? '';
-           final local = localChapters[url];
-           final isOpened = local?['is_opened'] as bool? ?? false;
-           final isRead = local?['is_read'] as bool? ?? false;
-           final name = ch['name'] as String? ?? '';
-           final chNum = ch['chapter_number'] as num?;
-           final scanlator = ch['scanlator'] as String?;
-           final dateUpload = ch['date_upload'] as int? ?? 0;
-           final dateStr = dateUpload > 0
-               ? DateFormat.yMMMd().format(
-                   DateTime.fromMillisecondsSinceEpoch(dateUpload),
-                 )
-               : '';
-
-           return AnimatedPress(
-             onTap: () => onChapterTap(ch),
-             child: Container(
-               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-               decoration: BoxDecoration(
-                 border: Border(bottom: BorderSide(color: c.border, width: 0.3)),
-               ),
-               child: Row(
-                 children: [
-                   Expanded(
-                     child: Column(
-                       crossAxisAlignment: CrossAxisAlignment.start,
-                       children: [
-                         Row(
-                           children: [
-                             if (isOpened)
-                               Container(
-                                 width: 6,
-                                 height: 6,
-                                 margin: const EdgeInsets.only(right: 8),
-                                 decoration: BoxDecoration(
-                                   color: c.accent,
-                                   shape: BoxShape.circle,
-                                 ),
-                               ),
-                             Expanded(
-                               child: Text(
-                                 name,
-                                 maxLines: 1,
-                                 overflow: TextOverflow.ellipsis,
-                                 style: TextStyle(
-                                   color: isRead ? c.textTertiary : c.textPrimary,
-                                   fontSize: 14,
-                                   fontWeight: FontWeight.w500,
-                                 ),
-                               ),
-                             ),
-                           ],
-                         ),
-                        if (!isRead && (local?['last_page_read'] as int? ?? 0) > 0)
-                          Padding(
-                            padding: const EdgeInsets.only(top: 2),
-                            child: Text(
-                              'Page ${(local?['last_page_read'] as int? ?? 0) + 1}',
-                              style: TextStyle(
-                                color: c.textTertiary,
-                                fontSize: 11,
-                              ),
-                            ),
-                          ),
-                        const SizedBox(height: 4),
-                        Row(
-                          children: [
-                            if (chNum != null)
-                              Text(
-                                'Ch. ${chNum.toStringAsFixed(chNum == chNum.truncateToDouble() ? 0 : 1)}',
-                                style: TextStyle(
-                                  color: c.textTertiary,
-                                  fontSize: 12,
-                                ),
-                              ),
-                            if (chNum != null && dateStr.isNotEmpty)
-                              Text(
-                                ' · ',
-                                style: TextStyle(
-                                  color: c.textTertiary,
-                                  fontSize: 12,
-                                ),
-                              ),
-                            if (dateStr.isNotEmpty)
-                              Text(
-                                dateStr,
-                                style: TextStyle(
-                                  color: c.textTertiary,
-                                  fontSize: 12,
-                                ),
-                              ),
-                            if (dateStr.isNotEmpty && scanlator != null)
-                              Text(
-                                ' · ',
-                                style: TextStyle(
-                                  color: c.textTertiary,
-                                  fontSize: 12,
-                                ),
-                              ),
-                            if (scanlator != null)
-                              Text(
-                                scanlator,
-                                style: TextStyle(
-                                  color: c.textTertiary,
-                                  fontSize: 12,
-                                ),
-                              ),
-                          ],
-                        ),
-                        if (downloadProgress[url] == 'queued')
-                          Padding(
-                            padding: const EdgeInsets.only(top: 6),
-                            child: LinearProgressIndicator(
-                              backgroundColor: c.surfaceMuted,
-                              color: c.accent,
-                              minHeight: 2,
-                            ),
-                          ),
-                      ],
-                    ),
-                  ),
-                  if (downloadProgress[url] == 'done')
-                    IconButtonRound(
-                      icon: Icons.check_circle_outline,
-                      size: 32,
-                      iconColor: Colors.green,
-                      onPressed: null,
-                    )
-                  else if (downloadProgress[url] == 'error')
-                    IconButtonRound(
-                      icon: Icons.error_outline,
-                      size: 32,
-                      iconColor: Colors.redAccent,
-                      onPressed: () => onDownloadTap?.call(ch),
-                    )
-                  else if (downloadProgress[url] == 'queued')
-                    const Padding(
-                      padding: EdgeInsets.all(4),
-                      child: SizedBox(
-                        width: 24, height: 24,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      ),
-                    )
-                  else if (!offlineMode)
-                    IconButtonRound(
-                      icon: Icons.download_rounded,
-                      size: 32,
-                      onPressed: onDownloadTap == null
-                          ? null
-                          : () => onDownloadTap!(ch),
-                    ),
-                ],
-              ),
-            ),
-          );
-        }),
-      ],
     );
   }
 }

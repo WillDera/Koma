@@ -8,13 +8,8 @@ import 'package:google_fonts/google_fonts.dart';
 class AppType {
   AppType._();
 
-  static const String _ui = 'Inter';
-  static const String _reading = 'Literata';
-  static const String _mono = 'JetBrainsMono';
-
-  /// UI TextTheme — used for everything except the reader body.
-  static TextTheme ui() {
-    final base = GoogleFonts.interTextTheme();
+  static TextTheme _platformTextTheme() {
+    final base = ThemeData().textTheme;
     return base.copyWith(
       displayLarge: base.displayLarge?.copyWith(
         fontSize: 40,
@@ -91,6 +86,41 @@ class AppType {
     );
   }
 
+  static TextTheme _withFontFamily(TextTheme base, String? fontFamily) {
+    if (fontFamily == null) return base;
+    return base.copyWith(
+      displayLarge: base.displayLarge?.copyWith(fontFamily: fontFamily),
+      displayMedium: base.displayMedium?.copyWith(fontFamily: fontFamily),
+      headlineLarge: base.headlineLarge?.copyWith(fontFamily: fontFamily),
+      headlineMedium: base.headlineMedium?.copyWith(fontFamily: fontFamily),
+      titleLarge: base.titleLarge?.copyWith(fontFamily: fontFamily),
+      titleMedium: base.titleMedium?.copyWith(fontFamily: fontFamily),
+      titleSmall: base.titleSmall?.copyWith(fontFamily: fontFamily),
+      bodyLarge: base.bodyLarge?.copyWith(fontFamily: fontFamily),
+      bodyMedium: base.bodyMedium?.copyWith(fontFamily: fontFamily),
+      bodySmall: base.bodySmall?.copyWith(fontFamily: fontFamily),
+      labelLarge: base.labelLarge?.copyWith(fontFamily: fontFamily),
+      labelMedium: base.labelMedium?.copyWith(fontFamily: fontFamily),
+      labelSmall: base.labelSmall?.copyWith(fontFamily: fontFamily),
+    );
+  }
+
+  static const String _ui = 'Inter';
+  static const String _reading = 'Literata';
+  static const String _mono = 'JetBrainsMono';
+
+  static TextTheme ui({String? fontFamily}) {
+    final sized = _platformTextTheme();
+    // null = platform Default (system / OEM font — Mihon parity).
+    if (fontFamily == null) return sized;
+    // Inter must be loaded via google_fonts; a bare family name never
+    // resolves and looked identical to system Default (toggle no-op).
+    if (fontFamily == _ui) {
+      return GoogleFonts.interTextTheme(sized);
+    }
+    return _withFontFamily(sized, fontFamily);
+  }
+
   /// Reading body — used in ReaderScreen for chapter content.
   /// Returns a TextStyle (not a TextTheme) because the reader uses a
   /// single TextStyle pipeline (SelectableText.rich).
@@ -125,6 +155,18 @@ class AppType {
         letterSpacing: 0.05,
       );
     }
+    // Families registered at runtime (the device system font, via FontLoader)
+    // are not in the Google Fonts catalogue and getFont throws on them.
+    if (!GoogleFonts.asMap().containsKey(fontFamily)) {
+      return TextStyle(
+        fontFamily: fontFamily,
+        fontSize: fontSize,
+        height: lineHeight,
+        color: color,
+        fontWeight: FontWeight.w400,
+        letterSpacing: 0.05,
+      );
+    }
     // Use GoogleFonts.getFont which loads & caches any supported font.
     return GoogleFonts.getFont(
       fontFamily,
@@ -143,6 +185,24 @@ class AppType {
       height: 1.4,
       color: color,
       fontWeight: FontWeight.w400,
+    );
+  }
+
+  /// Small-caps label — used for metadata, nav labels, section headers.
+  /// Pass [fontFamily] explicitly for Inter; leave null for platform default
+  /// (Use device font / Mihon-style inheritance).
+  static TextStyle labelCaps({
+    double fontSize = 12,
+    Color? color,
+    String? fontFamily,
+  }) {
+    return TextStyle(
+      fontFamily: fontFamily,
+      fontSize: fontSize,
+      height: 16 / 12,
+      fontWeight: FontWeight.w700,
+      letterSpacing: 0.05 * fontSize,
+      color: color,
     );
   }
 

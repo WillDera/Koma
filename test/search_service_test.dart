@@ -1,83 +1,63 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:drift/drift.dart' hide isNull, isNotNull;
-import 'package:koma/core/database/database.dart';
+import 'package:koma/core/models/book.dart';
+import 'package:koma/core/models/chapter.dart';
+import 'package:koma/core/models/snippet.dart';
+import 'package:koma/core/repositories/repositories.dart';
 import 'package:koma/core/services/search_service.dart';
 
 import 'helpers/test_database.dart';
 
 void main() {
-  late AppDatabase db;
+  late Repositories repos;
   late SearchService service;
 
   setUp(() async {
-    db = await createTestDb();
-    service = SearchService(db);
+    repos = await createTestRepositories();
+    service = SearchService(repos);
 
     // Seed test data
-    await db.customInsert(
-      'INSERT INTO books (title, author, source) VALUES (?, ?, ?)',
-      variables: [
-        Variable.withString('The Great Gatsby'),
-        Variable.withString('F. Scott Fitzgerald'),
-        Variable.withString('local'),
-      ],
+    final book1Id = await repos.books.insertBook(
+      Book(
+        id: 0,
+        title: 'The Great Gatsby',
+        author: 'F. Scott Fitzgerald',
+        source: 'local',
+      ),
     );
-    await db.customInsert(
-      'INSERT INTO books (title, author, source) VALUES (?, ?, ?)',
-      variables: [
-        Variable.withString('Dart in Action'),
-        Variable.withString('John Doe'),
-        Variable.withString('local'),
-      ],
+    await repos.books.insertBook(
+      Book(id: 0, title: 'Dart in Action', author: 'John Doe', source: 'local'),
     );
 
-    final bookId = (await db
-            .customSelect('SELECT id FROM books WHERE title = ?',
-                variables: [Variable.withString('The Great Gatsby')])
-            .get())
-        .first
-        .data['id'] as int;
-
-    await db.customInsert(
-      'INSERT INTO chapters (book_id, title, content, "index") VALUES (?, ?, ?, ?)',
-      variables: [
-        Variable.withInt(bookId),
-        Variable.withString('Chapter 1'),
-        Variable.withString('In my younger and more vulnerable years my father gave me some advice.'),
-        Variable.withInt(0),
-      ],
+    await repos.books.insertChapter(
+      Chapter(
+        id: 0,
+        bookId: book1Id,
+        title: 'Chapter 1',
+        content:
+            'In my younger and more vulnerable years my father gave me some advice.',
+        index: 0,
+      ),
     );
-    await db.customInsert(
-      'INSERT INTO chapters (book_id, title, content, "index") VALUES (?, ?, ?, ?)',
-      variables: [
-        Variable.withInt(bookId),
-        Variable.withString('Chapter 2'),
-        Variable.withString('The wind blew and the green light twinkled across the bay.'),
-        Variable.withInt(1),
-      ],
+    await repos.books.insertChapter(
+      Chapter(
+        id: 0,
+        bookId: book1Id,
+        title: 'Chapter 2',
+        content: 'The wind blew and the green light twinkled across the bay.',
+        index: 1,
+      ),
     );
 
-    await db.customInsert(
-      'INSERT INTO snippets (content, note, source_title, created_at, updated_at) '
-      'VALUES (?, ?, ?, ?, ?)',
-      variables: [
-        Variable.withString('So we beat on, boats against the current.'),
-        Variable.withString('Closing line'),
-        Variable.withString('The Great Gatsby'),
-        Variable.withDateTime(DateTime.now()),
-        Variable.withDateTime(DateTime.now()),
-      ],
+    await repos.snippets.createSnippet(
+      text: 'So we beat on, boats against the current.',
+      note: 'Closing line',
+      sourceTitle: 'The Great Gatsby',
     );
-  });
-
-  tearDown(() async {
-    await db.close();
   });
 
   group('searchAll', () {
     test('returns mixed results from books, chapters, and snippets', () async {
       final results = await service.searchAll('gatsby');
-      // Should match: 1 book (title), 0 chapters, 1 snippet (source_title)
       expect(results.length, greaterThanOrEqualTo(2));
       final types = results.map((r) => r.type).toSet();
       expect(types, contains('book'));
@@ -105,13 +85,13 @@ void main() {
     test('finds book by title', () async {
       final books = await service.searchBooks('gatsby');
       expect(books.length, 1);
-      expect(books.first.title, 'The Great Gatsby');
+      expect((books.first.item as Book).title, 'The Great Gatsby');
     });
 
     test('finds book by author', () async {
       final books = await service.searchBooks('Fitzgerald');
       expect(books.length, 1);
-      expect(books.first.title, 'The Great Gatsby');
+      expect((books.first.item as Book).title, 'The Great Gatsby');
     });
 
     test('returns empty for blank query', () async {
@@ -123,13 +103,13 @@ void main() {
     test('finds chapter by content', () async {
       final chapters = await service.searchChapters('vulnerable');
       expect(chapters.length, 1);
-      expect(chapters.first.title, 'Chapter 1');
+      expect((chapters.first.item as Chapter).title, 'Chapter 1');
     });
 
     test('finds chapter by title', () async {
       final chapters = await service.searchChapters('Chapter 2');
       expect(chapters.length, 1);
-      expect(chapters.first.content, contains('wind blew'));
+      expect((chapters.first.item as Chapter).content, contains('wind blew'));
     });
 
     test('returns empty for blank query', () async {
@@ -141,7 +121,10 @@ void main() {
     test('finds snippet by content', () async {
       final snippets = await service.searchSnippets('beat on');
       expect(snippets.length, 1);
-      expect(snippets.first.text, contains('boats against the current'));
+      expect(
+        (snippets.first.item as Snippet).text,
+        contains('boats against the current'),
+      );
     });
 
     test('finds snippet by source_title', () async {

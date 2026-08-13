@@ -1,173 +1,271 @@
 import 'dart:async';
-import 'package:flutter/material.dart';
+
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+
 import '../../core/models/book.dart';
 import '../../core/models/chapter.dart';
-import '../../core/services/database_service.dart';
-import '../../core/services/stats_service.dart';
+import '../../core/providers.dart';
 
-class ReaderProvider extends ChangeNotifier {
-  final DatabaseService _db;
-  final StatsService _statsService;
+/// Immutable state for the ebook reader.
+class ReaderState {
+  const ReaderState({
+    this.book,
+    this.chapters = const [],
+    this.currentChapter,
+    this.currentIndex = 0,
+    this.scrollPosition = 0.0,
+    this.loading = true,
+    this.error,
+  });
 
-  Book? _book;
-  List<Chapter> _chapters = [];
-  Chapter? _currentChapter;
-  int _currentIndex = 0;
-  double _scrollPosition = 0.0;
-  bool _loading = true;
-  String? _error;
+  final Book? book;
+  final List<Chapter> chapters;
+  final Chapter? currentChapter;
+  final int currentIndex;
+  final double scrollPosition;
+  final bool loading;
+  final String? error;
 
-  /// Per-chapter scroll position. Keyed by chapter index. Populated
-  /// from the DB on load and updated as the user scrolls.
+  ReaderState copyWith({
+    Book? Function()? book,
+    List<Chapter>? chapters,
+    Chapter? Function()? currentChapter,
+    int? currentIndex,
+    double? scrollPosition,
+    bool? loading,
+    String? Function()? error,
+  }) {
+    return ReaderState(
+      book: book != null ? book() : this.book,
+      chapters: chapters ?? this.chapters,
+      currentChapter: currentChapter != null
+          ? currentChapter()
+          : this.currentChapter,
+      currentIndex: currentIndex ?? this.currentIndex,
+      scrollPosition: scrollPosition ?? this.scrollPosition,
+      loading: loading ?? this.loading,
+      error: error != null ? error() : this.error,
+    );
+  }
+}
+
+class ReaderNotifier extends Notifier<ReaderState> {
   final Map<int, double> _chapterScrollPositions = {};
-
   Timer? _readingTimer;
   int _elapsedSeconds = 0;
   Timer? _scrollPersistTimer;
-  double? _pendingScroll;
+  ({int chapterId, double position})? _pendingScroll;
 
-  ReaderProvider(this._db, this._statsService);
+  /// Reading position per chapter index, as a character offset. Populated from
+  /// storage on load and updated as paginated mode turns pages.
+  final Map<int, int> _chapterReadingOffsets = {};
+  Timer? _offsetPersistTimer;
+  int? _pendingOffset;
 
-  Book? get book => _book;
-  List<Chapter> get chapters => _chapters;
-  Chapter? get currentChapter => _currentChapter;
-  int get currentIndex => _currentIndex;
-  double get scrollPosition => _scrollPosition;
-  bool get loading => _loading;
-  String? get error => _error;
+  @override
+  ReaderState build() => const ReaderState();
 
-  Future<void> loadBook(int bookId) async {
-    _loading = true;
-    _error = null;
+  // Convenience accessors — avoids verbose `.state.` in consumer code
+  // that holds a direct reference to the notifier.
+  Book? get book => state.book;
+  List<Chapter> get chapters => state.chapters;
+  Chapter? get currentChapter => state.currentChapter;
+  int get currentIndex => state.currentIndex;
+  double get scrollPosition =>
+      _chapterScrollPositions[state.currentIndex] ?? state.scrollPosition;
+  bool get loading => state.loading;
+  String? get error => state.error;
+
+  Future<void> loadBook(
+    int bookId, {
+    int? targetChapterId,
+    double? targetScrollOffset,
+  }) async {
     _elapsedSeconds = 0;
-    notifyListeners();
+    state = state.copyWith(loading: true, error: () => null);
+    final repos = ref.watch(repositoriesProvider);
 
     try {
-      _book = await _db.getBook(bookId);
-      _chapters = await _db.getChapters(bookId);
+      final book = await repos.books.getBook(bookId);
+      final chapters = await repos.books.getChapters(bookId);
 
-      if (_book != null && _chapters.isNotEmpty) {
-        _currentIndex =
-            _book!.currentChapterIndex.clamp(0, _chapters.length - 1);
-        _currentChapter = _chapters[_currentIndex];
-        // Populate the per-chapter scroll map from the DB. This makes
-        // back-navigation restore exactly where the user left off.
-        for (var i = 0; i < _chapters.length; i++) {
-          _chapterScrollPositions[i] = _chapters[i].scrollPosition;
+      if (book != null && chapters.isNotEmpty) {
+        var currentIndex = book.currentChapterIndex.clamp(
+          0,
+          chapters.length - 1,
+        );
+        if (targetChapterId != null) {
+          final idx = chapters.indexWhere((ch) => ch.id == targetChapterId);
+          if (idx >= 0) currentIndex = idx;
         }
-        // The book-level scroll is only used as a fallback when the
-        // current chapter's per-chapter position is 0.
-        final chPos = _chapterScrollPositions[_currentIndex] ?? 0.0;
-        _scrollPosition = chPos > 0 ? chPos : _book!.scrollPosition;
-        await _db.markChapterRead(_currentChapter!.id);
+        final currentChapter = chapters[currentIndex];
+        _chapterScrollPositions.clear();
+        _chapterReadingOffsets.clear();
+        for (var i = 0; i < chapters.length; i++) {
+          _chapterScrollPositions[i] = chapters[i].scrollPosition;
+          final off = chapters[i].readingCharOffset;
+          if (off != null) _chapterReadingOffsets[i] = off;
+        }
+        final chPos = _chapterScrollPositions[currentIndex] ?? 0.0;
+        final scrollPos =
+            targetScrollOffset ?? (chPos > 0 ? chPos : book.scrollPosition);
+
+        state = ReaderState(
+          book: book,
+          chapters: chapters,
+          currentChapter: currentChapter,
+          currentIndex: currentIndex,
+          scrollPosition: scrollPos,
+          loading: false,
+        );
+        await repos.books.markChapterRead(currentChapter.id);
+        _startReadingTimer();
+      } else {
+        state = state.copyWith(
+          book: () => book,
+          chapters: chapters,
+          loading: false,
+        );
       }
-
-      _startReadingTimer();
     } catch (e) {
-      _error = e.toString();
+      state = state.copyWith(error: () => e.toString(), loading: false);
     }
-
-    _loading = false;
-    notifyListeners();
   }
 
   void navigateToChapter(int index) {
-    if (index < 0 || index >= _chapters.length) return;
-    // Persist the outgoing chapter's pending scroll before leaving.
+    if (index < 0 || index >= state.chapters.length) return;
+    // Both flushes must happen while currentChapter is still the outgoing one,
+    // otherwise the pending position is written against the wrong chapter.
     _flushPendingScroll();
-    _currentIndex = index;
-    _currentChapter = _chapters[index];
-    _scrollPosition = _chapterScrollPositions[index] ?? 0.0;
-    _db.markChapterRead(_currentChapter!.id);
+    _flushPendingOffset();
+    final chapter = state.chapters[index];
+    final scrollPos = _chapterScrollPositions[index] ?? 0.0;
+    state = state.copyWith(
+      currentIndex: index,
+      currentChapter: () => chapter,
+      scrollPosition: scrollPos,
+    );
+    final repos = ref.read(repositoriesProvider);
+    repos.books.markChapterRead(chapter.id);
     _updateBookProgress();
-    notifyListeners();
   }
 
   void goToNextChapter() {
-    if (_currentIndex < _chapters.length - 1) {
-      navigateToChapter(_currentIndex + 1);
+    if (state.currentIndex < state.chapters.length - 1) {
+      navigateToChapter(state.currentIndex + 1);
     }
   }
 
   void goToPreviousChapter() {
-    if (_currentIndex > 0) {
-      navigateToChapter(_currentIndex - 1);
+    if (state.currentIndex > 0) {
+      navigateToChapter(state.currentIndex - 1);
     }
   }
 
   void updateScrollPosition(double position) {
-    _scrollPosition = position;
-    _chapterScrollPositions[_currentIndex] = position;
-    // Debounce the DB write — scrolling fires hundreds of events per
-    // second; we only need to persist the latest position once the
-    // user pauses.
-    _pendingScroll = position;
+    _chapterScrollPositions[state.currentIndex] = position;
+    final chapter = state.currentChapter;
+    if (chapter == null) return;
+    _pendingScroll = (chapterId: chapter.id, position: position);
     _scrollPersistTimer?.cancel();
     _scrollPersistTimer = Timer(const Duration(milliseconds: 1500), () {
       _flushPendingScroll();
     });
   }
 
-  void _flushPendingScroll() {
+  Future<void> _flushPendingScroll() async {
     _scrollPersistTimer?.cancel();
     _scrollPersistTimer = null;
-    final pos = _pendingScroll;
-    final ch = _currentChapter;
-    if (pos == null || ch == null) return;
+    final pending = _pendingScroll;
+    if (pending == null) return;
     _pendingScroll = null;
-    _db.updateChapterScroll(ch.id, pos);
+    final repos = ref.read(repositoriesProvider);
+    await repos.books.updateChapterScroll(pending.chapterId, pending.position);
   }
 
-  void _updateBookProgress() {
-    if (_book == null || _chapters.isEmpty) return;
-    final progress = (_currentIndex + 1) / _chapters.length;
-    _book = _book!.copyWith(
+  /// The stored character offset for a chapter, or null if none was recorded.
+  int? readingOffsetFor(int chapterIndex) =>
+      _chapterReadingOffsets[chapterIndex];
+
+  /// Records the paginated reading position, debounced like scroll.
+  ///
+  /// Page turns are far less frequent than scroll ticks, but a fast flick
+  /// through several pages still shouldn't mean a write per page.
+  void updateReadingOffset(int charOffset) {
+    _chapterReadingOffsets[state.currentIndex] = charOffset;
+    _pendingOffset = charOffset;
+    _offsetPersistTimer?.cancel();
+    _offsetPersistTimer = Timer(const Duration(milliseconds: 1500), () {
+      _flushPendingOffset();
+    });
+  }
+
+  Future<void> _flushPendingOffset() async {
+    _offsetPersistTimer?.cancel();
+    _offsetPersistTimer = null;
+    final off = _pendingOffset;
+    final ch = state.currentChapter;
+    if (off == null || ch == null) return;
+    _pendingOffset = null;
+    final repos = ref.watch(repositoriesProvider);
+    await repos.books.updateChapterReadingOffset(ch.id, off);
+  }
+
+  Future<void> _updateBookProgress() async {
+    final book = state.book;
+    if (book == null || state.chapters.isEmpty) return;
+    final progress = (state.currentIndex + 1) / state.chapters.length;
+    final updatedBook = book.copyWith(
       progress: progress,
-      currentChapterIndex: _currentIndex,
-      scrollPosition: _scrollPosition,
+      currentChapterIndex: state.currentIndex,
+      scrollPosition: scrollPosition,
     );
-    _db.updateProgress(
-      _book!.id,
+    state = state.copyWith(book: () => updatedBook);
+    final repos = ref.read(repositoriesProvider);
+    await repos.books.updateProgress(
+      book.id,
       progress,
-      currentChapterIndex: _currentIndex,
-      scrollPosition: _scrollPosition,
+      currentChapterIndex: state.currentIndex,
+      scrollPosition: scrollPosition,
     );
+    // Bump the history revision so the History tab refreshes in real time.
+    ref.read(historyRevisionProvider.notifier).bump();
   }
 
   void _startReadingTimer() {
     _readingTimer?.cancel();
     _readingTimer = Timer.periodic(const Duration(seconds: 30), (_) {
       _elapsedSeconds += 30;
-      _statsService.trackReading(_book?.id ?? 0, 30);
+      ref.read(statsServiceProvider).trackReading(state.book?.id ?? 0, 30);
     });
   }
 
-  void stopReadingTimer() {
+  Future<void> stopReadingTimer() async {
     _readingTimer?.cancel();
     _readingTimer = null;
+    final stats = ref.read(statsServiceProvider);
     if (_elapsedSeconds > 0) {
-      _statsService.trackReading(_book?.id ?? 0, _elapsedSeconds % 30);
+      stats.trackReading(state.book?.id ?? 0, _elapsedSeconds % 30);
     }
-    // Persist the most recent scroll position before tearing down.
-    _flushPendingScroll();
-    // Mark book as complete if at last chapter
-    if (_book != null &&
-        _currentIndex == _chapters.length - 1 &&
-        _book!.progress < 1.0) {
-      _book = _book!.copyWith(
-          progress: 1.0, scrollPosition: _scrollPosition);
-      _db.updateProgress(_book!.id, 1.0,
-          scrollPosition: _scrollPosition);
-      _statsService.trackCompletion(_book!.id);
+    await _flushPendingScroll();
+    await _flushPendingOffset();
+    final book = state.book;
+    if (book != null &&
+        state.currentIndex == state.chapters.length - 1 &&
+        book.progress < 1.0) {
+      final updated = book.copyWith(
+        progress: 1.0,
+        scrollPosition: scrollPosition,
+      );
+      state = state.copyWith(book: () => updated);
+      final repos = ref.read(repositoriesProvider);
+      await repos.books.updateProgress(
+        book.id,
+        1.0,
+        scrollPosition: scrollPosition,
+      );
+      stats.trackCompletion(book.id);
     }
-    _updateBookProgress();
-  }
-
-  @override
-  void dispose() {
-    _readingTimer?.cancel();
-    _scrollPersistTimer?.cancel();
-    _flushPendingScroll();
-    super.dispose();
+    await _updateBookProgress();
   }
 }

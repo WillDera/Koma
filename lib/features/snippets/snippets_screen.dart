@@ -1,84 +1,134 @@
-import 'package:flutter/material.dart';
-import 'package:provider/provider.dart';
 import 'package:collection/collection.dart';
+import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
+
+import '../../core/models/bookmark.dart';
 import '../../core/models/snippet.dart';
 import '../../core/models/snippet_collection.dart';
+import '../../core/providers.dart';
+import '../../router/router.dart';
+import '../../theme/app_icons.dart';
 import '../../theme/app_theme.dart';
 import '../../theme/theme_provider.dart';
+import '../../widgets/aethelgard_fab.dart';
+import '../../widgets/bookmark_card.dart';
+import '../../widgets/dialog_sheet.dart';
 import '../../widgets/empty_state.dart';
+import '../../widgets/highlight_color_picker.dart';
 import '../../widgets/icon_button_round.dart';
 import '../../widgets/library_header.dart';
 import '../../widgets/loading_skeleton.dart';
 import '../../widgets/one_hand_spacer.dart';
+import '../../widgets/horizontal_tab_swipe.dart';
 import '../../widgets/screen_chrome.dart';
+import '../../widgets/segmented_control.dart';
 import '../../widgets/snippet_card.dart';
 import '../../widgets/snippet_detail_sheet.dart';
-import '../../widgets/dialog_sheet.dart';
 import '../../widgets/tag_filter_bar.dart';
 import '../../widgets/toast.dart';
+import 'bookmarks_provider.dart';
 import 'snippets_provider.dart';
 
-class SnippetsScreen extends StatefulWidget {
+class SnippetsScreen extends ConsumerStatefulWidget {
   const SnippetsScreen({super.key});
 
   @override
-  State<SnippetsScreen> createState() => _SnippetsScreenState();
+  ConsumerState<SnippetsScreen> createState() => _SnippetsScreenState();
 }
 
-class _SnippetsScreenState extends State<SnippetsScreen> {
+class _SnippetsScreenState extends ConsumerState<SnippetsScreen> {
   final ScrollController _scrollCtrl = ScrollController();
-  double _scrollProgress = 0;
+  final TextEditingController _searchCtrl = TextEditingController();
+  int _tab = 0;
+  String _searchQuery = '';
+  /// Local book filter key: null = all books; otherwise bookId as string or
+  /// `title:<sourceTitle>` for snippets without a bookId.
+  String? _filterBookKey;
 
   @override
   void initState() {
     super.initState();
-    _scrollCtrl.addListener(_onScroll);
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      context.read<SnippetsProvider>().loadSnippets();
+      ref.read(snippetsProvider.notifier).loadSnippets();
+      ref.read(bookmarksProvider.notifier).loadBookmarks();
     });
-  }
-
-  void _onScroll() {
-    if (!_scrollCtrl.hasClients) return;
-    final max = _scrollCtrl.position.maxScrollExtent;
-    final p = max <= 0 ? 0.0 : (_scrollCtrl.offset / max).clamp(0.0, 1.0);
-    if ((p - _scrollProgress).abs() > 0.01) {
-      setState(() => _scrollProgress = p);
-    }
   }
 
   @override
   void dispose() {
-    _scrollCtrl.removeListener(_onScroll);
     _scrollCtrl.dispose();
+    _searchCtrl.dispose();
     super.dispose();
   }
 
-  bool get _oneHand => context.watch<ThemeProvider>().oneHandMode;
+  List<Snippet> _applyLocalFilters(List<Snippet> items) {
+    var out = items;
+    final q = _searchQuery.trim().toLowerCase();
+    if (q.isNotEmpty) {
+      out = out.where((s) {
+        final hay = [
+          s.text,
+          s.note ?? '',
+          s.sourceTitle ?? '',
+          ...s.tags,
+        ].join(' ').toLowerCase();
+        return hay.contains(q);
+      }).toList();
+    }
+    final key = _filterBookKey;
+    if (key != null) {
+      out = out.where((s) => _bookKeyFor(s) == key).toList();
+    }
+    return out;
+  }
+
+  String _bookKeyFor(Snippet s) {
+    if (s.bookId != null) return 'id:${s.bookId}';
+    final title = (s.sourceTitle ?? '').trim();
+    if (title.isNotEmpty) return 'title:$title';
+    return 'none';
+  }
+
+  String _bookLabelFor(Snippet s) {
+    final title = (s.sourceTitle ?? '').trim();
+    if (title.isNotEmpty) return title;
+    if (s.bookId != null) return 'Book ${s.bookId}';
+    return 'Untitled';
+  }
+
+  List<({String key, String label})> _uniqueBooks(List<Snippet> all) {
+    final seen = <String>{};
+    final out = <({String key, String label})>[];
+    for (final s in all) {
+      final key = _bookKeyFor(s);
+      if (key == 'none' || !seen.add(key)) continue;
+      out.add((key: key, label: _bookLabelFor(s)));
+    }
+    return out;
+  }
 
   @override
   Widget build(BuildContext context) {
-    final leftHanded = context.watch<ThemeProvider>().handMode == HandMode.left;
+    final leftHanded = ref.watch(themeProvider).handMode == HandMode.left;
+    final p = ref.watch(snippetsProvider);
+    final bp = ref.watch(bookmarksProvider);
     final navClearance = MediaQuery.paddingOf(context).bottom + 84;
     return ScreenBackdrop(
-      child: Consumer<SnippetsProvider>(
-        builder: (context, p, _) => Stack(
+      child: HorizontalTabSwipe(
+        tabIndex: _tab,
+        tabCount: 2,
+        onTabChanged: _setTab,
+        child: Stack(
           children: [
-            SafeArea(
-              bottom: false,
-              child: _body(context, p),
-            ),
-            if (!p.selectionMode)
+            SafeArea(bottom: false, child: _body(context, p, bp)),
+            if (!p.selectionMode && _tab == 0)
               Positioned(
                 left: leftHanded ? 20 : null,
                 right: leftHanded ? null : 20,
                 bottom: navClearance,
-                child: IconButtonRound(
-                  icon: Icons.add,
-                  size: 52,
-                  variant: IconButtonVariant.filled,
-                  backgroundColor: context.colors.accent,
-                  iconColor: context.colors.onAccent,
+                child: AethelgardFab(
+                  iconData: AppIcons.add,
                   onPressed: () => _createSnippet(context),
                 ),
               ),
@@ -88,7 +138,19 @@ class _SnippetsScreenState extends State<SnippetsScreen> {
     );
   }
 
-  Widget _body(BuildContext context, SnippetsProvider p) {
+  void _setTab(int v) {
+    if (_tab == v) return;
+    setState(() => _tab = v);
+    if (v == 1) {
+      ref.read(bookmarksProvider.notifier).loadBookmarks();
+    }
+  }
+
+  Widget _body(BuildContext context, SnippetsState p, BookmarksState bp) {
+    if (_tab == 1) {
+      return _buildBookmarksTab(context, bp);
+    }
+
     if (p.loading && p.snippets.isEmpty) return _loading();
     if (p.error != null) {
       return ListView(
@@ -96,51 +158,67 @@ class _SnippetsScreenState extends State<SnippetsScreen> {
         padding: EdgeInsets.zero,
         children: [
           const OneHandSpacer(),
-          LibraryHeader(
-            title: 'Snippets',
-            titleSize: _oneHand ? 64 : 32,
-            shrinkProgress: _oneHand ? _scrollProgress : 0.0,
-          ),
+          const LibraryHeader(title: 'Snippets', subtitle: '0 snippets'),
+          _buildTabBar(),
           const SizedBox(height: 60),
           EmptyState(
-            icon: Icons.error_outline,
+            icon: AppIcons.alert,
             title: 'Could not load snippets',
             subtitle: p.error!,
             primaryActionLabel: 'Try again',
-            onPrimaryAction: () => p.loadSnippets(),
+            onPrimaryAction: () =>
+                ref.read(snippetsProvider.notifier).loadSnippets(),
           ),
         ],
       );
     }
 
-    final items = p.snippets;
-    final hasFilter = p.filterTag != null ||
-        p.filterCollectionId != null ||
-        p.filterCollectionId == -1;
+    return _buildSnippetsTab(context, p);
+  }
 
-    if (items.isEmpty && !hasFilter && p.collections.isEmpty) {
+  Widget _buildTabBar() {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 4, 20, 8),
+      child: SegmentedControl<int>(
+        segments: const {0: 'Snippets', 1: 'Bookmarks'},
+        value: _tab,
+        onChanged: _setTab,
+      ),
+    );
+  }
+
+  Widget _buildSnippetsTab(BuildContext context, SnippetsState p) {
+    final base = p.snippets;
+    final items = _applyLocalFilters(base);
+    final hasFilter =
+        p.filterTag != null ||
+        p.filterCollectionId != null ||
+        p.filterCollectionId == -1 ||
+        _searchQuery.trim().isNotEmpty ||
+        _filterBookKey != null;
+
+    if (p.allSnippets.isEmpty && p.collections.isEmpty) {
       return ListView(
         controller: _scrollCtrl,
         padding: EdgeInsets.zero,
         children: [
           const OneHandSpacer(),
-          LibraryHeader(
-            title: 'Snippets',
-            titleSize: _oneHand ? 64 : 32,
-            shrinkProgress: _oneHand ? _scrollProgress : 0.0,
-          ),
+          const LibraryHeader(title: 'Snippets', subtitle: '0 snippets'),
+          _buildTabBar(),
           const SizedBox(height: 60),
           EmptyState(
-            icon: Icons.format_quote_outlined,
+            icon: AppIcons.bookmark,
             title: 'No snippets yet',
             subtitle: 'Highlight text while reading, or tap + to create one.',
             primaryActionLabel: 'New snippet',
-            primaryActionIcon: Icons.add,
+            primaryActionIcon: AppIcons.add,
             onPrimaryAction: () => _createSnippet(context),
           ),
         ],
       );
     }
+
+    final books = _uniqueBooks(p.allSnippets);
 
     return ListView(
       controller: _scrollCtrl,
@@ -148,69 +226,98 @@ class _SnippetsScreenState extends State<SnippetsScreen> {
       physics: const AlwaysScrollableScrollPhysics(),
       children: [
         const OneHandSpacer(),
-        _buildHeader(p),
-        if (!p.selectionMode)
-          StaggeredEntrance(
-            child: FeaturePanel(
-              icon: Icons.format_quote_rounded,
-              title: 'Captured thoughts',
-              subtitle:
-                  'Highlights, notes, and quotes with just enough structure to find them again.',
-              stats: [
-                PanelStat(value: '${p.snippets.length}', label: 'Saved'),
-                PanelStat(value: '${p.allTags.length}', label: 'Tags'),
-                PanelStat(value: hasFilter ? 'Filtered' : 'Uncollected', label: 'View'),
-              ],
+        _buildHeader(p, count: items.length),
+        _buildTabBar(),
+        if (!p.selectionMode) ...[
+          Padding(
+            padding: const EdgeInsets.fromLTRB(20, 4, 20, 10),
+            child: TextField(
+              controller: _searchCtrl,
+              onChanged: (v) => setState(() => _searchQuery = v),
+              onSubmitted: (_) => FocusScope.of(context).unfocus(),
+              textInputAction: TextInputAction.search,
+              decoration: InputDecoration(
+                hintText: 'Search snippets...',
+                prefixIcon: const Icon(Icons.search, size: 18),
+                suffixIcon: _searchQuery.isNotEmpty
+                    ? IconButton(
+                        icon: const Icon(Icons.clear, size: 18),
+                        onPressed: () {
+                          _searchCtrl.clear();
+                          setState(() => _searchQuery = '');
+                          FocusScope.of(context).unfocus();
+                        },
+                      )
+                    : null,
+              ),
             ),
           ),
-        if (!p.selectionMode) ...[
+          _BookFilterChips(
+            books: books,
+            selectedKey: _filterBookKey,
+            onSelected: (key) => setState(() => _filterBookKey = key),
+          ),
           _CollectionFilterBar(
             collections: p.collections,
             selectedId: p.filterCollectionId,
-            onSelected: p.setFilterCollection,
+            onSelected: ref.read(snippetsProvider.notifier).setFilterCollection,
           ),
           if (p.allTags.isNotEmpty)
             TagFilterBar(
               tags: p.allTags,
               selected: p.filterTag,
-              onChanged: p.setFilterTag,
+              onChanged: ref.read(snippetsProvider.notifier).setFilterTag,
             ),
         ],
         if (items.isEmpty)
           SizedBox(
             height: 200,
             child: EmptyState(
-              icon: Icons.format_quote_outlined,
-              title: 'No matching snippets',
-              subtitle: 'Try a different tag or remove the filter.',
+              icon: AppIcons.note,
+              title: hasFilter ? 'No matching snippets' : 'No snippets yet',
+              subtitle: hasFilter
+                  ? 'Try a different filter or clear search.'
+                  : 'Highlight text while reading, or tap + to create one.',
             ),
           )
         else ...[
-          SectionLabel(
-            title: _sectionTitle(p),
-            meta: '${items.length}',
-          ),
+          SectionLabel(title: _sectionTitle(p), meta: '${items.length}'),
           ...items.indexed.map(
             (entry) => Padding(
-              padding: const EdgeInsets.fromLTRB(20, 0, 20, 12),
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
               child: StaggeredEntrance(
                 index: entry.$1 + 1,
                 child: SnippetCard(
                   snippet: entry.$2,
-                  selected: p.selectionMode && p.selectedIds.contains(entry.$2.id),
+                  selected:
+                      p.selectionMode && p.selectedIds.contains(entry.$2.id),
                   selectionMode: p.selectionMode,
                   onTap: () {
                     if (p.selectionMode) {
-                      p.toggleSelection(entry.$2.id);
+                      ref
+                          .read(snippetsProvider.notifier)
+                          .toggleSelection(entry.$2.id);
                     } else {
                       _editSnippet(context, entry.$2, p);
                     }
                   },
                   onLongPress: () {
                     if (!p.selectionMode) {
-                      p.toggleSelection(entry.$2.id);
+                      ref
+                          .read(snippetsProvider.notifier)
+                          .toggleSelection(entry.$2.id);
                     }
                   },
+                  onOpenSource: entry.$2.bookId != null
+                      ? () => _openBookReader(
+                          context,
+                          entry.$2.bookId!,
+                          chapterId: entry.$2.chapterId,
+                          scrollOffset: entry.$2.scrollPosition,
+                          startOffset: entry.$2.startOffset,
+                          endOffset: entry.$2.endOffset,
+                        )
+                      : null,
                 ),
               ),
             ),
@@ -221,7 +328,7 @@ class _SnippetsScreenState extends State<SnippetsScreen> {
     );
   }
 
-  String _sectionTitle(SnippetsProvider p) {
+  String _sectionTitle(SnippetsState p) {
     final colId = p.filterCollectionId;
     if (colId == -1) return 'All snippets';
     if (colId == null) return 'Uncollected';
@@ -229,11 +336,11 @@ class _SnippetsScreenState extends State<SnippetsScreen> {
     return col?.name ?? 'Collection';
   }
 
-  Widget _buildHeader(SnippetsProvider p) {
+  Widget _buildHeader(SnippetsState p, {required int count}) {
+    final sn = ref.read(snippetsProvider.notifier);
     if (p.selectionMode) {
       return LibraryHeader(
         title: '${p.selectedIds.length} selected',
-        titleSize: _oneHand ? 64 : 32,
         actions: [
           IconButtonRound(
             icon: Icons.select_all_rounded,
@@ -241,9 +348,11 @@ class _SnippetsScreenState extends State<SnippetsScreen> {
             variant: IconButtonVariant.tonal,
             iconColor: context.colors.textSecondary,
             tooltip: 'Select All',
-            onPressed: p.selectedIds.length == p.snippets.length && p.snippets.isNotEmpty
-                ? p.clearSelection
-                : p.selectAll,
+            onPressed:
+                p.selectedIds.length == p.snippets.length &&
+                    p.snippets.isNotEmpty
+                ? sn.clearSelection
+                : sn.selectAll,
           ),
           const SizedBox(width: 4),
           IconButtonRound(
@@ -252,7 +361,7 @@ class _SnippetsScreenState extends State<SnippetsScreen> {
             variant: IconButtonVariant.tonal,
             iconColor: context.colors.textSecondary,
             tooltip: 'Inverse',
-            onPressed: p.inverseSelection,
+            onPressed: sn.inverseSelection,
           ),
           const SizedBox(width: 4),
           IconButtonRound(
@@ -279,15 +388,14 @@ class _SnippetsScreenState extends State<SnippetsScreen> {
             variant: IconButtonVariant.tonal,
             iconColor: context.colors.textSecondary,
             tooltip: 'Done',
-            onPressed: p.clearSelection,
+            onPressed: sn.clearSelection,
           ),
         ],
       );
     }
     return LibraryHeader(
       title: 'Snippets',
-      titleSize: _oneHand ? 64 : 32,
-      shrinkProgress: _oneHand ? _scrollProgress : 0.0,
+      subtitle: '$count snippet${count == 1 ? '' : 's'}',
       actions: [
         IconButtonRound(
           icon: Icons.checklist_rtl_rounded,
@@ -295,7 +403,7 @@ class _SnippetsScreenState extends State<SnippetsScreen> {
           variant: IconButtonVariant.tonal,
           iconColor: context.colors.textSecondary,
           tooltip: 'Select',
-          onPressed: () => p.selectAll(),
+          onPressed: () => sn.selectAll(),
         ),
       ],
     );
@@ -318,19 +426,41 @@ class _SnippetsScreenState extends State<SnippetsScreen> {
     );
   }
 
+  void _openBookReader(
+    BuildContext context,
+    int bookId, {
+    int? chapterId,
+    double? scrollOffset,
+    int? startOffset,
+    int? endOffset,
+  }) {
+    context.pushNamed(
+      Routes.reader,
+      extra: (
+        bookId: bookId,
+        snippetChapterId: chapterId,
+        snippetScrollOffset: scrollOffset,
+        snippetStartOffset: startOffset,
+        snippetEndOffset: endOffset,
+      ),
+    );
+  }
+
   void _createSnippet(BuildContext context) {
     SnippetDetailSheet.show(
       context,
       creating: true,
       onSave: (s) async {
         try {
-          await context.read<SnippetsProvider>().createSnippet(
-            text: s.text,
-            note: s.note,
-            sourceTitle: s.sourceTitle,
-            color: s.color,
-            tags: s.tags,
-          );
+          await ref
+              .read(snippetsProvider.notifier)
+              .createSnippet(
+                text: s.text,
+                note: s.note,
+                sourceTitle: s.sourceTitle,
+                color: s.color,
+                tags: s.tags,
+              );
           if (context.mounted) {
             StashToast.show(
               context,
@@ -351,12 +481,13 @@ class _SnippetsScreenState extends State<SnippetsScreen> {
     );
   }
 
-  void _editSnippet(BuildContext context, Snippet snippet, SnippetsProvider p) {
+  void _editSnippet(BuildContext context, Snippet snippet, SnippetsState p) {
+    final sn = ref.read(snippetsProvider.notifier);
     SnippetDetailSheet.show(
       context,
       snippet: snippet,
       onSave: (s) async {
-        await p.updateSnippet(s);
+        await sn.updateSnippet(s);
         if (context.mounted) {
           StashToast.show(
             context,
@@ -366,7 +497,7 @@ class _SnippetsScreenState extends State<SnippetsScreen> {
         }
       },
       onDelete: (id) async {
-        await p.deleteSnippet(id);
+        await sn.deleteSnippet(id);
         if (context.mounted) {
           StashToast.show(
             context,
@@ -379,7 +510,8 @@ class _SnippetsScreenState extends State<SnippetsScreen> {
   }
 
   Future<void> _confirmDelete() async {
-    final p = context.read<SnippetsProvider>();
+    final p = ref.read(snippetsProvider);
+    final sn = ref.read(snippetsProvider.notifier);
     final ctx = context;
     final confirmed = await StashDialog.show<bool>(
       ctx,
@@ -403,18 +535,15 @@ class _SnippetsScreenState extends State<SnippetsScreen> {
       ],
     );
     if (confirmed == true) {
-      await p.deleteSelected();
+      await sn.deleteSelected();
       if (ctx.mounted) {
-        StashToast.show(
-          ctx,
-          message: 'Snippets deleted',
-          icon: Icons.check,
-        );
+        StashToast.show(ctx, message: 'Snippets deleted', icon: Icons.check);
       }
     }
   }
 
-  Future<void> _groupSelected(BuildContext context, SnippetsProvider p) async {
+  Future<void> _groupSelected(BuildContext context, SnippetsState p) async {
+    final sn = ref.read(snippetsProvider.notifier);
     final result = await showModalBottomSheet<int?>(
       context: context,
       isScrollControlled: true,
@@ -449,45 +578,80 @@ class _SnippetsScreenState extends State<SnippetsScreen> {
               const Divider(height: 1),
               ListTile(
                 leading: Icon(Icons.add_circle_outline, color: c.primary),
-                title: Text('New collection', style: TextStyle(color: c.primary)),
+                title: Text(
+                  'New collection',
+                  style: TextStyle(color: c.primary),
+                ),
                 trailing: Icon(Icons.chevron_right, color: c.primary),
                 onTap: () async {
                   final nameController = TextEditingController();
-                  final colorController = TextEditingController(text: '#FFD700');
+                  String selectedColor = '#FFD700';
                   final confirmed = await showDialog<bool>(
                     context: ctx,
                     builder: (dialogCtx) {
                       final dc = Theme.of(dialogCtx).colorScheme;
-                      return AlertDialog(
-                        title: const Text('New collection'),
-                        content: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            TextField(
-                              controller: nameController,
-                              decoration: const InputDecoration(
-                                labelText: 'Name',
-                                hintText: 'My collection',
+                      return StatefulBuilder(
+                        builder: (ctx2, setState2) => AlertDialog(
+                          title: const Text('New collection'),
+                          content: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              TextField(
+                                controller: nameController,
+                                decoration: const InputDecoration(
+                                  labelText: 'Name',
+                                  hintText: 'My collection',
+                                ),
+                                autofocus: true,
                               ),
-                              autofocus: true,
+                              const SizedBox(height: 16),
+                              Text(
+                                'Accent colour',
+                                style: TextStyle(
+                                  color: dc.secondary,
+                                  fontSize: 13,
+                                ),
+                              ),
+                              const SizedBox(height: 8),
+                              HighlightColorPicker(
+                                colors: HighlightColorPicker.palette,
+                                selected: selectedColor,
+                                onChanged: (c) {
+                                  setState2(() => selectedColor = c);
+                                },
+                              ),
+                            ],
+                          ),
+                          actions: [
+                            TextButton(
+                              onPressed: () => Navigator.pop(dialogCtx, false),
+                              child: Text(
+                                'Cancel',
+                                style: TextStyle(color: dc.secondary),
+                              ),
+                            ),
+                            TextButton(
+                              onPressed: () => Navigator.pop(dialogCtx, true),
+                              child: const Text('Create'),
                             ),
                           ],
                         ),
-                        actions: [
-                          TextButton(
-                            onPressed: () => Navigator.pop(dialogCtx, false),
-                            child: Text('Cancel', style: TextStyle(color: dc.secondary)),
-                          ),
-                          TextButton(
-                            onPressed: () => Navigator.pop(dialogCtx, true),
-                            child: const Text('Create'),
-                          ),
-                        ],
                       );
                     },
                   );
-                  if (confirmed == true && nameController.text.trim().isNotEmpty) {
-                    final id = await p.createCollection(nameController.text.trim(), color: colorController.text.trim());
+                  const keyToHex = <String, String>{
+                    'yellow': '#FFE8A8',
+                    'blue': '#C8D8FF',
+                    'pink': '#FFD4DC',
+                    'green': '#C8E6C9',
+                  };
+                  if (confirmed == true &&
+                      nameController.text.trim().isNotEmpty) {
+                    final hex = keyToHex[selectedColor] ?? '#FFE8A8';
+                    final id = await sn.createCollection(
+                      nameController.text.trim(),
+                      color: hex,
+                    );
                     if (ctx.mounted) {
                       Navigator.pop(ctx, id);
                     }
@@ -501,26 +665,183 @@ class _SnippetsScreenState extends State<SnippetsScreen> {
     );
 
     if (result == null) {
-      await p.moveSnippetsToCollection(p.selectedIds.toList(), null);
+      await sn.moveSnippetsToCollection(p.selectedIds.toList(), null);
     } else if (result > 0) {
-      await p.moveSnippetsToCollection(p.selectedIds.toList(), result);
+      await sn.moveSnippetsToCollection(p.selectedIds.toList(), result);
     }
     if (context.mounted) {
-      p.clearSelection();
+      sn.clearSelection();
     }
   }
 
   Color _parseColor(String hex) {
     final cleaned = hex.replaceFirst('#', '');
-    final value = int.parse(cleaned.padLeft(6, '0'), radix: 16) + 0xFF000000;
-    return Color(value);
+    if (cleaned.length < 6) return const Color(0xFFFFE8A8);
+    final value = int.tryParse(cleaned.substring(0, 6), radix: 16);
+    if (value == null) return const Color(0xFFFFE8A8);
+    return Color(value + 0xFF000000);
+  }
+
+  Widget _buildBookmarksTab(BuildContext context, BookmarksState bp) {
+    final bookmarks = bp.bookmarks;
+    return ListView(
+      controller: _scrollCtrl,
+      padding: EdgeInsets.zero,
+      children: [
+        const OneHandSpacer(),
+        LibraryHeader(
+          title: 'Bookmarks',
+          subtitle: '${bookmarks.length} bookmark${bookmarks.length == 1 ? '' : 's'}',
+        ),
+        _buildTabBar(),
+        if (bp.loading && bookmarks.isEmpty)
+          const Padding(
+            padding: EdgeInsets.all(40),
+            child: Center(child: CircularProgressIndicator()),
+          )
+        else if (bookmarks.isEmpty)
+          Padding(
+            padding: const EdgeInsets.all(40),
+            child: EmptyState(
+              icon: AppIcons.bookmark,
+              title: 'No bookmarks yet',
+              subtitle: 'Tap the bookmark icon while reading to save a page.',
+            ),
+          )
+        else
+          ...bookmarks.map(
+            (b) => Padding(
+              padding: const EdgeInsets.fromLTRB(20, 12, 20, 12),
+              child: BookmarkCard(
+                bookmark: b,
+                onTap: () => _openBookmark(context, b),
+                onDelete: () => _confirmDeleteBookmark(context, b.id),
+              ),
+            ),
+          ),
+        const SizedBox(height: 100),
+      ],
+    );
+  }
+
+  Future<void> _openBookmark(BuildContext context, Bookmark bookmark) async {
+    if (bookmark.bookId <= 0) return;
+    final repos = ref.read(repositoriesProvider);
+    final chapter = await repos.manga.getMangaChapter(bookmark.chapterId);
+    if (chapter == null || !context.mounted) return;
+    // Bookmarks store manga ids in [Bookmark.bookId] — look up manga, not ebook.
+    final manga = await repos.manga.getMangaById(bookmark.bookId);
+    if (manga == null || !context.mounted) {
+      if (context.mounted) {
+        StashToast.show(
+          context,
+          message: 'Manga no longer in library',
+          icon: Icons.error_outline,
+        );
+      }
+      return;
+    }
+    context.pushNamed(
+      Routes.mangaReader,
+      extra: (
+        mangaId: bookmark.bookId,
+        sourceId: manga.sourceId,
+        mangaUrl: manga.url,
+        chapterUrl: chapter.url,
+        chapterName: chapter.name,
+        pageNumber: bookmark.pageNumber,
+      ),
+    );
+  }
+
+  Future<void> _confirmDeleteBookmark(BuildContext context, int id) async {
+    final confirmed = await StashDialog.show<bool>(
+      context,
+      title: 'Remove bookmark?',
+      content: 'This cannot be undone.',
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context, false),
+          child: Text(
+            'Cancel',
+            style: TextStyle(color: context.colors.textSecondary),
+          ),
+        ),
+        TextButton(
+          onPressed: () => Navigator.pop(context, true),
+          child: const Text(
+            'Remove',
+            style: TextStyle(color: Color(0xFFC44C4C)),
+          ),
+        ),
+      ],
+    );
+    if (confirmed == true && context.mounted) {
+      await ref.read(bookmarksProvider.notifier).deleteBookmark(id);
+      if (context.mounted) {
+        StashToast.show(
+          context,
+          message: 'Bookmark removed',
+          icon: Icons.check,
+        );
+      }
+    }
   }
 }
 
 Color _parseHexColor(String hex) {
   final cleaned = hex.replaceFirst('#', '');
-  final value = int.parse(cleaned.padLeft(6, '0'), radix: 16) + 0xFF000000;
-  return Color(value);
+  if (cleaned.length < 6) return const Color(0xFFFFE8A8);
+  final value = int.tryParse(cleaned.substring(0, 6), radix: 16);
+  if (value == null) return const Color(0xFFFFE8A8);
+  return Color(value + 0xFF000000);
+}
+
+class _BookFilterChips extends StatelessWidget {
+  final List<({String key, String label})> books;
+  final String? selectedKey;
+  final ValueChanged<String?> onSelected;
+
+  const _BookFilterChips({
+    required this.books,
+    required this.selectedKey,
+    required this.onSelected,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    if (books.isEmpty) return const SizedBox.shrink();
+    final c = context.colors;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+      child: SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        child: Row(
+          children: [
+            _Chip(
+              label: 'All Books',
+              selected: selectedKey == null,
+              color: c.accent,
+              filled: true,
+              onSelected: () => onSelected(null),
+            ),
+            for (final book in books) ...[
+              const SizedBox(width: 8),
+              _Chip(
+                label: book.label,
+                selected: selectedKey == book.key,
+                color: c.accent,
+                filled: true,
+                onSelected: () {
+                  onSelected(selectedKey == book.key ? null : book.key);
+                },
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
 }
 
 class _CollectionFilterBar extends StatelessWidget {
@@ -584,36 +905,54 @@ class _Chip extends StatelessWidget {
   final bool selected;
   final Color color;
   final VoidCallback onSelected;
+  final bool filled;
 
   const _Chip({
     required this.label,
     required this.selected,
     required this.color,
     required this.onSelected,
+    this.filled = false,
   });
 
   @override
   Widget build(BuildContext context) {
     final c = context.colors;
-    final bg = selected ? color.withValues(alpha: 0.18) : c.surfaceMuted;
-    final fg = selected ? color : c.textSecondary;
-    final border = selected ? Border.all(color: color.withValues(alpha: 0.6)) : null;
+    final Color bg;
+    final Color fg;
+    Border? border;
+    if (filled && selected) {
+      bg = color;
+      fg = c.onAccent;
+      border = null;
+    } else if (selected) {
+      bg = color.withValues(alpha: 0.18);
+      fg = color;
+      border = Border.all(color: color.withValues(alpha: 0.6));
+    } else {
+      bg = c.surfaceMuted;
+      fg = c.textSecondary;
+      border = null;
+    }
     return GestureDetector(
       onTap: onSelected,
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 180),
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+        constraints: const BoxConstraints(maxWidth: 140),
         decoration: BoxDecoration(
           color: bg,
-          borderRadius: BorderRadius.circular(20),
+          borderRadius: BorderRadius.circular(999),
           border: border,
         ),
         child: Text(
           label,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
           style: TextStyle(
             color: fg,
-            fontSize: 13,
-            fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
+            fontSize: 12,
+            fontWeight: selected ? FontWeight.w600 : FontWeight.w400,
           ),
         ),
       ),

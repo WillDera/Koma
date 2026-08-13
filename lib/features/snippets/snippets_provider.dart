@@ -1,74 +1,103 @@
-import 'package:flutter/material.dart';
 import 'package:collection/collection.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/models/snippet.dart';
 import '../../core/models/snippet_collection.dart';
-import '../../core/services/database_service.dart';
-import '../../core/services/stats_service.dart';
+import '../../core/providers.dart';
 
-class SnippetsProvider extends ChangeNotifier {
-  final DatabaseService _db;
-  final StatsService _statsService;
+/// Immutable state for the snippets screen.
+class SnippetsState {
+  const SnippetsState({
+    this.allSnippets = const [],
+    this.allTags = const [],
+    this.collections = const [],
+    this.filterTag,
+    this.filterCollectionId,
+    this.loading = true,
+    this.error,
+    this.selectedIds = const {},
+    this.selectionMode = false,
+  });
 
-  List<Snippet> _snippets = [];
-  List<String> _allTags = [];
-  List<SnippetCollection> _collections = [];
-  String? _filterTag;
-  int? _filterCollectionId;
-  bool _loading = true;
-  String? _error;
-  final Set<int> _selectedIds = {};
-  bool _selectionMode = false;
+  final List<Snippet> allSnippets;
+  final List<String> allTags;
+  final List<SnippetCollection> collections;
+  final String? filterTag;
+  final int? filterCollectionId;
+  final bool loading;
+  final String? error;
+  final Set<int> selectedIds;
+  final bool selectionMode;
 
-  SnippetsProvider(this._db, this._statsService);
-
+  /// Filtered view of snippets based on current collection + tag filters.
   List<Snippet> get snippets {
-    var items = _snippets;
-    if (_filterCollectionId == null) {
+    var items = allSnippets;
+    if (filterCollectionId == null) {
       items = items.where((s) => s.collectionId == null).toList();
-    } else if (_filterCollectionId == -1) {
-      // -1 means show all, collected + uncollected
+    } else if (filterCollectionId == -1) {
+      // -1 means show all
     } else {
-      items = items.where((s) => s.collectionId == _filterCollectionId).toList();
+      items = items.where((s) => s.collectionId == filterCollectionId).toList();
     }
-    if (_filterTag == null) return items;
-    final tag = _filterTag;
+    if (filterTag == null) return items;
+    final tag = filterTag;
     return items.where((s) => s.tags.contains(tag)).toList();
   }
 
-  List<String> get allTags => _allTags;
-  List<SnippetCollection> get collections => _collections;
-  String? get filterTag => _filterTag;
-  int? get filterCollectionId => _filterCollectionId;
-  bool get loading => _loading;
-  String? get error => _error;
-  Set<int> get selectedIds => _selectedIds;
-  bool get selectionMode => _selectionMode;
+  SnippetsState copyWith({
+    List<Snippet>? allSnippets,
+    List<String>? allTags,
+    List<SnippetCollection>? collections,
+    String? Function()? filterTag,
+    int? Function()? filterCollectionId,
+    bool? loading,
+    String? Function()? error,
+    Set<int>? selectedIds,
+    bool? selectionMode,
+  }) {
+    return SnippetsState(
+      allSnippets: allSnippets ?? this.allSnippets,
+      allTags: allTags ?? this.allTags,
+      collections: collections ?? this.collections,
+      filterTag: filterTag != null ? filterTag() : this.filterTag,
+      filterCollectionId: filterCollectionId != null
+          ? filterCollectionId()
+          : this.filterCollectionId,
+      loading: loading ?? this.loading,
+      error: error != null ? error() : this.error,
+      selectedIds: selectedIds ?? this.selectedIds,
+      selectionMode: selectionMode ?? this.selectionMode,
+    );
+  }
+}
+
+class SnippetsNotifier extends Notifier<SnippetsState> {
+  @override
+  SnippetsState build() => const SnippetsState();
 
   Future<void> loadSnippets() async {
-    _loading = true;
-    _error = null;
-    notifyListeners();
-
+    state = state.copyWith(loading: true, error: () => null);
+    final repos = ref.read(repositoriesProvider);
     try {
-      _snippets = await _db.getSnippets();
-      _allTags = await _db.getAllTags();
-      _collections = await _db.getCollections();
+      final snippets = await repos.snippets.getSnippets();
+      final tags = await repos.snippets.getAllTags();
+      final collections = await repos.snippets.getCollections();
+      state = state.copyWith(
+        allSnippets: snippets,
+        allTags: tags,
+        collections: collections,
+        loading: false,
+      );
     } catch (e) {
-      _error = e.toString();
+      state = state.copyWith(error: () => e.toString(), loading: false);
     }
-
-    _loading = false;
-    notifyListeners();
   }
 
   void setFilterTag(String? tag) {
-    _filterTag = tag;
-    notifyListeners();
+    state = state.copyWith(filterTag: () => tag);
   }
 
   void setFilterCollection(int? collectionId) {
-    _filterCollectionId = collectionId;
-    notifyListeners();
+    state = state.copyWith(filterCollectionId: () => collectionId);
   }
 
   Future<int> createSnippet({
@@ -80,9 +109,13 @@ class SnippetsProvider extends ChangeNotifier {
     int? bookId,
     int? chapterId,
     int? collectionId,
+    int? startOffset,
+    int? endOffset,
+    double? scrollPosition,
     List<String> tags = const [],
   }) async {
-    final id = await _db.createSnippet(
+    final repos = ref.read(repositoriesProvider);
+    final id = await repos.snippets.createSnippet(
       text: text,
       note: note,
       sourceTitle: sourceTitle,
@@ -91,97 +124,116 @@ class SnippetsProvider extends ChangeNotifier {
       bookId: bookId,
       chapterId: chapterId,
       collectionId: collectionId,
+      startOffset: startOffset,
+      endOffset: endOffset,
+      scrollPosition: scrollPosition,
       tags: tags,
     );
-    await _statsService.trackSnippet();
+    await ref.read(statsServiceProvider).trackSnippet();
     await loadSnippets();
     return id;
   }
 
   Future<void> updateSnippet(Snippet snippet) async {
-    await _db.updateSnippet(snippet);
+    await ref.read(repositoriesProvider).snippets.updateSnippet(snippet);
     await loadSnippets();
   }
 
   Future<void> deleteSnippet(int id) async {
-    await _db.deleteSnippet(id);
+    await ref.read(repositoriesProvider).snippets.deleteSnippet(id);
     await loadSnippets();
   }
 
   Future<int> createCollection(String name, {String color = '#FFD700'}) async {
-    final id = await _db.createCollection(name, color: color);
+    final id = await ref
+        .read(repositoriesProvider)
+        .snippets
+        .createCollection(name, color: color);
     await loadSnippets();
     return id;
   }
 
   Future<void> updateCollection(SnippetCollection collection) async {
-    await _db.updateCollection(collection);
+    await ref.read(repositoriesProvider).snippets.updateCollection(collection);
     await loadSnippets();
   }
 
   Future<void> deleteCollection(int id) async {
-    await _db.deleteCollection(id);
-    if (_filterCollectionId == id) _filterCollectionId = null;
+    await ref.read(repositoriesProvider).snippets.deleteCollection(id);
+    if (state.filterCollectionId == id) {
+      state = state.copyWith(filterCollectionId: () => null);
+    }
     await loadSnippets();
   }
 
-  Future<void> moveSnippetsToCollection(List<int> snippetIds, int? collectionId) async {
+  Future<void> moveSnippetsToCollection(
+    List<int> snippetIds,
+    int? collectionId,
+  ) async {
+    final repos = ref.read(repositoriesProvider);
     for (final id in snippetIds) {
-      final snippet = _snippets.firstWhereOrNull((s) => s.id == id);
+      final snippet = state.allSnippets.firstWhereOrNull((s) => s.id == id);
       if (snippet != null) {
-        await _db.updateSnippet(snippet.copyWith(collectionId: collectionId));
+        await repos.snippets.updateSnippet(
+          snippet.copyWith(collectionId: collectionId),
+        );
       }
     }
     await loadSnippets();
   }
 
   void toggleSelection(int id) {
-    if (_selectedIds.contains(id)) {
-      _selectedIds.remove(id);
-      if (_selectedIds.isEmpty) _selectionMode = false;
+    final ids = Set<int>.from(state.selectedIds);
+    bool mode = state.selectionMode;
+    if (ids.contains(id)) {
+      ids.remove(id);
+      if (ids.isEmpty) mode = false;
     } else {
-      _selectedIds.add(id);
-      _selectionMode = true;
+      ids.add(id);
+      mode = true;
     }
-    notifyListeners();
+    state = state.copyWith(selectedIds: ids, selectionMode: mode);
   }
 
   void clearSelection() {
-    _selectedIds.clear();
-    _selectionMode = false;
-    notifyListeners();
+    state = state.copyWith(selectedIds: {}, selectionMode: false);
   }
 
   void selectAll() {
-    if (_selectedIds.length == _snippets.length && _snippets.isNotEmpty) {
+    final filtered = state.snippets;
+    if (state.selectedIds.length == filtered.length && filtered.isNotEmpty) {
       clearSelection();
       return;
     }
-    _selectedIds.clear();
-    for (final s in _snippets) {
-      _selectedIds.add(s.id);
+    final ids = <int>{};
+    for (final s in filtered) {
+      ids.add(s.id);
     }
-    _selectionMode = true;
-    notifyListeners();
+    state = state.copyWith(selectedIds: ids, selectionMode: true);
   }
 
   void inverseSelection() {
-    if (_snippets.isEmpty) return;
-    final selectedSet = _selectedIds.toSet();
-    final allIds = _snippets.map((s) => s.id).toSet();
-    _selectedIds.clear();
+    final filtered = state.snippets;
+    if (filtered.isEmpty) return;
+    final current = state.selectedIds;
+    final allIds = filtered.map((s) => s.id).toSet();
+    final inverted = <int>{};
     for (final id in allIds) {
-      if (!selectedSet.contains(id)) _selectedIds.add(id);
+      if (!current.contains(id)) inverted.add(id);
     }
-    _selectionMode = _selectedIds.isNotEmpty;
-    notifyListeners();
+    state = state.copyWith(
+      selectedIds: inverted,
+      selectionMode: inverted.isNotEmpty,
+    );
   }
 
   Future<void> deleteSelected() async {
-    if (_selectedIds.isEmpty) return;
-    await _db.deleteSelectedSnippets(_selectedIds.toList());
-    _selectedIds.clear();
-    _selectionMode = false;
+    if (state.selectedIds.isEmpty) return;
+    await ref
+        .read(repositoriesProvider)
+        .snippets
+        .deleteSelectedSnippets(state.selectedIds.toList());
+    state = state.copyWith(selectedIds: {}, selectionMode: false);
     await loadSnippets();
   }
 }

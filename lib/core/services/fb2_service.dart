@@ -5,6 +5,7 @@ import 'package:html/dom.dart';
 import 'package:path_provider/path_provider.dart';
 import '../models/book.dart';
 import '../models/chapter.dart';
+import 'ebook_media_store.dart';
 import 'epub_service.dart';
 
 class Fb2Service {
@@ -17,22 +18,52 @@ class Fb2Service {
       if (doc.body == null) throw Exception('No body');
 
       final bookIdFinal = bookId ?? 0;
+      final sessionId = bookId != null && bookId > 0
+          ? '$bookId'
+          : EbookMediaStore.newSessionId();
+
+      // Prefetch binary images → local paths (id without leading #).
+      final binaryPaths = <String, String>{};
+      for (final match in RegExp(
+        r'''<binary\s+([^>]*)>([\s\S]*?)</binary>''',
+        caseSensitive: false,
+      ).allMatches(raw)) {
+        final attrs = match.group(1) ?? '';
+        final idMatch = RegExp(
+          r'''\bid\s*=\s*["']([^"']+)["']''',
+          caseSensitive: false,
+        ).firstMatch(attrs);
+        if (idMatch == null) continue;
+        final id = idMatch.group(1)!;
+        try {
+          final bytes = base64Decode(match.group(2)!.trim());
+          final path = await EbookMediaStore.storeBytes(
+            bookOrSessionId: sessionId,
+            bytes: bytes,
+            preferredExt: _extFromContentType(attrs),
+            logicalName: id,
+          );
+          binaryPaths[id] = path;
+        } catch (_) {}
+      }
 
       // Save cover image
       String? coverPath;
       final coverImg = doc.querySelector('coverpage image');
       if (coverImg != null) {
-        final href = coverImg.attributes['l:href'] ??
+        final href =
+            coverImg.attributes['l:href'] ??
             coverImg.attributes['xlink:href'] ??
             '';
         final binId = href.replaceFirst('#', '');
-        coverPath = await _extractBinary(raw, binId);
+        coverPath = binaryPaths[binId] ?? await _extractBinary(raw, binId);
       }
 
       // Metadata
       final titleInfo = doc.querySelector('title-info');
       final bookTitle =
-          titleInfo?.querySelector('book-title')?.text.trim() ?? 'Unknown Title';
+          titleInfo?.querySelector('book-title')?.text.trim() ??
+          'Unknown Title';
       final authorEl = titleInfo?.querySelector('author');
       final author = authorEl != null ? _parseAuthor(authorEl) : null;
 
@@ -53,18 +84,22 @@ class Fb2Service {
       if (fb2Body == null) throw Exception('No body element');
 
       for (final section in fb2Body.querySelectorAll(':scope > section')) {
-        chapters.add(_sectionToChapter(section, bookIdFinal, idx++, raw));
+        chapters.add(
+          _sectionToChapter(section, bookIdFinal, idx++, binaryPaths),
+        );
       }
 
       if (chapters.isEmpty) {
-        final html = _serializeChildren(fb2Body);
-        chapters.add(Chapter(
-          id: 0,
-          bookId: bookIdFinal,
-          title: 'Text',
-          content: '<div>$html</div>',
-          index: 0,
-        ));
+        final html = _serializeChildren(fb2Body, binaryPaths);
+        chapters.add(
+          Chapter(
+            id: 0,
+            bookId: bookIdFinal,
+            title: 'Text',
+            content: '<div>$html</div>',
+            index: 0,
+          ),
+        );
       }
 
       final book = Book(
@@ -77,17 +112,25 @@ class Fb2Service {
         totalChapters: chapters.length,
       );
 
-      return EpubResult(book: book, chapters: chapters);
+      return EpubResult(
+        book: book,
+        chapters: chapters,
+        mediaSessionId: sessionId,
+      );
     } catch (e) {
       throw Exception('Failed to parse FB2: $e');
     }
   }
 
   Chapter _sectionToChapter(
-      Element section, int bookId, int index, String rawFile) {
+    Element section,
+    int bookId,
+    int index,
+    Map<String, String> binaryPaths,
+  ) {
     final titleEl = section.querySelector('title');
     final title = titleEl?.text.trim() ?? 'Chapter ${index + 1}';
-    final html = _serializeChildren(section);
+    final html = _serializeChildren(section, binaryPaths);
     return Chapter(
       id: 0,
       bookId: bookId,
@@ -97,56 +140,64 @@ class Fb2Service {
     );
   }
 
-  String _serializeChildren(Element parent) {
+  String _serializeChildren(Element parent, Map<String, String> binaryPaths) {
     final buf = StringBuffer();
     for (final node in parent.nodes) {
       if (node.nodeType == Node.TEXT_NODE) {
         buf.write(_escape(node.text ?? ''));
       } else if (node is Element) {
-        buf.write(_serializeElement(node));
+        buf.write(_serializeElement(node, binaryPaths));
       }
     }
     return buf.toString();
   }
 
-  String _serializeElement(Element el) {
+  String _serializeElement(Element el, Map<String, String> binaryPaths) {
     final tag = el.localName!.toLowerCase();
     switch (tag) {
       case 'title':
       case 'subtitle':
-        return '<h3>${_serializeChildren(el)}</h3>';
+        return '<h3>${_serializeChildren(el, binaryPaths)}</h3>';
       case 'p':
-        return '<p>${_serializeChildren(el)}</p>';
+        return '<p>${_serializeChildren(el, binaryPaths)}</p>';
       case 'empty-line':
         return '<br/>';
       case 'emphasis':
-        return '<em>${_serializeChildren(el)}</em>';
+        return '<em>${_serializeChildren(el, binaryPaths)}</em>';
       case 'strong':
-        return '<strong>${_serializeChildren(el)}</strong>';
+        return '<strong>${_serializeChildren(el, binaryPaths)}</strong>';
       case 'strikethrough':
-        return '<s>${_serializeChildren(el)}</s>';
+        return '<s>${_serializeChildren(el, binaryPaths)}</s>';
       case 'code':
-        return '<code>${_serializeChildren(el)}</code>';
+        return '<code>${_serializeChildren(el, binaryPaths)}</code>';
       case 'a':
         final href = el.attributes['l:href'] ?? el.attributes['href'] ?? '';
-        return '<a href="$href">${_serializeChildren(el)}</a>';
+        return '<a href="${_escape(href)}">${_serializeChildren(el, binaryPaths)}</a>';
       case 'image':
-        return ''; // ponytail: inline images stripped (reader is text-only)
+        final href =
+            el.attributes['l:href'] ??
+            el.attributes['xlink:href'] ??
+            el.attributes['href'] ??
+            '';
+        final binId = href.replaceFirst('#', '');
+        final path = binaryPaths[binId];
+        if (path == null) return '';
+        return '<img src="${Uri.file(path)}"/>';
       case 'section':
       case 'v':
       case 'text-author':
       case 'date':
       case 'style':
-        return '<p>${_serializeChildren(el)}</p>';
+        return '<p>${_serializeChildren(el, binaryPaths)}</p>';
       case 'table':
-        return '<table>${_serializeChildren(el)}</table>';
+        return '<table>${_serializeChildren(el, binaryPaths)}</table>';
       case 'tr':
-        return '<tr>${_serializeChildren(el)}</tr>';
+        return '<tr>${_serializeChildren(el, binaryPaths)}</tr>';
       case 'td':
       case 'th':
-        return '<$tag>${_serializeChildren(el)}</$tag>';
+        return '<$tag>${_serializeChildren(el, binaryPaths)}</$tag>';
       default:
-        return _serializeChildren(el);
+        return _serializeChildren(el, binaryPaths);
     }
   }
 
@@ -158,18 +209,33 @@ class Fb2Service {
         .replaceAll('"', '&quot;');
   }
 
+  String? _extFromContentType(String attrs) {
+    final m = RegExp(
+      r'''content-type\s*=\s*["']([^"']+)["']''',
+      caseSensitive: false,
+    ).firstMatch(attrs);
+    final ct = m?.group(1)?.toLowerCase() ?? '';
+    if (ct.contains('jpeg') || ct.contains('jpg')) return 'jpg';
+    if (ct.contains('png')) return 'png';
+    if (ct.contains('gif')) return 'gif';
+    if (ct.contains('webp')) return 'webp';
+    return null;
+  }
+
   Future<String?> _extractBinary(String rawXml, String id) async {
     final match = RegExp(
-        '<binary\\s+id=["\']$id["\'][^>]*>([\\s\\S]*?)</binary>',
-        caseSensitive: false).firstMatch(rawXml);
+      '<binary\\s+id=["\']$id["\'][^>]*>([\\s\\S]*?)</binary>',
+      caseSensitive: false,
+    ).firstMatch(rawXml);
     if (match == null) return null;
     try {
       final bytes = base64Decode(match.group(1)!.trim());
       final appDir = await getApplicationDocumentsDirectory();
       final coverDir = Directory('${appDir.path}/covers');
       if (!await coverDir.exists()) await coverDir.create(recursive: true);
-      final outFile =
-          File('${coverDir.path}/${DateTime.now().millisecondsSinceEpoch}.png');
+      final outFile = File(
+        '${coverDir.path}/${DateTime.now().millisecondsSinceEpoch}.png',
+      );
       await outFile.writeAsBytes(bytes);
       return outFile.path;
     } catch (_) {

@@ -30,6 +30,9 @@ class SegmentedControl<T extends Object> extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final c = context.colors;
+    final segmentStyle = (Theme.of(context).textTheme.labelMedium ??
+            const TextStyle())
+        .copyWith(fontSize: 13, letterSpacing: 0.1);
     final entries = segments.entries.toList();
     final selectedIndex = value == null
         ? -1
@@ -47,7 +50,7 @@ class SegmentedControl<T extends Object> extends StatelessWidget {
         final hasBoundedWidth = constraints.hasBoundedWidth;
         final perSeg = hasBoundedWidth
             ? ((constraints.maxWidth - padding.horizontal) / entries.length)
-                .clamp(0.0, double.infinity)
+                  .clamp(0.0, double.infinity)
             : (minWidth / entries.length).clamp(40.0, 200.0);
         final totalWidth = hasBoundedWidth
             ? constraints.maxWidth
@@ -71,10 +74,9 @@ class SegmentedControl<T extends Object> extends StatelessWidget {
                       duration: AppMotion.base,
                       curve: AppMotion.standard,
                       decoration: BoxDecoration(
-                        color: c.surface,
-                        borderRadius: AppSpacing.brPill,
-                        boxShadow: AppSpacing.shadow1(
-                            isDark: c.bg.computeLuminance() < 0.5),
+                        color: c.accent,
+                        // Figma active segment: rounded-lg (8).
+                        borderRadius: BorderRadius.circular(8),
                       ),
                     ),
                   ),
@@ -91,15 +93,11 @@ class SegmentedControl<T extends Object> extends StatelessWidget {
                         child: Center(
                           child: AnimatedDefaultTextStyle(
                             duration: AppMotion.base,
-                            style: TextStyle(
-                              color: isSelected
-                                  ? c.textPrimary
-                                  : c.textSecondary,
+                            style: segmentStyle.copyWith(
+                              color: isSelected ? c.onAccent : c.textSecondary,
                               fontWeight: isSelected
                                   ? FontWeight.w600
-                                  : FontWeight.w500,
-                              fontSize: 13,
-                              letterSpacing: 0.1,
+                                  : FontWeight.w400,
                             ),
                             child: Text(entry.value),
                           ),
@@ -120,7 +118,7 @@ class SegmentedControl<T extends Object> extends StatelessWidget {
     return DecoratedBox(
       decoration: BoxDecoration(
         color: c.surfaceMuted,
-        borderRadius: AppSpacing.brPill,
+        borderRadius: AppSpacing.brMd,
       ),
       child: content,
     );

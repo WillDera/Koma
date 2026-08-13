@@ -6,6 +6,17 @@ allprojects {
     }
 }
 
+// AGP 8.11 rejects `package=""` in plugin AndroidManifest.xml. Pub-cache on CI
+// is fresh every run, so patch before any subproject is configured — the
+// older plugins.withId hook ran too late for :flutter_native_splash.
+gradle.beforeProject {
+    val manifest = project.projectDir.resolve("src/main/AndroidManifest.xml")
+    if (!manifest.isFile) return@beforeProject
+    val text = manifest.readText()
+    if (!text.contains(Regex("""\spackage="""))) return@beforeProject
+    manifest.writeText(text.replace(Regex("""\s+package="[^"]+""""), ""))
+}
+
 val newBuildDir: Directory =
     rootProject.layout.buildDirectory
         .dir("../../build")
@@ -28,6 +39,7 @@ subprojects {
 // subprojects blocks above have already evaluated the projects.
 allprojects {
     plugins.withId("com.android.library") {
+        // Set a fallback namespace for plugins that don't declare one.
         extensions.findByName("android")?.let { ext ->
             val getter = ext.javaClass.methods.firstOrNull { it.name == "getNamespace" }
             val currentNamespace = getter?.invoke(ext) as? String

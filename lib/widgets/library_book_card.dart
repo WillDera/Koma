@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+
 import '../core/models/book.dart';
 import '../theme/app_theme.dart';
 import '../theme/tokens/app_motion.dart';
@@ -7,7 +8,7 @@ import 'animated_press.dart';
 import 'book_cover.dart';
 import 'progress_ring.dart';
 
-enum LibraryCardVariant { grid, list, compact }
+enum LibraryCardVariant { grid, list, compact, overlay }
 
 class LibraryBookCard extends StatelessWidget {
   final Book book;
@@ -33,9 +34,13 @@ class LibraryBookCard extends StatelessWidget {
   Widget build(BuildContext context) {
     if (variant == LibraryCardVariant.list) return _list(context);
     if (variant == LibraryCardVariant.compact) return _compact(context);
+    if (variant == LibraryCardVariant.overlay) return _overlay(context);
     return _grid(context);
   }
 
+  /// Comfortable grid — Figma style: bare cover (accent progress bar overlaid
+  /// at the cover's bottom edge) with title + author beneath. Cover fills
+  /// remaining cell height so 3-col never overflows.
   Widget _grid(BuildContext context) {
     final c = context.colors;
     return AnimatedPress(
@@ -44,96 +49,84 @@ class LibraryBookCard extends StatelessWidget {
       scaleDown: 0.97,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
-        mainAxisSize: MainAxisSize.min,
         children: [
-          Stack(
-            children: [
-              BookCover(book: book, variant: BookCoverVariant.grid),
-              if (showSourcePills)
-                Positioned(
-                  top: 6,
-                  left: 6,
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                    decoration: BoxDecoration(
-                      color: Colors.black.withValues(alpha: 0.7),
-                      borderRadius: AppSpacing.brPill,
-                    ),
-                    child: Text(
-                      _sourceLabel(book.source),
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 10,
-                        fontWeight: FontWeight.w600,
+          Expanded(
+            child: Stack(
+              fit: StackFit.expand,
+              children: [
+                BookCover(
+                  book: book,
+                  variant: BookCoverVariant.grid,
+                  expand: true,
+                ),
+                if (showSourcePills)
+                  Positioned(
+                    top: 6,
+                    left: 6,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 6,
+                        vertical: 2,
+                      ),
+                      decoration: BoxDecoration(
+                        color: Colors.black.withValues(alpha: 0.65),
+                        borderRadius: AppSpacing.brPill,
+                      ),
+                      child: Text(
+                        _sourceLabel(book.source),
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 10,
+                          fontWeight: FontWeight.w600,
+                        ),
                       ),
                     ),
                   ),
-                ),
-              if (book.progress > 0 && book.progress < 1)
-                Positioned(
-                  bottom: 8,
-                  left: 8,
-                  right: 8,
-                  child: ClipRRect(
-                    borderRadius: BorderRadius.circular(2),
-                    child: ThinProgressBar(
-                      progress: book.progress,
-                      height: 3,
-                      color: Colors.white,
-                      trackColor: Colors.white.withValues(alpha: 0.3),
-                    ),
-                  ),
-                ),
-              if (selectionMode)
-                Positioned(
-                  top: 8,
-                  right: 8,
-                  child: AnimatedContainer(
-                    duration: AppMotion.fast,
-                    width: 24,
-                    height: 24,
-                    decoration: BoxDecoration(
-                      color: selected ? c.accent : Colors.black.withValues(alpha: 0.4),
-                      shape: BoxShape.circle,
-                      border: Border.all(
-                        color: Colors.white,
-                        width: 1.5,
+                if (book.progress > 0 && book.progress < 1)
+                  Positioned(
+                    bottom: 0,
+                    left: 0,
+                    right: 0,
+                    child: ClipRRect(
+                      borderRadius: const BorderRadius.vertical(
+                        bottom: Radius.circular(AppSpacing.radiusMd),
+                      ),
+                      child: ThinProgressBar(
+                        progress: book.progress,
+                        height: 4,
+                        color: c.accent,
+                        trackColor: Colors.black.withValues(alpha: 0.4),
                       ),
                     ),
-                    child: selected
-                        ? Icon(Icons.check,
-                            size: 14, color: c.onAccent)
-                        : null,
                   ),
-                ),
-            ],
+                if (selectionMode)
+                  Positioned(
+                    top: 8,
+                    right: 8,
+                    child: _selectionBadge(c),
+                  ),
+              ],
+            ),
           ),
-          const SizedBox(height: 10),
+          const SizedBox(height: 6),
           Text(
             book.title,
             maxLines: 2,
             overflow: TextOverflow.ellipsis,
             style: TextStyle(
               color: c.textPrimary,
-              fontSize: 14,
+              fontSize: 12,
               fontWeight: FontWeight.w600,
-              height: 1.25,
-              letterSpacing: -0.1,
+              height: 1.3,
             ),
           ),
-          if (book.author != null && book.author!.isNotEmpty) ...[
-            const SizedBox(height: 2),
+          if (book.author != null && book.author!.isNotEmpty)
             Text(
               book.author!,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                color: c.textTertiary,
-                fontSize: 12,
-                fontWeight: FontWeight.w400,
-              ),
+              style: TextStyle(color: c.textSecondary, fontSize: 11),
             ),
-          ],
         ],
       ),
     );
@@ -146,18 +139,16 @@ class LibraryBookCard extends StatelessWidget {
       onLongPress: onLongPress,
       scaleDown: 0.99,
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        padding: const EdgeInsets.all(12),
         decoration: BoxDecoration(
-          color: selected ? c.accentMuted : Colors.transparent,
-          borderRadius: AppSpacing.brLg,
+          color: selected ? c.accentMuted : c.surface,
+          borderRadius: AppSpacing.brMd,
         ),
         child: Row(
           children: [
             if (selectionMode) ...[
               Icon(
-                selected
-                    ? Icons.check_circle
-                    : Icons.radio_button_unchecked,
+                selected ? Icons.check_circle : Icons.radio_button_unchecked,
                 size: 22,
                 color: selected ? c.accent : c.textTertiary,
               ),
@@ -171,7 +162,10 @@ class LibraryBookCard extends StatelessWidget {
                     top: 2,
                     left: 2,
                     child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 4,
+                        vertical: 1,
+                      ),
                       decoration: BoxDecoration(
                         color: Colors.black.withValues(alpha: 0.7),
                         borderRadius: AppSpacing.brPill,
@@ -188,7 +182,7 @@ class LibraryBookCard extends StatelessWidget {
                   ),
               ],
             ),
-            const SizedBox(width: 16),
+            const SizedBox(width: 12),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -196,11 +190,11 @@ class LibraryBookCard extends StatelessWidget {
                 children: [
                   Text(
                     book.title,
-                    maxLines: 2,
+                    maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(
                       color: c.textPrimary,
-                      fontSize: 15,
+                      fontSize: 14,
                       fontWeight: FontWeight.w600,
                       height: 1.3,
                     ),
@@ -211,80 +205,191 @@ class LibraryBookCard extends StatelessWidget {
                       book.author!,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        color: c.textSecondary,
-                        fontSize: 13,
-                      ),
+                      style: TextStyle(color: c.textSecondary, fontSize: 12),
                     ),
                   ],
-                  const SizedBox(height: 8),
-                  if (book.progress > 0)
-                    Row(
-                      children: [
-                        Expanded(
-                          child: ThinProgressBar(
-                            progress: book.progress,
-                            height: 3,
-                            color: c.accent,
-                            trackColor: c.border,
-                          ),
-                        ),
-                        const SizedBox(width: 8),
-                        Text(
-                          '${(book.progress * 100).toInt()}%',
-                          style: TextStyle(
-                            color: c.textTertiary,
-                            fontSize: 11,
-                            fontWeight: FontWeight.w500,
-                          ),
-                        ),
-                      ],
-                    )
-                  else
-                    Text(
-                      _sourceLabel(book.source),
-                      style: TextStyle(
-                        color: c.textTertiary,
-                        fontSize: 11,
-                        fontWeight: FontWeight.w500,
-                        letterSpacing: 0.2,
-                      ),
+                  if (book.progress > 0) ...[
+                    const SizedBox(height: 8),
+                    ThinProgressBar(
+                      progress: book.progress,
+                      height: 4,
+                      color: c.accent,
+                      trackColor: c.borderStrong,
                     ),
+                  ],
                 ],
               ),
             ),
+            if (selectionMode)
+              const SizedBox.shrink()
+            else if (book.progress > 0 && book.progress < 1)
+              Padding(
+                padding: const EdgeInsets.only(left: 8),
+                child: Text(
+                  '${(book.progress * 100).toInt()}%',
+                  style: TextStyle(
+                    color: c.textTertiary,
+                    fontSize: 11,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
           ],
         ),
       ),
     );
   }
 
+  /// Dense grid — smaller title + tighter spacing (Mihon CompactGrid).
   Widget _compact(BuildContext context) {
     final c = context.colors;
     return AnimatedPress(
       onTap: onTap,
+      onLongPress: onLongPress,
       scaleDown: 0.97,
-      child: SizedBox(
-        width: 96,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          Expanded(
+            child: Stack(
+              fit: StackFit.expand,
+              children: [
+                BookCover(
+                  book: book,
+                  variant: BookCoverVariant.compact,
+                  borderRadius: AppSpacing.brSm,
+                  expand: true,
+                ),
+                if (showSourcePills)
+                  Positioned(
+                    top: 4,
+                    left: 4,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 4,
+                        vertical: 1,
+                      ),
+                      decoration: BoxDecoration(
+                        color: Colors.black.withValues(alpha: 0.7),
+                        borderRadius: AppSpacing.brPill,
+                      ),
+                      child: Text(
+                        _sourceLabel(book.source),
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 9,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                  ),
+                if (selectionMode)
+                  Positioned(
+                    top: 6,
+                    right: 6,
+                    child: _selectionBadge(c, size: 20),
+                  ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            book.title,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              color: c.textPrimary,
+              fontSize: 11,
+              fontWeight: FontWeight.w500,
+              height: 1.15,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Cover-only with title gradient (Mihon CoverOnlyGrid).
+  Widget _overlay(BuildContext context) {
+    final c = context.colors;
+    return AnimatedPress(
+      onTap: onTap,
+      onLongPress: onLongPress,
+      scaleDown: 0.97,
+      child: ClipRRect(
+        borderRadius: AppSpacing.brMd,
+        child: Stack(
+          fit: StackFit.expand,
           children: [
-            BookCover(book: book, variant: BookCoverVariant.grid),
-            const SizedBox(height: 6),
-            Text(
-              book.title,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              textAlign: TextAlign.center,
-              style: TextStyle(
-                color: c.textPrimary,
-                fontSize: 11,
-                fontWeight: FontWeight.w500,
+            BookCover(
+              book: book,
+              variant: BookCoverVariant.grid,
+              borderRadius: BorderRadius.zero,
+              expand: true,
+            ),
+            const DecoratedBox(
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.bottomCenter,
+                  end: Alignment.topCenter,
+                  colors: [
+                    Color(0xBF000000),
+                    Color(0x59000000),
+                    Color(0x00000000),
+                  ],
+                  stops: [0.0, 0.35, 1.0],
+                ),
               ),
             ),
+            Positioned(
+              left: 8,
+              right: 8,
+              bottom: 8,
+              child: Text(
+                book.title,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                  height: 1.3,
+                  shadows: const [
+                    Shadow(
+                      blurRadius: 4,
+                      color: Colors.black54,
+                      offset: Offset(0, 1),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            if (selectionMode)
+              Positioned(
+                top: 8,
+                right: 8,
+                child: _selectionBadge(c),
+              ),
           ],
         ),
       ),
+    );
+  }
+
+  Widget _selectionBadge(KomaColors c, {double size = 24}) {
+    return AnimatedContainer(
+      duration: AppMotion.fast,
+      width: size,
+      height: size,
+      decoration: BoxDecoration(
+        color: selected ? c.accent : Colors.black.withValues(alpha: 0.4),
+        shape: BoxShape.circle,
+        border: Border.all(color: Colors.white, width: 1.5),
+      ),
+      child: selected
+          ? Icon(Icons.check, size: size * 0.58, color: c.onAccent)
+          : null,
     );
   }
 

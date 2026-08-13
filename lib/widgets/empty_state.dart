@@ -1,16 +1,19 @@
 import 'package:flutter/material.dart';
+
+import '../theme/app_icons.dart';
 import '../theme/app_theme.dart';
+import '../theme/tokens/app_spacing.dart';
 import 'animated_press.dart';
 import 'premium_button.dart';
 
 /// A refined empty state. Icon (line, 1.5px stroke feel), title, subtitle,
 /// optional primary CTA. Used on Library / Snippets / Search.
 class EmptyState extends StatelessWidget {
-  final IconData icon;
+  final AppIconData icon;
   final String title;
   final String? subtitle;
   final String? primaryActionLabel;
-  final IconData? primaryActionIcon;
+  final AppIconData? primaryActionIcon;
   final VoidCallback? onPrimaryAction;
   final String? secondaryActionLabel;
   final VoidCallback? onSecondaryAction;
@@ -37,36 +40,36 @@ class EmptyState extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           children: [
             Container(
-              width: 88,
-              height: 88,
+              width: 64,
+              height: 64,
               decoration: BoxDecoration(
-                color: c.accentMuted,
-                borderRadius: BorderRadius.circular(28),
+                color: c.surfaceMuted,
+                borderRadius: AppSpacing.brLg,
               ),
-              child: Icon(
-                icon,
-                size: 40,
-                color: c.accent,
+              child: Center(
+                child: AppIcon(data: icon, size: 28, color: c.textSecondary),
               ),
             ),
-            const SizedBox(height: 24),
+            const SizedBox(height: 16),
             Text(
               title,
               textAlign: TextAlign.center,
-              style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                    color: c.textPrimary,
-                    fontWeight: FontWeight.w600,
-                  ),
+              style: TextStyle(
+                color: c.textPrimary,
+                fontSize: 15,
+                fontWeight: FontWeight.w500,
+              ),
             ),
             if (subtitle != null) ...[
-              const SizedBox(height: 8),
+              const SizedBox(height: 6),
               Text(
                 subtitle!,
                 textAlign: TextAlign.center,
-                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                      color: c.textSecondary,
-                      height: 1.5,
-                    ),
+                style: TextStyle(
+                  color: c.textSecondary,
+                  fontSize: 12,
+                  height: 1.5,
+                ),
               ),
             ],
             if (primaryActionLabel != null && onPrimaryAction != null) ...[
@@ -74,7 +77,7 @@ class EmptyState extends StatelessWidget {
               PremiumButton(
                 label: primaryActionLabel,
                 leading: primaryActionIcon != null
-                    ? Icon(primaryActionIcon)
+                    ? AppIcon(data: primaryActionIcon!, size: 20)
                     : null,
                 onPressed: onPrimaryAction,
                 size: PremiumButtonSize.lg,
@@ -86,7 +89,9 @@ class EmptyState extends StatelessWidget {
                 onTap: onSecondaryAction,
                 child: Padding(
                   padding: const EdgeInsets.symmetric(
-                      horizontal: 12, vertical: 8),
+                    horizontal: 12,
+                    vertical: 8,
+                  ),
                   child: Text(
                     secondaryActionLabel!,
                     style: TextStyle(

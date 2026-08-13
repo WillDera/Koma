@@ -51,3 +51,23 @@ graphify-out/
 /Firefly_upscaled.jpg
 /annas-archive-secret-key.txt
 /app_icons/LN_tagged/
+/docs/
+/ebook_design_figma/
+/stitch_modern_ebook_library_redesign/
+
+# Rust metadata engine
+/rust/target/
+/tools/
+TASKS.md
+
+# Folders
+mihon/
+mangayomi/
+android/piper/piper1-gpl/
+android/piper/onnxruntime/
+.commandcode/
+.kilo/
+*.md
+!README.md
+!THIRD-PARTY-NOTICES.md
+docs/

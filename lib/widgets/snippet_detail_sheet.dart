@@ -73,9 +73,7 @@ class _SnippetDetailSheetState extends State<SnippetDetailSheet> {
     _textCtrl = TextEditingController(text: widget.snippet?.text ?? '');
     _noteCtrl = TextEditingController(text: widget.snippet?.note ?? '');
     _sourceCtrl = TextEditingController(
-      text: widget.snippet?.sourceTitle ??
-          widget.defaultSourceTitle ??
-          '',
+      text: widget.snippet?.sourceTitle ?? widget.defaultSourceTitle ?? '',
     );
     _tagCtrl = TextEditingController();
     _color = widget.snippet?.color ?? 'yellow';
@@ -110,26 +108,25 @@ class _SnippetDetailSheetState extends State<SnippetDetailSheet> {
   void _save() {
     final text = _textCtrl.text.trim();
     if (text.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Snippet cannot be empty')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Snippet cannot be empty')));
       return;
     }
-    final snippet = (widget.snippet ??
-            Snippet(
-              id: 0,
+    final snippet =
+        (widget.snippet ??
+                Snippet(id: 0, text: text, createdAt: DateTime.now()))
+            .copyWith(
               text: text,
-              createdAt: DateTime.now(),
-            ))
-        .copyWith(
-      text: text,
-      note: _noteCtrl.text.trim().isNotEmpty ? _noteCtrl.text.trim() : null,
-      sourceTitle: _sourceCtrl.text.trim().isNotEmpty
-          ? _sourceCtrl.text.trim()
-          : null,
-      color: _color,
-      tags: _tags,
-    );
+              note: _noteCtrl.text.trim().isNotEmpty
+                  ? _noteCtrl.text.trim()
+                  : null,
+              sourceTitle: _sourceCtrl.text.trim().isNotEmpty
+                  ? _sourceCtrl.text.trim()
+                  : null,
+              color: _color,
+              tags: _tags,
+            );
     Navigator.pop(context, snippet);
     widget.onSave(snippet);
   }

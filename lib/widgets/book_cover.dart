@@ -1,5 +1,7 @@
 import 'dart:io';
+
 import 'package:flutter/material.dart';
+
 import '../core/models/book.dart';
 import '../theme/app_theme.dart';
 import '../theme/tokens/app_motion.dart';
@@ -18,67 +20,67 @@ class BookCover extends StatelessWidget {
   final BorderRadius? borderRadius;
   final BoxFit fit;
 
+  /// When true, fill the parent (no intrinsic AspectRatio / fixed size).
+  /// Use inside Expanded / Positioned.fill grid cells so title rows never
+  /// overflow the SliverGrid cell.
+  final bool expand;
+
   const BookCover({
     super.key,
     required this.book,
     this.variant = BookCoverVariant.grid,
     this.borderRadius,
     this.fit = BoxFit.cover,
+    this.expand = false,
   });
 
   @override
   Widget build(BuildContext context) {
     final c = context.colors;
-    final radius = borderRadius ??
+    final radius =
+        borderRadius ??
         switch (variant) {
           BookCoverVariant.grid => AppSpacing.brMd,
-          BookCoverVariant.list => AppSpacing.brSm,
+          BookCoverVariant.list => AppSpacing.brMd,
           BookCoverVariant.hero => AppSpacing.brLg,
           BookCoverVariant.compact => AppSpacing.brSm,
         };
 
-    final hasCover =
-        book.coverPath != null && book.coverPath!.isNotEmpty;
+    final hasCover = book.coverPath != null && book.coverPath!.isNotEmpty;
     final image = hasCover
         ? Image.file(
             File(book.coverPath!),
             fit: fit,
+            width: expand ? double.infinity : null,
+            height: expand ? double.infinity : null,
             errorBuilder: (_, _, _) => _placeholder(c),
           )
         : _placeholder(c);
 
-    final child = ClipRRect(
-      borderRadius: radius,
-      child: image,
-    );
+    final child = ClipRRect(borderRadius: radius, child: image);
 
-    if (variant == BookCoverVariant.grid ||
-        variant == BookCoverVariant.hero) {
+    if (expand) {
+      return SizedBox.expand(child: child);
+    }
+    if (variant == BookCoverVariant.grid || variant == BookCoverVariant.hero) {
       return AspectRatio(
-        aspectRatio: 3 / 4,
+        aspectRatio: AppSpacing.coverAspectRatio,
         child: child,
       );
     }
     if (variant == BookCoverVariant.list) {
-      return SizedBox(
-        width: 44,
-        height: 64,
-        child: child,
-      );
+      // Figma list row thumbnails: 52×74.
+      return SizedBox(width: 52, height: 74, child: child);
     }
-    return SizedBox(
-      width: 32,
-      height: 44,
-      child: child,
-    );
+    return SizedBox(width: 32, height: 44, child: child);
   }
 
   Widget _placeholder(KomaColors c) {
     final gradient = _gradientFor(book.title, c);
     final monogram = _monogramFor(book.title);
     final sourceIcon = _sourceIcon(book.source);
-    final showSubtitle = variant == BookCoverVariant.hero ||
-        variant == BookCoverVariant.grid;
+    final showSubtitle =
+        variant == BookCoverVariant.hero || variant == BookCoverVariant.grid;
 
     return AnimatedContainer(
       duration: AppMotion.base,
@@ -172,10 +174,7 @@ class BookCover extends StatelessWidget {
     final hash = title.codeUnits.fold<int>(0, (acc, ch) => acc + ch);
     final palettes = <List<Color>>[
       [c.accent, c.accent.withValues(alpha: 0.7)],
-      [
-        c.accent.withValues(alpha: 0.85),
-        c.accentMuted,
-      ],
+      [c.accent.withValues(alpha: 0.85), c.accentMuted],
       [c.textPrimary, c.textSecondary],
       [c.accent, c.textPrimary],
       [c.textSecondary, c.accent],

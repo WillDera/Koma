@@ -15,6 +15,8 @@ import okhttp3.Request
 import okhttp3.Response
 import rx.Observable
 import tachiyomi.core.common.util.lang.awaitSingle
+import uy.kohesive.injekt.Injekt
+import uy.kohesive.injekt.api.get
 import java.net.URI
 import java.net.URISyntaxException
 import java.security.MessageDigest
@@ -22,15 +24,13 @@ import java.util.concurrent.TimeUnit
 
 abstract class HttpSource : CatalogueSource {
 
-    protected open val network: NetworkHelper by lazy {
-        NetworkHelper(
-            OkHttpClient.Builder()
-                .connectTimeout(20, TimeUnit.SECONDS)
-                .readTimeout(30, TimeUnit.SECONDS)
-                .writeTimeout(20, TimeUnit.SECONDS)
-                .build(),
-        )
-    }
+    /**
+     * Network service injected via Injekt — matching Mihon's pattern.
+     * Uses the properly configured client from KeiyoushiEngine with
+     * UncaughtExceptionInterceptor, UserAgentInterceptor, and the full
+     * interceptor chain that extensions expect.
+     */
+    protected open val network: NetworkHelper by lazy { Injekt.get() }
 
     abstract val baseUrl: String
 
@@ -52,7 +52,7 @@ abstract class HttpSource : CatalogueSource {
     }
 
     protected open fun headersBuilder(): Headers.Builder = Headers.Builder().apply {
-        add("User-Agent", "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36")
+        add("User-Agent", network.defaultUserAgentProvider())
     }
 
     override fun toString(): String = "$name (${lang.uppercase()})"
@@ -121,7 +121,8 @@ abstract class HttpSource : CatalogueSource {
 
     @Deprecated("Override the request method directly")
     open fun mangaDetailsRequest(manga: SManga): Request {
-        return GET(baseUrl + manga.url, headers)
+        val url = if (manga.url.startsWith("http")) manga.url else baseUrl + manga.url
+        return GET(url, headers)
     }
 
     @Deprecated("Override the request/parse methods directly")
@@ -137,7 +138,8 @@ abstract class HttpSource : CatalogueSource {
 
     @Deprecated("Override the request/parse methods directly")
     protected open fun chapterListRequest(manga: SManga): Request {
-        return GET(baseUrl + manga.url, headers)
+        val url = if (manga.url.startsWith("http")) manga.url else baseUrl + manga.url
+        return GET(url, headers)
     }
 
     @Deprecated("Override the request/parse methods directly")

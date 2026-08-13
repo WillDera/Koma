@@ -1,27 +1,42 @@
+import 'dart:io';
+
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
-import 'package:provider/provider.dart';
-import '../../core/services/export_service.dart';
-import '../../core/services/database_service.dart';
-import '../../core/services/stats_service.dart';
-import '../extensions/extensions_screen.dart';
-import '../../core/services/source_service.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+
 import '../../core/models/source.dart';
-import '../library/library_provider.dart';
+import '../../core/providers.dart';
+import '../../core/services/app_update/app_update_checker.dart';
+import '../../core/services/app_update/app_update_manager.dart';
+import '../../core/services/app_update/get_application_release.dart';
+import '../../core/services/export_service.dart';
+import '../../core/services/extension_manager.dart';
+import '../../core/services/keiyoushi_service.dart';
+import '../../core/services/library_update_prefs.dart';
+import '../../core/services/metadata_enrichment_service.dart';
+import '../../core/services/source_service.dart';
+import '../../router/router.dart';
+import 'custom_font_ui.dart';
+import 'open_source_licenses_sheet.dart';
 import '../../theme/app_theme.dart';
 import '../../theme/theme_provider.dart';
 import '../../theme/tokens/app_colors.dart';
 import '../../theme/tokens/app_motion.dart';
 import '../../theme/tokens/app_spacing.dart';
+import '../../theme/tokens/app_type.dart';
 import '../../widgets/animated_press.dart';
 import '../../widgets/dialog_sheet.dart';
-import '../../widgets/divider_hairline.dart';
+import '../../widgets/library_book_card.dart';
 import '../../widgets/library_header.dart';
+import '../../widgets/new_update_sheet.dart';
 import '../../widgets/one_hand_spacer.dart';
 import '../../widgets/reading_streak_card.dart';
+import '../../widgets/reading_calendar_sheet.dart';
 import '../../widgets/screen_chrome.dart';
 import '../../widgets/segmented_control.dart';
 import '../../widgets/settings_section.dart';
-import '../../widgets/text_field.dart';
 import '../../widgets/toast.dart';
 
 class SettingsScreen extends StatelessWidget {
@@ -39,25 +54,73 @@ class SettingsScreen extends StatelessWidget {
             const OneHandSpacer(),
             const LibraryHeader(
               title: 'Settings',
-                subtitle: 'Version 2.5.90',
-              padding: EdgeInsets.fromLTRB(24, 20, 20, 12),
+              subtitle: 'Customize your reading experience',
+              padding: EdgeInsets.fromLTRB(20, 8, 16, 12),
             ),
-            const StaggeredEntrance(
-              index: 0,
-              child: FeaturePanel(
-                icon: Icons.tune_rounded,
-                title: 'Tune the reading room',
-                subtitle:
-                    'Shape the app around your eyes, your thumb, your sources, and your backups.',
-                stats: [
-                  PanelStat(value: 'Local', label: 'Storage'),
-                  PanelStat(value: 'Reader', label: 'Focus'),
-                  PanelStat(value: 'Fast', label: 'Controls'),
+            const StaggeredEntrance(index: 0, child: _ThemePreviewPill()),
+            const SizedBox(height: 16),
+            const StaggeredEntrance(index: 1, child: _SettingsHub()),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _ThemePreviewPill extends ConsumerWidget {
+  const _ThemePreviewPill();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final c = context.colors;
+    final theme = ref.watch(themeProvider);
+    final modeLabel = switch (theme.themeMode) {
+      ThemeMode.light => 'Light',
+      ThemeMode.dark => 'Dark',
+      ThemeMode.system => 'Auto',
+    };
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 20),
+      child: Container(
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: c.accentMuted,
+          borderRadius: AppSpacing.brLg,
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 40,
+              height: 40,
+              decoration: BoxDecoration(
+                color: c.accent,
+                borderRadius: AppSpacing.brMd,
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    '$modeLabel theme',
+                    style: TextStyle(
+                      color: c.textPrimary,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    '${theme.readingFontLabel} · ${theme.fontSize.toInt()}px · ${theme.lineHeight.toStringAsFixed(2)}× leading',
+                    style: TextStyle(
+                      color: c.textSecondary,
+                      fontSize: 11,
+                    ),
+                  ),
                 ],
               ),
             ),
-            const SizedBox(height: 8),
-            const StaggeredEntrance(index: 1, child: _SettingsHub()),
           ],
         ),
       ),
@@ -76,28 +139,38 @@ class _SettingsHub extends StatelessWidget {
       children: [
         SettingsRow(
           icon: Icons.palette_outlined,
+          iconColor: AppColors.figmaViolet,
           title: 'Appearance',
+          subtitle: 'Theme, accent, single hand mode',
           onTap: () => _open(context, 'Appearance', const _AppearanceSection()),
         ),
         SettingsRow(
           icon: Icons.text_fields_rounded,
+          iconColor: AppColors.figmaGreen,
           title: 'Typography',
+          subtitle: 'Font, size, line height, bionic reading',
           onTap: () => _open(context, 'Typography', const _TypographySection()),
         ),
         SettingsRow(
           icon: Icons.storage_outlined,
+          iconColor: AppColors.figmaAmber,
           title: 'Data',
+          subtitle: 'Export and import your library data',
           onTap: () => _open(context, 'Data', const _DataAndStatsPage()),
         ),
         SettingsRow(
-          icon: Icons.travel_explore_outlined,
+          icon: Icons.layers_outlined,
+          iconColor: AppColors.figmaCyan,
           title: 'Sources',
+          subtitle: 'Ebook sources and manga plugins',
           onTap: () =>
               _open(context, 'Sources', const _SourcesAndPluginsPage()),
         ),
         SettingsRow(
           icon: Icons.info_outline_rounded,
+          iconColor: const Color(0xFF8888A0),
           title: 'About',
+          subtitle: 'App info, version, credits',
           onTap: () => _open(context, 'About', const _AboutSection()),
         ),
       ],
@@ -105,7 +178,10 @@ class _SettingsHub extends StatelessWidget {
   }
 
   void _open(BuildContext context, String title, Widget child) {
-    Navigator.of(context).push(
+    // rootNavigator: true so the settings sub-page covers the bottom nav,
+    // matching pre-go_router full-screen behavior (the Settings tab now
+    // has its own nested Navigator under the StatefulShellRoute).
+    Navigator.of(context, rootNavigator: true).push(
       MaterialPageRoute(
         builder: (_) => _SettingsDestinationScreen(title: title, child: child),
       ),
@@ -130,8 +206,11 @@ class _SettingsDestinationScreen extends StatelessWidget {
             padding: const EdgeInsets.only(bottom: 32),
             children: [
               const OneHandSpacer(),
-              LibraryHeader(title: title, showBackButton: true),
-              const SizedBox(height: 4),
+              LibraryHeader(
+                title: title,
+                showBackButton: true,
+                padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+              ),
               child,
             ],
           ),
@@ -147,7 +226,17 @@ class _DataAndStatsPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return const Column(
-      children: [_DataSection(), SizedBox(height: 24), _StatsSection()],
+      children: [
+        _DataSection(),
+        SizedBox(height: 20),
+        _DownloadQueueSection(),
+        SizedBox(height: 20),
+        _LibraryUpdateSection(),
+        SizedBox(height: 20),
+        _BookMetadataSection(),
+        SizedBox(height: 20),
+        _StatsSection(),
+      ],
     );
   }
 }
@@ -158,177 +247,335 @@ class _SourcesAndPluginsPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return const Column(
-      children: [_SourcesSection(), SizedBox(height: 24), _PluginsSection()],
+      children: [_SourcesSection(), SizedBox(height: 20), _PluginsSection()],
     );
   }
 }
 
 // ─── Appearance ──────────────────────────────────────────────────────────
-class _AppearanceSection extends StatelessWidget {
+class _AppearanceSection extends ConsumerWidget {
   const _AppearanceSection();
+
+  static const _pad = EdgeInsets.symmetric(horizontal: 16);
+  static const _gap = SizedBox(height: 20);
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final c = context.colors;
+    final theme = ref.watch(themeProvider);
+    final tn = ref.read(themeProvider.notifier);
+    final library = ref.watch(libraryProvider);
+    final ln = ref.read(libraryProvider.notifier);
+    final violet = AppColors.figmaViolet;
+
+    return Column(
+      children: [
+        SettingsSection(
+          title: 'Theme',
+          headerColor: violet,
+          padding: _pad,
+          children: [
+            _ThemeModePicker(
+              value: theme.themeMode,
+              onChanged: tn.setThemeMode,
+            ),
+            SettingsRow(
+              title: 'Sepia mode',
+              subtitle: 'Warm paper-like background',
+              trailing: Switch(
+                value: theme.sepiaMode,
+                activeThumbColor: c.accent,
+                onChanged: tn.setSepiaMode,
+              ),
+            ),
+            SettingsRow(
+              title: 'AMOLED dark mode',
+              subtitle: 'True black for OLED screens',
+              trailing: Switch(
+                value: theme.amoledMode,
+                activeThumbColor: c.accent,
+                onChanged: tn.setAmoledMode,
+              ),
+            ),
+            SettingsRow(
+              title: 'App font',
+              subtitle: theme.uiFontLabel,
+              trailing: const Icon(Icons.chevron_right, size: 18),
+              onTap: () => CustomFontUi.showAppFontPicker(context, ref),
+            ),
+            SettingsRow(
+              title: 'Imported fonts',
+              subtitle: theme.customFonts.isEmpty
+                  ? 'Add TTF/OTF files for UI and reading'
+                  : '${theme.customFonts.length} font(s) on device',
+              trailing: const Icon(Icons.chevron_right, size: 18),
+              onTap: () => CustomFontUi.showManageFonts(context, ref),
+            ),
+          ],
+        ),
+        _gap,
+        SettingsSection(
+          title: 'Accent color',
+          headerColor: violet,
+          padding: _pad,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Used for highlights, selections, and the active state. '
+                    'Device follows wallpaper Material You colors.',
+                    style: TextStyle(color: c.textSecondary, fontSize: 11),
+                  ),
+                  const SizedBox(height: 14),
+                  SingleChildScrollView(
+                    scrollDirection: Axis.horizontal,
+                    child: Row(
+                      children: [
+                        _AccentSwatch(
+                          light: theme.lightDynamicPrimary ??
+                              AppColors.accentIndigo,
+                          dark: theme.darkDynamicPrimary ??
+                              AppColors.accentIndigoDark,
+                          label: 'Device',
+                          selected: theme.followSystemAccent &&
+                              theme.customAccentHex == null,
+                          onTap: () => tn.setFollowSystemAccent(true),
+                        ),
+                        const SizedBox(width: 10),
+                        for (final entry in const [
+                          (
+                            AccentPreset.indigo,
+                            AppColors.accentIndigo,
+                            AppColors.accentIndigoDark,
+                            'Indigo',
+                          ),
+                          (
+                            AccentPreset.amber,
+                            AppColors.accentAmber,
+                            AppColors.accentAmberDark,
+                            'Amber',
+                          ),
+                          (
+                            AccentPreset.forest,
+                            AppColors.accentForest,
+                            AppColors.accentForestDark,
+                            'Forest',
+                          ),
+                          (
+                            AccentPreset.aethelgard,
+                            AppColors.aethelgardPrimary,
+                            AppColors.aethelgardPrimaryDark,
+                            'Neo-Noir',
+                          ),
+                        ]) ...[
+                          _AccentSwatch(
+                            light: entry.$2,
+                            dark: entry.$3,
+                            label: entry.$4,
+                            selected:
+                                !theme.followSystemAccent &&
+                                theme.customAccentHex == null &&
+                                theme.accent == entry.$1,
+                            onTap: () => tn.setAccent(entry.$1),
+                          ),
+                          const SizedBox(width: 10),
+                        ],
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  Text(
+                    'Custom color',
+                    style: TextStyle(
+                      color: c.textPrimary,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  _CustomAccentPicker(
+                    current: theme.customAccentHex,
+                    fallback: theme.accentColor,
+                    onSubmit: tn.setCustomAccentHex,
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+        _gap,
+        SettingsSection(
+          title: 'Ergonomics',
+          headerColor: violet,
+          padding: _pad,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 14, 16, 8),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Dominant hand',
+                    style: TextStyle(
+                      color: c.textPrimary,
+                      fontSize: 14,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    'Floating buttons on your preferred side for one-thumb reach.',
+                    style: TextStyle(color: c.textSecondary, fontSize: 11),
+                  ),
+                  const SizedBox(height: 10),
+                  SegmentedControl<HandMode>(
+                    segments: const {
+                      HandMode.right: 'Right',
+                      HandMode.left: 'Left',
+                    },
+                    value: theme.handMode,
+                    onChanged: tn.setHandMode,
+                  ),
+                ],
+              ),
+            ),
+            const _OneHandToggle(),
+          ],
+        ),
+        _gap,
+        SettingsSection(
+          title: 'Library',
+          headerColor: violet,
+          padding: _pad,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 14, 16, 16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Library grid',
+                    style: TextStyle(
+                      color: c.textPrimary,
+                      fontSize: 14,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  SegmentedControl<int>(
+                    segments: const {2: '2 cols', 3: '3 cols'},
+                    value: library.gridColumns,
+                    onChanged: (v) => ln.setGridColumns(v),
+                  ),
+                  const SizedBox(height: 16),
+                  Text(
+                    'Card style',
+                    style: TextStyle(
+                      color: c.textPrimary,
+                      fontSize: 14,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  SegmentedControl<LibraryCardVariant>(
+                    segments: const {
+                      LibraryCardVariant.grid: 'Grid',
+                      LibraryCardVariant.list: 'List',
+                      LibraryCardVariant.compact: 'Compact',
+                      LibraryCardVariant.overlay: 'Overlay',
+                    },
+                    value: library.cardVariant,
+                    onChanged: (v) => ln.setCardVariant(v),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+}
+
+/// Figma-style 3-column Light / Dark / System theme cards.
+class _ThemeModePicker extends StatelessWidget {
+  final ThemeMode value;
+  final ValueChanged<ThemeMode> onChanged;
+
+  const _ThemeModePicker({required this.value, required this.onChanged});
 
   @override
   Widget build(BuildContext context) {
     final c = context.colors;
-    final themeProv = context.watch<ThemeProvider>();
-    return SettingsSection(
-      title: 'Appearance',
-      children: [
-        Padding(
-          padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                'Theme',
-                style: TextStyle(
-                  color: c.textPrimary,
-                  fontSize: 14,
-                  fontWeight: FontWeight.w500,
-                ),
-              ),
-              const SizedBox(height: 10),
-              SegmentedControl<ThemeMode>(
-                segments: const {
-                  ThemeMode.light: 'Light',
-                  ThemeMode.dark: 'Dark',
-                  ThemeMode.system: 'Auto',
-                },
-                value: themeProv.themeMode,
-                onChanged: themeProv.setThemeMode,
-              ),
-              const SizedBox(height: 12),
-              Material(
-                type: MaterialType.transparency,
-                child: SwitchListTile(
-                  contentPadding: EdgeInsets.zero,
-                  title: const Text('Sepia mode'),
-                  subtitle: Text(
-                    'Warm paper-like background',
-                    style: TextStyle(color: c.textSecondary, fontSize: 12),
+    const options = <(ThemeMode, String, IconData)>[
+      (ThemeMode.light, 'Light', Icons.wb_sunny_outlined),
+      (ThemeMode.dark, 'Dark', Icons.dark_mode_outlined),
+      (ThemeMode.system, 'System', Icons.desktop_windows_outlined),
+    ];
+    // Match SettingsSection card corners (brLg) on the end cells.
+    final endRadius = Radius.circular(AppSpacing.radiusLg);
+    return IntrinsicHeight(
+      child: Row(
+        children: [
+          for (var i = 0; i < options.length; i++) ...[
+            Expanded(
+              child: AnimatedPress(
+                onTap: () => onChanged(options[i].$1),
+                child: AnimatedContainer(
+                  duration: AppMotion.base,
+                  curve: AppMotion.standard,
+                  padding: const EdgeInsets.symmetric(vertical: 16),
+                  decoration: BoxDecoration(
+                    color: value == options[i].$1
+                        ? c.accent.withValues(alpha: 0.16)
+                        : Colors.transparent,
+                    borderRadius: BorderRadius.only(
+                      topLeft: i == 0 ? endRadius : Radius.zero,
+                      topRight: i == options.length - 1
+                          ? endRadius
+                          : Radius.zero,
+                    ),
                   ),
-                  value: themeProv.sepiaMode,
-                  onChanged: themeProv.setSepiaMode,
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(
+                        options[i].$3,
+                        size: 20,
+                        color: value == options[i].$1
+                            ? c.accent
+                            : c.textSecondary,
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        options[i].$2,
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: value == options[i].$1
+                              ? FontWeight.w600
+                              : FontWeight.w400,
+                          color: value == options[i].$1
+                              ? c.accent
+                              : c.textSecondary,
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
               ),
-            ],
-          ),
-        ),
-        const Padding(
-          padding: EdgeInsets.symmetric(horizontal: 16),
-          child: HairlineDivider(),
-        ),
-        Padding(
-          padding: const EdgeInsets.fromLTRB(16, 16, 16, 16),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                'Accent',
-                style: TextStyle(
-                  color: c.textPrimary,
-                  fontSize: 14,
-                  fontWeight: FontWeight.w500,
-                ),
+            ),
+            if (i < options.length - 1)
+              VerticalDivider(
+                width: 0.5,
+                thickness: 0.5,
+                color: c.border,
               ),
-              const SizedBox(height: 4),
-              Text(
-                'Used for highlights, selections, and the active state.',
-                style: TextStyle(color: c.textSecondary, fontSize: 12),
-              ),
-              const SizedBox(height: 12),
-              Row(
-                children: [
-                  for (final entry in const [
-                    (
-                      AccentPreset.indigo,
-                      AppColors.accentIndigo,
-                      AppColors.accentIndigoDark,
-                      'Indigo',
-                    ),
-                    (
-                      AccentPreset.amber,
-                      AppColors.accentAmber,
-                      AppColors.accentAmberDark,
-                      'Amber',
-                    ),
-                    (
-                      AccentPreset.forest,
-                      AppColors.accentForest,
-                      AppColors.accentForestDark,
-                      'Forest',
-                    ),
-                  ]) ...[
-                    _AccentSwatch(
-                      light: entry.$2,
-                      dark: entry.$3,
-                      label: entry.$4,
-                      selected:
-                          themeProv.customAccentHex == null &&
-                          themeProv.accent == entry.$1,
-                      onTap: () => themeProv.setAccent(entry.$1),
-                    ),
-                    const SizedBox(width: 10),
-                  ],
-                ],
-              ),
-              const SizedBox(height: 16),
-              Text(
-                'Custom hex',
-                style: TextStyle(
-                  color: c.textPrimary,
-                  fontSize: 13,
-                  fontWeight: FontWeight.w500,
-                ),
-              ),
-              const SizedBox(height: 6),
-              _CustomAccentInput(
-                current: themeProv.customAccentHex,
-                onSubmit: themeProv.setCustomAccentHex,
-              ),
-            ],
-          ),
-        ),
-        const Padding(
-          padding: EdgeInsets.symmetric(horizontal: 16),
-          child: HairlineDivider(),
-        ),
-        Padding(
-          padding: const EdgeInsets.fromLTRB(16, 16, 16, 16),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                'Handedness',
-                style: TextStyle(
-                  color: c.textPrimary,
-                  fontSize: 14,
-                  fontWeight: FontWeight.w500,
-                ),
-              ),
-              const SizedBox(height: 4),
-              Text(
-                'Floating buttons on your preferred side for one-thumb reach.',
-                style: TextStyle(color: c.textSecondary, fontSize: 12),
-              ),
-              const SizedBox(height: 10),
-              SegmentedControl<HandMode>(
-                segments: const {
-                  HandMode.right: 'Right',
-                  HandMode.left: 'Left',
-                },
-                value: themeProv.handMode,
-                onChanged: themeProv.setHandMode,
-              ),
-            ],
-          ),
-        ),
-        const Padding(
-          padding: EdgeInsets.symmetric(horizontal: 16),
-          child: HairlineDivider(),
-        ),
-        const _OneHandToggle(),
-      ],
+          ],
+        ],
+      ),
     );
   }
 }
@@ -360,33 +607,44 @@ class _AccentSwatch extends StatelessWidget {
           AnimatedContainer(
             duration: AppMotion.base,
             curve: AppMotion.standard,
-            width: 44,
-            height: 44,
+            padding: selected ? const EdgeInsets.all(3) : EdgeInsets.zero,
             decoration: BoxDecoration(
-              color: color,
-              borderRadius: AppSpacing.brMd,
-              border: Border.all(
-                color: selected ? c.textPrimary : c.border,
-                width: selected ? 2 : 1,
-              ),
+              borderRadius: BorderRadius.circular(selected ? 14 : 10),
+              border: selected
+                  ? Border.all(color: color, width: 2)
+                  : Border.all(color: Colors.transparent, width: 0),
             ),
-            child: selected
-                ? Icon(
-                    Icons.check,
-                    size: 20,
-                    color: color.computeLuminance() > 0.5
-                        ? const Color(0xFF1A1815)
-                        : Colors.white,
-                  )
-                : null,
+            child: AnimatedContainer(
+              duration: AppMotion.base,
+              curve: AppMotion.standard,
+              width: selected ? 40 : 44,
+              height: selected ? 40 : 44,
+              decoration: BoxDecoration(
+                color: color,
+                borderRadius: AppSpacing.brMd,
+                border: Border.all(
+                  color: selected ? Colors.transparent : c.border,
+                  width: selected ? 0 : 1,
+                ),
+              ),
+              child: selected
+                  ? Icon(
+                      Icons.check,
+                      size: 18,
+                      color: color.computeLuminance() > 0.5
+                          ? const Color(0xFF1A1815)
+                          : Colors.white,
+                    )
+                  : null,
+            ),
           ),
           const SizedBox(height: 4),
           Text(
             label,
             style: TextStyle(
-              color: c.textSecondary,
-              fontSize: 11,
-              fontWeight: FontWeight.w500,
+              color: selected ? color : c.textSecondary,
+              fontSize: 10,
+              fontWeight: selected ? FontWeight.w600 : FontWeight.w400,
             ),
           ),
         ],
@@ -395,87 +653,133 @@ class _AccentSwatch extends StatelessWidget {
   }
 }
 
-class _CustomAccentInput extends StatefulWidget {
+class _CustomAccentPicker extends StatefulWidget {
   final String? current;
+  final Color fallback;
   final ValueChanged<String?> onSubmit;
-  const _CustomAccentInput({required this.current, required this.onSubmit});
+
+  const _CustomAccentPicker({
+    required this.current,
+    required this.fallback,
+    required this.onSubmit,
+  });
 
   @override
-  State<_CustomAccentInput> createState() => _CustomAccentInputState();
+  State<_CustomAccentPicker> createState() => _CustomAccentPickerState();
 }
 
-class _CustomAccentInputState extends State<_CustomAccentInput> {
-  late final TextEditingController _ctrl;
+class _CustomAccentPickerState extends State<_CustomAccentPicker> {
+  Color? _draft;
 
   @override
   void initState() {
     super.initState();
-    _ctrl = TextEditingController(text: widget.current ?? '');
+    _draft = ThemeState.resolveHex(widget.current ?? '');
   }
 
   @override
-  void didUpdateWidget(covariant _CustomAccentInput old) {
+  void didUpdateWidget(covariant _CustomAccentPicker old) {
     super.didUpdateWidget(old);
-    final next = widget.current ?? '';
-    if (next != _ctrl.text) {
-      _ctrl.text = next;
+    if (old.current != widget.current) {
+      _draft = ThemeState.resolveHex(widget.current ?? '');
     }
   }
 
-  @override
-  void dispose() {
-    _ctrl.dispose();
-    super.dispose();
+  String _toHex(Color color) {
+    final r = ((color.r * 255.0).round() & 0xff).toRadixString(16).padLeft(2, '0');
+    final g = ((color.g * 255.0).round() & 0xff).toRadixString(16).padLeft(2, '0');
+    final b = ((color.b * 255.0).round() & 0xff).toRadixString(16).padLeft(2, '0');
+    return '#${r.toUpperCase()}${g.toUpperCase()}${b.toUpperCase()}';
+  }
+
+  Future<void> _openPicker() async {
+    final initial = _draft ??
+        ThemeState.resolveHex(widget.current ?? '') ??
+        widget.fallback;
+    final picked = await showDialog<Color>(
+      context: context,
+      builder: (ctx) => _AccentColorPickerDialog(initial: initial),
+    );
+    if (picked == null || !mounted) return;
+    setState(() => _draft = picked);
   }
 
   void _apply() {
-    final v = _ctrl.text.trim();
-    if (v.isEmpty) {
-      widget.onSubmit(null);
-    } else {
-      widget.onSubmit(v);
-    }
+    final draft = _draft;
+    if (draft == null) return;
+    widget.onSubmit(_toHex(draft));
   }
 
   @override
   Widget build(BuildContext context) {
     final c = context.colors;
-    final parsed = _parseColor(_ctrl.text);
+    final preview = _draft ??
+        ThemeState.resolveHex(widget.current ?? '') ??
+        widget.fallback;
+    final hex = _draft != null
+        ? _toHex(_draft!)
+        : (widget.current?.trim().isNotEmpty == true
+            ? widget.current!.trim()
+            : null);
+    final canApply = _draft != null;
+
     return Row(
       children: [
-        Container(
-          width: 32,
-          height: 32,
-          decoration: BoxDecoration(
-            color: parsed ?? c.surfaceMuted,
-            borderRadius: AppSpacing.brSm,
-            border: Border.all(color: c.border, width: 0.5),
+        AnimatedPress(
+          onTap: _openPicker,
+          child: Container(
+            width: 40,
+            height: 40,
+            decoration: BoxDecoration(
+              color: preview,
+              borderRadius: AppSpacing.brSm,
+              border: Border.all(color: c.border, width: 0.5),
+            ),
+            child: Icon(
+              Icons.colorize_rounded,
+              size: 18,
+              color: preview.computeLuminance() > 0.5
+                  ? const Color(0xFF1A1815)
+                  : Colors.white,
+            ),
           ),
         ),
         const SizedBox(width: 10),
         Expanded(
-          child: StashTextField(
-            controller: _ctrl,
-            hint: '#RRGGBB',
-            leadingIcon: Icons.format_color_fill,
-            showClearButton: true,
-            onSubmitted: (_) => _apply(),
-            onChanged: (_) => setState(() {}),
+          child: AnimatedPress(
+            onTap: _openPicker,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+              decoration: BoxDecoration(
+                color: c.surfaceMuted,
+                borderRadius: AppSpacing.brSm,
+                border: Border.all(color: c.border, width: 0.5),
+              ),
+              child: Text(
+                hex ?? 'Tap to pick a color',
+                style: TextStyle(
+                  color: hex != null ? c.textPrimary : c.textTertiary,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w500,
+                  fontFamily: 'monospace',
+                ),
+              ),
+            ),
           ),
         ),
         const SizedBox(width: 8),
         AnimatedPress(
-          onTap: _apply,
+          onTap: canApply ? _apply : null,
           child: Container(
             padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
             decoration: BoxDecoration(
-              color: parsed == null ? c.surfaceMuted : c.accent,
+              color: canApply ? c.accent : c.surfaceMuted,
               borderRadius: AppSpacing.brPill,
             ),
             child: Text(
               'Apply',
               style: TextStyle(
-                color: parsed == null ? c.textTertiary : c.onAccent,
+                color: canApply ? c.onAccent : c.textTertiary,
                 fontSize: 13,
                 fontWeight: FontWeight.w600,
               ),
@@ -485,139 +789,400 @@ class _CustomAccentInputState extends State<_CustomAccentInput> {
       ],
     );
   }
-
-  Color? _parseColor(String hex) {
-    var v = hex.trim();
-    if (v.isEmpty) return null;
-    if (v.startsWith('#')) v = v.substring(1);
-    if (v.length == 6) v = 'FF$v';
-    if (v.length != 8) return null;
-    final i = int.tryParse(v, radix: 16);
-    if (i == null) return null;
-    return Color(i);
-  }
 }
 
-class _OneHandToggle extends StatelessWidget {
-  const _OneHandToggle();
+class _AccentColorPickerDialog extends StatefulWidget {
+  final Color initial;
+  const _AccentColorPickerDialog({required this.initial});
+
+  @override
+  State<_AccentColorPickerDialog> createState() =>
+      _AccentColorPickerDialogState();
+}
+
+class _AccentColorPickerDialogState extends State<_AccentColorPickerDialog> {
+  late HSVColor _hsv;
+
+  @override
+  void initState() {
+    super.initState();
+    _hsv = HSVColor.fromColor(widget.initial);
+  }
+
+  String _toHex(Color color) {
+    final r = ((color.r * 255.0).round() & 0xff).toRadixString(16).padLeft(2, '0');
+    final g = ((color.g * 255.0).round() & 0xff).toRadixString(16).padLeft(2, '0');
+    final b = ((color.b * 255.0).round() & 0xff).toRadixString(16).padLeft(2, '0');
+    return '#${r.toUpperCase()}${g.toUpperCase()}${b.toUpperCase()}';
+  }
 
   @override
   Widget build(BuildContext context) {
-    final themeProv = context.watch<ThemeProvider>();
     final c = context.colors;
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 16, 16, 16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            'One-hand mode',
-            style: TextStyle(
-              color: c.textPrimary,
-              fontSize: 14,
-              fontWeight: FontWeight.w500,
+    final color = _hsv.toColor();
+    return AlertDialog(
+      backgroundColor: c.surface,
+      title: Text('Pick accent color', style: TextStyle(color: c.textPrimary)),
+      content: SizedBox(
+        width: 280,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            AspectRatio(
+              aspectRatio: 1.2,
+              child: _SvPicker(
+                hsv: _hsv,
+                onChanged: (v) => setState(() => _hsv = v),
+              ),
             ),
-          ),
-          const SizedBox(height: 4),
-          Text(
-            'Pushes content toward the bottom half of the screen for easier thumb reach. Headers grow larger and shrink as you scroll.',
-            style: TextStyle(color: c.textSecondary, fontSize: 12),
-          ),
-          const SizedBox(height: 10),
-          Material(
-            type: MaterialType.transparency,
-            child: SwitchListTile(
-              contentPadding: EdgeInsets.zero,
-              title: const Text('Enable one-hand layout'),
-              value: themeProv.oneHandMode,
-              onChanged: themeProv.setOneHandMode,
+            const SizedBox(height: 14),
+            _HueSlider(
+              hue: _hsv.hue,
+              onChanged: (h) => setState(() => _hsv = _hsv.withHue(h)),
             ),
-          ),
+            const SizedBox(height: 14),
+            Row(
+              children: [
+                Container(
+                  width: 36,
+                  height: 36,
+                  decoration: BoxDecoration(
+                    color: color,
+                    borderRadius: AppSpacing.brSm,
+                    border: Border.all(color: c.border, width: 0.5),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    _toHex(color),
+                    style: TextStyle(
+                      color: c.textPrimary,
+                      fontSize: 15,
+                      fontWeight: FontWeight.w600,
+                      fontFamily: 'monospace',
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: Text('Cancel', style: TextStyle(color: c.textSecondary)),
+        ),
+        TextButton(
+          onPressed: () => Navigator.pop(context, color),
+          child: Text('Select', style: TextStyle(color: c.accent)),
+        ),
+      ],
+    );
+  }
+}
+
+class _HueSlider extends StatelessWidget {
+  final double hue;
+  final ValueChanged<double> onChanged;
+  const _HueSlider({required this.hue, required this.onChanged});
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      height: 28,
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final w = constraints.maxWidth;
+          return GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onHorizontalDragUpdate: (d) {
+              final local = (d.localPosition.dx).clamp(0.0, w);
+              onChanged((local / w) * 360.0);
+            },
+            onTapDown: (d) {
+              final local = d.localPosition.dx.clamp(0.0, w);
+              onChanged((local / w) * 360.0);
+            },
+            child: CustomPaint(
+              size: Size(w, 28),
+              painter: _HueTrackPainter(hue: hue),
+            ),
+          );
+        },
+      ),
+    );
+  }
+}
+
+class _HueTrackPainter extends CustomPainter {
+  final double hue;
+  const _HueTrackPainter({required this.hue});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final r = RRect.fromRectAndRadius(
+      Rect.fromLTWH(0, 8, size.width, 12),
+      const Radius.circular(6),
+    );
+    final paint = Paint()
+      ..shader = const LinearGradient(
+        colors: [
+          Color(0xFFFF0000),
+          Color(0xFFFFFF00),
+          Color(0xFF00FF00),
+          Color(0xFF00FFFF),
+          Color(0xFF0000FF),
+          Color(0xFFFF00FF),
+          Color(0xFFFF0000),
         ],
+      ).createShader(Rect.fromLTWH(0, 0, size.width, size.height));
+    canvas.drawRRect(r, paint);
+    final x = (hue / 360.0).clamp(0.0, 1.0) * size.width;
+    canvas.drawCircle(
+      Offset(x, size.height / 2),
+      10,
+      Paint()
+        ..color = Colors.white
+        ..style = PaintingStyle.fill,
+    );
+    canvas.drawCircle(
+      Offset(x, size.height / 2),
+      10,
+      Paint()
+        ..color = Colors.black26
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 1,
+    );
+  }
+
+  @override
+  bool shouldRepaint(covariant _HueTrackPainter old) => old.hue != hue;
+}
+
+class _SvPicker extends StatelessWidget {
+  final HSVColor hsv;
+  final ValueChanged<HSVColor> onChanged;
+  const _SvPicker({required this.hsv, required this.onChanged});
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final size = Size(constraints.maxWidth, constraints.maxHeight);
+        void update(Offset local) {
+          final s = (local.dx / size.width).clamp(0.0, 1.0);
+          final v = 1.0 - (local.dy / size.height).clamp(0.0, 1.0);
+          onChanged(hsv.withSaturation(s).withValue(v));
+        }
+
+        return GestureDetector(
+          onPanDown: (d) => update(d.localPosition),
+          onPanUpdate: (d) => update(d.localPosition),
+          child: CustomPaint(
+            size: size,
+            painter: _SvPainter(hsv: hsv),
+          ),
+        );
+      },
+    );
+  }
+}
+
+class _SvPainter extends CustomPainter {
+  final HSVColor hsv;
+  const _SvPainter({required this.hsv});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final rect = Offset.zero & size;
+    final rrect = RRect.fromRectAndRadius(rect, const Radius.circular(10));
+    canvas.save();
+    canvas.clipRRect(rrect);
+
+    final hueColor = HSVColor.fromAHSV(1, hsv.hue, 1, 1).toColor();
+    canvas.drawRect(rect, Paint()..color = hueColor);
+    canvas.drawRect(
+      rect,
+      Paint()
+        ..shader = LinearGradient(
+          colors: [Colors.white, Colors.white.withValues(alpha: 0)],
+        ).createShader(rect),
+    );
+    canvas.drawRect(
+      rect,
+      Paint()
+        ..shader = LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          colors: [Colors.transparent, Colors.black],
+        ).createShader(rect),
+    );
+
+    final cx = hsv.saturation * size.width;
+    final cy = (1.0 - hsv.value) * size.height;
+    canvas.drawCircle(
+      Offset(cx, cy),
+      9,
+      Paint()
+        ..color = Colors.white
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 2.5,
+    );
+    canvas.drawCircle(
+      Offset(cx, cy),
+      9,
+      Paint()
+        ..color = Colors.black38
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 1,
+    );
+    canvas.restore();
+  }
+
+  @override
+  bool shouldRepaint(covariant _SvPainter old) =>
+      old.hsv.hue != hsv.hue ||
+      old.hsv.saturation != hsv.saturation ||
+      old.hsv.value != hsv.value;
+}
+
+class _OneHandToggle extends ConsumerWidget {
+  const _OneHandToggle();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final theme = ref.watch(themeProvider);
+    final tn = ref.read(themeProvider.notifier);
+    final c = context.colors;
+    return SettingsRow(
+      title: 'Single hand mode',
+      subtitle:
+          'Pushes content toward the bottom half of the screen for easier thumb reach.',
+      trailing: Switch(
+        value: theme.oneHandMode,
+        activeThumbColor: c.accent,
+        onChanged: tn.setOneHandMode,
       ),
     );
   }
 }
 
 // ─── Typography ──────────────────────────────────────────────────────────
-class _TypographySection extends StatelessWidget {
+class _TypographySection extends ConsumerWidget {
   const _TypographySection();
 
+  static const _pad = EdgeInsets.symmetric(horizontal: 16);
+  static const _gap = SizedBox(height: 20);
+
   @override
-  Widget build(BuildContext context) {
-    final p = context.watch<ThemeProvider>();
-    return SettingsSection(
-      title: 'Typography',
+  Widget build(BuildContext context, WidgetRef ref) {
+    final p = ref.watch(themeProvider);
+    final tn = ref.read(themeProvider.notifier);
+    final green = AppColors.figmaGreen;
+    return Column(
       children: [
-        SettingsRow(
-          icon: Icons.text_fields,
+        SettingsSection(
           title: 'Reading font',
-          subtitle: p.readingFont.label,
-          trailing: const Icon(Icons.chevron_right, size: 18),
-          onTap: () => _showFontPicker(context, p),
-        ),
-        SettingsRow(
-          icon: Icons.format_size,
-          title: 'Font size',
-          subtitle: '${p.fontSize.toInt()}px',
-          trailing: SizedBox(
-            width: 110,
-            child: Slider(
-              value: p.fontSize,
-              min: 13,
-              max: 26,
-              divisions: 13,
-              onChanged: p.setFontSize,
+          headerColor: green,
+          padding: _pad,
+          children: [
+            SettingsRow(
+              icon: Icons.text_fields,
+              iconColor: green,
+              title: 'Reading font',
+              subtitle: p.readingFontLabel,
+              trailing: const Icon(Icons.chevron_right, size: 18),
+              onTap: () => CustomFontUi.showReadingFontPicker(context, ref),
             ),
-          ),
+          ],
         ),
-        SettingsRow(
-          icon: Icons.format_line_spacing,
-          title: 'Line height',
-          subtitle: p.lineHeight.toStringAsFixed(2),
-          trailing: SizedBox(
-            width: 110,
-            child: Slider(
-              value: p.lineHeight,
-              min: 1.2,
-              max: 2.2,
-              divisions: 10,
-              onChanged: p.setLineHeight,
+        _gap,
+        SettingsSection(
+          title: 'Layout',
+          headerColor: green,
+          padding: _pad,
+          children: [
+            SettingsRow(
+              icon: Icons.format_size,
+              iconColor: green,
+              title: 'Font size',
+              subtitle: '${p.fontSize.toInt()}px',
+              trailing: SizedBox(
+                width: 110,
+                child: Slider(
+                  value: p.fontSize,
+                  min: 13,
+                  max: 26,
+                  divisions: 13,
+                  activeColor: green,
+                  onChanged: tn.setFontSize,
+                ),
+              ),
             ),
-          ),
-        ),
-        const HairlineDivider(indent: 16, endIndent: 16),
-        SettingsRow(
-          icon: Icons.bolt,
-          title: 'Bionic reading',
-          subtitle: 'Bold the first 40% of every word',
-          trailing: Switch(
-            value: p.bionicReading,
-            onChanged: p.setBionicReading,
-          ),
-        ),
-        const HairlineDivider(indent: 16, endIndent: 16),
-        SettingsRow(
-          icon: Icons.format_align_left,
-          title: 'Text alignment',
-          subtitle: _alignName(p.textAlign),
-          trailing: const Icon(Icons.chevron_right, size: 18),
-          onTap: () => _showAlignPicker(context, p),
-        ),
-        SettingsRow(
-          icon: Icons.width_normal,
-          title: 'Page width',
-          subtitle: '${p.pageWidth.toInt()}px',
-          trailing: SizedBox(
-            width: 110,
-            child: Slider(
-              value: p.pageWidth,
-              min: 520,
-              max: 760,
-              divisions: 12,
-              onChanged: p.setPageWidth,
+            SettingsRow(
+              icon: Icons.format_line_spacing,
+              iconColor: green,
+              title: 'Line height',
+              subtitle: '${p.lineHeight.toStringAsFixed(2)}×',
+              trailing: SizedBox(
+                width: 110,
+                child: Slider(
+                  value: p.lineHeight,
+                  min: 1.2,
+                  max: 2.2,
+                  divisions: 10,
+                  activeColor: green,
+                  onChanged: tn.setLineHeight,
+                ),
+              ),
             ),
-          ),
+            SettingsRow(
+              icon: Icons.width_normal,
+              iconColor: green,
+              title: 'Page width',
+              subtitle: '${p.pageWidth.toInt()}px',
+              trailing: SizedBox(
+                width: 110,
+                child: Slider(
+                  value: p.pageWidth,
+                  min: 520,
+                  max: 760,
+                  divisions: 12,
+                  activeColor: green,
+                  onChanged: tn.setPageWidth,
+                ),
+              ),
+            ),
+          ],
+        ),
+        _gap,
+        SettingsSection(
+          title: 'Reading mode',
+          headerColor: green,
+          padding: _pad,
+          children: [
+            SettingsRow(
+              icon: Icons.bolt,
+              iconColor: green,
+              title: 'Bionic reading',
+              subtitle: 'Bold the first 40% of every word',
+              trailing: Switch(
+                value: p.bionicReading,
+                activeThumbColor: green,
+                onChanged: tn.setBionicReading,
+              ),
+            ),
+            SettingsRow(
+              icon: Icons.format_align_left,
+              iconColor: green,
+              title: 'Text alignment',
+              subtitle: _alignName(p.textAlign),
+              trailing: const Icon(Icons.chevron_right, size: 18),
+              onTap: () => _showAlignPicker(context, ref, p),
+            ),
+          ],
         ),
       ],
     );
@@ -640,78 +1205,8 @@ class _TypographySection extends StatelessWidget {
     }
   }
 
-  void _showFontPicker(BuildContext context, ThemeProvider p) {
-    StashSheet.show<void>(
-      context,
-      title: 'Reading font',
-      subtitle: 'Choose a face for long-form reading.',
-      initialChildSize: 0.7,
-      maxChildSize: 0.95,
-      child: ListView(
-        padding: const EdgeInsets.fromLTRB(20, 8, 20, 32),
-        children: [
-          for (final f in ReadingFont.values) ...[
-            AnimatedPress(
-              onTap: () {
-                p.setReadingFont(f);
-                Navigator.pop(context);
-              },
-              child: Container(
-                margin: const EdgeInsets.only(bottom: 8),
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  color: p.readingFont == f
-                      ? context.colors.accentMuted
-                      : context.colors.surface,
-                  borderRadius: AppSpacing.brLg,
-                  border: Border.all(
-                    color: p.readingFont == f
-                        ? context.colors.accent
-                        : context.colors.border,
-                    width: p.readingFont == f ? 1.2 : 0.5,
-                  ),
-                ),
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            f.label,
-                            style: TextStyle(
-                              color: context.colors.textPrimary,
-                              fontSize: 16,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                          if (f.googleFontFamily != null)
-                            Padding(
-                              padding: const EdgeInsets.only(top: 4),
-                              child: Text(
-                                'Aa — long-form sample text',
-                                style: TextStyle(
-                                  color: context.colors.textSecondary,
-                                  fontSize: 13,
-                                ),
-                              ),
-                            ),
-                        ],
-                      ),
-                    ),
-                    if (p.readingFont == f)
-                      Icon(Icons.check, color: context.colors.accent, size: 20),
-                  ],
-                ),
-              ),
-            ),
-          ],
-        ],
-      ),
-    );
-  }
-
-  void _showAlignPicker(BuildContext context, ThemeProvider p) {
+  void _showAlignPicker(BuildContext context, WidgetRef ref, ThemeState p) {
+    final tn = ref.read(themeProvider.notifier);
     final c = context.colors;
     final options = const [
       (TextAlign.left, 'Left', Icons.format_align_left),
@@ -730,7 +1225,7 @@ class _TypographySection extends StatelessWidget {
           for (final o in options) ...[
             AnimatedPress(
               onTap: () {
-                p.setTextAlign(o.$1);
+                tn.setTextAlign(o.$1);
                 Navigator.pop(context);
               },
               child: Container(
@@ -795,27 +1290,422 @@ class _TypographySection extends StatelessWidget {
   }
 }
 
+// ─── Book metadata (Open Library / Google Books via Rust engine) ───────
+class _BookMetadataSection extends ConsumerStatefulWidget {
+  const _BookMetadataSection();
+
+  @override
+  ConsumerState<_BookMetadataSection> createState() =>
+      _BookMetadataSectionState();
+}
+
+class _BookMetadataSectionState extends ConsumerState<_BookMetadataSection> {
+  late final TextEditingController _apiKeyCtrl;
+  bool _loaded = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _apiKeyCtrl = TextEditingController();
+    SharedPreferences.getInstance().then((prefs) {
+      if (!mounted) return;
+      _apiKeyCtrl.text = prefs.getString(kGoogleBooksApiKeyPref) ?? '';
+      setState(() => _loaded = true);
+    });
+  }
+
+  @override
+  void dispose() {
+    _apiKeyCtrl.dispose();
+    super.dispose();
+  }
+
+  Future<void> _saveKey(String value) async {
+    final prefs = await SharedPreferences.getInstance();
+    final trimmed = value.trim();
+    if (trimmed.isEmpty) {
+      await prefs.remove(kGoogleBooksApiKeyPref);
+    } else {
+      await prefs.setString(kGoogleBooksApiKeyPref, trimmed);
+    }
+  }
+
+  Future<void> _fetchAll() async {
+    final books = ref.read(libraryProvider).books;
+    if (books.isEmpty) {
+      if (!mounted) return;
+      StashToast.show(
+        context,
+        message: 'No books in library',
+        icon: Icons.info_outline,
+      );
+      return;
+    }
+    final enrichment = ref.read(metadataEnrichmentProvider.notifier);
+    await enrichment.enrichAll(books);
+    await ref.read(libraryProvider.notifier).loadBooks();
+    if (!mounted) return;
+    final progress = ref.read(metadataEnrichmentProvider);
+    StashToast.show(
+      context,
+      message: progress.lastMessage ?? 'Done',
+      icon: progress.errors.isEmpty ? Icons.auto_awesome : Icons.error_outline,
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.colors;
+    final progress = ref.watch(metadataEnrichmentProvider);
+    return SettingsSection(
+      title: 'Book metadata',
+      headerColor: AppColors.figmaAmber,
+      padding: const EdgeInsets.symmetric(horizontal: 16),
+      footer:
+          'Looks up author, cover, genres, and release date via Open Library (primary) and Google Books (fallback). An API key improves Google Books rate limits but is optional.',
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+          child: TextField(
+            controller: _apiKeyCtrl,
+            enabled: _loaded && !progress.running,
+            obscureText: true,
+            decoration: InputDecoration(
+              labelText: 'Google Books API key (optional)',
+              labelStyle: TextStyle(color: c.textSecondary),
+              border: const OutlineInputBorder(),
+              isDense: true,
+            ),
+            onChanged: _saveKey,
+          ),
+        ),
+        SettingsRow(
+          icon: Icons.auto_awesome,
+          title: 'Fetch metadata for all books',
+          subtitle: progress.running
+              ? 'Fetching ${progress.current}/${progress.total}…'
+              : (progress.lastMessage ?? 'Enrich library books from the web'),
+          trailing: progress.running
+              ? const SizedBox(
+                  width: 18,
+                  height: 18,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              : null,
+          onTap: progress.running ? null : _fetchAll,
+        ),
+      ],
+    );
+  }
+}
+
+// ─── Download queue ────────────────────────────────────────────────────
+class _DownloadQueueSection extends ConsumerWidget {
+  const _DownloadQueueSection();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final pending = ref.watch(downloadManagerProvider).pendingCount;
+    return SettingsSection(
+      title: 'Downloads',
+      headerColor: AppColors.figmaAmber,
+      padding: const EdgeInsets.symmetric(horizontal: 16),
+      footer:
+          'Chapter downloads run in a shared queue across titles. Pause, cancel, or retry from the queue screen.',
+      children: [
+        SettingsRow(
+          icon: Icons.download_outlined,
+          title: 'Download queue',
+          subtitle: pending > 0
+              ? '$pending chapter${pending == 1 ? '' : 's'} pending'
+              : 'Pause, cancel, or retry chapter downloads',
+          trailing: const Icon(Icons.chevron_right, size: 18),
+          onTap: () => context.pushNamed(Routes.downloadQueue),
+        ),
+      ],
+    );
+  }
+}
+
+// ─── Library updates (chapter polling) ─────────────────────────────────
+class _LibraryUpdateSection extends ConsumerWidget {
+  const _LibraryUpdateSection();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final c = context.colors;
+    final update = ref.watch(libraryUpdateProvider);
+    final lastReport = ref.watch(libraryUpdateResultProvider);
+    final lastChecked = update.lastCheckedAt;
+    return SettingsSection(
+      title: 'Library updates',
+      headerColor: AppColors.figmaAmber,
+      padding: const EdgeInsets.symmetric(horizontal: 16),
+      footer:
+          'Check now always fetches every library title. Skip filters below '
+          'apply only to auto/background checks. Background checks can also '
+          'wait for Wi‑Fi or charging. Turning on auto-download queues newly '
+          'discovered chapters after each successful check.',
+      children: [
+        SettingsRow(
+          icon: Icons.autorenew,
+          title: 'Auto-check for new chapters',
+          subtitle: update.enabled ? 'On' : 'Off',
+          trailing: Switch(
+            value: update.enabled,
+            activeThumbColor: c.accent,
+            onChanged: (v) =>
+                ref.read(libraryUpdateProvider.notifier).setEnabled(v),
+          ),
+        ),
+        _PrefSwitchRow(
+          key: const Key('notify_new_chapters'),
+          icon: Icons.notifications_outlined,
+          title: 'Notify on new chapters',
+          subtitle:
+              'Send a system notification when a check finds new chapters',
+          prefKey: 'notify_new_chapters',
+          defaultValue: true,
+        ),
+        SettingsRow(
+          icon: Icons.schedule_outlined,
+          title: 'Check every',
+          subtitle:
+              '${update.interval.inHours} hour${update.interval.inHours == 1 ? '' : 's'}',
+          trailing: PopupMenuButton<int>(
+            icon: Icon(Icons.keyboard_arrow_down, color: c.textSecondary),
+            tooltip: 'Interval',
+            onSelected: (hours) => ref
+                .read(libraryUpdateProvider.notifier)
+                .setInterval(Duration(hours: hours)),
+            itemBuilder: (_) => const [
+              PopupMenuItem(value: 1, child: Text('1 hour')),
+              PopupMenuItem(value: 6, child: Text('6 hours')),
+              PopupMenuItem(value: 12, child: Text('12 hours')),
+              PopupMenuItem(value: 24, child: Text('24 hours')),
+            ],
+          ),
+        ),
+        SettingsRow(
+          icon: Icons.wifi,
+          title: 'Only on Wi‑Fi',
+          subtitle: 'Background checks wait for an unmetered network',
+          trailing: Switch(
+            value: update.wifiOnly,
+            activeThumbColor: c.accent,
+            onChanged: update.enabled
+                ? (v) =>
+                      ref.read(libraryUpdateProvider.notifier).setWifiOnly(v)
+                : null,
+          ),
+        ),
+        SettingsRow(
+          icon: Icons.battery_charging_full,
+          title: 'Only while charging',
+          subtitle: 'Background checks wait until the device is charging',
+          trailing: Switch(
+            value: update.chargingOnly,
+            activeThumbColor: c.accent,
+            onChanged: update.enabled
+                ? (v) => ref
+                      .read(libraryUpdateProvider.notifier)
+                      .setChargingOnly(v)
+                : null,
+          ),
+        ),
+        _PrefSwitchRow(
+          key: const Key('library_update_skip_completed'),
+          icon: Icons.check_circle_outline,
+          title: 'Skip completed titles',
+          subtitle: 'Auto-check: skip manga marked completed by the source',
+          prefKey: LibraryUpdatePrefs.keySkipCompleted,
+          defaultValue: LibraryUpdatePrefs.defaultSkipCompleted,
+        ),
+        _PrefSwitchRow(
+          key: const Key('library_update_skip_with_unread'),
+          icon: Icons.mark_email_unread_outlined,
+          title: 'Skip titles with unread chapters',
+          subtitle: 'Auto-check: only titles you are fully caught up on',
+          prefKey: LibraryUpdatePrefs.keySkipWithUnread,
+          defaultValue: LibraryUpdatePrefs.defaultSkipWithUnread,
+        ),
+        _PrefSwitchRow(
+          key: const Key('library_update_skip_not_started'),
+          icon: Icons.play_circle_outline,
+          title: 'Skip not-started titles',
+          subtitle: 'Auto-check: only titles you have started reading',
+          prefKey: LibraryUpdatePrefs.keySkipNotStarted,
+          defaultValue: LibraryUpdatePrefs.defaultSkipNotStarted,
+        ),
+        _PrefSwitchRow(
+          key: const Key('download_new'),
+          icon: Icons.download_outlined,
+          title: 'Download new chapters',
+          subtitle: 'Auto-queue chapters discovered by a library check',
+          prefKey: LibraryUpdatePrefs.keyDownloadNew,
+          defaultValue: LibraryUpdatePrefs.defaultDownloadNew,
+        ),
+        SettingsRow(
+          icon: Icons.refresh,
+          title: 'Check now',
+          subtitle: update.checking
+              ? 'Checking all library titles…'
+              : update.error != null
+              ? 'Failed — tap to retry'
+              : lastChecked != null
+              ? 'Last checked ${_timeAgo(lastChecked)} · ${lastReport?.totalNew ?? update.lastNewChapterCount} new'
+              : 'Fetches every library title from sources',
+          trailing: update.checking
+              ? const SizedBox(
+                  width: 18,
+                  height: 18,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              : null,
+          onTap: update.checking
+              ? null
+              : () => ref
+                    .read(libraryUpdateProvider.notifier)
+                    .checkForNewChapters(applyRestrictions: false),
+        ),
+      ],
+    );
+  }
+}
+
+/// A SettingsRow whose Switch persists to a SharedPreferences boolean.
+class _PrefSwitchRow extends StatefulWidget {
+  const _PrefSwitchRow({
+    super.key,
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    required this.prefKey,
+    this.defaultValue = false,
+  });
+
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  final String prefKey;
+  final bool defaultValue;
+
+  @override
+  State<_PrefSwitchRow> createState() => _PrefSwitchRowState();
+}
+
+class _PrefSwitchRowState extends State<_PrefSwitchRow> {
+  bool _value = false;
+  bool _loaded = false;
+
+  @override
+  void initState() {
+    super.initState();
+    SharedPreferences.getInstance().then((prefs) {
+      if (!mounted) return;
+      setState(() {
+        _value = prefs.getBool(widget.prefKey) ?? widget.defaultValue;
+        _loaded = true;
+      });
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.colors;
+    return SettingsRow(
+      icon: widget.icon,
+      title: widget.title,
+      subtitle: widget.subtitle,
+      trailing: Switch(
+        value: _loaded ? _value : widget.defaultValue,
+        activeThumbColor: c.accent,
+        onChanged: (v) async {
+          setState(() {
+            _value = v;
+            _loaded = true;
+          });
+          final prefs = await SharedPreferences.getInstance();
+          await prefs.setBool(widget.prefKey, v);
+        },
+      ),
+    );
+  }
+}
+
+String _timeAgo(DateTime t) {
+  final diff = DateTime.now().difference(t);
+  if (diff.inMinutes < 1) return 'just now';
+  if (diff.inMinutes < 60) return '${diff.inMinutes}m ago';
+  if (diff.inHours < 24) return '${diff.inHours}h ago';
+  return '${diff.inDays}d ago';
+}
+
+/// Soft tinted pill used as Export / Import trailing affordance.
+class _TintedActionChip extends StatelessWidget {
+  final String label;
+  final IconData icon;
+  final Color color;
+
+  const _TintedActionChip({
+    required this.label,
+    required this.icon,
+    required this.color,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.13),
+        borderRadius: AppSpacing.brMd,
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 14, color: color),
+          const SizedBox(width: 5),
+          Text(
+            label,
+            style: TextStyle(
+              color: color,
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 // ─── Data ────────────────────────────────────────────────────────────────
-class _DataSection extends StatefulWidget {
+class _DataSection extends ConsumerStatefulWidget {
   const _DataSection();
 
   @override
-  State<_DataSection> createState() => _DataSectionState();
+  ConsumerState<_DataSection> createState() => _DataSectionState();
 }
 
-class _DataSectionState extends State<_DataSection> {
+class _DataSectionState extends ConsumerState<_DataSection> {
   bool _importing = false;
   bool _exporting = false;
 
   @override
   Widget build(BuildContext context) {
+    final amber = AppColors.figmaAmber;
+    final violet = AppColors.figmaVioletLight;
     return SettingsSection(
-      title: 'Data',
+      title: 'Backup & restore',
+      headerColor: amber,
+      padding: const EdgeInsets.symmetric(horizontal: 16),
       footer:
           'All your data lives on this device. Backups are plain JSON you can keep anywhere.',
       children: [
         SettingsRow(
           icon: Icons.file_upload_outlined,
+          iconColor: amber,
           title: 'Export',
           subtitle: 'Save books & snippets as JSON',
           trailing: _exporting
@@ -824,11 +1714,16 @@ class _DataSectionState extends State<_DataSection> {
                   height: 18,
                   child: CircularProgressIndicator(strokeWidth: 2),
                 )
-              : null,
+              : _TintedActionChip(
+                  label: 'Export',
+                  icon: Icons.download_outlined,
+                  color: amber,
+                ),
           onTap: _exporting ? null : _export,
         ),
         SettingsRow(
           icon: Icons.file_download_outlined,
+          iconColor: violet,
           title: 'Import',
           subtitle: 'Restore from a backup file',
           trailing: _importing
@@ -837,7 +1732,11 @@ class _DataSectionState extends State<_DataSection> {
                   height: 18,
                   child: CircularProgressIndicator(strokeWidth: 2),
                 )
-              : null,
+              : _TintedActionChip(
+                  label: 'Import',
+                  icon: Icons.upload_outlined,
+                  color: violet,
+                ),
           onTap: _importing ? null : _import,
         ),
       ],
@@ -847,8 +1746,8 @@ class _DataSectionState extends State<_DataSection> {
   Future<void> _export() async {
     setState(() => _exporting = true);
     try {
-      final db = context.read<DatabaseService>();
-      final svc = ExportService(db);
+      final repos = ref.watch(repositoriesProvider);
+      final svc = ExportService(repos);
       final message = await svc.exportToJson();
       if (mounted) {
         StashToast.show(
@@ -873,12 +1772,27 @@ class _DataSectionState extends State<_DataSection> {
   Future<void> _import() async {
     setState(() => _importing = true);
     try {
-      final db = context.read<DatabaseService>();
-      final svc = ExportService(db);
-      final result = await svc.importFromJson();
+      final repos = ref.watch(repositoriesProvider);
+      final svc = ExportService(repos);
+      String? jsonStr;
+      try {
+        final result = await FilePicker.pickFiles(
+          type: FileType.custom,
+          allowedExtensions: ['json'],
+        );
+        if (result == null || result.files.isEmpty) {
+          if (mounted) setState(() => _importing = false);
+          return;
+        }
+        jsonStr = File(result.files.single.path!).readAsStringSync();
+      } catch (_) {
+        if (mounted) setState(() => _importing = false);
+        return;
+      }
+      final result = await svc.importFromJson(jsonStr);
       if (mounted) {
-        context.read<LibraryProvider>().loadBooks();
-        StashToast.show(context, message: result, icon: Icons.check);
+        ref.read(libraryProvider.notifier).loadBooks();
+        StashToast.show(context, message: result.toString(), icon: Icons.check);
       }
     } catch (e) {
       if (mounted) {
@@ -895,43 +1809,70 @@ class _DataSectionState extends State<_DataSection> {
 }
 
 // ─── Sources ─────────────────────────────────────────────────────────
-class _SourcesSection extends StatefulWidget {
+class _SourcesSection extends ConsumerStatefulWidget {
   const _SourcesSection();
   @override
-  State<_SourcesSection> createState() => _SourcesSectionState();
+  ConsumerState<_SourcesSection> createState() => _SourcesSectionState();
 }
 
-class _SourcesSectionState extends State<_SourcesSection> {
+class _SourcesSectionState extends ConsumerState<_SourcesSection> {
   List<Source> _sources = [];
   bool _loading = true;
+  String? _error;
 
   @override
   void initState() {
     super.initState();
-    _load();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _load());
   }
 
   Future<void> _load() async {
-    final db = context.read<DatabaseService>();
-    final sources = await db.getSources();
-    if (sources.isEmpty) {
-      for (final s in SourceService.defaultSources()) {
-        await db.insertSource(s);
+    try {
+      final repos = ref.read(repositoriesProvider);
+      final sources = await repos.stats.getSources();
+      if (sources.isEmpty) {
+        for (final s in SourceService.defaultSources()) {
+          await repos.stats.insertSource(s);
+        }
       }
+      final updated = await repos.stats.getSources();
+      if (!mounted) return;
+      setState(() {
+        _sources = updated;
+        _loading = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _error = e.toString();
+        _loading = false;
+      });
     }
-    final updated = await db.getSources();
-    if (!mounted) return;
-    setState(() {
-      _sources = updated;
-      _loading = false;
-    });
   }
 
   @override
   Widget build(BuildContext context) {
     if (_loading) return const SizedBox.shrink();
+    if (_error != null) {
+      return SettingsSection(
+        title: 'Ebook sources',
+        headerColor: AppColors.figmaCyan,
+        padding: const EdgeInsets.symmetric(horizontal: 16),
+        children: [
+          Padding(
+            padding: const EdgeInsets.all(16),
+            child: Text(
+              'Failed to load sources: $_error',
+              style: TextStyle(color: context.colors.accentMuted),
+            ),
+          ),
+        ],
+      );
+    }
     return SettingsSection(
-      title: 'ePub Sources',
+      title: 'Ebook sources',
+      headerColor: AppColors.figmaCyan,
+      padding: const EdgeInsets.symmetric(horizontal: 16),
       footer:
           'Discover tab searches all enabled sources. Add sources with the correct tag for the scraper to use.',
       children: [
@@ -943,23 +1884,23 @@ class _SourcesSectionState extends State<_SourcesSection> {
             onEdit: () => _edit(s),
           ),
         ),
-        SettingsRow(icon: Icons.add, title: 'Add source', onTap: _add),
+        SettingsRow(icon: Icons.add, iconColor: AppColors.figmaCyan, title: 'Add source', onTap: _add),
       ],
     );
   }
 
   Future<void> _toggle(int id, bool enabled) async {
-    final db = context.read<DatabaseService>();
+    final repos = ref.read(repositoriesProvider);
     final idx = _sources.indexWhere((s) => s.id == id);
     if (idx < 0) return;
     _sources[idx] = _sources[idx].copyWith(enabled: enabled);
-    await db.updateSource(_sources[idx]);
+    await repos.stats.updateSource(_sources[idx]);
     setState(() {});
   }
 
   Future<void> _delete(int id) async {
-    final db = context.read<DatabaseService>();
-    await db.deleteSource(id);
+    final repos = ref.read(repositoriesProvider);
+    await repos.stats.deleteSource(id);
     _sources.removeWhere((s) => s.id == id);
     setState(() {});
   }
@@ -967,8 +1908,8 @@ class _SourcesSectionState extends State<_SourcesSection> {
   Future<void> _add() async {
     final result = await _sourceDialog(context, null);
     if (result == null) return;
-    final db = context.read<DatabaseService>();
-    final id = await db.insertSource(result);
+    final repos = ref.read(repositoriesProvider);
+    final id = await repos.stats.insertSource(result);
     _sources.add(result.copyWith(id: id));
     setState(() {});
   }
@@ -976,8 +1917,8 @@ class _SourcesSectionState extends State<_SourcesSection> {
   Future<void> _edit(Source source) async {
     final result = await _sourceDialog(context, source);
     if (result == null) return;
-    final db = context.read<DatabaseService>();
-    await db.updateSource(result);
+    final repos = ref.read(repositoriesProvider);
+    await repos.stats.updateSource(result);
     final idx = _sources.indexWhere((s) => s.id == result.id);
     if (idx >= 0) _sources[idx] = result;
     setState(() {});
@@ -1063,8 +2004,9 @@ Future<Source?> _sourceDialog(BuildContext context, Source? existing) async {
           ),
           TextButton(
             onPressed: () {
-              if (nameCtrl.text.trim().isEmpty || urlCtrl.text.trim().isEmpty)
+              if (nameCtrl.text.trim().isEmpty || urlCtrl.text.trim().isEmpty) {
                 return;
+              }
               Navigator.of(ctx).pop(
                 Source(
                   id: existing?.id ?? 0,
@@ -1101,10 +2043,21 @@ class _SourceRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final c = context.colors;
+    const cyan = AppColors.figmaCyan;
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
       child: Row(
         children: [
+          Container(
+            width: 40,
+            height: 40,
+            decoration: BoxDecoration(
+              color: cyan.withValues(alpha: 0.13),
+              borderRadius: AppSpacing.brMd,
+            ),
+            child: const Icon(Icons.language, size: 18, color: cyan),
+          ),
+          const SizedBox(width: 12),
           Expanded(
             child: GestureDetector(
               onTap: onEdit,
@@ -1117,15 +2070,9 @@ class _SourceRow extends StatelessWidget {
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(
                       color: c.textPrimary,
-                      fontSize: 14,
-                      fontWeight: FontWeight.w500,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
                     ),
-                  ),
-                  Text(
-                    source.tag,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(color: c.accent, fontSize: 11),
                   ),
                   Text(
                     source.baseUrl,
@@ -1133,6 +2080,27 @@ class _SourceRow extends StatelessWidget {
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(color: c.textTertiary, fontSize: 11),
                   ),
+                  if (source.tag.isNotEmpty) ...[
+                    const SizedBox(height: 2),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 6,
+                        vertical: 2,
+                      ),
+                      decoration: BoxDecoration(
+                        color: cyan.withValues(alpha: 0.13),
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                      child: Text(
+                        source.tag.toUpperCase(),
+                        style: const TextStyle(
+                          color: cyan,
+                          fontSize: 9,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ),
+                  ],
                 ],
               ),
             ),
@@ -1151,24 +2119,31 @@ class _SourceRow extends StatelessWidget {
 }
 
 // ─── Stats ────────────────────────────────────────────────────────────
-class _StatsSection extends StatefulWidget {
+class _StatsSection extends ConsumerStatefulWidget {
   const _StatsSection();
 
   @override
-  State<_StatsSection> createState() => _StatsSectionState();
+  ConsumerState<_StatsSection> createState() => _StatsSectionState();
 }
 
-class _StatsSectionState extends State<_StatsSection> {
+class _StatsSectionState extends ConsumerState<_StatsSection> {
   Map<String, int> _genres = {};
-  Map<String, int> _extensions = {};
+  Map<String, int> _formats = {};
   int _completed = 0;
+  int _totalBooks = 0;
+  int _totalManga = 0;
   List<int> _minutesPerDay = List.filled(7, 0);
   int _streak = 0;
   bool _loading = true;
+  bool _started = false;
 
   @override
-  void initState() {
-    super.initState();
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // Riverpod forbids ref.watch/read from initState before the element
+    // finishes mounting — load once after inherited-widget deps settle.
+    if (_started) return;
+    _started = true;
     _load();
   }
 
@@ -1179,21 +2154,25 @@ class _StatsSectionState extends State<_StatsSection> {
   }
 
   Future<void> _load() async {
-    final db = context.read<DatabaseService>();
-    final statsSvc = StatsService(db);
+    final repos = ref.read(repositoriesProvider);
+    final statsSvc = ref.read(statsServiceProvider);
     final results = await Future.wait([
-      db.getGenreCounts(),
-      db.getExtensionCounts(),
-      db.getCompletedBooksCount(),
+      repos.books.getGenreCounts(),
+      repos.books.getExtensionCounts(),
+      repos.books.getCompletedBooksCount(),
+      repos.books.getBooks(),
+      repos.manga.getMangasInLibrary(),
       statsSvc.getWeeklyStreak(),
     ]);
     if (!mounted) return;
     setState(() {
       _genres = results[0] as Map<String, int>;
-      _extensions = results[1] as Map<String, int>;
+      _formats = results[1] as Map<String, int>;
       _completed = results[2] as int;
+      _totalBooks = (results[3] as List).length;
+      _totalManga = (results[4] as List).length;
       final streak =
-          results[3] as ({List<int> minutesPerDay, int currentStreak});
+          results[5] as ({List<int> minutesPerDay, int currentStreak});
       _minutesPerDay = streak.minutesPerDay;
       _streak = streak.currentStreak;
       _loading = false;
@@ -1202,166 +2181,394 @@ class _StatsSectionState extends State<_StatsSection> {
 
   @override
   Widget build(BuildContext context) {
-    final c = context.colors;
     if (_loading) return const SizedBox.shrink();
     return SettingsSection(
       title: 'Stats',
+      headerColor: AppColors.figmaAmber,
+      padding: const EdgeInsets.symmetric(horizontal: 16),
       children: [
         ReadingStreakCard(
           minutesPerDay: _minutesPerDay,
           currentStreak: _streak,
-          onTap: _showWeeklyDetail,
-        ),
-        _row(c, Icons.menu_book, 'Books completed', _completed),
-        if (_genres.isNotEmpty)
-          ..._genres.entries.map(
-            (e) => _row(c, Icons.category_outlined, e.key, e.value),
-          )
-        else
-          _row(
-            c,
-            Icons.category_outlined,
-            'Genre metadata not available',
-            null,
+          onTap: () => showReadingCalendarSheet(
+            context,
+            ref.read(statsServiceProvider),
           ),
-        if (_extensions.isNotEmpty)
-          ..._extensions.entries.map(
-            (e) => _row(c, Icons.insert_drive_file_outlined, e.key, e.value),
-          )
-        else
-          _row(c, Icons.insert_drive_file_outlined, 'Extensions', 0),
+        ),
+        _StatsLibraryBreakdown(
+          completed: _completed,
+          totalBooks: _totalBooks,
+          totalManga: _totalManga,
+          formats: _formats,
+          genres: _genres,
+        ),
       ],
     );
   }
+}
 
-  void _showWeeklyDetail() {
-    final dayNames = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
-    final now = DateTime.now();
-    final buf = StringBuffer();
-    int total = 0;
-    for (int i = 6; i >= 0; i--) {
-      final day = now.subtract(Duration(days: i));
-      final mins = _minutesPerDay[6 - i];
-      total += mins;
-      final label = day.weekday - 1 == now.weekday - 1
-          ? 'Today'
-          : dayNames[day.weekday - 1];
-      buf.writeln('$label · ${mins}min');
-    }
-    showDialog(
-      context: context,
-      builder: (ctx) {
-        final c = ctx.colors;
-        return AlertDialog(
-          backgroundColor: c.surface,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(18),
-            side: BorderSide(color: c.border, width: 0.5),
-          ),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                '$_streak day streak',
-                style: TextStyle(
-                  color: c.accent,
-                  fontSize: 18,
-                  fontWeight: FontWeight.w600,
+class _StatsLibraryBreakdown extends StatelessWidget {
+  const _StatsLibraryBreakdown({
+    required this.completed,
+    required this.totalBooks,
+    required this.totalManga,
+    required this.formats,
+    required this.genres,
+  });
+
+  final int completed;
+  final int totalBooks;
+  final int totalManga;
+  final Map<String, int> formats;
+  final Map<String, int> genres;
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.colors;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 4, 16, 16),
+      child: Container(
+        padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
+        decoration: BoxDecoration(
+          color: c.surfaceMuted,
+          borderRadius: AppSpacing.brXl,
+          border: Border.all(color: c.border.withValues(alpha: 0.7), width: 0.5),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Expanded(
+                  child: _StatsMetricTile(
+                    label: 'Completed',
+                    value: '$completed',
+                    icon: Icons.check_circle_outline_rounded,
+                  ),
                 ),
-              ),
-              const SizedBox(height: 2),
-              Text(
-                '$total min this week',
-                style: TextStyle(color: c.textTertiary, fontSize: 13),
-              ),
-              const SizedBox(height: 12),
-              Text(
-                buf.toString().trim(),
-                style: TextStyle(
-                  color: c.textPrimary,
-                  fontSize: 14,
-                  height: 1.6,
+                _StatsMetricDivider(color: c.border),
+                Expanded(
+                  child: _StatsMetricTile(
+                    label: 'Books',
+                    value: '$totalBooks',
+                    icon: Icons.menu_book_outlined,
+                  ),
                 ),
-              ),
-              const SizedBox(height: 8),
-              Text(
-                'Streak resets when a day has 0 min read.',
-                style: TextStyle(color: c.textTertiary, fontSize: 12),
-              ),
-            ],
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(ctx).pop(),
-              child: Text(
-                'OK',
-                style: TextStyle(color: c.accent, fontWeight: FontWeight.w600),
-              ),
+                if (totalManga > 0) ...[
+                  _StatsMetricDivider(color: c.border),
+                  Expanded(
+                    child: _StatsMetricTile(
+                      label: 'Manga',
+                      value: '$totalManga',
+                      icon: Icons.auto_stories_outlined,
+                    ),
+                  ),
+                ],
+              ],
+            ),
+            const SizedBox(height: 16),
+            _StatsBreakdownGroup(
+              title: 'Formats',
+              items: formats,
+              emptyHint: 'Import books to see format breakdown',
+            ),
+            const SizedBox(height: 14),
+            _StatsBreakdownGroup(
+              title: 'Genres',
+              items: genres,
+              emptyHint: 'Run metadata enrichment to see genres',
             ),
           ],
-        );
-      },
-    );
-  }
-
-  Widget _row(KomaColors c, IconData icon, String label, int? count) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 4, 16, 12),
-      child: Row(
-        children: [
-          Icon(icon, size: 18, color: c.textSecondary),
-          const SizedBox(width: 14),
-          Expanded(
-            child: Text(
-              label,
-              style: TextStyle(color: c.textPrimary, fontSize: 15),
-            ),
-          ),
-          const SizedBox(width: 8),
-          Text(
-            count == null ? '—' : '$count',
-            style: TextStyle(
-              color: c.textSecondary,
-              fontSize: 15,
-              fontWeight: FontWeight.w500,
-            ),
-          ),
-        ],
+        ),
       ),
     );
   }
 }
 
-// ─── Plugins ───────────────────────────────────────────────────────────
-class _PluginsSection extends StatelessWidget {
-  const _PluginsSection();
+class _StatsMetricTile extends StatelessWidget {
+  const _StatsMetricTile({
+    required this.label,
+    required this.value,
+    required this.icon,
+  });
+
+  final String label;
+  final String value;
+  final IconData icon;
 
   @override
   Widget build(BuildContext context) {
+    final c = context.colors;
+    return Column(
+      children: [
+        Icon(icon, size: 17, color: c.accent.withValues(alpha: 0.85)),
+        const SizedBox(height: 6),
+        Text(
+          value,
+          style: TextStyle(
+            color: c.textPrimary,
+            fontSize: 20,
+            fontWeight: FontWeight.w700,
+            height: 1,
+          ),
+        ),
+        const SizedBox(height: 4),
+        Text(
+          label,
+          style: TextStyle(color: c.textSecondary, fontSize: 11),
+        ),
+      ],
+    );
+  }
+}
+
+class _StatsMetricDivider extends StatelessWidget {
+  const _StatsMetricDivider({required this.color});
+
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 0.5,
+      height: 44,
+      margin: const EdgeInsets.symmetric(horizontal: 8),
+      color: color.withValues(alpha: 0.7),
+    );
+  }
+}
+
+class _StatsBreakdownGroup extends StatelessWidget {
+  const _StatsBreakdownGroup({
+    required this.title,
+    required this.items,
+    required this.emptyHint,
+  });
+
+  final String title;
+  final Map<String, int> items;
+  final String emptyHint;
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.colors;
+    final labelStyle = TextStyle(
+      color: c.textTertiary,
+      fontSize: 10,
+      fontWeight: FontWeight.w600,
+      letterSpacing: 0.7,
+    );
+
+    if (items.isEmpty) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(title.toUpperCase(), style: labelStyle),
+          const SizedBox(height: 6),
+          Text(
+            emptyHint,
+            style: TextStyle(color: c.textSecondary, fontSize: 12),
+          ),
+        ],
+      );
+    }
+
+    final sorted = items.entries.toList()
+      ..sort((a, b) => b.value.compareTo(a.value));
+    final maxCount = sorted.first.value;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(title.toUpperCase(), style: labelStyle),
+        const SizedBox(height: 8),
+        ...sorted.take(8).map(
+          (entry) => Padding(
+            padding: const EdgeInsets.only(bottom: 7),
+            child: Row(
+              children: [
+                SizedBox(
+                  width: 72,
+                  child: Text(
+                    entry.key,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: c.textPrimary,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ),
+                Expanded(
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(3),
+                    child: LinearProgressIndicator(
+                      value: entry.value / maxCount,
+                      minHeight: 5,
+                      backgroundColor: c.border.withValues(alpha: 0.55),
+                      color: c.accent.withValues(alpha: 0.75),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                SizedBox(
+                  width: 24,
+                  child: Text(
+                    '${entry.value}',
+                    textAlign: TextAlign.end,
+                    style: TextStyle(
+                      color: c.textSecondary,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                      fontFeatures: const [FontFeature.tabularFigures()],
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+// ─── Plugins ───────────────────────────────────────────────────────────
+class _PluginsSection extends ConsumerWidget {
+  const _PluginsSection();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final c = context.colors;
+    final updateCount = ref.watch(extensionUpdateCountProvider);
     return SettingsSection(
       title: 'Plugins',
+      headerColor: AppColors.figmaCyan,
+      padding: const EdgeInsets.symmetric(horizontal: 16),
       footer:
           'Plugins extend Koma with new sources via Keiyoushi/Mihon extension APKs. Add a repo, fetch its index, and install the ones you want.',
       children: [
         SettingsRow(
           icon: Icons.extension_outlined,
+          iconColor: AppColors.figmaCyan,
           title: 'Manage plugins',
-          subtitle: 'Browse, install, and remove extensions',
-          trailing: const Icon(Icons.chevron_right, size: 18),
+          subtitle: updateCount > 0
+              ? 'Browse, install, and remove extensions · $updateCount update${updateCount == 1 ? '' : 's'} available'
+              : 'Browse, install, and remove extensions',
+          trailing: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (updateCount > 0)
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 7,
+                    vertical: 2,
+                  ),
+                  decoration: BoxDecoration(
+                    color: c.accent,
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Text(
+                    '$updateCount',
+                    style: TextStyle(
+                      color: c.bg,
+                      fontSize: 12,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+              const SizedBox(width: 4),
+              const Icon(Icons.chevron_right, size: 18),
+            ],
+          ),
           onTap: () {
-            Navigator.of(
-              context,
-            ).push(MaterialPageRoute(builder: (_) => const ExtensionsScreen()));
+            context.pushNamed(Routes.extensions);
           },
         ),
         SettingsRow(
           icon: Icons.code,
+          iconColor: AppColors.figmaCyan,
           title: 'Plugin SDK',
           subtitle: 'Documentation for authors',
           trailing: const Icon(Icons.chevron_right, size: 18),
         ),
+        _PrefSwitchRow(
+          key: const Key('notify_extension_updates'),
+          icon: Icons.notifications_outlined,
+          title: 'Notify on plugin updates',
+          subtitle:
+              'Send a system notification when updates are found on launch',
+          prefKey: 'notify_extension_updates',
+          defaultValue: true,
+        ),
+        _PrefSwitchRow(
+          key: const Key('extension_auto_update_enabled'),
+          icon: Icons.system_update_alt_outlined,
+          title: 'Auto-install plugin updates',
+          subtitle:
+              'Download and reload newer extension APKs on launch when available',
+          prefKey: 'extension_auto_update_enabled',
+          defaultValue: false,
+        ),
+        SettingsRow(
+          icon: Icons.security_outlined,
+          iconColor: const Color(0xFFEF4444),
+          title: 'Revoke all trusted extensions',
+          subtitle:
+              'Clear user-trusted sideloads. Repo-signed packages stay trusted.',
+          destructive: true,
+          onTap: () => _revokeTrustedExtensions(context, ref),
+        ),
       ],
+    );
+  }
+
+  Future<void> _revokeTrustedExtensions(
+    BuildContext context,
+    WidgetRef ref,
+  ) async {
+    final c = context.colors;
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: c.surface,
+        title: Text(
+          'Revoke trusted extensions?',
+          style: TextStyle(color: c.textPrimary),
+        ),
+        content: Text(
+          'This clears extensions you explicitly trusted. Packages signed by '
+          'a known repository remain usable.',
+          style: TextStyle(color: c.textSecondary),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: Text('Cancel', style: TextStyle(color: c.textSecondary)),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: Text('Revoke', style: TextStyle(color: c.accent)),
+          ),
+        ],
+      ),
+    );
+    if (ok != true || !context.mounted) return;
+    final mgr = ExtensionManager(
+      ref.read(repositoriesProvider),
+      KeiyoushiService(),
+    );
+    final changed = await mgr.revokeAllTrusted();
+    if (!context.mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          changed > 0
+              ? 'Revoked trust · $changed extension${changed == 1 ? '' : 's'} rechecked'
+              : 'Revoked all user-trusted extensions',
+        ),
+      ),
     );
   }
 }
@@ -1370,25 +2577,283 @@ class _PluginsSection extends StatelessWidget {
 class _AboutSection extends StatelessWidget {
   const _AboutSection();
 
+  static const _muted = Color(0xFF8888A0);
+  static const _pad = EdgeInsets.symmetric(horizontal: 16);
+
+  Future<void> _checkForAppUpdate(BuildContext context) async {
+    StashToast.show(
+      context,
+      message: 'Checking for updates…',
+      icon: Icons.system_update_alt_outlined,
+    );
+    try {
+      final notifier = ProviderScope.containerOf(context)
+          .read(appUpdateProvider.notifier);
+      final update = ProviderScope.containerOf(context).read(appUpdateProvider);
+      if (update.stage == AppUpdateStage.downloaded && update.release != null) {
+        await NewUpdateSheet.show(context, update.release!);
+        return;
+      }
+      if (update.stage == AppUpdateStage.downloading &&
+          update.release != null) {
+        await NewUpdateSheet.show(context, update.release!);
+        return;
+      }
+      final result = await notifier.checkForUpdate(forceCheck: true);
+      if (!context.mounted) return;
+      switch (result) {
+        case NewAppUpdate(:final release):
+          notifier.offerUpdate(release);
+          await NewUpdateSheet.show(context, release);
+        case NoNewAppUpdate():
+          StashToast.show(
+            context,
+            message: 'You\'re on the latest version',
+            icon: Icons.check,
+          );
+      }
+    } catch (e) {
+      if (!context.mounted) return;
+      StashToast.show(
+        context,
+        message: 'Update check failed',
+        icon: Icons.error_outline,
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
-    return SettingsSection(
-      title: 'About',
+    final c = context.colors;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    const features = <(IconData, String, Color)>[
+      (Icons.menu_book_outlined, 'EPUB reading', AppColors.figmaViolet),
+      (Icons.extension_outlined, 'Manga plugins', AppColors.figmaAmber),
+      (Icons.bolt, 'Bionic reading', Color(0xFFEF4444)),
+      (Icons.shield_outlined, 'Local-first / offline', AppColors.figmaGreen),
+    ];
+    return Column(
       children: [
-        SettingsRow(
-          icon: Icons.info_outline,
-          title: 'Koma',
-               subtitle: 'Version 2.5.90 · build 2.5.90+85',
+        Padding(
+          padding: _pad,
+          child: Container(
+            width: double.infinity,
+            padding: const EdgeInsets.fromLTRB(24, 28, 24, 24),
+            decoration: BoxDecoration(
+              color: c.surface,
+              borderRadius: AppSpacing.brLg,
+              border: Border.all(color: c.border, width: 0.5),
+            ),
+            child: Column(
+              children: [
+                Container(
+                  width: 72,
+                  height: 72,
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(22),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withValues(alpha: 0.18),
+                        blurRadius: 12,
+                        offset: const Offset(0, 4),
+                      ),
+                    ],
+                  ),
+                  clipBehavior: Clip.antiAlias,
+                  child: Image.asset(
+                    'app_icons/hon.png',
+                    fit: BoxFit.cover,
+                    errorBuilder: (_, error, stackTrace) => Container(
+                      decoration: const BoxDecoration(
+                        gradient: LinearGradient(
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
+                          colors: [AppColors.figmaViolet, AppColors.figmaCyan],
+                        ),
+                      ),
+                      child: const Icon(
+                        Icons.menu_book_rounded,
+                        size: 34,
+                        color: Colors.white,
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 14),
+                Text(
+                  'Koma',
+                  style: TextStyle(
+                    color: c.textPrimary,
+                    fontSize: 22,
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: -0.4,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  'Version 2.37.37 · build 2.37.37+304',
+                  style: TextStyle(color: c.textSecondary, fontSize: 13),
+                ),
+                const SizedBox(height: 10),
+                Text(
+                  'A reader and a thinking tool. Local-first. No accounts. No tracking.',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    color: c.textSecondary,
+                    fontSize: 13,
+                    height: 1.5,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  'Free software under GPL-3.0-or-later.',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    color: c.textTertiary,
+                    fontSize: 12,
+                    height: 1.4,
+                  ),
+                ),
+              ],
+            ),
+          ),
         ),
-        SettingsRow(
-          icon: Icons.favorite_outline,
-          title: 'A reader and a thinking tool',
-          subtitle: 'Local-first. No accounts. No tracking.',
+        const SizedBox(height: 20),
+        Padding(
+          padding: _pad,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              const Padding(
+                padding: EdgeInsets.fromLTRB(4, 8, 4, 8),
+                child: Text(
+                  'FEATURES',
+                  style: TextStyle(
+                    color: _muted,
+                    fontSize: 11,
+                    fontWeight: FontWeight.w600,
+                    letterSpacing: 0.8,
+                  ),
+                ),
+              ),
+              GridView.count(
+                crossAxisCount: 2,
+                shrinkWrap: true,
+                physics: const NeverScrollableScrollPhysics(),
+                mainAxisSpacing: 8,
+                crossAxisSpacing: 8,
+                childAspectRatio: 2.6,
+                children: [
+                  for (final f in features)
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 10,
+                        vertical: 8,
+                      ),
+                      decoration: BoxDecoration(
+                        color: c.surface,
+                        borderRadius: AppSpacing.brMd,
+                        border: Border.all(color: c.border, width: 0.5),
+                      ),
+                      child: Row(
+                        children: [
+                          Container(
+                            width: 28,
+                            height: 28,
+                            decoration: BoxDecoration(
+                              color: f.$3.withValues(alpha: 0.13),
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: Icon(f.$1, size: 14, color: f.$3),
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              f.$2,
+                              style: TextStyle(
+                                color: c.textPrimary,
+                                fontSize: 12,
+                                fontWeight: FontWeight.w500,
+                                height: 1.25,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                ],
+              ),
+            ],
+          ),
         ),
-        SettingsRow(
-          icon: Icons.book_outlined,
-          title: 'Open source licenses',
-          trailing: const Icon(Icons.chevron_right, size: 18),
+        const SizedBox(height: 20),
+        SettingsSection(
+          title: 'About',
+          headerColor: _muted,
+          padding: _pad,
+          children: [
+            SettingsRow(
+              icon: Icons.info_outline,
+              iconColor: _muted,
+              title: 'Koma',
+              subtitle: 'Version 2.37.37 · build 2.37.37+304',
+            ),
+            if (AppUpdateChecker.updaterEnabled)
+              SettingsRow(
+                icon: Icons.system_update_alt_outlined,
+                iconColor: _muted,
+                title: 'Check for updates',
+                subtitle: 'Download and install the latest APK',
+                trailing: const Icon(Icons.chevron_right, size: 18),
+                onTap: () => _checkForAppUpdate(context),
+              ),
+            SettingsRow(
+              icon: Icons.favorite_outline,
+              iconColor: const Color(0xFFEF4444),
+              title: 'A reader and a thinking tool',
+              subtitle: 'Local-first. No accounts. No tracking.',
+            ),
+            SettingsRow(
+              icon: Icons.book_outlined,
+              iconColor: _muted,
+              title: 'Open source licenses',
+              trailing: const Icon(Icons.chevron_right, size: 18),
+              onTap: () => OpenSourceLicensesSheet.show(context),
+            ),
+          ],
+        ),
+        const SizedBox(height: 20),
+        Padding(
+          padding: _pad,
+          child: Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: c.surface,
+              borderRadius: AppSpacing.brLg,
+              border: Border.all(color: c.border, width: 0.5),
+            ),
+            child: Column(
+              children: [
+                Text(
+                  'Made for readers who take their collections seriously.',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(color: c.textSecondary, fontSize: 12),
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  'Inspired by Mihon & Mangayomi',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    color: isDark
+                        ? const Color(0xFF3A3A55)
+                        : const Color(0xFFC0C0D8),
+                    fontSize: 11,
+                  ),
+                ),
+              ],
+            ),
+          ),
         ),
       ],
     );

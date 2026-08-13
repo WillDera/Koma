@@ -3,6 +3,7 @@ import '../theme/app_theme.dart';
 import '../theme/tokens/app_motion.dart';
 
 /// A circular progress indicator (0..1) used on book covers and stats.
+/// Uses the latest Material 3 circular indicator (theme `year2023: false`).
 class ProgressRing extends StatelessWidget {
   final double progress; // 0..1
   final double size;
@@ -41,19 +42,10 @@ class ProgressRing extends StatelessWidget {
                 width: size,
                 height: size,
                 child: CircularProgressIndicator(
-                  value: 1,
-                  strokeWidth: strokeWidth,
-                  valueColor: AlwaysStoppedAnimation(bg),
-                ),
-              ),
-              SizedBox(
-                width: size,
-                height: size,
-                child: CircularProgressIndicator(
                   value: value,
                   strokeWidth: strokeWidth,
-                  strokeCap: StrokeCap.round,
-                  valueColor: AlwaysStoppedAnimation(fg),
+                  color: fg,
+                  backgroundColor: bg,
                 ),
               ),
               ?child,
@@ -65,7 +57,7 @@ class ProgressRing extends StatelessWidget {
   }
 }
 
-/// A thin linear progress bar with rounded caps.
+/// A thin linear progress bar with rounded caps (Material 3 LinearProgressIndicator).
 class ThinProgressBar extends StatelessWidget {
   final double progress;
   final double height;
@@ -87,14 +79,11 @@ class ThinProgressBar extends StatelessWidget {
       borderRadius: BorderRadius.circular(height),
       child: SizedBox(
         height: height,
-        child: Stack(
-          children: [
-            Container(color: trackColor ?? c.border),
-            FractionallySizedBox(
-              widthFactor: progress.clamp(0.0, 1.0),
-              child: Container(color: color ?? c.accent),
-            ),
-          ],
+        child: LinearProgressIndicator(
+          value: progress.clamp(0.0, 1.0),
+          minHeight: height,
+          color: color ?? c.accent,
+          backgroundColor: trackColor ?? c.border,
         ),
       ),
     );

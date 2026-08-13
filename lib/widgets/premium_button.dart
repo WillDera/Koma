@@ -5,6 +5,7 @@ import '../theme/tokens/app_spacing.dart';
 import 'animated_press.dart';
 
 enum PremiumButtonVariant { primary, secondary, ghost, destructive }
+
 enum PremiumButtonSize { sm, md, lg }
 
 /// The single button primitive. Four variants, three sizes, always with
@@ -40,8 +41,11 @@ class PremiumButton extends StatelessWidget {
       PremiumButtonVariant.primary => (c.accent, c.onAccent, null),
       PremiumButtonVariant.secondary => (c.surface, c.textPrimary, c.border),
       PremiumButtonVariant.ghost => (Colors.transparent, c.textPrimary, null),
-      PremiumButtonVariant.destructive =>
-        (Colors.transparent, Colors.white, null),
+      PremiumButtonVariant.destructive => (
+        Colors.transparent,
+        Colors.white,
+        null,
+      ),
     };
 
     final (hPad, vPad, fontSize, iconSize) = switch (size) {
@@ -62,8 +66,8 @@ class PremiumButton extends StatelessWidget {
         border: border != null
             ? Border.all(color: border, width: 0.5)
             : variant == PremiumButtonVariant.destructive
-                ? null
-                : null,
+            ? null
+            : null,
       ),
       child: Row(
         mainAxisSize: expand ? MainAxisSize.max : MainAxisSize.min,

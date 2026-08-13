@@ -6,7 +6,7 @@
              the Flutter engine draws its first frame -->
         <item name="android:windowBackground">@drawable/launch_background</item>
         <item name="android:forceDarkAllowed">false</item>
-        <item name="android:windowFullscreen">false</item>
+        <item name="android:windowFullscreen">true</item>
         <item name="android:windowLayoutInDisplayCutoutMode">shortEdges</item>
     </style>
     <!-- Theme applied to the Android Window as soon as the process has started.
@@ -17,5 +17,21 @@
          This Theme is only used starting with V2 of Flutter's Android embedding. -->
     <style name="NormalTheme" parent="@android:style/Theme.Light.NoTitleBar">
         <item name="android:windowBackground">?android:colorBackground</item>
+    </style>
+    <!-- AppCompat theme for SourcePreferencesActivity (PreferenceFragmentCompat).
+         NoActionBar: activity hosts an explicit Toolbar so prefs never draw under it. -->
+    <style name="Theme.Koma.SourcePreferences" parent="Theme.AppCompat.DayNight.NoActionBar">
+        <item name="preferenceTheme">@style/PreferenceThemeOverlay</item>
+        <item name="colorPrimary">#C44C4C</item>
+        <item name="colorPrimaryDark">#A33C3C</item>
+        <item name="colorAccent">#C44C4C</item>
+        <item name="android:statusBarColor">#A33C3C</item>
+    </style>
+    <!-- Same chrome as SourcePreferences for interactive CF / captcha WebView. -->
+    <style name="Theme.Koma.SourceWebView" parent="Theme.AppCompat.DayNight.NoActionBar">
+        <item name="colorPrimary">#C44C4C</item>
+        <item name="colorPrimaryDark">#A33C3C</item>
+        <item name="colorAccent">#C44C4C</item>
+        <item name="android:statusBarColor">#A33C3C</item>
     </style>
 </resources>
