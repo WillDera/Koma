@@ -2691,7 +2691,7 @@ class _AboutSection extends StatelessWidget {
                 ),
                 const SizedBox(height: 4),
                 Text(
-                  'Version 2.37.36 · build 2.37.36+303',
+                  'Version 2.37.37 · build 2.37.37+304',
                   style: TextStyle(color: c.textSecondary, fontSize: 13),
                 ),
                 const SizedBox(height: 10),
@@ -2702,6 +2702,16 @@ class _AboutSection extends StatelessWidget {
                     color: c.textSecondary,
                     fontSize: 13,
                     height: 1.5,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  'Free software under GPL-3.0-or-later.',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    color: c.textTertiary,
+                    fontSize: 12,
+                    height: 1.4,
                   ),
                 ),
               ],
@@ -2786,7 +2796,7 @@ class _AboutSection extends StatelessWidget {
               icon: Icons.info_outline,
               iconColor: _muted,
               title: 'Koma',
-              subtitle: 'Version 2.37.36 · build 2.37.36+303',
+              subtitle: 'Version 2.37.37 · build 2.37.37+304',
             ),
             if (AppUpdateChecker.updaterEnabled)
               SettingsRow(
