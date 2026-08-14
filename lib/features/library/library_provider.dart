@@ -11,6 +11,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:workmanager/workmanager.dart';
 
 import '../../core/models/book.dart';
+import '../../core/models/library_category.dart';
 import '../../core/models/manga.dart';
 import '../../core/providers.dart';
 import '../../core/services/background_task.dart';
@@ -25,6 +26,7 @@ class LibraryState {
   const LibraryState({
     this.books = const [],
     this.mangas = const [],
+    this.categories = const [],
     this.loading = true,
     this.error,
     this.selectedIds = const {},
@@ -39,6 +41,7 @@ class LibraryState {
 
   final List<Book> books;
   final List<Manga> mangas;
+  final List<LibraryCategory> categories;
   final bool loading;
   final String? error;
   final Set<String> selectedIds;
@@ -57,6 +60,7 @@ class LibraryState {
   LibraryState copyWith({
     List<Book>? books,
     List<Manga>? mangas,
+    List<LibraryCategory>? categories,
     bool? loading,
     String? Function()? error,
     Set<String>? selectedIds,
@@ -71,6 +75,7 @@ class LibraryState {
     return LibraryState(
       books: books ?? this.books,
       mangas: mangas ?? this.mangas,
+      categories: categories ?? this.categories,
       loading: loading ?? this.loading,
       error: error != null ? error() : this.error,
       selectedIds: selectedIds ?? this.selectedIds,
@@ -141,6 +146,7 @@ class LibraryNotifier extends Notifier<LibraryState> {
     try {
       final books = await repos.books.getBooks();
       final mangas = await repos.manga.getMangasInLibrary();
+      final categories = await repos.categories.getCategories();
       final newChapters = await repos.manga.countNewChaptersByManga();
       final extNames = <String, String>{};
       final extensions = await repos.extensions.getInstalledExtensions();
@@ -153,6 +159,7 @@ class LibraryNotifier extends Notifier<LibraryState> {
       state = state.copyWith(
         books: books,
         mangas: mangas,
+        categories: categories,
         extensionNames: extNames,
         newChapters: newChapters,
         loading: false,
