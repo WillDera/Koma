@@ -1,4 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:koma/core/services/app_update/app_release.dart';
+import 'package:koma/core/services/app_update/app_update_manager.dart';
 import 'package:koma/core/services/app_update/get_application_release.dart';
 
 void main() {
@@ -42,6 +44,37 @@ void main() {
           versionName: '2.38.0',
           versionTag: 'v2.37.33+300',
           buildNumber: '300',
+        ),
+        isFalse,
+      );
+    });
+  });
+
+  group('AppUpdateManager.isStaleCachedRelease', () {
+    const cached = AppRelease(
+      version: 'v2.37.39+306',
+      info: '',
+      releaseLink: '',
+      downloadLink: '',
+    );
+
+    test('cached APK matching the running app is stale', () {
+      expect(
+        AppUpdateManager.isStaleCachedRelease(
+          cached,
+          versionName: '2.37.39',
+          buildNumber: '306',
+        ),
+        isTrue,
+      );
+    });
+
+    test('cached APK newer than the running app is kept', () {
+      expect(
+        AppUpdateManager.isStaleCachedRelease(
+          cached,
+          versionName: '2.37.38',
+          buildNumber: '305',
         ),
         isFalse,
       );

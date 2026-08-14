@@ -2,23 +2,36 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../notification_service.dart';
 import 'app_release.dart';
 import 'app_update_installer.dart';
+import 'get_application_release.dart';
 
 enum AppUpdateStage { idle, available, downloading, downloaded, failed }
+
+typedef InstalledAppVersion = ({String versionName, String buildNumber});
 
 /// Global app-update download state. Survives closing [NewUpdateSheet] and
 /// drives the system notification progress bar (chapter download parity).
 class AppUpdateManager extends ChangeNotifier {
-  AppUpdateManager({AppUpdateInstaller? installer})
-      : _installer = installer ?? AppUpdateInstaller();
+  AppUpdateManager({
+    AppUpdateInstaller? installer,
+    Future<InstalledAppVersion> Function()? installedVersion,
+  })  : _installer = installer ?? AppUpdateInstaller(),
+        _installedVersion = installedVersion ?? _packageInfoVersion;
 
   static const _prefsReleaseKey = 'app_update_pending_release';
 
   final AppUpdateInstaller _installer;
+  final Future<InstalledAppVersion> Function() _installedVersion;
+
+  static Future<InstalledAppVersion> _packageInfoVersion() async {
+    final info = await PackageInfo.fromPlatform();
+    return (versionName: info.version, buildNumber: info.buildNumber);
+  }
 
   AppUpdateStage _stage = AppUpdateStage.idle;
   int _progress = 0;
@@ -93,18 +106,54 @@ class AppUpdateManager extends ChangeNotifier {
   Future<void> install() => _installer.installUpdate();
 
   /// If a previous download finished while the app was closed, restore state.
+  /// Drops the APK when that release is already running (post-install).
   Future<void> restoreCachedDownload() async {
-    if (_stage == AppUpdateStage.downloading) return;
+    if (_stage == AppUpdateStage.downloading || _downloadRunning) return;
     final cached = await _installer.cachedApkFile();
     if (cached == null) {
       await _clearPersistedRelease();
+      if (_stage == AppUpdateStage.downloaded) {
+        _release = null;
+        _stage = AppUpdateStage.idle;
+        _progress = 0;
+        notifyListeners();
+      }
+      return;
+    }
+    final persisted = await _loadPersistedRelease();
+    if (persisted == null || await isCachedReleaseInstalled(persisted)) {
+      _installer.adoptCachedApk(cached);
+      clear();
       return;
     }
     _installer.adoptCachedApk(cached);
-    _release ??= await _loadPersistedRelease();
+    _release = persisted;
     _stage = AppUpdateStage.downloaded;
     _progress = 100;
     notifyListeners();
+  }
+
+  /// True when [release] is already the running app (or older).
+  Future<bool> isCachedReleaseInstalled(AppRelease release) async {
+    final installed = await _installedVersion();
+    return isStaleCachedRelease(
+      release,
+      versionName: installed.versionName,
+      buildNumber: installed.buildNumber,
+    );
+  }
+
+  @visibleForTesting
+  static bool isStaleCachedRelease(
+    AppRelease release, {
+    required String versionName,
+    required String buildNumber,
+  }) {
+    return !GetApplicationRelease.isNewVersion(
+      versionName: versionName,
+      versionTag: release.version,
+      buildNumber: buildNumber,
+    );
   }
 
   Future<void> _persistRelease(AppRelease release) async {
