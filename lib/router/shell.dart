@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../core/app_version.dart';
 import '../theme/app_icons.dart';
 import '../theme/theme_provider.dart';
 import '../widgets/app_update_gate.dart';
@@ -61,6 +62,11 @@ class MainShell extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final theme = ref.watch(themeProvider);
+    final version = ref.watch(packageInfoProvider).when(
+          data: (info) => '${info.version}+${info.buildNumber}',
+          loading: () => '',
+          error: (_, _) => '',
+        );
     return AppUpdateGate(
       child: Scaffold(
         extendBody: true,
@@ -74,7 +80,7 @@ class MainShell extends ConsumerWidget {
         drawer: NavDrawer(
           currentIndex: navigationShell.currentIndex,
           onTap: _onTap,
-          version: '2.37.39',
+          version: version,
         ),
       ),
     );
