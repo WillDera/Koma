@@ -8,6 +8,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../../core/app_version.dart';
 import '../../core/models/source.dart';
 import '../../core/providers.dart';
 import '../../core/services/app_update/app_update_checker.dart';
@@ -27,7 +28,6 @@ import '../../theme/theme_provider.dart';
 import '../../theme/tokens/app_colors.dart';
 import '../../theme/tokens/app_motion.dart';
 import '../../theme/tokens/app_spacing.dart';
-import '../../theme/tokens/app_type.dart';
 import '../../widgets/animated_press.dart';
 import '../../widgets/dialog_sheet.dart';
 import '../../widgets/library_book_card.dart';
@@ -2591,7 +2591,7 @@ class _PluginsSection extends ConsumerWidget {
 }
 
 // ─── About ──────────────────────────────────────────────────────────────
-class _AboutSection extends StatelessWidget {
+class _AboutSection extends ConsumerWidget {
   const _AboutSection();
 
   static const _muted = Color(0xFF8888A0);
@@ -2637,9 +2637,14 @@ class _AboutSection extends StatelessWidget {
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final c = context.colors;
     final isDark = Theme.of(context).brightness == Brightness.dark;
+    final versionLabel = ref.watch(packageInfoProvider).when(
+          data: appVersionLabel,
+          loading: () => 'Version …',
+          error: (_, _) => 'Version',
+        );
     const features = <(IconData, String, Color)>[
       (Icons.menu_book_outlined, 'EPUB reading', AppColors.figmaViolet),
       (Icons.extension_outlined, 'Manga plugins', AppColors.figmaAmber),
@@ -2705,7 +2710,7 @@ class _AboutSection extends StatelessWidget {
                 ),
                 const SizedBox(height: 4),
                 Text(
-                  'Version 2.37.39 · build 2.37.39+306',
+                  versionLabel,
                   style: TextStyle(color: c.textSecondary, fontSize: 13),
                 ),
                 const SizedBox(height: 10),
@@ -2810,7 +2815,7 @@ class _AboutSection extends StatelessWidget {
               icon: Icons.info_outline,
               iconColor: _muted,
               title: 'Koma',
-              subtitle: 'Version 2.37.39 · build 2.37.39+306',
+              subtitle: versionLabel,
             ),
             if (AppUpdateChecker.updaterEnabled)
               SettingsRow(
