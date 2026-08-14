@@ -91,11 +91,11 @@ class AppUpdateInstaller {
   }
 
   Future<void> deleteDownloadedApk() async {
-    final apk = _apkFile;
     _apkFile = null;
-    if (apk != null && await apk.exists()) {
-      await apk.delete();
-    }
+    try {
+      final leftover = File('${(await _cacheDir()).path}/$_apkName');
+      if (await leftover.exists()) await leftover.delete();
+    } catch (_) {}
   }
 
   /// Returns a finished update APK left in cache from a prior session.

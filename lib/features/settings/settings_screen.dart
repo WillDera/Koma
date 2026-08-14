@@ -2607,10 +2607,6 @@ class _AboutSection extends StatelessWidget {
       final notifier = ProviderScope.containerOf(context)
           .read(appUpdateProvider.notifier);
       final update = ProviderScope.containerOf(context).read(appUpdateProvider);
-      if (update.stage == AppUpdateStage.downloaded && update.release != null) {
-        await NewUpdateSheet.show(context, update.release!);
-        return;
-      }
       if (update.stage == AppUpdateStage.downloading &&
           update.release != null) {
         await NewUpdateSheet.show(context, update.release!);
@@ -2623,6 +2619,7 @@ class _AboutSection extends StatelessWidget {
           notifier.offerUpdate(release);
           await NewUpdateSheet.show(context, release);
         case NoNewAppUpdate():
+          notifier.clear();
           StashToast.show(
             context,
             message: 'You\'re on the latest version',
@@ -2708,7 +2705,7 @@ class _AboutSection extends StatelessWidget {
                 ),
                 const SizedBox(height: 4),
                 Text(
-                  'Version 2.37.38 · build 2.37.38+305',
+                  'Version 2.37.39 · build 2.37.39+306',
                   style: TextStyle(color: c.textSecondary, fontSize: 13),
                 ),
                 const SizedBox(height: 10),
@@ -2813,7 +2810,7 @@ class _AboutSection extends StatelessWidget {
               icon: Icons.info_outline,
               iconColor: _muted,
               title: 'Koma',
-              subtitle: 'Version 2.37.38 · build 2.37.38+305',
+              subtitle: 'Version 2.37.39 · build 2.37.39+306',
             ),
             if (AppUpdateChecker.updaterEnabled)
               SettingsRow(
