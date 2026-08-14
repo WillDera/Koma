@@ -6,6 +6,6 @@ final packageInfoProvider = FutureProvider<PackageInfo>(
   (ref) => PackageInfo.fromPlatform(),
 );
 
-/// e.g. `Version 2.37.40 · build 2.37.40+307`
+/// e.g. `Version 2.37.41 · build 2.37.41+308`
 String appVersionLabel(PackageInfo info) =>
     'Version ${info.version} · build ${info.version}+${info.buildNumber}';

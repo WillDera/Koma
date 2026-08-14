@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:koma/core/services/app_update/app_release.dart';
+import 'package:koma/core/services/app_update/app_release_service.dart';
 import 'package:koma/core/services/app_update/app_update_manager.dart';
 import 'package:koma/core/services/app_update/get_application_release.dart';
 
@@ -33,6 +34,17 @@ void main() {
           versionName: '2.37.33',
           versionTag: 'v2.37.33+301',
           buildNumber: '300',
+        ),
+        isTrue,
+      );
+    });
+
+    test('mislabeled GitHub tag vs older baked APK is still an update', () {
+      expect(
+        GetApplicationRelease.isNewVersion(
+          versionName: '2.37.37',
+          versionTag: 'v2.37.40+307',
+          buildNumber: '304',
         ),
         isTrue,
       );
@@ -77,6 +89,24 @@ void main() {
           buildNumber: '305',
         ),
         isFalse,
+      );
+    });
+  });
+
+  group('AppReleaseService.pickApkUrl', () {
+    test('prefers versioned koma-*.apk over app-release.apk', () {
+      expect(
+        AppReleaseService.pickApkUrl([
+          {
+            'name': 'app-release.apk',
+            'browser_download_url': 'https://example.com/app-release.apk',
+          },
+          {
+            'name': 'koma-2.37.41+308.apk',
+            'browser_download_url': 'https://example.com/koma-2.37.41+308.apk',
+          },
+        ]),
+        'https://example.com/koma-2.37.41+308.apk',
       );
     });
   });
