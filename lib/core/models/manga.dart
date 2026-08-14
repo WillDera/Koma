@@ -19,6 +19,12 @@ class Manga {
   /// Round-tripped on detail fetch / library reopen (Mihon parity).
   final String? memo;
 
+  /// [LibraryCategory] ids. Stored in the MangaExtras sidecar.
+  final List<int> categoryIds;
+
+  /// Mihon user notes. Stored in the MangaExtras sidecar.
+  final String? notes;
+
   final DateTime createdAt;
   final DateTime updatedAt;
 
@@ -36,9 +42,12 @@ class Manga {
     this.inLibrary = false,
     this.readingStatus = 0,
     this.memo,
+    List<int>? categoryIds,
+    this.notes,
     DateTime? createdAt,
     DateTime? updatedAt,
   }) : genres = List.unmodifiable(genres ?? const []),
+       categoryIds = List.unmodifiable(categoryIds ?? const []),
        createdAt = createdAt ?? DateTime.now(),
        updatedAt = updatedAt ?? DateTime.now();
 
@@ -56,6 +65,8 @@ class Manga {
     bool? inLibrary,
     int? readingStatus,
     String? memo,
+    List<int>? categoryIds,
+    String? notes,
     DateTime? createdAt,
     DateTime? updatedAt,
   }) {
@@ -73,6 +84,8 @@ class Manga {
       inLibrary: inLibrary ?? this.inLibrary,
       readingStatus: readingStatus ?? this.readingStatus,
       memo: memo ?? this.memo,
+      categoryIds: categoryIds ?? this.categoryIds,
+      notes: notes ?? this.notes,
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
     );
@@ -92,6 +105,8 @@ class Manga {
     'in_library': inLibrary ? 1 : 0,
     'reading_status': readingStatus,
     'memo': memo,
+    'category_ids': categoryIds,
+    'notes': notes,
     'created_at': createdAt.toIso8601String(),
     'updated_at': updatedAt.toIso8601String(),
   };
@@ -110,6 +125,10 @@ class Manga {
     inLibrary: (json['in_library'] as int? ?? 0) == 1,
     readingStatus: json['reading_status'] as int? ?? 0,
     memo: coerceMemoJson(json['memo']),
+    categoryIds: (json['category_ids'] as List<dynamic>?)
+        ?.map((e) => (e as num).toInt())
+        .toList(),
+    notes: json['notes'] as String?,
     createdAt: json['created_at'] != null
         ? DateTime.parse(json['created_at'] as String)
         : DateTime.now(),

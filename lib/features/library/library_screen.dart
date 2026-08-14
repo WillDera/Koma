@@ -12,6 +12,7 @@ import 'package:path_provider/path_provider.dart';
 import '../../app.dart' show routeObserver;
 import '../../core/models/book.dart';
 import '../../core/models/chapter.dart';
+import '../../core/models/library_category.dart';
 import '../../core/models/manga.dart';
 import '../../core/providers.dart';
 import '../../core/services/cache_service.dart';
@@ -62,6 +63,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> with RouteAware {
   final Map<_LibraryFilter, _FilterMode> _filters = {
     for (final filter in _LibraryFilter.values) filter: _FilterMode.none,
   };
+  int? _selectedCategoryId;
   final Map<int, String?> _mangaThumbnails = {};
 
   @override
@@ -449,6 +451,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> with RouteAware {
               onPressed: _showFilterSheet,
             ),
             if (_filters.values.any((mode) => mode != _FilterMode.none) ||
+                _selectedCategoryId != null ||
                 _bookSearchCtrl.text.trim().isNotEmpty ||
                 _mangaSearchCtrl.text.trim().isNotEmpty)
               Positioned(
@@ -485,6 +488,8 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> with RouteAware {
     final filters = Map<_LibraryFilter, _FilterMode>.from(_filters);
     var selectedSort = _sort;
     var showSourcePills = ref.read(libraryProvider).showSourcePills;
+    var selectedCategoryId = _selectedCategoryId;
+    final categories = ref.read(libraryProvider).categories;
     final queryCtrl = _section == _LibrarySection.books
         ? _bookSearchCtrl
         : _mangaSearchCtrl;
@@ -502,6 +507,12 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> with RouteAware {
           queryHint: _section == _LibrarySection.books
               ? 'Filter books'
               : 'Filter manga',
+          categories: _section == _LibrarySection.manga ? categories : const [],
+          selectedCategoryId: selectedCategoryId,
+          onCategoryChanged: (id) {
+            setSheetState(() => selectedCategoryId = id);
+            setState(() => _selectedCategoryId = id);
+          },
           onQueryChanged: (_) => setState(() {}),
           onFilterChanged: (filter) {
             final next = switch (filters[filter] ?? _FilterMode.none) {
@@ -574,7 +585,12 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> with RouteAware {
             ].join(' ').toLowerCase();
             return haystack.contains(query);
           }).toList();
-    final filtered = searched
+    final inCategory = _selectedCategoryId == null
+        ? searched
+        : searched
+            .where((m) => m.categoryIds.contains(_selectedCategoryId))
+            .toList();
+    final filtered = inCategory
         .where(
           (manga) => _filters.entries.every(
             (entry) =>
@@ -1042,6 +1058,9 @@ class _LibraryFilterSheet extends StatelessWidget {
   final bool showSourcePills;
   final TextEditingController queryController;
   final String queryHint;
+  final List<LibraryCategory> categories;
+  final int? selectedCategoryId;
+  final ValueChanged<int?> onCategoryChanged;
   final ValueChanged<String> onQueryChanged;
   final ValueChanged<_LibraryFilter> onFilterChanged;
   final ValueChanged<_LibrarySort> onSortChanged;
@@ -1053,6 +1072,9 @@ class _LibraryFilterSheet extends StatelessWidget {
     required this.showSourcePills,
     required this.queryController,
     required this.queryHint,
+    this.categories = const [],
+    this.selectedCategoryId,
+    required this.onCategoryChanged,
     required this.onQueryChanged,
     required this.onFilterChanged,
     required this.onSortChanged,
@@ -1115,6 +1137,40 @@ class _LibraryFilterSheet extends StatelessWidget {
               mode: filters[_LibraryFilter.newlyAdded] ?? _FilterMode.none,
               onTap: () => onFilterChanged(_LibraryFilter.newlyAdded),
             ),
+            if (categories.isNotEmpty) ...[
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 14),
+                child: Divider(color: c.border, height: 1),
+              ),
+              Text(
+                'Categories',
+                style: TextStyle(
+                  color: c.textTertiary,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  ChoiceChip(
+                    label: const Text('All'),
+                    selected: selectedCategoryId == null,
+                    onSelected: (_) => onCategoryChanged(null),
+                  ),
+                  for (final cat in categories)
+                    ChoiceChip(
+                      label: Text(cat.name),
+                      selected: selectedCategoryId == cat.id,
+                      onSelected: (_) => onCategoryChanged(
+                        selectedCategoryId == cat.id ? null : cat.id,
+                      ),
+                    ),
+                ],
+              ),
+            ],
             Padding(
               padding: const EdgeInsets.symmetric(vertical: 14),
               child: Divider(color: c.border, height: 1),

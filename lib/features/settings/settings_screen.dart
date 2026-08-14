@@ -1,4 +1,6 @@
+import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
@@ -1701,13 +1703,13 @@ class _DataSectionState extends ConsumerState<_DataSection> {
       headerColor: amber,
       padding: const EdgeInsets.symmetric(horizontal: 16),
       footer:
-          'All your data lives on this device. Backups are plain JSON you can keep anywhere.',
+          'Koma backups are JSON. You can also restore Mihon .tachibk and Mangayomi .backup files. Downloads and extension APKs are not inside those backups.',
       children: [
         SettingsRow(
           icon: Icons.file_upload_outlined,
           iconColor: amber,
           title: 'Export',
-          subtitle: 'Save books & snippets as JSON',
+          subtitle: 'Save books, manga, and snippets as JSON',
           trailing: _exporting
               ? const SizedBox(
                   width: 18,
@@ -1725,7 +1727,7 @@ class _DataSectionState extends ConsumerState<_DataSection> {
           icon: Icons.file_download_outlined,
           iconColor: violet,
           title: 'Import',
-          subtitle: 'Restore from a backup file',
+          subtitle: 'Koma JSON, Mihon .tachibk, or Mangayomi .backup',
           trailing: _importing
               ? const SizedBox(
                   width: 18,
@@ -1746,14 +1748,26 @@ class _DataSectionState extends ConsumerState<_DataSection> {
   Future<void> _export() async {
     setState(() => _exporting = true);
     try {
-      final repos = ref.watch(repositoriesProvider);
+      final repos = ref.read(repositoriesProvider);
       final svc = ExportService(repos);
-      final message = await svc.exportToJson();
-      if (mounted) {
+      final jsonStr = await svc.exportToJson();
+      final stamp = DateTime.now()
+          .toIso8601String()
+          .replaceAll(':', '-')
+          .split('.')
+          .first;
+      final saved = await FilePicker.saveFile(
+        dialogTitle: 'Save Koma backup',
+        fileName: 'koma_$stamp.json',
+        type: FileType.custom,
+        allowedExtensions: const ['json'],
+        bytes: Uint8List.fromList(utf8.encode(jsonStr)),
+      );
+      if (mounted && saved != null) {
         StashToast.show(
           context,
-          message: message,
-          icon: message.startsWith('Backup') ? Icons.check : Icons.info_outline,
+          message: 'Backup saved',
+          icon: Icons.check,
         );
       }
     } catch (e) {
@@ -1772,27 +1786,30 @@ class _DataSectionState extends ConsumerState<_DataSection> {
   Future<void> _import() async {
     setState(() => _importing = true);
     try {
-      final repos = ref.watch(repositoriesProvider);
+      final repos = ref.read(repositoriesProvider);
       final svc = ExportService(repos);
-      String? jsonStr;
-      try {
-        final result = await FilePicker.pickFiles(
-          type: FileType.custom,
-          allowedExtensions: ['json'],
-        );
-        if (result == null || result.files.isEmpty) {
-          if (mounted) setState(() => _importing = false);
-          return;
-        }
-        jsonStr = File(result.files.single.path!).readAsStringSync();
-      } catch (_) {
+      final result = await FilePicker.pickFiles(
+        type: FileType.custom,
+        allowedExtensions: const ['json', 'tachibk', 'backup'],
+      );
+      if (result == null || result.files.isEmpty) {
         if (mounted) setState(() => _importing = false);
         return;
       }
-      final result = await svc.importFromJson(jsonStr);
+      final file = result.files.single;
+      final bytes = file.bytes ??
+          (file.path != null ? File(file.path!).readAsBytesSync() : null);
+      if (bytes == null) {
+        throw const FormatException('Could not read backup file');
+      }
+      final imported = await svc.importBytes(bytes, filename: file.name);
       if (mounted) {
         ref.read(libraryProvider.notifier).loadBooks();
-        StashToast.show(context, message: result.toString(), icon: Icons.check);
+        StashToast.show(
+          context,
+          message: imported.toString(),
+          icon: Icons.check,
+        );
       }
     } catch (e) {
       if (mounted) {
@@ -2691,7 +2708,7 @@ class _AboutSection extends StatelessWidget {
                 ),
                 const SizedBox(height: 4),
                 Text(
-                  'Version 2.37.37 · build 2.37.37+304',
+                  'Version 2.37.38 · build 2.37.38+305',
                   style: TextStyle(color: c.textSecondary, fontSize: 13),
                 ),
                 const SizedBox(height: 10),
@@ -2796,7 +2813,7 @@ class _AboutSection extends StatelessWidget {
               icon: Icons.info_outline,
               iconColor: _muted,
               title: 'Koma',
-              subtitle: 'Version 2.37.37 · build 2.37.37+304',
+              subtitle: 'Version 2.37.38 · build 2.37.38+305',
             ),
             if (AppUpdateChecker.updaterEnabled)
               SettingsRow(

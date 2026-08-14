@@ -71,7 +71,23 @@ class ExtensionRepository {
     return rows.map(_repoToModel).toList(growable: false);
   }
 
+  Future<ExtensionRepo?> getExtensionRepoByUrl(String url) async {
+    final row = await _isar.extensionRepos.filter().urlEqualTo(url).findFirst();
+    return row == null ? null : _repoToModel(row);
+  }
+
   Future<int> insertExtensionRepo(ExtensionRepo repo) async {
+    final existing = await getExtensionRepoByUrl(repo.url);
+    if (existing != null) {
+      await _isar.writeTxn(
+        () => _isar.extensionRepos.put(
+          _repoFromModel(
+            repo.copyWith(id: existing.id, createdAt: existing.createdAt),
+          ),
+        ),
+      );
+      return existing.id;
+    }
     return _isar.writeTxn(() => _isar.extensionRepos.put(_repoFromModel(repo)));
   }
 

@@ -363,6 +363,11 @@ class BookRepository {
     return rows.map(_highlightToModel).toList(growable: false);
   }
 
+  Future<List<Highlight>> getAllHighlights() async {
+    final rows = await _isar.highlights.where().findAll();
+    return rows.map(_highlightToModel).toList(growable: false);
+  }
+
   /// Persists [hl] and returns the assigned row id, so callers holding an
   /// in-memory copy can keep it in step with the stored row rather than
   /// carrying a placeholder id.
