@@ -8,6 +8,7 @@ import '../../../core/utils/text_extractor.dart';
 import '../../../theme/app_theme.dart';
 import '../../../theme/theme_state.dart';
 import '../../../widgets/page_curl/page_curl_view.dart';
+import '../html/kir_model.dart';
 import 'book_page_cursor.dart';
 import 'chapter_paginator.dart';
 import 'paginated_chapter_view.dart';
@@ -59,6 +60,7 @@ class PaginatedReaderBody extends StatefulWidget {
     this.onSelectionCleared,
     this.onSelectionCollapsed,
     this.onTap,
+    this.kirForChapter,
   });
 
   final List<Chapter> chapters;
@@ -114,6 +116,9 @@ class PaginatedReaderBody extends StatefulWidget {
   final VoidCallback? onSelectionCleared;
   final VoidCallback? onSelectionCollapsed;
   final VoidCallback? onTap;
+
+  /// Optional KIR per chapter index (Level 1). Null → HTML [TextExtractor].
+  final KirChapter? Function(int chapterIndex)? kirForChapter;
 
   @override
   State<PaginatedReaderBody> createState() => _PaginatedReaderBodyState();
@@ -215,7 +220,11 @@ class _PaginatedReaderBodyState extends State<PaginatedReaderBody> {
       chapters: widget.chapters,
       paginatorFor: (i) {
         final chapter = widget.chapters[i];
-        final doc = TextExtractor.documentCached(chapter.id, chapter.content);
+        final doc = TextExtractor.documentCached(
+          chapter.id,
+          chapter.content,
+          kir: widget.kirForChapter?.call(i),
+        );
         final baseStyle = ReadingSpans.style(
           widget.themeProv,
           context.colors.textPrimary,
@@ -404,7 +413,11 @@ class _PaginatedReaderBodyState extends State<PaginatedReaderBody> {
     final page = cursor.pageAt(pos);
     if (page.isEmpty) return null;
     final chapter = widget.chapters[pos.chapterIndex];
-    final doc = TextExtractor.documentCached(chapter.id, chapter.content);
+    final doc = TextExtractor.documentCached(
+      chapter.id,
+      chapter.content,
+      kir: widget.kirForChapter?.call(pos.chapterIndex),
+    );
     final text = doc.plainText;
 
     final isCurrentChapter = pos.chapterIndex == widget.chapterIndex;

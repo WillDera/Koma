@@ -6,6 +6,7 @@
 // Static analysis wrongly picks the IO variant, thus ignore this
 // ignore_for_file: argument_type_not_assignable
 
+import 'api/koma.dart';
 import 'api/metadata.dart';
 import 'dart:async';
 import 'dart:convert';
@@ -36,6 +37,18 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   PlatformInt64 dco_decode_i_64(dynamic raw);
 
   @protected
+  KirBlockDto dco_decode_kir_block_dto(dynamic raw);
+
+  @protected
+  KirChapterDto dco_decode_kir_chapter_dto(dynamic raw);
+
+  @protected
+  KirSpanDto dco_decode_kir_span_dto(dynamic raw);
+
+  @protected
+  KomaChapterInfo dco_decode_koma_chapter_info(dynamic raw);
+
+  @protected
   List<String> dco_decode_list_String(dynamic raw);
 
   @protected
@@ -45,10 +58,22 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   List<BookMetadataResult> dco_decode_list_book_metadata_result(dynamic raw);
 
   @protected
+  List<KirBlockDto> dco_decode_list_kir_block_dto(dynamic raw);
+
+  @protected
+  List<KirSpanDto> dco_decode_list_kir_span_dto(dynamic raw);
+
+  @protected
+  List<KomaChapterInfo> dco_decode_list_koma_chapter_info(dynamic raw);
+
+  @protected
   Uint8List dco_decode_list_prim_u_8_strict(dynamic raw);
 
   @protected
   String? dco_decode_opt_String(dynamic raw);
+
+  @protected
+  int dco_decode_u_32(dynamic raw);
 
   @protected
   int dco_decode_u_8(dynamic raw);
@@ -74,6 +99,18 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   PlatformInt64 sse_decode_i_64(SseDeserializer deserializer);
 
   @protected
+  KirBlockDto sse_decode_kir_block_dto(SseDeserializer deserializer);
+
+  @protected
+  KirChapterDto sse_decode_kir_chapter_dto(SseDeserializer deserializer);
+
+  @protected
+  KirSpanDto sse_decode_kir_span_dto(SseDeserializer deserializer);
+
+  @protected
+  KomaChapterInfo sse_decode_koma_chapter_info(SseDeserializer deserializer);
+
+  @protected
   List<String> sse_decode_list_String(SseDeserializer deserializer);
 
   @protected
@@ -87,10 +124,24 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  List<KirBlockDto> sse_decode_list_kir_block_dto(SseDeserializer deserializer);
+
+  @protected
+  List<KirSpanDto> sse_decode_list_kir_span_dto(SseDeserializer deserializer);
+
+  @protected
+  List<KomaChapterInfo> sse_decode_list_koma_chapter_info(
+    SseDeserializer deserializer,
+  );
+
+  @protected
   Uint8List sse_decode_list_prim_u_8_strict(SseDeserializer deserializer);
 
   @protected
   String? sse_decode_opt_String(SseDeserializer deserializer);
+
+  @protected
+  int sse_decode_u_32(SseDeserializer deserializer);
 
   @protected
   int sse_decode_u_8(SseDeserializer deserializer);
@@ -123,6 +174,21 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   void sse_encode_i_64(PlatformInt64 self, SseSerializer serializer);
 
   @protected
+  void sse_encode_kir_block_dto(KirBlockDto self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_kir_chapter_dto(KirChapterDto self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_kir_span_dto(KirSpanDto self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_koma_chapter_info(
+    KomaChapterInfo self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_list_String(List<String> self, SseSerializer serializer);
 
   @protected
@@ -138,6 +204,24 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_list_kir_block_dto(
+    List<KirBlockDto> self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_list_kir_span_dto(
+    List<KirSpanDto> self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_list_koma_chapter_info(
+    List<KomaChapterInfo> self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_list_prim_u_8_strict(
     Uint8List self,
     SseSerializer serializer,
@@ -145,6 +229,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   void sse_encode_opt_String(String? self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_u_32(int self, SseSerializer serializer);
 
   @protected
   void sse_encode_u_8(int self, SseSerializer serializer);

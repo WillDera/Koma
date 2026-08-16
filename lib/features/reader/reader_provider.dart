@@ -5,6 +5,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/models/book.dart';
 import '../../core/models/chapter.dart';
 import '../../core/providers.dart';
+import '../../core/services/koma_package_store.dart';
+import '../../features/reader/html/kir_model.dart';
 
 /// Immutable state for the ebook reader.
 class ReaderState {
@@ -16,6 +18,7 @@ class ReaderState {
     this.scrollPosition = 0.0,
     this.loading = true,
     this.error,
+    this.currentKir,
   });
 
   final Book? book;
@@ -26,6 +29,9 @@ class ReaderState {
   final bool loading;
   final String? error;
 
+  /// KIR for [currentChapter] when a `.koma` exists and spine count matches.
+  final KirChapter? currentKir;
+
   ReaderState copyWith({
     Book? Function()? book,
     List<Chapter>? chapters,
@@ -34,6 +40,7 @@ class ReaderState {
     double? scrollPosition,
     bool? loading,
     String? Function()? error,
+    KirChapter? Function()? currentKir,
   }) {
     return ReaderState(
       book: book != null ? book() : this.book,
@@ -45,6 +52,7 @@ class ReaderState {
       scrollPosition: scrollPosition ?? this.scrollPosition,
       loading: loading ?? this.loading,
       error: error != null ? error() : this.error,
+      currentKir: currentKir != null ? currentKir() : this.currentKir,
     );
   }
 }
@@ -62,6 +70,10 @@ class ReaderNotifier extends Notifier<ReaderState> {
   Timer? _offsetPersistTimer;
   int? _pendingOffset;
 
+  final Map<int, KirChapter> _kirByIndex = {};
+  bool _kirEnabled = false;
+  int? _kirBookId;
+
   @override
   ReaderState build() => const ReaderState();
 
@@ -71,6 +83,7 @@ class ReaderNotifier extends Notifier<ReaderState> {
   List<Chapter> get chapters => state.chapters;
   Chapter? get currentChapter => state.currentChapter;
   int get currentIndex => state.currentIndex;
+  KirChapter? get currentKir => state.currentKir;
   double get scrollPosition =>
       _chapterScrollPositions[state.currentIndex] ?? state.scrollPosition;
   bool get loading => state.loading;
@@ -82,6 +95,9 @@ class ReaderNotifier extends Notifier<ReaderState> {
     double? targetScrollOffset,
   }) async {
     _elapsedSeconds = 0;
+    _kirByIndex.clear();
+    _kirEnabled = false;
+    _kirBookId = null;
     state = state.copyWith(loading: true, error: () => null);
     final repos = ref.watch(repositoriesProvider);
 
@@ -110,6 +126,9 @@ class ReaderNotifier extends Notifier<ReaderState> {
         final scrollPos =
             targetScrollOffset ?? (chPos > 0 ? chPos : book.scrollPosition);
 
+        await _prepareKir(book.id, chapters.length);
+        final kir = await _kirFor(currentIndex);
+
         state = ReaderState(
           book: book,
           chapters: chapters,
@@ -117,9 +136,11 @@ class ReaderNotifier extends Notifier<ReaderState> {
           currentIndex: currentIndex,
           scrollPosition: scrollPos,
           loading: false,
+          currentKir: kir,
         );
         await repos.books.markChapterRead(currentChapter.id);
         _startReadingTimer();
+        _prefetchKirNeighbours(currentIndex, chapters.length);
       } else {
         state = state.copyWith(
           book: () => book,
@@ -144,10 +165,12 @@ class ReaderNotifier extends Notifier<ReaderState> {
       currentIndex: index,
       currentChapter: () => chapter,
       scrollPosition: scrollPos,
+      currentKir: () => _kirByIndex[index],
     );
     final repos = ref.read(repositoriesProvider);
     repos.books.markChapterRead(chapter.id);
     _updateBookProgress();
+    _prefetchKirNeighbours(index, state.chapters.length);
   }
 
   void goToNextChapter() {
@@ -267,5 +290,34 @@ class ReaderNotifier extends Notifier<ReaderState> {
       stats.trackCompletion(book.id);
     }
     await _updateBookProgress();
+  }
+
+  Future<void> _prepareKir(int bookId, int chapterCount) async {
+    _kirByIndex.clear();
+    _kirEnabled = false;
+    _kirBookId = bookId;
+    final count = await KomaPackageStore.chapterCount(bookId);
+    if (count == null || count != chapterCount) return;
+    _kirEnabled = true;
+  }
+
+  Future<KirChapter?> _kirFor(int index) async {
+    if (!_kirEnabled || _kirBookId == null) return null;
+    final hit = _kirByIndex[index];
+    if (hit != null) return hit;
+    final chapter = await KomaPackageStore.chapterByIndex(
+      bookId: _kirBookId!,
+      index: index,
+    );
+    if (chapter != null) _kirByIndex[index] = chapter;
+    return chapter;
+  }
+
+  void _prefetchKirNeighbours(int index, int length) {
+    if (!_kirEnabled) return;
+    for (final i in {index - 1, index + 1}) {
+      if (i < 0 || i >= length || _kirByIndex.containsKey(i)) continue;
+      unawaited(_kirFor(i));
+    }
   }
 }

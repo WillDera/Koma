@@ -9,6 +9,7 @@ import '../models/source.dart';
 import '../repositories/repositories.dart';
 import 'ebook_service.dart';
 import 'ebook_media_store.dart';
+import 'koma_package_store.dart';
 
 class SourceSearchResult {
   final String title;
@@ -294,6 +295,12 @@ class SourceService {
         );
         for (final ch in chapters) {
           await _repos.books.insertChapter(ch);
+        }
+        if (ext == 'epub') {
+          await KomaPackageStore.compileEpub(
+            bookId: bookId,
+            epubPath: file.path,
+          );
         }
         return true;
       } finally {

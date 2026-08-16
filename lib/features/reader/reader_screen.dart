@@ -357,7 +357,11 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
     if (_ttsProvider != null && _ttsListening && ch != null) {
       final tts = _ttsProvider!;
       final chapter = ch[newIndex];
-      final text = TextExtractor.extractCached(chapter.id, chapter.content);
+      final text = TextExtractor.extractCached(
+        chapter.id,
+        chapter.content,
+        kir: _provider?.currentKir,
+      );
       tts.stop();
       unawaited(() async {
         await tts.init(text, chapterId: chapter.id.toString());
@@ -432,7 +436,13 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
 
   String get _currentText {
     final ch = _provider?.currentChapter;
-    return ch != null ? TextExtractor.extractCached(ch.id, ch.content) : '';
+    return ch != null
+        ? TextExtractor.extractCached(
+            ch.id,
+            ch.content,
+            kir: _provider?.currentKir,
+          )
+        : '';
   }
 
   String get _nextHighlightColor {
@@ -640,6 +650,8 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
             chapters: provider.chapters,
             chapterIndex: provider.currentIndex,
             themeProv: themeProv,
+            kirForChapter: (i) =>
+                i == provider.currentIndex ? provider.currentKir : null,
             highlights: _highlights,
             highlightVersion: _highlightVersion,
             ttsActive: _ttsProvider?.isActive ?? false,
@@ -679,6 +691,7 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
               final text = TextExtractor.extractCached(
                 chapter.id,
                 chapter.content,
+                kir: provider.currentKir,
               );
               if (end <= text.length) {
                 _selStart = start;
@@ -861,6 +874,7 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
                                                   TextExtractor.documentCached(
                                                     chapter.id,
                                                     chapter.content,
+                                                    kir: provider.currentKir,
                                                   );
                                               return RichChapterBody(
                                                 document: doc,
@@ -1145,7 +1159,11 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
       final repos = ref.watch(repositoriesProvider);
       final ch = p.currentChapter;
       final contentStr = ch != null
-          ? TextExtractor.extractCached(ch.id, ch.content)
+          ? TextExtractor.extractCached(
+              ch.id,
+              ch.content,
+              kir: p.currentKir,
+            )
           : '';
       final selected = _selectedText!.trim();
       int? startOff;
@@ -1309,7 +1327,11 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
       final snippetsProv = ref.read(snippetsProvider.notifier);
       final ch = p.currentChapter;
       final contentStr = ch != null
-          ? TextExtractor.extractCached(ch.id, ch.content)
+          ? TextExtractor.extractCached(
+              ch.id,
+              ch.content,
+              kir: p.currentKir,
+            )
           : '';
       final selected = _selectedText?.trim() ?? '';
       int? startOff;

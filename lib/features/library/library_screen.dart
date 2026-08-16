@@ -18,6 +18,7 @@ import '../../core/providers.dart';
 import '../../core/services/cache_service.dart';
 import '../../core/services/ebook_media_store.dart';
 import '../../core/services/ebook_service.dart';
+import '../../core/services/koma_package_store.dart';
 import '../../core/services/metadata_enrichment_service.dart';
 import '../../core/services/web_scraper_service.dart';
 import '../../core/utils/benchmark_logger.dart';
@@ -749,6 +750,12 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> with RouteAware {
       );
       for (final ch in chapters) {
         await repos.books.insertChapter(ch);
+      }
+      if (filePath.toLowerCase().endsWith('.epub')) {
+        await KomaPackageStore.compileEpub(
+          bookId: bookId,
+          epubPath: filePath,
+        );
       }
       if (context.mounted) {
         StashToast.show(

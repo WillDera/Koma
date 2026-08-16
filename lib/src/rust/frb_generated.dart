@@ -3,6 +3,7 @@
 
 // ignore_for_file: unused_import, unused_element, unnecessary_import, duplicate_ignore, invalid_use_of_internal_member, annotate_overrides, non_constant_identifier_names, curly_braces_in_flow_control_structures, prefer_const_literals_to_create_immutables, unused_field
 
+import 'api/koma.dart';
 import 'api/metadata.dart';
 import 'dart:async';
 import 'dart:convert';
@@ -66,7 +67,7 @@ class RustLib extends BaseEntrypoint<RustLibApi, RustLibApiImpl, RustLibWire> {
   String get codegenVersion => '2.12.0';
 
   @override
-  int get rustContentHash => 2048841190;
+  int get rustContentHash => -604403930;
 
   static const kDefaultExternalLibraryLoaderConfig =
       ExternalLibraryLoaderConfig(
@@ -78,11 +79,22 @@ class RustLib extends BaseEntrypoint<RustLibApi, RustLibApiImpl, RustLibWire> {
 }
 
 abstract class RustLibApi extends BaseApi {
+  Future<KirChapterDto> crateApiKomaChapterKirByIndex({
+    required String komaPath,
+    required int index,
+  });
+
+  Future<Uint8List> crateApiKomaCompileEpub({required String path});
+
   Future<void> crateApiSimpleInitApp();
 
   Future<List<BookMetadataResult>> crateApiMetadataLookupBooks({
     required List<BookLookupQuery> queries,
     String? googleApiKey,
+  });
+
+  Future<List<KomaChapterInfo>> crateApiKomaPackageChapters({
+    required String komaPath,
   });
 }
 
@@ -95,6 +107,69 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   });
 
   @override
+  Future<KirChapterDto> crateApiKomaChapterKirByIndex({
+    required String komaPath,
+    required int index,
+  }) {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_String(komaPath, serializer);
+          sse_encode_u_32(index, serializer);
+          pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 1,
+            port: port_,
+          );
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_kir_chapter_dto,
+          decodeErrorData: sse_decode_String,
+        ),
+        constMeta: kCrateApiKomaChapterKirByIndexConstMeta,
+        argValues: [komaPath, index],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiKomaChapterKirByIndexConstMeta =>
+      const TaskConstMeta(
+        debugName: "chapter_kir_by_index",
+        argNames: ["komaPath", "index"],
+      );
+
+  @override
+  Future<Uint8List> crateApiKomaCompileEpub({required String path}) {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_String(path, serializer);
+          pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 2,
+            port: port_,
+          );
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_list_prim_u_8_strict,
+          decodeErrorData: sse_decode_String,
+        ),
+        constMeta: kCrateApiKomaCompileEpubConstMeta,
+        argValues: [path],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiKomaCompileEpubConstMeta =>
+      const TaskConstMeta(debugName: "compile_epub", argNames: ["path"]);
+
+  @override
   Future<void> crateApiSimpleInitApp() {
     return handler.executeNormal(
       NormalTask(
@@ -103,7 +178,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 1,
+            funcId: 3,
             port: port_,
           );
         },
@@ -135,7 +210,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 2,
+            funcId: 4,
             port: port_,
           );
         },
@@ -154,6 +229,39 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       const TaskConstMeta(
         debugName: "lookup_books",
         argNames: ["queries", "googleApiKey"],
+      );
+
+  @override
+  Future<List<KomaChapterInfo>> crateApiKomaPackageChapters({
+    required String komaPath,
+  }) {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_String(komaPath, serializer);
+          pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 5,
+            port: port_,
+          );
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_list_koma_chapter_info,
+          decodeErrorData: sse_decode_String,
+        ),
+        constMeta: kCrateApiKomaPackageChaptersConstMeta,
+        argValues: [komaPath],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiKomaPackageChaptersConstMeta =>
+      const TaskConstMeta(
+        debugName: "package_chapters",
+        argNames: ["komaPath"],
       );
 
   @protected
@@ -208,6 +316,62 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  KirBlockDto dco_decode_kir_block_dto(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    final arr = raw as List<dynamic>;
+    if (arr.length != 6)
+      throw Exception('unexpected arr length: expect 6 but see ${arr.length}');
+    return KirBlockDto(
+      kind: dco_decode_String(arr[0]),
+      spans: dco_decode_list_kir_span_dto(arr[1]),
+      mediaId: dco_decode_opt_String(arr[2]),
+      alt: dco_decode_opt_String(arr[3]),
+      ordered: dco_decode_bool(arr[4]),
+      children: dco_decode_list_kir_block_dto(arr[5]),
+    );
+  }
+
+  @protected
+  KirChapterDto dco_decode_kir_chapter_dto(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    final arr = raw as List<dynamic>;
+    if (arr.length != 3)
+      throw Exception('unexpected arr length: expect 3 but see ${arr.length}');
+    return KirChapterDto(
+      id: dco_decode_String(arr[0]),
+      title: dco_decode_opt_String(arr[1]),
+      blocks: dco_decode_list_kir_block_dto(arr[2]),
+    );
+  }
+
+  @protected
+  KirSpanDto dco_decode_kir_span_dto(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    final arr = raw as List<dynamic>;
+    if (arr.length != 5)
+      throw Exception('unexpected arr length: expect 5 but see ${arr.length}');
+    return KirSpanDto(
+      text: dco_decode_String(arr[0]),
+      bold: dco_decode_bool(arr[1]),
+      italic: dco_decode_bool(arr[2]),
+      underline: dco_decode_bool(arr[3]),
+      color: dco_decode_opt_String(arr[4]),
+    );
+  }
+
+  @protected
+  KomaChapterInfo dco_decode_koma_chapter_info(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    final arr = raw as List<dynamic>;
+    if (arr.length != 2)
+      throw Exception('unexpected arr length: expect 2 but see ${arr.length}');
+    return KomaChapterInfo(
+      id: dco_decode_String(arr[0]),
+      title: dco_decode_opt_String(arr[1]),
+    );
+  }
+
+  @protected
   List<String> dco_decode_list_String(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     return (raw as List<dynamic>).map(dco_decode_String).toList();
@@ -226,6 +390,24 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  List<KirBlockDto> dco_decode_list_kir_block_dto(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return (raw as List<dynamic>).map(dco_decode_kir_block_dto).toList();
+  }
+
+  @protected
+  List<KirSpanDto> dco_decode_list_kir_span_dto(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return (raw as List<dynamic>).map(dco_decode_kir_span_dto).toList();
+  }
+
+  @protected
+  List<KomaChapterInfo> dco_decode_list_koma_chapter_info(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return (raw as List<dynamic>).map(dco_decode_koma_chapter_info).toList();
+  }
+
+  @protected
   Uint8List dco_decode_list_prim_u_8_strict(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     return raw as Uint8List;
@@ -235,6 +417,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   String? dco_decode_opt_String(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     return raw == null ? null : dco_decode_String(raw);
+  }
+
+  @protected
+  int dco_decode_u_32(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return raw as int;
   }
 
   @protected
@@ -307,6 +495,59 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  KirBlockDto sse_decode_kir_block_dto(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var var_kind = sse_decode_String(deserializer);
+    var var_spans = sse_decode_list_kir_span_dto(deserializer);
+    var var_mediaId = sse_decode_opt_String(deserializer);
+    var var_alt = sse_decode_opt_String(deserializer);
+    var var_ordered = sse_decode_bool(deserializer);
+    var var_children = sse_decode_list_kir_block_dto(deserializer);
+    return KirBlockDto(
+      kind: var_kind,
+      spans: var_spans,
+      mediaId: var_mediaId,
+      alt: var_alt,
+      ordered: var_ordered,
+      children: var_children,
+    );
+  }
+
+  @protected
+  KirChapterDto sse_decode_kir_chapter_dto(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var var_id = sse_decode_String(deserializer);
+    var var_title = sse_decode_opt_String(deserializer);
+    var var_blocks = sse_decode_list_kir_block_dto(deserializer);
+    return KirChapterDto(id: var_id, title: var_title, blocks: var_blocks);
+  }
+
+  @protected
+  KirSpanDto sse_decode_kir_span_dto(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var var_text = sse_decode_String(deserializer);
+    var var_bold = sse_decode_bool(deserializer);
+    var var_italic = sse_decode_bool(deserializer);
+    var var_underline = sse_decode_bool(deserializer);
+    var var_color = sse_decode_opt_String(deserializer);
+    return KirSpanDto(
+      text: var_text,
+      bold: var_bold,
+      italic: var_italic,
+      underline: var_underline,
+      color: var_color,
+    );
+  }
+
+  @protected
+  KomaChapterInfo sse_decode_koma_chapter_info(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var var_id = sse_decode_String(deserializer);
+    var var_title = sse_decode_opt_String(deserializer);
+    return KomaChapterInfo(id: var_id, title: var_title);
+  }
+
+  @protected
   List<String> sse_decode_list_String(SseDeserializer deserializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
 
@@ -347,6 +588,46 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  List<KirBlockDto> sse_decode_list_kir_block_dto(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    var len_ = sse_decode_i_32(deserializer);
+    var ans_ = <KirBlockDto>[];
+    for (var idx_ = 0; idx_ < len_; ++idx_) {
+      ans_.add(sse_decode_kir_block_dto(deserializer));
+    }
+    return ans_;
+  }
+
+  @protected
+  List<KirSpanDto> sse_decode_list_kir_span_dto(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    var len_ = sse_decode_i_32(deserializer);
+    var ans_ = <KirSpanDto>[];
+    for (var idx_ = 0; idx_ < len_; ++idx_) {
+      ans_.add(sse_decode_kir_span_dto(deserializer));
+    }
+    return ans_;
+  }
+
+  @protected
+  List<KomaChapterInfo> sse_decode_list_koma_chapter_info(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    var len_ = sse_decode_i_32(deserializer);
+    var ans_ = <KomaChapterInfo>[];
+    for (var idx_ = 0; idx_ < len_; ++idx_) {
+      ans_.add(sse_decode_koma_chapter_info(deserializer));
+    }
+    return ans_;
+  }
+
+  @protected
   Uint8List sse_decode_list_prim_u_8_strict(SseDeserializer deserializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     var len_ = sse_decode_i_32(deserializer);
@@ -362,6 +643,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     } else {
       return null;
     }
+  }
+
+  @protected
+  int sse_decode_u_32(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    return deserializer.buffer.getUint32();
   }
 
   @protected
@@ -429,6 +716,48 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  void sse_encode_kir_block_dto(KirBlockDto self, SseSerializer serializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_String(self.kind, serializer);
+    sse_encode_list_kir_span_dto(self.spans, serializer);
+    sse_encode_opt_String(self.mediaId, serializer);
+    sse_encode_opt_String(self.alt, serializer);
+    sse_encode_bool(self.ordered, serializer);
+    sse_encode_list_kir_block_dto(self.children, serializer);
+  }
+
+  @protected
+  void sse_encode_kir_chapter_dto(
+    KirChapterDto self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_String(self.id, serializer);
+    sse_encode_opt_String(self.title, serializer);
+    sse_encode_list_kir_block_dto(self.blocks, serializer);
+  }
+
+  @protected
+  void sse_encode_kir_span_dto(KirSpanDto self, SseSerializer serializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_String(self.text, serializer);
+    sse_encode_bool(self.bold, serializer);
+    sse_encode_bool(self.italic, serializer);
+    sse_encode_bool(self.underline, serializer);
+    sse_encode_opt_String(self.color, serializer);
+  }
+
+  @protected
+  void sse_encode_koma_chapter_info(
+    KomaChapterInfo self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_String(self.id, serializer);
+    sse_encode_opt_String(self.title, serializer);
+  }
+
+  @protected
   void sse_encode_list_String(List<String> self, SseSerializer serializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     sse_encode_i_32(self.length, serializer);
@@ -462,6 +791,42 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  void sse_encode_list_kir_block_dto(
+    List<KirBlockDto> self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_i_32(self.length, serializer);
+    for (final item in self) {
+      sse_encode_kir_block_dto(item, serializer);
+    }
+  }
+
+  @protected
+  void sse_encode_list_kir_span_dto(
+    List<KirSpanDto> self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_i_32(self.length, serializer);
+    for (final item in self) {
+      sse_encode_kir_span_dto(item, serializer);
+    }
+  }
+
+  @protected
+  void sse_encode_list_koma_chapter_info(
+    List<KomaChapterInfo> self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_i_32(self.length, serializer);
+    for (final item in self) {
+      sse_encode_koma_chapter_info(item, serializer);
+    }
+  }
+
+  @protected
   void sse_encode_list_prim_u_8_strict(
     Uint8List self,
     SseSerializer serializer,
@@ -479,6 +844,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     if (self != null) {
       sse_encode_String(self, serializer);
     }
+  }
+
+  @protected
+  void sse_encode_u_32(int self, SseSerializer serializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    serializer.buffer.putUint32(self);
   }
 
   @protected

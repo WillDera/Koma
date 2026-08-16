@@ -79,6 +79,11 @@ jobs:
           EOF
 
       - run: flutter pub get
+
+      # koma-core (KRE) runs prost-build; cargokit compiles it during the APK.
+      - name: Install protoc
+        run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
+
       - run: flutter build apk --release --build-name=${{ env.BUILD_NAME }} --build-number=${{ env.BUILD_NUMBER }}
 
       - name: Verify APK version
