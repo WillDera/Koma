@@ -58,13 +58,13 @@ class PaginationKey {
 
   /// Derives a key from the current theme state and the measured content box.
   ///
-  /// Viewport is snapped to whole pixels so a sub-pixel MediaQuery flicker
-  /// (system bars showing/hiding) cannot invalidate pagination.
+  /// Viewport is floored to whole pixels so a sub-pixel MediaQuery flicker
+  /// cannot invalidate pagination, and KRE never wraps wider than the paint box.
   factory PaginationKey.from(ThemeState prov, Size viewport) {
     return PaginationKey(
       viewport: Size(
-        viewport.width.roundToDouble(),
-        viewport.height.roundToDouble(),
+        viewport.width.floorToDouble(),
+        viewport.height.floorToDouble(),
       ),
       fontSize: prov.fontSize,
       lineHeight: prov.lineHeight,
@@ -288,15 +288,14 @@ class ChapterPaginator {
 
   /// Character offset of the first character on [line].
   ///
-  /// Probes just below the line's top edge at the leading horizontal edge, then
-  /// asks the painter which text position sits there.
+  /// Probes the vertical centre of the line at x=0, then snaps to that line's
+  /// start. A probe at the top edge can land on the previous line or one
+  /// grapheme in, which used to leave a broken last line on the page.
   int _offsetAtLineTop(TextPainter painter, LineMetrics line, double width) {
-    final y = line.baseline - line.ascent + 1.0;
-    // Probe from the line's own left edge so centred and right-aligned text
-    // resolve to the first glyph rather than to empty margin.
-    final x = line.left + 0.5;
-    final pos = painter.getPositionForOffset(Offset(x.clamp(0.0, width), y));
-    return pos.offset;
+    final yMid = line.baseline - line.ascent + (line.height / 2);
+    final x = 0.0.clamp(0.0, width);
+    final pos = painter.getPositionForOffset(Offset(x, yMid));
+    return painter.getLineBoundary(pos).start;
   }
 }
 

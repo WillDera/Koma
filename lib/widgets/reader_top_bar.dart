@@ -29,6 +29,10 @@ class ReaderTopBar extends StatelessWidget {
     this.background,
   });
 
+  /// Height of the bar below [MediaQuery.viewPadding.top] (row + progress).
+  /// Keep in sync with the Column below; page padding uses this.
+  static const double bodyHeight = 50;
+
   @override
   Widget build(BuildContext context) {
     final c = context.colors;
@@ -116,7 +120,6 @@ class ReaderTopBar extends StatelessWidget {
                       ],
                     ),
                   ),
-                  // Thin progress line at the very top
                   SizedBox(
                     height: 2,
                     child: LayoutBuilder(

@@ -127,6 +127,7 @@ class _KrePageViewState extends State<KrePageView> {
                 children: [
                   CustomPaint(
                     key: ValueKey(widget.highlightVersion),
+                    size: Size.infinite,
                     painter: _KrePagePainter(
                       page: widget.page,
                       plainText: widget.plainText,
@@ -193,7 +194,9 @@ class _KrePageViewState extends State<KrePageView> {
       left: 0,
       right: 0,
       height: line.height,
-      child: _KreEmbedImage(path: embed.path),
+      child: ClipRect(
+        child: _KreEmbedImage(path: embed.path),
+      ),
     );
   }
 }
@@ -293,9 +296,9 @@ class _KrePagePainter extends CustomPainter {
       cuts.add(h.endOffset.clamp(line.charStart, line.charEnd));
     }
     final sorted = cuts.toList()..sort();
-    var x = 0.0;
+    var x = line.glyphs.isEmpty ? 0.0 : line.glyphs.first.x;
     var cursor = line.charStart;
-    final lineStyle = _styleFor(line);
+    final lineStyle = _paintStyle(line);
     for (final cut in sorted) {
       if (cut <= cursor) continue;
       final slice = layoutSlice(plainText, cursor, cut);
@@ -312,7 +315,7 @@ class _KrePagePainter extends CustomPainter {
         final painter = TextPainter(
           text: TextSpan(text: slice, style: style),
           textDirection: TextDirection.ltr,
-          textScaler: textScaler,
+          textScaler: TextScaler.noScaling,
           maxLines: 1,
         )..layout();
         painter.paint(canvas, Offset(x, line.y));
@@ -321,6 +324,17 @@ class _KrePagePainter extends CustomPainter {
       }
       cursor = cut;
     }
+  }
+
+  /// Same px size KRE wrapped with: scaled font, no second [TextScaler] pass.
+  TextStyle _paintStyle(LayoutLine line) {
+    final s = _styleFor(line);
+    final base = s.fontSize ?? 17;
+    final fs = textScaler.scale(base);
+    return s.copyWith(
+      fontSize: fs,
+      height: fs > 0 ? line.height / fs : s.height,
+    );
   }
 
   TextStyle _styleFor(LayoutLine line) {
@@ -364,7 +378,8 @@ class _KrePagePainter extends CustomPainter {
         old.selStart != selStart ||
         old.selEnd != selEnd ||
         old.brightness != brightness ||
-        old.isSepia != isSepia;
+        old.isSepia != isSepia ||
+        old.textScaler != textScaler;
   }
 }
 
@@ -381,7 +396,15 @@ class _KreEmbedImage extends StatelessWidget {
     }
     return ClipRRect(
       borderRadius: BorderRadius.circular(10),
-      child: Image.file(file, fit: BoxFit.contain),
+      child: SizedBox.expand(
+        child: Image.file(
+          file,
+          fit: BoxFit.contain,
+          alignment: Alignment.topCenter,
+          width: double.infinity,
+          height: double.infinity,
+        ),
+      ),
     );
   }
 }

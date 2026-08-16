@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -65,6 +66,16 @@ class ReaderScreen extends ConsumerStatefulWidget {
 
 enum _SwipeDirection { none, next, previous }
 
+/// Equal top/bottom inset that clears whichever chrome bar is taller.
+///
+/// Uses [MediaQuery.viewPadding] so showing or hiding system bars does not
+/// resize the page box.
+double readerVerticalChromeInset(EdgeInsets viewPadding) {
+  final top = viewPadding.top + ReaderTopBar.bodyHeight;
+  final bottom = viewPadding.bottom + ReaderBottomBar.bodyHeight;
+  return math.max(top, bottom);
+}
+
 class _ReaderScreenState extends ConsumerState<ReaderScreen>
     with TickerProviderStateMixin {
   final ScrollController _scrollController = ScrollController();
@@ -96,6 +107,12 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
   /// Held so a new selection can cancel it — see [_showToolbar].
   Timer? _selectionLostTimer;
   double _lastScrollOffset = 0;
+
+  /// True while we jump the incoming chapter to its saved offset. The new
+  /// scroll view mounts at 0 and would otherwise persist that 0 (and a
+  /// matching character offset) over the resume position we are about to
+  /// restore.
+  bool _restoringScroll = false;
   _SwipeDirection _lastSwipeDirection = _SwipeDirection.none;
   double? _dragStartX;
   Offset? _pointerDown;
@@ -170,6 +187,7 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
         }
         _snippetSeekAttempts = 0;
         _snippetSeekSettleCount = 0;
+        _restoringScroll = true;
         _seekScrollForSnippetOrResume(
           ignoreSnippet:
               widget.snippetStartOffset == null ||
@@ -289,12 +307,26 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
   bool get _usingScrollStyle =>
       ref.read(themeProvider).pageStyle == PageStyle.scroll;
 
+  void _finishScrollRestore() {
+    _restoringScroll = false;
+    if (_scrollReady) {
+      _lastScrollOffset = _scrollController.offset;
+    }
+  }
+
   /// Scroll mode: jump to [snippetStartOffset] via char/length ratio, then the
   /// stored character offset, then legacy pixel scroll.
   void _seekScrollForSnippetOrResume({bool ignoreSnippet = false}) {
+    _restoringScroll = true;
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted || !_sessionReady) return;
-      if (!_usingScrollStyle) return;
+      if (!mounted || !_sessionReady) {
+        _finishScrollRestore();
+        return;
+      }
+      if (!_usingScrollStyle) {
+        _finishScrollRestore();
+        return;
+      }
 
       final start = ignoreSnippet ? null : widget.snippetStartOffset;
 
@@ -304,6 +336,7 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
           _seekScrollForSnippetOrResume(ignoreSnippet: ignoreSnippet);
           return true;
         }
+        _finishScrollRestore();
         return false;
       }
 
@@ -341,6 +374,7 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
         _snippetScrollSeekDone = true;
         _provider?.updateReadingOffset(start.clamp(0, text.length));
         _armSnippetFocusIfNeeded();
+        _finishScrollRestore();
         return;
       }
 
@@ -367,6 +401,7 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
           retry();
           return;
         }
+        _finishScrollRestore();
         return;
       }
 
@@ -374,6 +409,7 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
       _scrollController.jumpTo(
         pos.clamp(0.0, _scrollController.position.maxScrollExtent),
       );
+      _finishScrollRestore();
     });
   }
 
@@ -407,6 +443,7 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
     if (newIndex == _lastSeenChapterIndex) return;
     _lastSeenChapterIndex = newIndex;
     _lastScrollOffset = 0;
+    if (_usingScrollStyle) _restoringScroll = true;
     // Load highlights for this chapter.
     final ch = _provider?.chapters;
     if (ch != null && newIndex >= 0 && newIndex < ch.length) {
@@ -559,9 +596,10 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
 
   bool _onScrollNotification(ScrollNotification notification) {
     if (notification is ScrollUpdateNotification) {
-      final currentOffset = _scrollReady
-          ? _scrollController.offset
-          : _lastScrollOffset;
+      // Incoming chapter mounts at 0; two sheets share the controller mid
+      // turn. Either case would stamp 0 over the saved resume position.
+      if (_restoringScroll || !_scrollReady) return false;
+      final currentOffset = _scrollController.offset;
       _provider?.updateScrollPosition(currentOffset);
       _syncCharOffsetFromScroll();
 
@@ -1180,18 +1218,14 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
 
   /// Insets for the reading surface.
   ///
-  /// Uses [MediaQuery.viewPadding] rather than [MediaQuery.padding]: showing
-  /// or hiding system bars changes `padding` and would otherwise resize the
-  /// page box, forcing a KRE relayout (and a skeleton flash) on a chrome tap.
+  /// Top and bottom are equal and large enough for either chrome bar, using
+  /// [MediaQuery.viewPadding] (stable when system bars show/hide) so the page
+  /// box does not resize on a chrome tap. Text fills everything between.
   EdgeInsets _readingPadding(ThemeState themeProv) {
     final mq = MediaQuery.of(context);
     final h = _horizontalPadding(themeProv.pageWidth);
-    return EdgeInsets.fromLTRB(
-      h,
-      mq.viewPadding.top + 32,
-      h,
-      mq.viewPadding.bottom + 16,
-    );
+    final v = readerVerticalChromeInset(mq.viewPadding);
+    return EdgeInsets.fromLTRB(h, v, h, v);
   }
 
   String? _estimateReadingTime(String content) {

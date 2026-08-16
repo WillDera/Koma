@@ -340,8 +340,8 @@ class _PaginatedReaderBodyState extends State<PaginatedReaderBody> {
       return;
     }
     final gen = _kreGeneration;
-    final width = _viewport.width.round().clamp(1, 100000);
-    final height = _viewport.height.round().clamp(1, 100000);
+    final width = _viewport.width.floor().clamp(1, 100000);
+    final height = _viewport.height.floor().clamp(1, 100000);
     final fontSize = _textScaler.scale(widget.themeProv.fontSize);
     final lineHeightPx = fontSize * widget.themeProv.lineHeight;
     final inset = _titleInsetFor(chapterIndex);

@@ -364,16 +364,20 @@ class ReadingSpans {
         continue;
       }
       if (e.afterOffset != afterOffset) continue;
+      final height = estimateEmbedHeight(e, contentWidth);
+      // Tight width+height on the placeholder so SelectableText cannot use the
+      // decoded image's intrinsic size and wrap following text to the side.
       out.add(
         WidgetSpan(
           alignment: PlaceholderAlignment.middle,
           child: SizedBox(
             width: contentWidth,
-            height: estimateEmbedHeight(e, contentWidth),
+            height: height,
             child: _EmbedImage(
               path: e.path,
               maxWidth: contentWidth,
-              widthHint: e.widthHint,
+              layoutHeight: height,
+              widthHint: e.isBlock ? null : e.widthHint,
               heightHint: e.heightHint,
               isBlock: e.isBlock,
             ),
@@ -487,6 +491,7 @@ class ReadingSpans {
 class _EmbedImage extends StatelessWidget {
   final String path;
   final double maxWidth;
+  final double? layoutHeight;
   final double? widthHint;
   final double? heightHint;
   final bool isBlock;
@@ -494,6 +499,7 @@ class _EmbedImage extends StatelessWidget {
   const _EmbedImage({
     required this.path,
     required this.maxWidth,
+    this.layoutHeight,
     this.widthHint,
     this.heightHint,
     this.isBlock = true,
@@ -524,22 +530,41 @@ class _EmbedImage extends StatelessWidget {
 
     if (!file.existsSync()) return placeholder();
 
+    final image = Image.file(
+      file,
+      fit: BoxFit.contain,
+      alignment: Alignment.center,
+      width: isBlock
+          ? maxW
+          : (widthHint != null && widthHint! < maxW ? widthHint : maxW),
+      height: layoutHeight,
+      errorBuilder: (_, _, _) => placeholder(),
+      frameBuilder: (context, child, frame, wasSync) {
+        if (wasSync || frame != null) return child;
+        return placeholder(icon: Icons.image_outlined);
+      },
+    );
+
+    // When the parent WidgetSpan already sized us, fill that box. Extra
+    // padding here would overflow the placeholder and let text wrap beside.
+    if (layoutHeight != null) {
+      return ClipRRect(
+        borderRadius: BorderRadius.circular(10),
+        child: SizedBox(
+          width: maxW,
+          height: layoutHeight,
+          child: image,
+        ),
+      );
+    }
+
     return Padding(
       padding: EdgeInsets.symmetric(vertical: isBlock ? 14 : 2),
       child: ClipRRect(
         borderRadius: BorderRadius.circular(10),
         child: ConstrainedBox(
           constraints: BoxConstraints(maxWidth: maxW),
-          child: Image.file(
-            file,
-            fit: BoxFit.contain,
-            width: widthHint != null && widthHint! < maxW ? widthHint : maxW,
-            errorBuilder: (_, _, _) => placeholder(),
-            frameBuilder: (context, child, frame, wasSync) {
-              if (wasSync || frame != null) return child;
-              return placeholder(icon: Icons.image_outlined);
-            },
-          ),
+          child: image,
         ),
       ),
     );

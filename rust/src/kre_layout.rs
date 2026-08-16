@@ -295,7 +295,10 @@ fn layout_chapter_inner(
                 lines.extend(shaped);
             }
             Unit::Image { height } => {
-                let h = *height;
+                // At least as tall as Flutter's `estimateEmbedHeight` default so
+                // a figure is a full-width band, not a short stamp with text
+                // beside it.
+                let h = (*height).max(text_width * 0.55);
                 lines.push(LayoutLine {
                     y,
                     height: h,
@@ -599,6 +602,46 @@ mod tests {
         assert!(!c.plain.contains("Must Not Appear"));
         assert_eq!(c.plain, "Hello\n\nWorld");
         assert!(c.units.iter().any(|u| matches!(u, Unit::Image { .. })));
+    }
+
+    #[test]
+    fn image_placeholder_is_a_full_width_band_above_following_text() {
+        let ch = chapter_with(vec![
+            Block {
+                kind: Some(block::Kind::Image(Default::default())),
+                ..Default::default()
+            },
+            Block {
+                kind: Some(block::Kind::Paragraph(paragraph("After"))),
+                ..Default::default()
+            },
+        ]);
+        let result = layout_chapter(
+            &ch,
+            LayoutParams {
+                width: 400,
+                height: 800,
+                margin: 0.0,
+                font_size: 18.0,
+                line_height: 28.0,
+                paragraph_spacing: 8.0,
+                first_page_inset: 0.0,
+                font_path: String::new(),
+            },
+        )
+        .expect("layout");
+        let image = result.pages[0]
+            .lines
+            .iter()
+            .find(|l| l.glyphs.is_empty())
+            .expect("image line");
+        assert!(image.height >= 400.0 * 0.55 - 0.5);
+        let text = result.pages[0]
+            .lines
+            .iter()
+            .find(|l| !l.glyphs.is_empty())
+            .expect("text line");
+        assert!(text.y >= image.y + image.height);
     }
 
     #[test]

@@ -30,6 +30,10 @@ class ReaderBottomBar extends StatelessWidget {
     this.background,
   });
 
+  /// Height of the bar above [MediaQuery.viewPadding.bottom] (padding + buttons).
+  /// Keep in sync with the Row below; page padding uses this.
+  static const double bodyHeight = 56;
+
   @override
   Widget build(BuildContext context) {
     final c = context.colors;

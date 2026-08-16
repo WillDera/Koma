@@ -169,6 +169,7 @@ class PaginatedChapterView extends StatelessWidget {
         children: children,
       ),
       textAlign: themeProv.textAlign,
+      textWidthBasis: TextWidthBasis.parent,
       contextMenuBuilder: emptyTextSelectionContextMenu,
       onSelectionChanged: (selection, cause) {
         if (selection.isValid && !selection.isCollapsed) {
@@ -196,9 +197,13 @@ class PaginatedChapterView extends StatelessWidget {
           ],
           // The page is measured to fit, so the body takes the space it needs
           // and any rounding slack falls to the bottom rather than clipping
-          // text.
-          Flexible(
-            child: Align(alignment: Alignment.topLeft, child: body),
+          // text. Width is locked so block-image WidgetSpans cannot shrink
+          // and let following text sit beside the figure.
+          Expanded(
+            child: Align(
+              alignment: Alignment.topLeft,
+              child: SizedBox(width: width, child: body),
+            ),
           ),
         ],
       ),

@@ -99,6 +99,29 @@ void main() {
       // The first page holds less text; later pages are unaffected.
       expect(with_.pages.first.end, lessThan(without.pages.first.end));
     });
+
+    test('page breaks land on visual line starts, never mid-line', () {
+      const viewport = Size(300, 160);
+      final result = run(longText, viewport: viewport);
+      final painter = TextPainter(
+        text: TextSpan(text: longText, style: style),
+        textDirection: TextDirection.ltr,
+      )..layout(maxWidth: viewport.width);
+      addTearDown(painter.dispose);
+
+      expect(result.pageCount, greaterThan(1));
+      for (var i = 1; i < result.pages.length; i++) {
+        final start = result.pages[i].start;
+        if (start >= longText.length) continue;
+        final boundary = painter.getLineBoundary(TextPosition(offset: start));
+        expect(
+          start,
+          boundary.start,
+          reason: 'page $i starts at $start, inside a line '
+              '(${boundary.start}..${boundary.end})',
+        );
+      }
+    });
   });
 
   group('ChapterPaginator — offset mapping', () {
@@ -295,11 +318,11 @@ void main() {
     expect(result.pageCount, greaterThan(1));
   });
 
-  test('PaginationKey.from snaps viewport to whole pixels', () {
+  test('PaginationKey.from floors viewport to whole pixels', () {
     const prov = ThemeState();
     final a = PaginationKey.from(prov, const Size(400.2, 599.8));
-    final b = PaginationKey.from(prov, const Size(400.4, 600.2));
+    final b = PaginationKey.from(prov, const Size(400.9, 599.1));
     expect(a, b);
-    expect(a.viewport, const Size(400, 600));
+    expect(a.viewport, const Size(400, 599));
   });
 }
