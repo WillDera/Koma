@@ -68,6 +68,8 @@ Map<String, String> discoverCoverHeaders(String url) {
       host.contains('googleusercontent.com') ||
       host.contains('books.google')) {
     headers['Referer'] = 'https://books.google.com/';
+  } else if (host.contains('libgen.')) {
+    headers['Referer'] = 'https://libgen.li/';
   }
   return headers;
 }
@@ -98,7 +100,10 @@ class DiscoverMetadataNotifier
 
   /// Enqueue rows that do not yet have a cache entry. Processes one lookup at
   /// a time so Open Library / Google Books are not flooded.
-  void enqueue(List<SourceSearchResult> results) {
+  /// No-op when [discoverMetadataEnabledProvider] is off.
+  Future<void> enqueue(List<SourceSearchResult> results) async {
+    final enabled = await loadDiscoverMetadataEnabled();
+    if (!enabled) return;
     for (final r in results) {
       final key = discoverMetadataCacheKey(r.title, r.author);
       if (state.containsKey(key) || !_queued.add(key)) continue;
@@ -182,6 +187,38 @@ class DiscoverMetadataNotifier
     }
   }
 }
+
+/// SharedPreferences: enrich Discover book cards via Open Library / Google.
+/// Default off — sequential lookups are slow on large result grids.
+const kDiscoverMetadataEnabledPref = 'discover_metadata_enabled';
+
+const kDiscoverMetadataEnabledDefault = false;
+
+Future<bool> loadDiscoverMetadataEnabled() async {
+  final prefs = await SharedPreferences.getInstance();
+  return prefs.getBool(kDiscoverMetadataEnabledPref) ??
+      kDiscoverMetadataEnabledDefault;
+}
+
+/// Whether Discover should call the metadata engine for ebook covers.
+class DiscoverMetadataEnabledNotifier extends AsyncNotifier<bool> {
+  @override
+  Future<bool> build() => loadDiscoverMetadataEnabled();
+
+  Future<void> setEnabled(bool enabled) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(kDiscoverMetadataEnabledPref, enabled);
+    state = AsyncData(enabled);
+    if (!enabled) {
+      ref.read(discoverMetadataProvider.notifier).clearQueue();
+    }
+  }
+}
+
+final discoverMetadataEnabledProvider =
+    AsyncNotifierProvider<DiscoverMetadataEnabledNotifier, bool>(
+      DiscoverMetadataEnabledNotifier.new,
+    );
 
 final discoverMetadataProvider =
     NotifierProvider<DiscoverMetadataNotifier, Map<String, DiscoverMetadataHit>>(

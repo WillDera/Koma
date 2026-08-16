@@ -17,6 +17,7 @@ import '../../core/services/app_update/get_application_release.dart';
 import '../../core/services/export_service.dart';
 import '../../core/services/extension_manager.dart';
 import '../../core/services/keiyoushi_service.dart';
+import '../../core/services/discover_metadata_cache.dart';
 import '../../core/services/library_update_prefs.dart';
 import '../../core/services/metadata_enrichment_service.dart';
 import '../../core/services/source_service.dart';
@@ -1359,6 +1360,9 @@ class _BookMetadataSectionState extends ConsumerState<_BookMetadataSection> {
   Widget build(BuildContext context) {
     final c = context.colors;
     final progress = ref.watch(metadataEnrichmentProvider);
+    final discoverEnrich =
+        ref.watch(discoverMetadataEnabledProvider).value ??
+        kDiscoverMetadataEnabledDefault;
     return SettingsSection(
       title: 'Book metadata',
       headerColor: AppColors.figmaAmber,
@@ -1366,6 +1370,19 @@ class _BookMetadataSectionState extends ConsumerState<_BookMetadataSection> {
       footer:
           'Looks up author, cover, genres, and release date via Open Library (primary) and Google Books (fallback). An API key improves Google Books rate limits but is optional.',
       children: [
+        SettingsRow(
+          icon: Icons.travel_explore_outlined,
+          title: 'Enrich Discover book covers',
+          subtitle: discoverEnrich
+              ? 'Open Library lookups run after each book search'
+              : 'Off — Discover shows source posters only (faster)',
+          trailing: Switch(
+            value: discoverEnrich,
+            activeThumbColor: c.accent,
+            onChanged: (v) =>
+                ref.read(discoverMetadataEnabledProvider.notifier).setEnabled(v),
+          ),
+        ),
         Padding(
           padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
           child: TextField(
@@ -2001,7 +2018,7 @@ Future<Source?> _sourceDialog(BuildContext context, Source? existing) async {
               TextField(
                 controller: urlCtrl,
                 decoration: const InputDecoration(
-                  hintText: 'Base URL (e.g. https://libgen.gs/index.php)',
+                  hintText: 'Base URL (e.g. https://libgen.li/index.php)',
                 ),
               ),
               const SizedBox(height: 12),

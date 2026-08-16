@@ -233,7 +233,8 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
       _results = books;
       _searching = false;
     });
-    ref.read(discoverMetadataProvider.notifier).enqueue(books);
+    // Fire-and-forget; no-ops when the Settings toggle is off.
+    unawaited(ref.read(discoverMetadataProvider.notifier).enqueue(books));
   }
 
   void _clearSearch() {
@@ -699,6 +700,9 @@ class _DiscoverBookResults extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final meta = ref.watch(discoverMetadataProvider);
+    final enrichOn =
+        ref.watch(discoverMetadataEnabledProvider).value ??
+        kDiscoverMetadataEnabledDefault;
     if (results.isEmpty) {
       return const SliverToBoxAdapter(
         child: SizedBox(
@@ -728,6 +732,7 @@ class _DiscoverBookResults extends ConsumerWidget {
                 child: _bookCard(
                   result: result,
                   meta: meta,
+                  enrichOn: enrichOn,
                   variant: variant,
                 ),
               );
@@ -750,6 +755,7 @@ class _DiscoverBookResults extends ConsumerWidget {
               child: _bookCard(
                 result: result,
                 meta: meta,
+                enrichOn: enrichOn,
                 variant: LibraryCardVariant.list,
               ),
             );
@@ -763,17 +769,25 @@ class _DiscoverBookResults extends ConsumerWidget {
   Widget _bookCard({
     required SourceSearchResult result,
     required Map<String, DiscoverMetadataHit> meta,
+    required bool enrichOn,
     required LibraryCardVariant variant,
   }) {
-    final hit = meta[discoverMetadataCacheKey(result.title, result.author)];
+    final hit = enrichOn
+        ? meta[discoverMetadataCacheKey(result.title, result.author)]
+        : null;
     final coverUrl = hit?.coverUrl;
-    final hasCover = coverUrl != null && coverUrl.isNotEmpty;
+    final hasEnriched = coverUrl != null && coverUrl.isNotEmpty;
+    final poster = result.poster;
+    // Prefer OL/Google when enrichment is on and ready; otherwise LibGen poster
+    // (fictionruscovers / fictioncovers on libgen.li).
+    final displayUrl = hasEnriched
+        ? coverUrl
+        : (poster != null && poster.isNotEmpty ? poster : null);
     return CatalogCoverCard(
       title: result.title,
       subtitle: result.author,
-      // Prefer Open Library / Google covers — LibGen posters are often broken.
-      imageUrl: hasCover ? coverUrl : null,
-      headers: hasCover ? discoverCoverHeaders(coverUrl) : null,
+      imageUrl: displayUrl,
+      headers: displayUrl != null ? discoverCoverHeaders(displayUrl) : null,
       badge: result.sourceName,
       secondaryBadge: result.size,
       showBadge: showSourcePills,

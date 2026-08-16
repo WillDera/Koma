@@ -11,6 +11,47 @@ import 'ebook_service.dart';
 import 'ebook_media_store.dart';
 import 'koma_package_store.dart';
 
+/// LibGen HTML uses relative cover paths like
+/// `/fictionruscovers/221000/<hash>_small.jpg` or `/fictioncovers/...`.
+/// Those assets are served from [libgen.li](https://libgen.li), not from
+/// search mirrors such as libgen.gs.
+String? resolveLibgenCoverUrl(String searchPageUrl, String? imgSrc) {
+  if (imgSrc == null || imgSrc.trim().isEmpty) return null;
+  final raw = imgSrc.trim();
+  final resolved = raw.startsWith('http')
+      ? raw
+      : _resolveRelativeUrl(searchPageUrl, raw);
+  final uri = Uri.tryParse(resolved);
+  if (uri == null) return resolved;
+
+  final path = uri.path;
+  final lower = path.toLowerCase();
+  final isCoverPath = lower.contains('fictionruscovers') ||
+      lower.contains('fictioncovers') ||
+      lower.contains('comicscovers') ||
+      lower.contains('/covers/');
+  if (!isCoverPath) return resolved;
+
+  var coverPath = path;
+  if (coverPath.endsWith('_small.jpg')) {
+    coverPath =
+        '${coverPath.substring(0, coverPath.length - '_small.jpg'.length)}.jpg';
+  } else if (coverPath.endsWith('_small.png')) {
+    coverPath =
+        '${coverPath.substring(0, coverPath.length - '_small.png'.length)}.png';
+  } else if (coverPath.endsWith('_small.webp')) {
+    coverPath =
+        '${coverPath.substring(0, coverPath.length - '_small.webp'.length)}.webp';
+  }
+  return 'https://libgen.li$coverPath';
+}
+
+String _resolveRelativeUrl(String base, String relative) {
+  final uri = Uri.tryParse(relative);
+  if (uri == null || uri.hasScheme) return relative;
+  return Uri.parse(base).resolve(relative).toString();
+}
+
 class SourceSearchResult {
   final String title;
   final String? author;
@@ -196,7 +237,7 @@ class SourceService {
               size: size,
               extension: ext,
               language: language,
-              poster: imgSrc != null ? '${_base(source.baseUrl)}$imgSrc' : null,
+              poster: resolveLibgenCoverUrl(url, imgSrc),
               downloadUrl: downloadUrl,
               sourceName: source.name,
               tag: 'libgen',
@@ -312,24 +353,15 @@ class SourceService {
     }
   }
 
-  String _base(String url) {
-    final uri = Uri.tryParse(url);
-    if (uri == null) return '';
-    return '${uri.scheme}://${uri.host}';
-  }
-
   String _resolveUrl(String base, String relative) {
-    final uri = Uri.tryParse(relative);
-    if (uri == null || uri.hasScheme) return relative;
-    final baseUri = Uri.parse(base);
-    return baseUri.resolve(relative).toString();
+    return _resolveRelativeUrl(base, relative);
   }
 
   static List<Source> defaultSources() => [
     Source(
       name: 'Library Genesis',
       tag: 'libgen',
-      baseUrl: 'https://libgen.gs/index.php',
+      baseUrl: 'https://libgen.li/index.php',
     ),
   ];
 }
