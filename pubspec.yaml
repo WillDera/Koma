@@ -93,6 +93,11 @@ dev_dependencies:
       url: https://github.com/kodjodevf/isar-community-generator.git
       ref: v3
   freezed: ^3.2.3
+  path_provider_platform_interface: ^2.1.3
+
+# kindle_unpack 0.1.1 still pins archive ^3.6.1; epub_pro needs archive 4.
+dependency_overrides:
+  archive: ^4.0.7
 
 flutter:
   uses-material-design: true

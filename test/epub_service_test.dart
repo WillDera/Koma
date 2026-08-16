@@ -63,9 +63,11 @@ List<int> _buildFixtureEpub() {
   final archive = Archive();
 
   void add(String name, List<int> bytes, {bool compress = true}) {
-    final file = ArchiveFile(name, bytes.length, bytes);
-    file.compress = compress;
-    archive.addFile(file);
+    archive.addFile(
+      compress
+          ? ArchiveFile(name, bytes.length, bytes)
+          : ArchiveFile.noCompress(name, bytes.length, bytes),
+    );
   }
 
   add('mimetype', 'application/epub+zip'.codeUnits, compress: false);
@@ -156,5 +158,5 @@ List<int> _buildFixtureEpub() {
   add('OEBPS/cover.png', png);
   add('OEBPS/img.png', png);
 
-  return ZipEncoder().encode(archive)!;
+  return ZipEncoder().encode(archive);
 }
