@@ -226,10 +226,10 @@ class ReaderNotifier extends Notifier<ReaderState> {
   int? readingOffsetFor(int chapterIndex) =>
       _chapterReadingOffsets[chapterIndex];
 
-  /// Records the paginated reading position, debounced like scroll.
+  /// Records the reading position as a character offset, debounced like scroll.
   ///
-  /// Page turns are far less frequent than scroll ticks, but a fast flick
-  /// through several pages still shouldn't mean a write per page.
+  /// Shared by page turns and scroll ticks so Scroll ↔ Page keep the same
+  /// place in the chapter. A fast flick still shouldn't mean a write per page.
   void updateReadingOffset(int charOffset) {
     _chapterReadingOffsets[state.currentIndex] = charOffset;
     _pendingOffset = charOffset;

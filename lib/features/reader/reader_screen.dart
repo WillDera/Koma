@@ -25,6 +25,7 @@ import '../../widgets/text_selection_toolbar.dart';
 import '../../widgets/toast.dart';
 import '../../widgets/tts_controls.dart';
 import 'pagination/paginated_reader_body.dart';
+import 'pagination/reading_position.dart';
 import 'pagination/reading_spans.dart';
 import 'pagination/rich_chapter_body.dart';
 import 'reader_provider.dart';
@@ -161,6 +162,24 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
       readerProvider.select((state) => state.currentIndex),
       (_, next) => _onChapterChanged(next),
     );
+    ref.listenManual<PageStyle>(
+      themeProvider.select((state) => state.pageStyle),
+      (prev, next) {
+        if (!_sessionReady || prev == next) return;
+        if (next == PageStyle.page) {
+          _syncCharOffsetFromScroll();
+          return;
+        }
+        _snippetSeekAttempts = 0;
+        _snippetSeekSettleCount = 0;
+        _seekScrollForSnippetOrResume(
+          ignoreSnippet:
+              widget.snippetStartOffset == null ||
+              _snippetScrollSeekDone ||
+              _snippetCharConsumed,
+        );
+      },
+    );
     unawaited(_ttsProvider!.loadPrefs());
     Future.microtask(() => _loadAndRestore());
   }
@@ -276,18 +295,22 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
     }
   }
 
-  /// Scroll mode: jump to [snippetStartOffset] via char/length ratio, falling
-  /// back to the provider's pixel scroll for older snippets without offsets.
-  void _seekScrollForSnippetOrResume() {
+  bool get _usingScrollStyle =>
+      ref.read(themeProvider).pageStyle == PageStyle.scroll;
+
+  /// Scroll mode: jump to [snippetStartOffset] via char/length ratio, then the
+  /// stored character offset, then legacy pixel scroll.
+  void _seekScrollForSnippetOrResume({bool ignoreSnippet = false}) {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted || !_sessionReady) return;
+      if (!_usingScrollStyle) return;
 
-      final start = widget.snippetStartOffset;
+      final start = ignoreSnippet ? null : widget.snippetStartOffset;
 
       bool retry() {
         _snippetSeekAttempts++;
         if (_snippetSeekAttempts < _snippetSeekMaxAttempts) {
-          _seekScrollForSnippetOrResume();
+          _seekScrollForSnippetOrResume(ignoreSnippet: ignoreSnippet);
           return true;
         }
         return false;
@@ -301,16 +324,18 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
 
       // Snippet jump wins over saved reading progress (often the chapter end
       // after the user finished scrolling the chapter).
-      if (start != null) {
-        if (_snippetScrollSeekDone) return;
+      if (start != null && !_snippetScrollSeekDone) {
         final text = _currentText;
         final extent = _scrollController.position.maxScrollExtent;
         if (text.isEmpty || extent <= 0) {
           retry();
           return;
         }
-        final ratio = start.clamp(0, text.length) / text.length;
-        final target = (ratio * extent).clamp(0.0, extent);
+        final target = scrollPixelsFromChar(
+          charOffset: start,
+          textLength: text.length,
+          maxExtent: extent,
+        );
         if ((_scrollController.offset - target).abs() > 1.0) {
           _scrollController.jumpTo(target);
           _snippetSeekSettleCount = 0; // extent moved us; resettle
@@ -323,7 +348,34 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
           return;
         }
         _snippetScrollSeekDone = true;
+        _provider?.updateReadingOffset(start.clamp(0, text.length));
         _armSnippetFocusIfNeeded();
+        return;
+      }
+
+      final charOff = _provider?.readingOffsetFor(_provider!.currentIndex);
+      if (charOff != null) {
+        final text = _currentText;
+        final extent = _scrollController.position.maxScrollExtent;
+        if (text.isEmpty || extent <= 0) {
+          retry();
+          return;
+        }
+        final target = scrollPixelsFromChar(
+          charOffset: charOff,
+          textLength: text.length,
+          maxExtent: extent,
+        );
+        if ((_scrollController.offset - target).abs() > 1.0) {
+          _scrollController.jumpTo(target);
+          _snippetSeekSettleCount = 0;
+        } else {
+          _snippetSeekSettleCount++;
+        }
+        if (_snippetSeekSettleCount < _snippetSeekSettleFrames) {
+          retry();
+          return;
+        }
         return;
       }
 
@@ -335,7 +387,25 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
   }
 
   void _restoreScrollPosition() {
+    if (!_usingScrollStyle) return;
     _seekScrollForSnippetOrResume();
+  }
+
+  void _syncCharOffsetFromScroll() {
+    final text = _currentText;
+    if (text.isEmpty) return;
+    final pixels = _scrollReady ? _scrollController.offset : _lastScrollOffset;
+    final extent = _scrollReady
+        ? _scrollController.position.maxScrollExtent
+        : 0.0;
+    if (extent <= 0) return;
+    _provider?.updateReadingOffset(
+      charOffsetFromScroll(
+        textLength: text.length,
+        pixels: pixels,
+        maxExtent: extent,
+      ),
+    );
   }
 
   /// Called from the Consumer builder when the current chapter index
@@ -383,8 +453,11 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
     }
     // Jump to the saved scroll position for this chapter — or the snippet
     // character offset when opening from a snippet link.
-    _snippetSeekAttempts = 0;
-    _seekScrollForSnippetOrResume();
+    if (_usingScrollStyle) {
+      _snippetSeekAttempts = 0;
+      _snippetSeekSettleCount = 0;
+      _seekScrollForSnippetOrResume();
+    }
   }
 
   bool _didHandleBack = false;
@@ -409,8 +482,11 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
     if (text.isEmpty) return;
     final offset = tts.currentSentenceOffset;
     if (offset <= 0) return;
-    final ratio = offset / text.length;
-    final target = ratio * _scrollController.position.maxScrollExtent;
+    final target = scrollPixelsFromChar(
+      charOffset: offset,
+      textLength: text.length,
+      maxExtent: _scrollController.position.maxScrollExtent,
+    );
     if ((target - _scrollController.offset).abs() > 60) {
       _scrollController.animateTo(
         target.clamp(0, _scrollController.position.maxScrollExtent),
@@ -509,6 +585,7 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
           ? _scrollController.offset
           : _lastScrollOffset;
       _provider?.updateScrollPosition(currentOffset);
+      _syncCharOffsetFromScroll();
 
       // Hide UI chrome while scrolling down. Tap toggles it back; do not
       // show again on scroll-up (that fought tap-to-toggle).
