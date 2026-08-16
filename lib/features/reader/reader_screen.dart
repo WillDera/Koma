@@ -17,13 +17,13 @@ import '../../theme/tokens/app_spacing.dart';
 import '../../theme/tokens/app_type.dart';
 import '../../widgets/chapter_nav_overlay.dart';
 import '../../widgets/empty_state.dart';
-import '../../widgets/highlight_color_picker.dart';
 import '../../widgets/reader_bottom_bar.dart';
 import '../../widgets/reader_settings_sheet.dart';
 import '../../widgets/reader_top_bar.dart';
 import '../../widgets/text_selection_toolbar.dart';
 import '../../widgets/toast.dart';
 import '../../widgets/tts_controls.dart';
+import 'pagination/highlight_range.dart';
 import 'pagination/paginated_reader_body.dart';
 import 'pagination/reading_position.dart';
 import 'pagination/reading_spans.dart';
@@ -95,17 +95,17 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
   /// Pending dismissal of the quick toolbar after its selection went away.
   /// Held so a new selection can cancel it — see [_showToolbar].
   Timer? _selectionLostTimer;
-  bool _colorPickerVisible = false;
-  int _highlightVersion = 0;
   double _lastScrollOffset = 0;
-  Offset _selectionOrigin = Offset.zero;
   _SwipeDirection _lastSwipeDirection = _SwipeDirection.none;
   double? _dragStartX;
   Offset? _pointerDown;
 
   TtsProvider? _ttsProvider;
   bool _ttsListening = false;
-  int _highlightColorIndex = 0;
+  int _highlightVersion = 0;
+
+  /// Last mark/remove so the toast Undo can restore the previous marks.
+  ({List<Highlight> removed, Highlight? added})? _highlightUndo;
 
   /// Index of the chapter we're currently showing. Used to detect a
   /// chapter change after navigation so we can jump the scroll back
@@ -113,7 +113,6 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
   int _lastSeenChapterIndex = -1;
 
   late final AnimationController _toolbarCtrl;
-  late final AnimationController _colorCtrl;
   late final AnimationController _focusCtrl;
 
   Timer? _uiHideTimer;
@@ -143,7 +142,6 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
   void initState() {
     super.initState();
     _toolbarCtrl = AnimationController(vsync: this, duration: AppMotion.sheet);
-    _colorCtrl = AnimationController(vsync: this, duration: AppMotion.base);
     _focusCtrl = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 1500),
@@ -203,13 +201,9 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
     _applySystemUiMode();
     if (ref.read(themeProvider).immersiveAutoHide &&
         !_toolbarVisible &&
-        !_colorPickerVisible &&
         !(_ttsProvider?.isActive ?? false)) {
       _uiHideTimer = Timer(_autoHideDelay, () {
-        if (mounted &&
-            !_toolbarVisible &&
-            !_colorPickerVisible &&
-            !(_ttsProvider?.isActive ?? false)) {
+        if (mounted && !_toolbarVisible && !(_ttsProvider?.isActive ?? false)) {
           _showUI.value = false;
           _applySystemUiMode();
         }
@@ -220,10 +214,7 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
   void _applySystemUiMode() {
     if (!mounted) return;
     final showSystemUi =
-        _showUI.value ||
-        _toolbarVisible ||
-        _colorPickerVisible ||
-        (_ttsProvider?.isActive ?? false);
+        _showUI.value || _toolbarVisible || (_ttsProvider?.isActive ?? false);
     SystemChrome.setEnabledSystemUIMode(
       showSystemUi ? SystemUiMode.edgeToEdge : SystemUiMode.immersiveSticky,
     );
@@ -533,18 +524,6 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
         : '';
   }
 
-  String get _nextHighlightColor {
-    final palette = HighlightColorPicker.palette;
-    if (palette.isEmpty) return 'yellow';
-    return palette[_highlightColorIndex % palette.length];
-  }
-
-  void _advanceHighlightColor() {
-    final palette = HighlightColorPicker.palette;
-    if (palette.isEmpty) return;
-    _highlightColorIndex = (_highlightColorIndex + 1) % palette.length;
-  }
-
   @override
   void dispose() {
     _cancelUiHideTimer();
@@ -555,7 +534,6 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
     _scrollController.dispose();
     _toolbarCtrl.dispose();
     _showUI.dispose();
-    _colorCtrl.dispose();
     _focusCtrl.dispose();
     super.dispose();
   }
@@ -673,7 +651,7 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
     _resetUiHideTimer();
   }
 
-  void _showToolbar(Offset origin) {
+  void _showToolbar() {
     // A new selection supersedes any pending dismissal — otherwise the timer
     // armed by the tap that *started* this selection fires a moment later and
     // hides a toolbar the user just summoned.
@@ -682,7 +660,6 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
     _cancelUiHideTimer();
     setState(() {
       _toolbarVisible = true;
-      _selectionOrigin = origin;
     });
     _applySystemUiMode();
     _toolbarCtrl.forward(from: 0);
@@ -704,13 +681,12 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
   }
 
   void _hideToolbar() {
-    if (!_toolbarVisible && !_colorPickerVisible) return;
+    if (!_toolbarVisible) return;
     _selectionLostTimer?.cancel();
     _selectionLostTimer = null;
     _toolbarCtrl.reverse();
     setState(() {
       _toolbarVisible = false;
-      _colorPickerVisible = false;
     });
     // _selectedText/_selStart are deliberately left alone: the save paths call
     // this before reading them, and they clear their own state when done.
@@ -779,7 +755,7 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
               if (end <= text.length) {
                 _selStart = start;
                 _selectedText = text.substring(start, end);
-                _showToolbar(Offset.zero);
+                _showToolbar();
               }
             },
             onSelectionCleared: _hideToolbarOnSelectionLost,
@@ -845,9 +821,7 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
     final reduceMotion = MediaQuery.disableAnimationsOf(context);
 
     return AnnotatedRegion<SystemUiOverlayStyle>(
-      value: pageDark
-          ? SystemUiOverlayStyle.light
-          : SystemUiOverlayStyle.dark,
+      value: pageDark ? SystemUiOverlayStyle.light : SystemUiOverlayStyle.dark,
       child: Scaffold(
         backgroundColor: pageBg,
         body: Stack(
@@ -971,14 +945,12 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
                                                             content.length) {
                                                           _selStart =
                                                               selection.start;
-                                                          _selectedText = content
-                                                              .substring(
+                                                          _selectedText =
+                                                              content.substring(
                                                                 selection.start,
                                                                 selection.end,
                                                               );
-                                                          _showToolbar(
-                                                            Offset.zero,
-                                                          );
+                                                          _showToolbar();
                                                         }
                                                       },
                                                   onSelectionCleared:
@@ -1051,88 +1023,68 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
               ),
             ),
 
-            // Selection toolbar overlay
+            // Selection toolbar overlay. Positioned must be a direct Stack
+            // child — the pill used to wrap itself in Positioned, which broke
+            // once the colour-picker Stack around it went away.
             if (_toolbarVisible)
-              FadeTransition(
-                opacity: _toolbarCtrl,
-                child: SlideTransition(
-                  position:
-                      Tween<Offset>(
-                        begin: const Offset(0, 0.3),
-                        end: Offset.zero,
-                      ).animate(
-                        CurvedAnimation(
-                          parent: _toolbarCtrl,
-                          curve: AppMotion.standard,
-                        ),
-                      ),
-                  child: Stack(
-                    children: [
-                      ReaderSelectionToolbar(
-                        selectedText: _selectedText ?? '',
-                        defaultHighlightColor: _nextHighlightColor,
-                        position: _selectionOrigin,
-                        onHighlight: (color) {
-                          _saveHighlight(color);
-                        },
-                        onNote: () {
-                          _createSnippetFromSelection();
-                        },
-                        onCopy: () {
-                          if (_selectedText != null) {
-                            Clipboard.setData(
-                              ClipboardData(text: _selectedText!),
-                            );
-                            StashToast.show(
-                              context,
-                              message: 'Copied to clipboard',
-                              icon: Icons.check,
-                            );
-                          }
-                          _hideToolbar();
-                        },
-                        onShare: () {
-                          if (_selectedText != null) {
-                            Clipboard.setData(
-                              ClipboardData(text: _selectedText!),
-                            );
-                            StashToast.show(
-                              context,
-                              message: 'Quote copied · share anywhere',
-                              icon: Icons.ios_share,
-                            );
-                          }
-                          _hideToolbar();
-                        },
-                      ),
-                      if (_colorPickerVisible)
-                        Positioned(
-                          left: 0,
-                          right: 0,
-                          bottom: 180,
-                          child: Center(
-                            child: ScaleTransition(
-                              scale: CurvedAnimation(
-                                parent: _colorCtrl,
-                                curve: AppMotion.standard,
-                              ),
-                              child: HighlightColorPicker(
-                                colors: HighlightColorPicker.palette,
-                                selected: _nextHighlightColor,
-                                onChanged: (color) {
-                                  ref
-                                      .read(themeProvider.notifier)
-                                      .setDefaultHighlight(color);
-                                  final idx = HighlightColorPicker.palette
-                                      .indexOf(color);
-                                  if (idx >= 0) _highlightColorIndex = idx;
-                                  _saveHighlight(color);
-                                },
-                              ),
-                            ),
+              Positioned(
+                left: 16,
+                right: 16,
+                bottom: 120,
+                child: FadeTransition(
+                  opacity: _toolbarCtrl,
+                  child: SlideTransition(
+                    position:
+                        Tween<Offset>(
+                          begin: const Offset(0, 0.3),
+                          end: Offset.zero,
+                        ).animate(
+                          CurvedAnimation(
+                            parent: _toolbarCtrl,
+                            curve: AppMotion.standard,
                           ),
                         ),
-                    ],
+                    child: ReaderSelectionToolbar(
+                      selectedColor: themeProv.defaultHighlight,
+                      onHighlight: (color) {
+                        ref
+                            .read(themeProvider.notifier)
+                            .setDefaultHighlight(color);
+                        _saveHighlight(color);
+                      },
+                      onRemove: _selectionOverlapsHighlight
+                          ? _removeOverlappingHighlights
+                          : null,
+                      onNote: () {
+                        _createSnippetFromSelection();
+                      },
+                      onCopy: () {
+                        if (_selectedText != null) {
+                          Clipboard.setData(
+                            ClipboardData(text: _selectedText!),
+                          );
+                          StashToast.show(
+                            context,
+                            message: 'Copied to clipboard',
+                            icon: Icons.check,
+                          );
+                        }
+                        _hideToolbar();
+                      },
+                      onShare: () {
+                        if (_selectedText != null) {
+                          Clipboard.setData(
+                            ClipboardData(text: _selectedText!),
+                          );
+                          StashToast.show(
+                            context,
+                            message: 'Quote copied · share anywhere',
+                            icon: Icons.ios_share,
+                          );
+                        }
+                        _hideToolbar();
+                      },
+                    ),
                   ),
                 ),
               ),
@@ -1249,19 +1201,133 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
     return '$mins min left';
   }
 
+  bool get _selectionOverlapsHighlight {
+    final start = _selStart;
+    final text = _selectedText;
+    if (start == null || text == null || text.isEmpty) return false;
+    return highlightsOverlapping(
+      _highlights,
+      start: start,
+      end: start + text.length,
+    ).isNotEmpty;
+  }
+
+  void _dismissSelectionUi() {
+    _hideToolbar();
+    _selectedText = null;
+    _selStart = null;
+    setState(() => _highlightVersion++);
+    FocusScope.of(context).unfocus();
+  }
+
+  Future<void> _undoLastHighlightEdit() async {
+    final edit = _highlightUndo;
+    if (edit == null) return;
+    _highlightUndo = null;
+    final repos = ref.read(repositoriesProvider);
+    final chapterId = _provider?.currentChapter?.id;
+    try {
+      if (edit.added != null) {
+        await repos.books.deleteHighlight(edit.added!.id);
+      }
+      final restored = <Highlight>[];
+      for (final h in edit.removed) {
+        final id = await repos.books.insertHighlight(h);
+        restored.add(
+          Highlight(
+            id: id,
+            snippetId: h.snippetId,
+            bookId: h.bookId,
+            chapterId: h.chapterId,
+            startOffset: h.startOffset,
+            endOffset: h.endOffset,
+            color: h.color,
+            text: h.text,
+            createdAt: h.createdAt,
+            updatedAt: h.updatedAt,
+          ),
+        );
+      }
+      if (!mounted) return;
+      final touchesCurrent =
+          chapterId != null &&
+          (edit.added?.chapterId == chapterId ||
+              edit.removed.any((h) => h.chapterId == chapterId));
+      if (!touchesCurrent) return;
+      setState(() {
+        if (edit.added != null) {
+          _highlights.removeWhere((h) => h.id == edit.added!.id);
+        }
+        for (final h in restored) {
+          if (_highlights.any((x) => x.id == h.id)) continue;
+          _highlights.add(h);
+        }
+        _highlightVersion++;
+      });
+    } catch (e) {
+      if (mounted) {
+        StashToast.show(
+          context,
+          message: 'Failed: $e',
+          icon: Icons.error_outline,
+        );
+      }
+    }
+  }
+
+  Future<void> _removeOverlappingHighlights() async {
+    final start = _selStart;
+    final text = _selectedText;
+    if (start == null || text == null || text.isEmpty) return;
+    final overlapping = highlightsOverlapping(
+      _highlights,
+      start: start,
+      end: start + text.length,
+    );
+    if (overlapping.isEmpty) return;
+    final repos = ref.read(repositoriesProvider);
+    try {
+      for (final h in overlapping) {
+        await repos.books.deleteHighlight(h.id);
+      }
+      _highlightUndo = (removed: List<Highlight>.of(overlapping), added: null);
+      if (mounted) {
+        setState(() {
+          final ids = overlapping.map((h) => h.id).toSet();
+          _highlights.removeWhere((h) => ids.contains(h.id));
+        });
+        StashToast.show(
+          context,
+          message: overlapping.length == 1
+              ? 'Highlight removed'
+              : 'Highlights removed',
+          icon: Icons.format_color_reset,
+          actionLabel: 'Undo',
+          onAction: _undoLastHighlightEdit,
+          duration: const Duration(seconds: 4),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        StashToast.show(
+          context,
+          message: 'Failed: $e',
+          icon: Icons.error_outline,
+        );
+      }
+    } finally {
+      if (mounted) _dismissSelectionUi();
+    }
+  }
+
   Future<void> _saveHighlight(String color) async {
     final p = _provider!;
     if (_selectedText == null || _selectedText!.trim().isEmpty) return;
-    final focusScope = FocusScope.of(context);
     try {
-      final repos = ref.watch(repositoriesProvider);
+      final repos = ref.read(repositoriesProvider);
       final ch = p.currentChapter;
       final contentStr = ch != null
-          ? TextExtractor.extractCached(
-              ch.id,
-              ch.content,
-              kir: p.currentKir,
-            )
+          ? TextExtractor.extractCached(ch.id, ch.content, kir: p.currentKir)
           : '';
       final selected = _selectedText!.trim();
       int? startOff;
@@ -1277,19 +1343,24 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
         startOff = contentStr.indexOf(selected, from);
         if (startOff < 0) startOff = contentStr.indexOf(selected);
       }
-      // Bug 1 fix: save ONLY to the highlights table, NOT to snippets.
-      // Only "Note" (renamed to "Snippet") creates a snippet row.
+      // Save ONLY to the highlights table, NOT to snippets.
+      // Only "Snippet" creates a snippet row.
       if (p.book != null && ch != null && startOff != null && startOff >= 0) {
-        // Bound to non-nullable locals: the promotion of startOff/ch does not
-        // survive the await below.
         final start = startOff;
         final bookId = p.book!.id;
         final chapterId = ch.id;
         final end = start + selected.length;
+        final overlapping = highlightsOverlapping(
+          _highlights,
+          start: start,
+          end: end,
+        );
+        for (final h in overlapping) {
+          await repos.books.deleteHighlight(h.id);
+        }
         final storedId = await repos.books.insertHighlight(
           Highlight(
             id: 0,
-            // No snippetId — marks are separate from snippets
             bookId: bookId,
             chapterId: chapterId,
             startOffset: start,
@@ -1298,24 +1369,26 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
             text: selected,
           ),
         );
-        // Only mutate the in-memory list when we're still viewing the chapter
-        // this mark belongs to. Otherwise a mid-await chapter change replaces
-        // `_highlights` with another chapter's rows and we'd append here,
-        // orphaning the mark until the user navigates back.
+        final added = Highlight(
+          id: storedId,
+          bookId: bookId,
+          chapterId: chapterId,
+          startOffset: start,
+          endOffset: end,
+          color: color,
+          text: selected,
+        );
+        _highlightUndo = (
+          removed: List<Highlight>.of(overlapping),
+          added: added,
+        );
         if (mounted && _provider?.currentChapter?.id == chapterId) {
           setState(() {
-            if (_highlights.any((h) => h.id == storedId)) return;
-            _highlights.add(
-              Highlight(
-                id: storedId,
-                bookId: bookId,
-                chapterId: chapterId,
-                startOffset: start,
-                endOffset: end,
-                color: color,
-                text: selected,
-              ),
-            );
+            final ids = overlapping.map((h) => h.id).toSet();
+            _highlights.removeWhere((h) => ids.contains(h.id));
+            if (!_highlights.any((h) => h.id == storedId)) {
+              _highlights.add(added);
+            }
           });
         }
       }
@@ -1324,6 +1397,9 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
           context,
           message: 'Marked',
           icon: Icons.format_color_fill,
+          actionLabel: 'Undo',
+          onAction: _undoLastHighlightEdit,
+          duration: const Duration(seconds: 4),
         );
       }
     } catch (e) {
@@ -1335,23 +1411,7 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
         );
       }
     } finally {
-      if (mounted) {
-        // Cycle to the next highlight color for the next mark.
-        _advanceHighlightColor();
-        // Discard the old selection so the next long-press can create
-        // fresh selection handles.
-        // The highlight toolbar just saved — hide it, then increment the
-        // SelectableText key so the widget unmounts/remounts cleanly,
-        // discarding the old selection state.  Next long-press creates
-        // new handles.
-        _hideToolbar();
-        _selectedText = null;
-        _selStart = null;
-        setState(() => _highlightVersion++);
-        // Dismiss keyboard/selection focus so the next long-press
-        // creates a fresh set of selection handles.
-        focusScope.unfocus();
-      }
+      if (mounted) _dismissSelectionUi();
     }
   }
 
@@ -1425,11 +1485,7 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
       final snippetsProv = ref.read(snippetsProvider.notifier);
       final ch = p.currentChapter;
       final contentStr = ch != null
-          ? TextExtractor.extractCached(
-              ch.id,
-              ch.content,
-              kir: p.currentKir,
-            )
+          ? TextExtractor.extractCached(ch.id, ch.content, kir: p.currentKir)
           : '';
       final selected = _selectedText?.trim() ?? '';
       int? startOff;

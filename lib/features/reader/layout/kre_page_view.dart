@@ -141,6 +141,7 @@ class _KrePageViewState extends State<KrePageView> {
                       focusEnd: widget.focusEnd,
                       focusAlpha: widget.focusAlpha,
                       brightness: brightness,
+                      isSepia: widget.themeProv.sepiaMode,
                       accent: widget.themeProv.accentColor,
                       selStart: _selStart,
                       selEnd: _selEnd,
@@ -212,6 +213,7 @@ class _KrePagePainter extends CustomPainter {
     required this.focusEnd,
     required this.focusAlpha,
     required this.brightness,
+    required this.isSepia,
     required this.accent,
     required this.selStart,
     required this.selEnd,
@@ -230,6 +232,7 @@ class _KrePagePainter extends CustomPainter {
   final int focusEnd;
   final double focusAlpha;
   final Brightness brightness;
+  final bool isSepia;
   final Color accent;
   final int? selStart;
   final int? selEnd;
@@ -246,10 +249,7 @@ class _KrePagePainter extends CustomPainter {
     for (final h in highlights) {
       fill(
         glyphRectsOverlapping(page, h.startOffset, h.endOffset),
-        AppColors.highlight(
-          h.color,
-          brightness,
-        ).withValues(alpha: 0.35),
+        AppColors.highlightWash(h.color, brightness, isSepia: isSepia),
       );
     }
     if (ttsActive && ttsEnd > ttsStart) {
@@ -261,7 +261,11 @@ class _KrePagePainter extends CustomPainter {
     if (focusAlpha > 0 && focusEnd > focusStart) {
       fill(
         glyphRectsOverlapping(page, focusStart, focusEnd),
-        AppColors.highlight('yellow', brightness).withValues(alpha: focusAlpha),
+        AppColors.highlight(
+          'yellow',
+          brightness,
+          isSepia: isSepia,
+        ).withValues(alpha: focusAlpha),
       );
     }
     final a = selStart;
@@ -275,16 +279,47 @@ class _KrePagePainter extends CustomPainter {
 
     for (final line in page.lines) {
       if (line.isImage) continue;
-      final text = layoutSlice(plainText, line.charStart, line.charEnd);
-      if (text.isEmpty) continue;
-      final painter = TextPainter(
-        text: TextSpan(text: text, style: _styleFor(line)),
-        textDirection: TextDirection.ltr,
-        textScaler: textScaler,
-        maxLines: 1,
-      )..layout();
-      painter.paint(canvas, Offset(0, line.y));
-      painter.dispose();
+      _paintLine(canvas, line);
+    }
+  }
+
+  void _paintLine(Canvas canvas, LayoutLine line) {
+    final cuts = <int>{line.charEnd};
+    for (final h in highlights) {
+      if (h.endOffset <= line.charStart || h.startOffset >= line.charEnd) {
+        continue;
+      }
+      cuts.add(h.startOffset.clamp(line.charStart, line.charEnd));
+      cuts.add(h.endOffset.clamp(line.charStart, line.charEnd));
+    }
+    final sorted = cuts.toList()..sort();
+    var x = 0.0;
+    var cursor = line.charStart;
+    final lineStyle = _styleFor(line);
+    for (final cut in sorted) {
+      if (cut <= cursor) continue;
+      final slice = layoutSlice(plainText, cursor, cut);
+      if (slice.isNotEmpty) {
+        var style = lineStyle;
+        final marked = highlights.any(
+          (h) => cursor >= h.startOffset && cursor < h.endOffset,
+        );
+        if (marked) {
+          style = style.copyWith(
+            fontWeight: ReadingSpans.highlightWeight(style.fontWeight),
+          );
+        }
+        final painter = TextPainter(
+          text: TextSpan(text: slice, style: style),
+          textDirection: TextDirection.ltr,
+          textScaler: textScaler,
+          maxLines: 1,
+        )..layout();
+        painter.paint(canvas, Offset(x, line.y));
+        x += painter.width;
+        painter.dispose();
+      }
+      cursor = cut;
     }
   }
 
@@ -328,7 +363,8 @@ class _KrePagePainter extends CustomPainter {
         old.focusAlpha != focusAlpha ||
         old.selStart != selStart ||
         old.selEnd != selEnd ||
-        old.brightness != brightness;
+        old.brightness != brightness ||
+        old.isSepia != isSepia;
   }
 }
 

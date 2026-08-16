@@ -94,11 +94,25 @@ void main() {
   group('ReadingSpans — decoration', () {
     const text = 'The quick brown fox jumps over the lazy dog.';
 
-    test('the highlighted range gets a background, the rest does not', () {
+    test('highlighted text is heavier than body text', () {
       final spans = build(text, highlights: [hl(4, 9)]);
-      final decorated = spans.where((s) => s.style?.backgroundColor != null);
-      expect(decorated, isNotEmpty);
-      expect(flatten(decorated.toList()), 'quick');
+      final marked = spans.firstWhere((s) => s.style?.backgroundColor != null);
+      final plain = spans.firstWhere((s) => s.style?.backgroundColor == null);
+      expect(marked.style?.fontWeight, FontWeight.w600);
+      expect(plain.style?.fontWeight ?? FontWeight.w400, FontWeight.w400);
+    });
+
+    test('removing the highlight restores body weight', () {
+      final marked = build(text, highlights: [hl(4, 9)]);
+      expect(
+        marked.any((s) => s.style?.fontWeight == FontWeight.w600),
+        isTrue,
+      );
+      final plain = build(text);
+      expect(
+        plain.every((s) => s.style?.fontWeight != FontWeight.w600),
+        isTrue,
+      );
     });
 
     test('text outside the highlight keeps the base style', () {

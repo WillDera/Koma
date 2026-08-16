@@ -20,6 +20,13 @@ import '../html/reading_document.dart';
 class ReadingSpans {
   const ReadingSpans._();
 
+  /// Weight applied to highlighted body text. Headings already at or above
+  /// this stay as they are so a mark cannot lighten bold HTML.
+  static FontWeight highlightWeight(FontWeight? current) {
+    final w = current ?? FontWeight.w400;
+    return w.value >= FontWeight.w600.value ? w : FontWeight.w600;
+  }
+
   /// The base text style for reading content.
   static TextStyle style(ThemeState prov, Color textColor) {
     return AppType.fontStyle(
@@ -389,11 +396,12 @@ class ReadingSpans {
     var style = base;
     if (highlightColor != null) {
       style = style.copyWith(
-        backgroundColor: AppColors.highlight(
+        backgroundColor: AppColors.highlightWash(
           highlightColor,
           brightness,
-          isSepia: false,
-        ).withValues(alpha: 0.35),
+          isSepia: prov.sepiaMode,
+        ),
+        fontWeight: highlightWeight(style.fontWeight),
       );
     }
     if (ttsOn) {
