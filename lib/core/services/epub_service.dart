@@ -1,5 +1,5 @@
 import 'dart:io';
-import 'package:epubx/epubx.dart';
+import 'package:epub_pro/epub_pro.dart';
 import 'package:image/image.dart' as img;
 import 'package:path_provider/path_provider.dart';
 import '../models/book.dart';
@@ -28,16 +28,18 @@ class EpubService {
       final bytes = await file.readAsBytes();
       final epubBook = await EpubReader.readBook(bytes);
 
-      final title = epubBook.Title ?? 'Unknown Title';
+      final title = epubBook.title ?? 'Unknown Title';
       String? author;
-      if (epubBook.AuthorList != null && epubBook.AuthorList!.isNotEmpty) {
-        author = epubBook.AuthorList!.first;
+      if (epubBook.authors.isNotEmpty) {
+        author = epubBook.authors.first;
+      } else if (epubBook.author != null && epubBook.author!.isNotEmpty) {
+        author = epubBook.author;
       }
 
       // Extract cover image
       String? coverPath;
       try {
-        final coverImage = epubBook.CoverImage;
+        final coverImage = epubBook.coverImage;
         if (coverImage != null) {
           final appDir = await getApplicationDocumentsDirectory();
           final coverDir = Directory('${appDir.path}/covers');
@@ -62,10 +64,10 @@ class EpubService {
 
       // Map EPUB image file names → absolute local paths.
       final imagePaths = <String, String>{};
-      final images = epubBook.Content?.Images;
+      final images = epubBook.content?.images;
       if (images != null) {
         for (final entry in images.entries) {
-          final content = entry.value.Content;
+          final content = entry.value.content;
           if (content == null || content.isEmpty) continue;
           final path = await EbookMediaStore.storeBytes(
             bookOrSessionId: sessionId,
@@ -78,15 +80,13 @@ class EpubService {
 
       final chapters = <Chapter>[];
 
-      if (epubBook.Chapters != null) {
-        _extractChapters(
-          epubBook.Chapters!,
-          bookIdFinal,
-          chapters,
-          0,
-          imagePaths,
-        );
-      }
+      _extractChapters(
+        epubBook.chapters,
+        bookIdFinal,
+        chapters,
+        0,
+        imagePaths,
+      );
 
       // Sort by index
       chapters.sort((a, b) => a.index.compareTo(b.index));
@@ -120,8 +120,8 @@ class EpubService {
   ) {
     int idx = startIndex;
     for (final ec in epubChapters) {
-      final chTitle = ec.Title ?? 'Chapter ${idx + 1}';
-      String content = ec.HtmlContent ?? '';
+      final chTitle = ec.title ?? 'Chapter ${idx + 1}';
+      String content = ec.htmlContent ?? '';
       // Strip CSS/style blocks that leak from EPUB stylesheets
       content = content.replaceAll(
         RegExp(r'<style[^>]*>.*?</style>', dotAll: true, caseSensitive: false),
@@ -148,9 +148,9 @@ class EpubService {
         ),
       );
       // Process subchapters
-      if (ec.SubChapters != null && ec.SubChapters!.isNotEmpty) {
+      if (ec.subChapters.isNotEmpty) {
         idx = _extractChapters(
-          ec.SubChapters!,
+          ec.subChapters,
           bookId,
           output,
           idx,

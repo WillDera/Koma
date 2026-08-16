@@ -259,6 +259,11 @@ enum HandMode { left, right }
 ///
 /// [scroll] is the long-standing continuous scroll view. [curl] paginates the
 /// chapter and turns pages with an interactive curl.
+///
+/// Curl is hidden from the UI for now ([kPageCurlUiEnabled]). The enum, prefs,
+/// and paginated reader stay so we can restore the picker without a rewrite.
+const bool kPageCurlUiEnabled = false;
+
 enum PageStyle {
   scroll(label: 'Scroll'),
   curl(label: 'Curl');

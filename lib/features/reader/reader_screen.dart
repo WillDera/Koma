@@ -764,7 +764,7 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
         body: Stack(
           children: [
             Positioned.fill(
-              child: themeProv.pageStyle == PageStyle.curl
+              child: kPageCurlUiEnabled && themeProv.pageStyle == PageStyle.curl
                   ? _buildCurlBody(themeProv, provider, chapter)
                   : GestureDetector(
                       onTapUp: _handleTapUp,
