@@ -10,6 +10,8 @@ import 'collections/extension_repo.dart';
 import 'collections/extension_source.dart';
 import 'collections/highlight.dart';
 import 'collections/library_category.dart';
+import 'collections/library_group.dart';
+import 'collections/library_group_member.dart';
 import 'collections/manga.dart';
 import 'collections/manga_chapter.dart';
 import 'collections/manga_cookie.dart';
@@ -29,6 +31,8 @@ export 'collections/extension_repo.dart';
 export 'collections/extension_source.dart';
 export 'collections/highlight.dart';
 export 'collections/library_category.dart';
+export 'collections/library_group.dart';
+export 'collections/library_group_member.dart';
 export 'collections/manga.dart';
 export 'collections/manga_chapter.dart';
 export 'collections/manga_cookie.dart';
@@ -63,6 +67,8 @@ const List<CollectionSchema<dynamic>> komaIsarSchemas = [
   BookMetadataSchema,
   LibraryCategorySchema,
   MangaExtrasSchema,
+  LibraryGroupSchema,
+  LibraryGroupMemberSchema,
 ];
 
 /// Open (or create) the Koma Isar instance in the app documents dir.
