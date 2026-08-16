@@ -18,6 +18,7 @@ class CatalogCoverCard extends StatelessWidget {
     this.imageProvider,
     this.headers,
     this.badge,
+    this.secondaryBadge,
     this.showBadge = true,
     this.inLibrary = false,
     this.coverMaxBytes,
@@ -31,6 +32,8 @@ class CatalogCoverCard extends StatelessWidget {
   final ImageProvider? imageProvider;
   final Map<String, String>? headers;
   final String? badge;
+  /// Second pill (e.g. file size) — bottom-left of the cover.
+  final String? secondaryBadge;
   final bool showBadge;
   /// Accent heart when this title is already in the user's library.
   final bool inLibrary;
@@ -91,6 +94,15 @@ class CatalogCoverCard extends StatelessWidget {
 
   Widget? _badgeChip({double fontSize = 10}) {
     if (!showBadge || badge == null || badge!.isEmpty) return null;
+    return _pill(badge!, fontSize: fontSize);
+  }
+
+  Widget? _secondaryChip({double fontSize = 10}) {
+    if (secondaryBadge == null || secondaryBadge!.isEmpty) return null;
+    return _pill(secondaryBadge!, fontSize: fontSize);
+  }
+
+  Widget _pill(String label, {double fontSize = 10}) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
       decoration: BoxDecoration(
@@ -98,7 +110,7 @@ class CatalogCoverCard extends StatelessWidget {
         borderRadius: AppSpacing.brPill,
       ),
       child: Text(
-        badge!,
+        label,
         maxLines: 1,
         overflow: TextOverflow.ellipsis,
         style: TextStyle(
@@ -125,6 +137,7 @@ class CatalogCoverCard extends StatelessWidget {
   Widget _grid(BuildContext context) {
     final c = context.colors;
     final chip = _badgeChip();
+    final sizeChip = _secondaryChip();
     final heart = _inLibraryHeart(c);
     return AnimatedPress(
       onTap: _busy ? null : onTap,
@@ -143,6 +156,8 @@ class CatalogCoverCard extends StatelessWidget {
                 if (chip != null) Positioned(top: 6, left: 6, child: chip),
                 if (heart != null)
                   Positioned(top: 6, right: 6, child: heart),
+                if (sizeChip != null)
+                  Positioned(bottom: 6, left: 6, child: sizeChip),
                 if (_busy)
                   Positioned(
                     left: 0,
@@ -187,6 +202,7 @@ class CatalogCoverCard extends StatelessWidget {
   Widget _compact(BuildContext context) {
     final c = context.colors;
     final chip = _badgeChip(fontSize: 9);
+    final sizeChip = _secondaryChip(fontSize: 9);
     final heart = _inLibraryHeart(c);
     return AnimatedPress(
       onTap: _busy ? null : onTap,
@@ -205,6 +221,8 @@ class CatalogCoverCard extends StatelessWidget {
                 if (chip != null) Positioned(top: 4, left: 4, child: chip),
                 if (heart != null)
                   Positioned(top: 4, right: 4, child: heart),
+                if (sizeChip != null)
+                  Positioned(bottom: 4, left: 4, child: sizeChip),
                 if (_busy)
                   Positioned(
                     left: 0,
@@ -240,6 +258,7 @@ class CatalogCoverCard extends StatelessWidget {
   Widget _overlay(BuildContext context) {
     final c = context.colors;
     final chip = _badgeChip();
+    final sizeChip = _secondaryChip();
     final heart = _inLibraryHeart(c);
     return AnimatedPress(
       onTap: _busy ? null : onTap,
@@ -267,6 +286,8 @@ class CatalogCoverCard extends StatelessWidget {
             if (chip != null) Positioned(top: 6, left: 6, child: chip),
             if (heart != null)
               Positioned(top: 6, right: 6, child: heart),
+            if (sizeChip != null)
+              Positioned(bottom: 36, left: 6, child: sizeChip),
             Positioned(
               left: 8,
               right: 8,
@@ -310,6 +331,7 @@ class CatalogCoverCard extends StatelessWidget {
   Widget _list(BuildContext context) {
     final c = context.colors;
     final chip = _badgeChip(fontSize: 9);
+    final sizeChip = _secondaryChip(fontSize: 9);
     final heart = _inLibraryHeart(c);
     return AnimatedPress(
       onTap: _busy ? null : onTap,
@@ -335,6 +357,8 @@ class CatalogCoverCard extends StatelessWidget {
                 if (chip != null) Positioned(top: 2, left: 2, child: chip),
                 if (heart != null)
                   Positioned(top: 2, right: 2, child: heart),
+                if (sizeChip != null)
+                  Positioned(bottom: 2, left: 2, child: sizeChip),
               ],
             ),
             const SizedBox(width: 16),

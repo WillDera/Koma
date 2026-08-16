@@ -242,7 +242,8 @@ class SourceService {
     return getDownloadLinks(result.downloadUrl!);
   }
 
-  Future<bool> downloadFromLink(
+  /// Downloads [url], imports the ebook, and returns the new library book id.
+  Future<int?> downloadFromLink(
     String url,
     String title,
     String ext, {
@@ -256,7 +257,7 @@ class SourceService {
             'Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 Koma/1.0';
         final response = await client.send(request);
 
-        if (response.statusCode != 200) return false;
+        if (response.statusCode != 200) return null;
 
         final total = response.contentLength;
         var received = 0;
@@ -285,7 +286,7 @@ class SourceService {
         await file.writeAsBytes(bytes);
 
         final result = await _ebook.parse(file.path);
-        if (result == null) return false;
+        if (result == null) return null;
 
         final bookId = await _repos.books.insertBook(result.book);
         final chapters = await EbookMediaStore.promote(
@@ -302,12 +303,12 @@ class SourceService {
             epubPath: file.path,
           );
         }
-        return true;
+        return bookId;
       } finally {
         client.close();
       }
     } catch (_) {
-      return false;
+      return null;
     }
   }
 

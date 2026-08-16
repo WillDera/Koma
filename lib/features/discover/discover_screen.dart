@@ -6,8 +6,9 @@ import 'package:go_router/go_router.dart';
 
 import '../../core/models/source.dart';
 import '../../core/providers.dart';
+import '../../core/services/discover_metadata_cache.dart';
+import '../../core/services/metadata_enrichment_service.dart';
 import '../../core/services/source_service.dart';
-import '../../core/utils/image_cache.dart';
 import '../../router/router.dart';
 import '../../theme/app_icons.dart';
 import '../../theme/app_theme.dart';
@@ -217,6 +218,7 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
       _results = [];
       // Keep the Books/Manga tab the user started the search from.
     });
+    ref.read(discoverMetadataProvider.notifier).clearQueue();
     // Manga: progressive Global Search (per-source Loading → Success/Error).
     // Do not await — UI watches [globalSearchProvider].
     ref.read(globalSearchProvider.notifier).search(q);
@@ -231,12 +233,14 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
       _results = books;
       _searching = false;
     });
+    ref.read(discoverMetadataProvider.notifier).enqueue(books);
   }
 
   void _clearSearch() {
     _ctrl.clear();
     _unfocusSearch();
     ref.read(globalSearchProvider.notifier).search('');
+    ref.read(discoverMetadataProvider.notifier).clearQueue();
     setState(() {
       _results = [];
       _loaded = false;
@@ -328,11 +332,10 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
       return;
     }
 
-    final ext = result.extension ?? 'epub';
     if (result.tag == 'libgen') {
       await _pickMirrorAndDownload(context, result);
     } else {
-      await _downloadDirect(result.downloadUrl!, result.title, ext);
+      await _downloadDirect(result, result.downloadUrl!);
     }
   }
 
@@ -345,8 +348,7 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
     if (!mounted) return;
     if (links.isEmpty) {
       if (result.downloadUrl != null && result.downloadUrl!.isNotEmpty) {
-        final ext = result.extension ?? 'epub';
-        await _downloadDirect(result.downloadUrl!, result.title, ext);
+        await _downloadDirect(result, result.downloadUrl!);
       }
       return;
     }
@@ -413,12 +415,14 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
       ),
     );
     if (chosen == null || chosen.isEmpty) return;
-    await _downloadDirect(chosen, result.title, result.extension ?? 'epub');
+    await _downloadDirect(result, chosen);
   }
 
-  Future<void> _downloadDirect(String url, String title, String ext) async {
+  Future<void> _downloadDirect(SourceSearchResult result, String url) async {
+    final title = result.title;
+    final ext = result.extension ?? 'epub';
     setState(() => _downloading[title] = 0.0);
-    final ok = await _svc().downloadFromLink(
+    final bookId = await _svc().downloadFromLink(
       url,
       title,
       ext,
@@ -428,7 +432,16 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
     );
     if (!mounted) return;
     setState(() => _downloading.remove(title));
-    if (ok) {
+    if (bookId != null) {
+      final hit = ref.read(discoverMetadataProvider)[
+        discoverMetadataCacheKey(result.title, result.author)
+      ];
+      if (hit != null && hit.found) {
+        await MetadataEnrichmentService(
+          ref.read(repositoriesProvider).books,
+        ).applyDiscoverHit(bookId, hit);
+      }
+      if (!mounted) return;
       ref.read(libraryProvider.notifier).loadBooks();
       StashToast.show(
         context,
@@ -663,7 +676,7 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
 
 enum _DiscoverSection { books, manga }
 
-class _DiscoverBookResults extends StatelessWidget {
+class _DiscoverBookResults extends ConsumerWidget {
   final List<SourceSearchResult> results;
   final bool gridView;
   final LibraryCardVariant cardVariant;
@@ -684,7 +697,8 @@ class _DiscoverBookResults extends StatelessWidget {
   });
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final meta = ref.watch(discoverMetadataProvider);
     if (results.isEmpty) {
       return const SliverToBoxAdapter(
         child: SizedBox(
@@ -711,17 +725,10 @@ class _DiscoverBookResults extends StatelessWidget {
               final result = results[i];
               return StaggeredEntrance(
                 index: i + 1,
-                child: CatalogCoverCard(
-                  title: result.title,
-                  subtitle: result.author,
-                  imageProvider: result.poster != null
-                      ? cachedCover(result.poster!)
-                      : null,
-                  badge: result.sourceName,
-                  showBadge: showSourcePills,
+                child: _bookCard(
+                  result: result,
+                  meta: meta,
                   variant: variant,
-                  downloadProgress: downloading[result.title],
-                  onTap: () => onTap(result),
                 ),
               );
             },
@@ -740,23 +747,39 @@ class _DiscoverBookResults extends StatelessWidget {
             final result = results[i];
             return StaggeredEntrance(
               index: i + 1,
-              child: CatalogCoverCard(
-                title: result.title,
-                subtitle: result.author,
-                imageProvider: result.poster != null
-                    ? cachedCover(result.poster!)
-                    : null,
-                badge: result.sourceName,
-                showBadge: showSourcePills,
+              child: _bookCard(
+                result: result,
+                meta: meta,
                 variant: LibraryCardVariant.list,
-                downloadProgress: downloading[result.title],
-                onTap: () => onTap(result),
               ),
             );
           },
           childCount: results.length * 2 - 1,
         ),
       ),
+    );
+  }
+
+  Widget _bookCard({
+    required SourceSearchResult result,
+    required Map<String, DiscoverMetadataHit> meta,
+    required LibraryCardVariant variant,
+  }) {
+    final hit = meta[discoverMetadataCacheKey(result.title, result.author)];
+    final coverUrl = hit?.coverUrl;
+    final hasCover = coverUrl != null && coverUrl.isNotEmpty;
+    return CatalogCoverCard(
+      title: result.title,
+      subtitle: result.author,
+      // Prefer Open Library / Google covers — LibGen posters are often broken.
+      imageUrl: hasCover ? coverUrl : null,
+      headers: hasCover ? discoverCoverHeaders(coverUrl) : null,
+      badge: result.sourceName,
+      secondaryBadge: result.size,
+      showBadge: showSourcePills,
+      variant: variant,
+      downloadProgress: downloading[result.title],
+      onTap: () => onTap(result),
     );
   }
 }

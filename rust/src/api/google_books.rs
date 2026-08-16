@@ -1,8 +1,7 @@
 use serde::Deserialize;
 
 use super::author::match_score;
-
-const USER_AGENT: &str = "KomaMetadataEngine/0.1 (ebook reader; metadata lookup)";
+use super::http_util;
 
 #[derive(Debug, Clone, Default)]
 pub struct GbHit {
@@ -51,29 +50,23 @@ pub async fn lookup(
     author: Option<&str>,
     api_key: Option<&str>,
 ) -> Result<Option<GbHit>, String> {
+    // Anonymous Google Books quota is tiny; without a key we only burn 429s.
+    let Some(key) = api_key.map(str::trim).filter(|s| !s.is_empty()) else {
+        return Ok(None);
+    };
+
     let mut q = format!("intitle:{}", title.trim());
     if let Some(a) = author.map(str::trim).filter(|s| !s.is_empty()) {
         q.push_str(&format!("+inauthor:{a}"));
     }
 
-    let mut url = format!(
-        "https://www.googleapis.com/books/v1/volumes?q={}&maxResults=8",
-        urlencoding::encode(&q)
+    let url = format!(
+        "https://www.googleapis.com/books/v1/volumes?q={}&maxResults=8&key={}",
+        urlencoding::encode(&q),
+        urlencoding::encode(key)
     );
-    if let Some(key) = api_key.map(str::trim).filter(|s| !s.is_empty()) {
-        url.push_str(&format!("&key={}", urlencoding::encode(key)));
-    }
 
-    let resp = client
-        .get(&url)
-        .header("User-Agent", USER_AGENT)
-        .send()
-        .await
-        .map_err(|e| e.to_string())?
-        .error_for_status()
-        .map_err(|e| e.to_string())?;
-
-    let body: VolumesResponse = resp.json().await.map_err(|e| e.to_string())?;
+    let body: VolumesResponse = http_util::get_json(client, &url).await?;
     let items = body.items.unwrap_or_default();
 
     let mut best: Option<(i32, VolumeItem)> = None;
