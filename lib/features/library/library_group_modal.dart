@@ -118,55 +118,14 @@ class _LibraryGroupModalState extends ConsumerState<_LibraryGroupModal> {
   }
 
   Future<void> _setOrder(LibraryGroupMemberInfo member) async {
-    final c = context.colors;
-    final ctrl = TextEditingController(
-      text: member.readingOrder?.toString() ?? '',
-    );
     final result = await showDialog<Object>(
       context: context,
       useRootNavigator: true,
       barrierColor: Colors.black.withValues(alpha: 0.45),
-      builder: (ctx) {
-        return AlertDialog(
-          backgroundColor: c.bgElevated,
-          surfaceTintColor: Colors.transparent,
-          shape: RoundedRectangleBorder(
-            borderRadius: AppSpacing.brXl,
-            side: BorderSide(color: c.border, width: 0.5),
-          ),
-          title: Text(
-            'Reading order',
-            style: TextStyle(color: c.textPrimary),
-          ),
-          content: TextField(
-            controller: ctrl,
-            keyboardType: TextInputType.number,
-            autofocus: true,
-            style: TextStyle(color: c.textPrimary),
-            decoration: InputDecoration(
-              labelText: 'Number (blank to clear)',
-              labelStyle: TextStyle(color: c.textSecondary),
-              border: const OutlineInputBorder(),
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(ctx, 'clear'),
-              child: Text('Clear', style: TextStyle(color: c.textTertiary)),
-            ),
-            TextButton(
-              onPressed: () => Navigator.pop(ctx),
-              child: Text('Cancel', style: TextStyle(color: c.textTertiary)),
-            ),
-            TextButton(
-              onPressed: () => Navigator.pop(ctx, ctrl.text.trim()),
-              child: Text('Save', style: TextStyle(color: c.accent)),
-            ),
-          ],
-        );
-      },
+      builder: (ctx) => _ReadingOrderDialog(
+        initialText: member.readingOrder?.toString() ?? '',
+      ),
     );
-    ctrl.dispose();
     if (result == null || !mounted) return;
     final notifier = ref.read(libraryProvider.notifier);
     if (result == 'clear' || (result is String && result.isEmpty)) {
@@ -346,6 +305,71 @@ class _LibraryGroupModalState extends ConsumerState<_LibraryGroupModal> {
           );
         },
       ),
+    );
+  }
+}
+
+class _ReadingOrderDialog extends StatefulWidget {
+  const _ReadingOrderDialog({required this.initialText});
+
+  final String initialText;
+
+  @override
+  State<_ReadingOrderDialog> createState() => _ReadingOrderDialogState();
+}
+
+class _ReadingOrderDialogState extends State<_ReadingOrderDialog> {
+  late final TextEditingController _ctrl;
+
+  @override
+  void initState() {
+    super.initState();
+    _ctrl = TextEditingController(text: widget.initialText);
+  }
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.colors;
+    return AlertDialog(
+      backgroundColor: c.bgElevated,
+      surfaceTintColor: Colors.transparent,
+      shape: RoundedRectangleBorder(
+        borderRadius: AppSpacing.brXl,
+        side: BorderSide(color: c.border, width: 0.5),
+      ),
+      title: Text('Reading order', style: TextStyle(color: c.textPrimary)),
+      content: TextField(
+        controller: _ctrl,
+        keyboardType: TextInputType.number,
+        autofocus: true,
+        style: TextStyle(color: c.textPrimary),
+        decoration: InputDecoration(
+          labelText: 'Number (blank to clear)',
+          labelStyle: TextStyle(color: c.textSecondary),
+          border: const OutlineInputBorder(),
+        ),
+        onSubmitted: (v) => Navigator.pop(context, v.trim()),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context, 'clear'),
+          child: Text('Clear', style: TextStyle(color: c.textTertiary)),
+        ),
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: Text('Cancel', style: TextStyle(color: c.textTertiary)),
+        ),
+        TextButton(
+          onPressed: () => Navigator.pop(context, _ctrl.text.trim()),
+          child: Text('Save', style: TextStyle(color: c.accent)),
+        ),
+      ],
     );
   }
 }
