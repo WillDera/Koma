@@ -182,10 +182,6 @@ class PaginatedChapterView extends StatelessWidget {
     );
 
     return ColoredBox(
-      // Opaque page background. The curl stacks this page under its neighbour
-      // and snapshots both to textures mid-turn, so a transparent page would
-      // let the one underneath show through — idle *and* while turning — and
-      // would capture a blank texture for the mesh to curl.
       color: themeProv.bgColor,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,

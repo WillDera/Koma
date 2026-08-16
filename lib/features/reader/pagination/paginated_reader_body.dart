@@ -7,28 +7,27 @@ import '../../../core/models/highlight.dart';
 import '../../../core/utils/text_extractor.dart';
 import '../../../theme/app_theme.dart';
 import '../../../theme/theme_state.dart';
-import '../../../widgets/page_curl/page_curl_view.dart';
 import '../html/kir_model.dart';
+import '../sheet/sheet_switcher.dart';
 import 'book_page_cursor.dart';
 import 'chapter_paginator.dart';
 import 'paginated_chapter_view.dart';
 import 'reading_spans.dart';
 import 'resume_resolver.dart';
 
-/// The paginated (curl) reader body: measures each chapter into pages and turns
-/// between them with [PageCurlView].
+/// The paginated reader body: measures each chapter into screen-sized sheets
+/// and turns between them with [SheetSwitcher].
 ///
-/// ## Why the curl's page index is not a book-wide page number
+/// ## Why the sheet index is not a book-wide page number
 ///
-/// [PageCurlView] addresses pages with a single int, but a book-wide page number
-/// would mean paginating every chapter up front just to know where chapter N
-/// starts — which defeats [BookPageCursor]'s lazy per-chapter measurement.
+/// [SheetSwitcher] addresses sheets with a single int, but a book-wide page
+/// number would mean paginating every chapter up front just to know where
+/// chapter N starts — which defeats [BookPageCursor]'s lazy per-chapter
+/// measurement.
 ///
-/// [PageCurlView] only ever asks for `pageIndex - 1`, `pageIndex` and
-/// `pageIndex + 1`, so the int is treated as an opaque monotonic counter and
-/// mapped onto relative cursor moves. Returning null for a neighbour is how the
-/// curl learns it cannot turn that way, which falls out naturally at the ends of
-/// the book.
+/// The int is an opaque monotonic counter mapped onto relative cursor moves.
+/// A neighbour step that returns null is how a turn is refused at the ends
+/// of the book.
 class PaginatedReaderBody extends StatefulWidget {
   const PaginatedReaderBody({
     super.key,
@@ -59,8 +58,9 @@ class PaginatedReaderBody extends StatefulWidget {
     this.onSelected,
     this.onSelectionCleared,
     this.onSelectionCollapsed,
-    this.onTap,
     this.kirForChapter,
+    this.sheetColor,
+    this.disableAnimations = false,
   });
 
   final List<Chapter> chapters;
@@ -115,10 +115,15 @@ class PaginatedReaderBody extends StatefulWidget {
   final void Function(int start, int end)? onSelected;
   final VoidCallback? onSelectionCleared;
   final VoidCallback? onSelectionCollapsed;
-  final VoidCallback? onTap;
 
   /// Optional KIR per chapter index (Level 1). Null → HTML [TextExtractor].
   final KirChapter? Function(int chapterIndex)? kirForChapter;
+
+  /// Opaque sheet fill. Defaults to [ThemeState.bgColor].
+  final Color? sheetColor;
+
+  /// Instant sheet swap (reduce-motion / tests).
+  final bool disableAnimations;
 
   @override
   State<PaginatedReaderBody> createState() => _PaginatedReaderBodyState();
@@ -128,8 +133,11 @@ class _PaginatedReaderBodyState extends State<PaginatedReaderBody> {
   BookPageCursor? _cursor;
   late BookPosition _position;
 
-  /// The curl's opaque counter for [_position]. Only differences matter.
-  int _curlIndex = 0;
+  /// Opaque monotonic counter for [_position]. Only differences matter.
+  int _sheetIndex = 0;
+  SheetTurnDirection _sheetDirection = SheetTurnDirection.none;
+  Offset? _panStart;
+  Duration? _panStartAt;
 
   /// Set once the first layout has resolved a resume position, so build knows
   /// whether [_position] is meaningful yet.
@@ -328,36 +336,31 @@ class _PaginatedReaderBodyState extends State<PaginatedReaderBody> {
     }
   }
 
-  void _onCurlPageChanged(BookPageCursor cursor, int nextCurlIndex) {
-    final delta = nextCurlIndex - _curlIndex;
-    if (delta == 0) return;
-
-    var target = _position;
-    for (var i = 0; i < delta.abs(); i++) {
-      final step = delta > 0 ? cursor.next(target) : cursor.previous(target);
-      if (step == null) break; // Start or end of the book.
-      target = step;
-    }
-    if (target == _position) return;
+  void _turnSheet({required bool forward}) {
+    final cursor = _cursor;
+    if (cursor == null) return;
+    final step = forward ? cursor.next(_position) : cursor.previous(_position);
+    if (step == null) return;
 
     final previousChapter = _position.chapterIndex;
     setState(() {
-      _position = target;
-      _curlIndex = nextCurlIndex;
+      _position = step;
+      _sheetIndex += forward ? 1 : -1;
+      _sheetDirection = forward
+          ? SheetTurnDirection.forward
+          : SheetTurnDirection.back;
     });
 
     widget.onPositionChanged?.call(
-      target,
-      cursor.offsetAt(target),
+      step,
+      cursor.offsetAt(step),
       exact: true,
     );
-    if (target.chapterIndex != previousChapter) {
-      widget.onChapterChanged?.call(target.chapterIndex);
+    if (step.chapterIndex != previousChapter) {
+      widget.onChapterChanged?.call(step.chapterIndex);
     }
   }
 
-  /// The page at [_position] offset by [delta], or null when there is none —
-  /// which is how [PageCurlView] learns it cannot turn that way.
   /// Whether stepping once from [pos] toward [delta] stays inside the chapter,
   /// avoiding a measure of a fresh chapter.
   bool _staysInChapter(BookPageCursor cursor, BookPosition pos, int delta) {
@@ -494,29 +497,47 @@ class _PaginatedReaderBodyState extends State<PaginatedReaderBody> {
         if (!_seeded) _seed(cursor);
         _warmNeighborChapters(cursor);
 
-        // The tap handler sits *behind* the curl, not around each page: the
-        // curl's gesture handler is translucent, so a detector wrapping the
-        // page content would win the arena and swallow the edge taps that turn
-        // pages. Here it only sees taps the curl itself declined — i.e. middle
-        // taps — while text selection still works because SelectableText's own
-        // recognizers are nearer the pointer.
-        return Stack(
-          children: [
-            Positioned.fill(
-              child: GestureDetector(
-                onTap: widget.onTap,
-                behavior: HitTestBehavior.translucent,
-              ),
+        final page = _pageAt(cursor, 0);
+        if (page == null) return const SizedBox.shrink();
+
+        return Listener(
+          onPointerDown: (event) {
+            _panStart = event.position;
+            _panStartAt = event.timeStamp;
+          },
+          onPointerCancel: (_) {
+            _panStart = null;
+            _panStartAt = null;
+          },
+          onPointerUp: (event) {
+            final start = _panStart;
+            final startedAt = _panStartAt;
+            _panStart = null;
+            _panStartAt = null;
+            if (start == null || startedAt == null) return;
+            final dx = event.position.dx - start.dx;
+            final dy = event.position.dy - start.dy;
+            if (dx.abs() < 64 || dx.abs() < dy.abs()) return;
+            final dtMs = (event.timeStamp - startedAt).inMilliseconds;
+            final vx = dtMs > 0 ? dx / dtMs * 1000 : 0;
+            if (vx < -500 || dx < -80) {
+              _turnSheet(forward: true);
+            } else if (vx > 500 || dx > 80) {
+              _turnSheet(forward: false);
+            }
+          },
+          child: SheetSwitcher(
+            index: _sheetIndex,
+            direction: _sheetDirection,
+            sheetColor: widget.sheetColor ?? widget.themeProv.bgColor,
+            disableAnimations:
+                widget.disableAnimations ||
+                MediaQuery.disableAnimationsOf(context),
+            child: KeyedSubtree(
+              key: ValueKey(_sheetIndex),
+              child: page,
             ),
-            Positioned.fill(
-              child: PageCurlView(
-                pageIndex: _curlIndex,
-                onPageChanged: (i) => _onCurlPageChanged(cursor, i),
-                pageBuilder: (context, index) =>
-                    _pageAt(cursor, index - _curlIndex),
-              ),
-            ),
-          ],
+          ),
         );
       },
     );

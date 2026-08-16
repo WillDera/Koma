@@ -266,4 +266,32 @@ void main() {
       expect(const PageBreak(5, 5).isEmpty, isTrue);
     });
   });
+
+  test('a chapter with WidgetSpan images paginates without throwing', () {
+    const text = 'Before the figure. After the figure, more words. ';
+    final padded = List.filled(80, text).join();
+    final paginator = ChapterPaginator(
+      spanBuilder: (start, end) => [
+        TextSpan(text: padded.substring(start, end), style: style),
+        const WidgetSpan(
+          alignment: PlaceholderAlignment.middle,
+          child: SizedBox(width: 280, height: 120),
+        ),
+      ],
+    );
+    expect(
+      () => paginator.paginate(
+        chapterId: 1,
+        text: padded,
+        key: keyFor(const Size(300, 200)),
+      ),
+      returnsNormally,
+    );
+    final result = paginator.paginate(
+      chapterId: 1,
+      text: padded,
+      key: keyFor(const Size(300, 200)),
+    );
+    expect(result.pageCount, greaterThan(1));
+  });
 }

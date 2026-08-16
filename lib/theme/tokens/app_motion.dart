@@ -12,6 +12,10 @@ class AppMotion {
   static const Duration sheet = Duration(milliseconds: 420);
   static const Duration page = Duration(milliseconds: 360);
 
+  /// Ebook sheet turn (scroll chapter / page mode). Slower than [page] so the
+  /// occlusion reads as paper, not a snap.
+  static const Duration pageTurn = Duration(milliseconds: 520);
+
   // ─── Curves ─────────────────────────────────────────────────────────────
   static const Curve standard = Cubic(0.2, 0.0, 0.0, 1.0);
   static const Curve emphasized = Cubic(0.2, 0.0, 0.0, 1.0);

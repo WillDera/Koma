@@ -37,7 +37,9 @@ class ReaderTopBar extends StatelessWidget {
       duration: AppMotion.base,
       curve: AppMotion.standard,
       offset: visible ? Offset.zero : const Offset(0, -1),
-      child: GlassBlur.layer(
+      child: IgnorePointer(
+        ignoring: !visible,
+        child: GlassBlur.layer(
         child: Container(
           color: bg.withValues(alpha: 0.78),
           child: SafeArea(
@@ -136,7 +138,8 @@ class ReaderTopBar extends StatelessWidget {
             ),
           ),
         ),
-      );
+      ),
+    );
   }
 }
 

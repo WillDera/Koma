@@ -192,12 +192,22 @@ class ChapterPaginator {
       );
     }
 
+    final span = TextSpan(children: spanBuilder(0, text.length));
     final painter = TextPainter(
-      text: TextSpan(children: spanBuilder(0, text.length)),
+      text: span,
       textDirection: TextDirection.ltr,
       textAlign: key.textAlign,
       textScaler: textScaler,
-    )..layout(maxWidth: width);
+    );
+    // WidgetSpan.build asserts dimensions != null. TextPainter only fills
+    // those when we pass placeholder sizes; without this, any chapter that
+    // contains an image throws during paginate (warm-neighbour and chapter
+    // turns are the usual triggers).
+    final placeholders = _placeholderDimensionsOf(span);
+    if (placeholders.isNotEmpty) {
+      painter.setPlaceholderDimensions(placeholders);
+    }
+    painter.layout(maxWidth: width);
 
     final lines = painter.computeLineMetrics();
     if (lines.isEmpty) {
@@ -261,4 +271,33 @@ class ChapterPaginator {
     final pos = painter.getPositionForOffset(Offset(x.clamp(0.0, width), y));
     return pos.offset;
   }
+}
+
+/// Placeholder sizes for [WidgetSpan]s in [root], in document order.
+///
+/// Image spans in [ReadingSpans] wrap a [SizedBox] with an explicit width and
+/// height; those become the paragraph placeholders. Anything else is empty so
+/// layout still succeeds.
+List<PlaceholderDimensions> _placeholderDimensionsOf(InlineSpan root) {
+  final out = <PlaceholderDimensions>[];
+  root.visitChildren((span) {
+    if (span is WidgetSpan) {
+      out.add(
+        PlaceholderDimensions(
+          size: _placeholderSize(span.child),
+          alignment: span.alignment,
+          baseline: span.baseline ?? TextBaseline.alphabetic,
+        ),
+      );
+    }
+    return true;
+  });
+  return out;
+}
+
+Size _placeholderSize(Widget child) {
+  if (child is SizedBox) {
+    return Size(child.width ?? 0, child.height ?? 0);
+  }
+  return Size.zero;
 }

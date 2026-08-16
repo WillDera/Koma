@@ -48,6 +48,7 @@ void main() {
             themeProv: const ThemeState(),
             charOffsetFor: charOffsetFor ?? (_) => null,
             pixelOffsetFor: (_) => 0,
+            disableAnimations: true,
             onPositionChanged: (pos, offset, {required exact}) {
               positions.add(pos);
             },
@@ -68,18 +69,15 @@ void main() {
   });
 
   testWidgets('pages paint an opaque background', (tester) async {
-    // The curl stacks the incoming page underneath the current one and
-    // snapshots both to textures mid-turn. A transparent page would show the
-    // neighbour through while idle and capture a blank texture for the mesh to
-    // curl — the symptoms were overlapping text and an invisible curl.
+    // Pages paint an opaque sheet fill.
     await pump(tester, chapters: [chapter(1, 0, 200)]);
 
     final boxes = tester.widgetList<ColoredBox>(find.byType(ColoredBox));
     final pageBoxes = boxes.where((b) => b.color.a == 1.0).length;
     expect(
       pageBoxes,
-      greaterThanOrEqualTo(2),
-      reason: 'current page plus incoming neighbour must both be opaque',
+      greaterThanOrEqualTo(1),
+      reason: 'the current sheet must be opaque',
     );
   });
 
@@ -123,6 +121,7 @@ void main() {
             charOffsetFor: (_) => null,
             pixelOffsetFor: (_) => 3000,
             contentHeightFor: (_) => 6000,
+            disableAnimations: true,
             onPositionChanged: (pos, offset, {required exact}) {
               if (!exact) positions.add(pos);
             },
@@ -138,12 +137,12 @@ void main() {
     expect(positions.single.pageIndex, greaterThan(0));
   });
 
-  /// Taps inside the curl's right/left edge strip to turn a page.
+  /// Drag horizontally to turn a page.
   Future<void> turn(WidgetTester tester, {required bool forward}) async {
-    final box = tester.getRect(find.byType(PaginatedReaderBody));
-    // edgeWidth defaults to 56; stay well inside the strip.
-    final dx = forward ? box.right - 20 : box.left + 20;
-    await tester.tapAt(Offset(dx, box.center.dy));
+    await tester.drag(
+      find.byType(PaginatedReaderBody),
+      Offset(forward ? -120 : 120, 0),
+    );
     await tester.pumpAndSettle();
   }
 
@@ -257,6 +256,7 @@ void main() {
                   themeProv: prov,
                   charOffsetFor: charOffsetFor ?? (_) => null,
                   pixelOffsetFor: (_) => 0,
+                  disableAnimations: true,
                 );
               },
             ),
@@ -266,15 +266,12 @@ void main() {
       await tester.pumpAndSettle();
 
       String pageText() {
-        // The curl keeps the incoming page mounted underneath the current one;
-        // the visible page is the last SelectableText in the tree. Pages are
-        // built with SelectableText.rich, so the text is in the span tree.
         final widgets = tester
             .widgetList<SelectableText>(find.byType(SelectableText))
             .toList();
         if (widgets.isEmpty) return '';
-        final last = widgets.last;
-        return last.data ?? last.textSpan?.toPlainText() ?? '';
+        final visible = widgets.first;
+        return visible.data ?? visible.textSpan?.toPlainText() ?? '';
       }
 
       Future<void> apply(ThemeState next) async {

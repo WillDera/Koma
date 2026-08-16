@@ -30,6 +30,7 @@ import 'pagination/rich_chapter_body.dart';
 import 'reader_provider.dart';
 import 'scene/scene_chrome.dart';
 import 'scene/scene_chrome_layer.dart';
+import 'sheet/sheet_switcher.dart';
 import 'tts/tts_engine.dart';
 import 'tts_provider.dart';
 
@@ -92,6 +93,7 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
   Offset _selectionOrigin = Offset.zero;
   _SwipeDirection _lastSwipeDirection = _SwipeDirection.none;
   double? _dragStartX;
+  Offset? _pointerDown;
 
   TtsProvider? _ttsProvider;
   bool _ttsListening = false;
@@ -157,7 +159,7 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
   }
 
   void _scheduleDirectionReset() {
-    Future.delayed(AppMotion.sheet, () {
+    Future.delayed(AppMotion.pageTurn, () {
       if (mounted) setState(() => _lastSwipeDirection = _SwipeDirection.none);
     });
   }
@@ -483,29 +485,11 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
     final velocity = details.velocity.pixelsPerSecond.dx;
 
     if (velocity < -500) {
-      _lastSwipeDirection = _SwipeDirection.next;
-      _provider?.goToNextChapter();
-      if (mounted) {
-        setState(() {
-          _lastScrollOffset = 0;
-          _showUI.value = true;
-        });
-      }
+      _goAdjacentChapter(next: true);
       HapticFeedback.lightImpact();
-      _scheduleDirectionReset();
-      _resetUiHideTimer();
     } else if (velocity > 500) {
-      _lastSwipeDirection = _SwipeDirection.previous;
-      _provider?.goToPreviousChapter();
-      if (mounted) {
-        setState(() {
-          _lastScrollOffset = 0;
-          _showUI.value = true;
-        });
-      }
+      _goAdjacentChapter(next: false);
       HapticFeedback.lightImpact();
-      _scheduleDirectionReset();
-      _resetUiHideTimer();
     }
 
     _dragStartX = null;
@@ -518,9 +502,8 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
           : _lastScrollOffset;
       _provider?.updateScrollPosition(currentOffset);
 
-      // Hide UI chrome while scrolling down, show on scroll up.
-      // Only transition chrome / SystemChrome on the edge — calling
-      // setEnabledSystemUIMode on every scroll-up tick makes flings stutter.
+      // Hide UI chrome while scrolling down. Tap toggles it back; do not
+      // show again on scroll-up (that fought tap-to-toggle).
       final diff = currentOffset - _lastScrollOffset;
       if (diff > 8 && currentOffset > 80) {
         if (_showUI.value) {
@@ -531,54 +514,77 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
             _applySystemUiMode();
           }
         }
-        _lastScrollOffset = currentOffset;
-      } else if (diff < -4 || currentOffset <= 0) {
-        if (!_showUI.value) {
-          _showUI.value = true;
-          _resetUiHideTimer();
-        }
-        _lastScrollOffset = currentOffset;
       }
+      _lastScrollOffset = currentOffset;
     }
     return false;
   }
 
-  void _handleTapUp(TapUpDetails details) {
+  static const _tapSlop = 18.0;
+
+  void _onReaderPointerDown(PointerDownEvent event) {
+    _pointerDown = event.position;
+  }
+
+  void _onReaderPointerMove(PointerMoveEvent event) {
+    final start = _pointerDown;
+    if (start != null && (event.position - start).distance > _tapSlop) {
+      _pointerDown = null;
+    }
+  }
+
+  void _onReaderPointerUp(PointerUpEvent event) {
+    if (_pointerDown == null) return;
+    _pointerDown = null;
+    _onReaderTap();
+  }
+
+  void _onReaderPointerCancel(PointerCancelEvent event) {
+    _pointerDown = null;
+  }
+
+  void _onReaderTap() {
     if (!mounted) return;
     if (_toolbarVisible) {
       _hideToolbar();
-      _resetUiHideTimer();
       return;
     }
-    final RenderBox renderBox = context.findRenderObject()! as RenderBox;
-    final localPos = renderBox.globalToLocal(details.globalPosition);
-    final screenWidth = renderBox.size.width;
-
-    final provider = _provider!;
-    if (provider.chapters.length > 1) {
-      if (localPos.dx < screenWidth / 3) {
-        _lastSwipeDirection = _SwipeDirection.previous;
-        provider.goToPreviousChapter();
-        setState(() {
-          _lastScrollOffset = 0;
-          _showUI.value = true;
-        });
-        _scheduleDirectionReset();
-        _resetUiHideTimer();
-        return;
-      } else if (localPos.dx > 2 * screenWidth / 3) {
-        _lastSwipeDirection = _SwipeDirection.next;
-        provider.goToNextChapter();
-        setState(() {
-          _lastScrollOffset = 0;
-          _showUI.value = true;
-        });
-        _scheduleDirectionReset();
-        _resetUiHideTimer();
-        return;
-      }
+    _showUI.value = !_showUI.value;
+    if (_showUI.value) {
+      _resetUiHideTimer();
+    } else {
+      _cancelUiHideTimer();
+      _applySystemUiMode();
     }
-    // Middle tap: force show UI (not toggle).
+  }
+
+  SheetTurnDirection get _chapterSheetDirection {
+    switch (_lastSwipeDirection) {
+      case _SwipeDirection.next:
+        return SheetTurnDirection.forward;
+      case _SwipeDirection.previous:
+        return SheetTurnDirection.back;
+      case _SwipeDirection.none:
+        return SheetTurnDirection.none;
+    }
+  }
+
+  void _goAdjacentChapter({required bool next}) {
+    _lastSwipeDirection = next
+        ? _SwipeDirection.next
+        : _SwipeDirection.previous;
+    if (next) {
+      _provider?.goToNextChapter();
+    } else {
+      _provider?.goToPreviousChapter();
+    }
+    if (mounted) {
+      setState(() {
+        _lastScrollOffset = 0;
+        _showUI.value = true;
+      });
+    }
+    _scheduleDirectionReset();
     _resetUiHideTimer();
   }
 
@@ -627,16 +633,17 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
     _resetUiHideTimer();
   }
 
-  /// The paginated + page-curl reading surface.
+  /// The paginated (page-style) reading surface.
   ///
   /// Deliberately does not wire the horizontal-drag chapter jump used by scroll
-  /// mode: the curl owns horizontal drags, and both competing in the gesture
-  /// arena would make page turns unreliable.
-  Widget _buildCurlBody(
+  /// mode: the sheet pager owns horizontal drags, and both competing in the
+  /// gesture arena would make page turns unreliable.
+  Widget _buildPageBody(
     ThemeState themeProv,
     ReaderState provider,
-    Chapter chapter,
-  ) {
+    Chapter chapter, {
+    required Color sheetColor,
+  }) {
     final pad = _horizontalPadding(themeProv.pageWidth);
     return Padding(
       padding: EdgeInsets.fromLTRB(
@@ -680,15 +687,8 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
             pixelOffsetFor: (i) => i < provider.chapters.length
                 ? provider.chapters[i].scrollPosition
                 : 0,
-            // Edge taps belong to the curl (it turns pages with them), so a tap
-            // reaching us is a middle tap: manage the UI only, never jump
-            // chapters the way scroll mode's edge taps do.
-            onTap: () {
-              if (_toolbarVisible) {
-                _hideToolbar();
-              }
-              _resetUiHideTimer();
-            },
+            sheetColor: sheetColor,
+            disableAnimations: MediaQuery.disableAnimationsOf(context),
             onSelected: (start, end) {
               final text = TextExtractor.extractCached(
                 chapter.id,
@@ -761,11 +761,7 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
     );
     final pageDark =
         ThemeData.estimateBrightnessForColor(pageBg) == Brightness.dark;
-    final switchMs = SceneChrome.switchDuration(
-      chrome,
-      AppMotion.sheet,
-      disableAnimations: MediaQuery.disableAnimationsOf(context),
-    );
+    final reduceMotion = MediaQuery.disableAnimationsOf(context);
 
     return AnnotatedRegion<SystemUiOverlayStyle>(
       value: pageDark
@@ -773,22 +769,6 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
           : SystemUiOverlayStyle.dark,
       child: Scaffold(
         backgroundColor: pageBg,
-        bottomNavigationBar: ValueListenableBuilder<bool>(
-          valueListenable: _showUI,
-          builder: (_, showUI, _) => ReaderBottomBar(
-            visible: showUI && !_toolbarVisible,
-            onChapters: () =>
-                _openChapters(context, ref.read(readerProvider.notifier)),
-            onPrevious: () =>
-                ref.read(readerProvider.notifier).goToPreviousChapter(),
-            onNext: () => ref.read(readerProvider.notifier).goToNextChapter(),
-            canGoNext: provider.currentIndex < provider.chapters.length - 1,
-            canGoPrevious: provider.currentIndex > 0,
-            currentIndex: provider.currentIndex,
-            totalChapters: provider.chapters.length,
-            readingTimeRemaining: readingTime,
-          ),
-        ),
         body: Stack(
           children: [
             if (chrome != null &&
@@ -796,168 +776,153 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
                     chrome.ambientOverlayAlpha > 0))
               Positioned.fill(child: SceneChromeLayer(chrome: chrome)),
             Positioned.fill(
-              child: kPageCurlUiEnabled && themeProv.pageStyle == PageStyle.curl
-                  ? _buildCurlBody(themeProv, provider, chapter)
-                  : GestureDetector(
-                      onTapUp: _handleTapUp,
-                      onHorizontalDragStart: _onHorizontalDragStart,
-                      onHorizontalDragEnd: _onHorizontalDragEnd,
-                      behavior: HitTestBehavior.opaque,
-                      child: NotificationListener<ScrollStartNotification>(
-                        onNotification: (notification) {
-                          if (_toolbarVisible) {
-                            _hideToolbar();
-                            return true;
-                          }
-                          return false;
-                        },
-                        child: NotificationListener<ScrollUpdateNotification>(
-                          onNotification: _onScrollNotification,
-                          child: SingleChildScrollView(
-                            controller: _scrollController,
-                            primary: false,
-                            padding: EdgeInsets.fromLTRB(
-                              _horizontalPadding(themeProv.pageWidth),
-                              MediaQuery.of(context).padding.top + 32,
-                              _horizontalPadding(themeProv.pageWidth),
-                              MediaQuery.of(context).padding.bottom + 16,
-                            ),
-                            child: Center(
-                              child: ConstrainedBox(
-                                constraints: BoxConstraints(
-                                  maxWidth: themeProv.pageWidth,
-                                ),
-                                child: ClipRect(
-                                  child: AnimatedSwitcher(
-                                    duration: switchMs,
-                                    transitionBuilder: (child, animation) {
-                                      var begin = Offset.zero;
-                                      switch (_lastSwipeDirection) {
-                                        case _SwipeDirection.next:
-                                          begin = const Offset(1, 0);
-                                        case _SwipeDirection.previous:
-                                          begin = const Offset(-1, 0);
-                                        case _SwipeDirection.none:
-                                          begin = Offset.zero;
-                                      }
-                                      final slide = Tween(
-                                        begin: begin,
-                                        end: Offset.zero,
-                                      );
-                                      final scale = Tween(
-                                        begin: 0.96,
-                                        end: 1.0,
-                                      );
-                                      return SlideTransition(
-                                        position: animation.drive(slide),
-                                        child: ScaleTransition(
-                                          scale: animation.drive(scale),
-                                          child: FadeTransition(
-                                            opacity: animation,
-                                            child: child,
-                                          ),
-                                        ),
-                                      );
-                                    },
-                                    child: RepaintBoundary(
-                                      key: ValueKey('chapter-${chapter.id}'),
-                                      child: Column(
-                                        crossAxisAlignment:
-                                            CrossAxisAlignment.start,
-                                        children: [
-                                          // Chapter title
-                                          Text(
-                                            chapter.title,
-                                            style:
-                                                AppType.reading(
-                                                  fontSize: themeProv.fontSize,
-                                                  lineHeight:
-                                                      themeProv.lineHeight,
-                                                  color: context
-                                                      .colors
-                                                      .textTertiary,
-                                                ).copyWith(
-                                                  fontStyle: FontStyle.italic,
-                                                  fontWeight: FontWeight.w500,
-                                                  letterSpacing: 0.1,
-                                                ),
-                                          ),
-                                          const SizedBox(height: 28),
-                                          ListenableBuilder(
-                                            listenable: Listenable.merge([
-                                              _ttsProvider!,
-                                              _focusCtrl,
-                                            ]),
-                                            builder: (_, _) {
-                                              final doc =
-                                                  TextExtractor.documentCached(
-                                                    chapter.id,
-                                                    chapter.content,
-                                                    kir: provider.currentKir,
-                                                  );
-                                              return RichChapterBody(
-                                                document: doc,
-                                                themeProv: themeProv,
-                                                baseStyle: _readingStyle(
-                                                  themeProv,
-                                                ),
-                                                brightness: Theme.of(
-                                                  context,
-                                                ).brightness,
-                                                highlights: _highlights,
-                                                ttsActive:
-                                                    _ttsProvider?.isActive ??
-                                                    false,
-                                                ttsStart:
-                                                    _ttsProvider
-                                                        ?.currentSentenceOffset ??
-                                                    0,
-                                                ttsEnd:
-                                                    _ttsProvider
-                                                        ?.currentSentenceEnd ??
-                                                    0,
-                                                focusStart: _focusStart,
-                                                focusEnd: _focusEnd,
-                                                focusAlpha: _focusAlpha,
-                                                contentKey:
-                                                    'content-$_highlightVersion-${chapter.id}',
-                                                textAlign: themeProv.textAlign,
-                                                onSelectionChanged:
-                                                    (selection) {
-                                                      final content =
-                                                          doc.plainText;
-                                                      if (selection.end <=
-                                                          content.length) {
-                                                        _selStart =
-                                                            selection.start;
-                                                        _selectedText = content
-                                                            .substring(
-                                                              selection.start,
-                                                              selection.end,
-                                                            );
-                                                        _showToolbar(
-                                                          Offset.zero,
-                                                        );
-                                                      }
-                                                    },
-                                                onSelectionCleared:
-                                                    _hideToolbarOnSelectionLost,
-                                              );
-                                            },
-                                          ),
-                                          const SizedBox(height: 80),
-                                        ],
+              child: Listener(
+                behavior: HitTestBehavior.translucent,
+                onPointerDown: _onReaderPointerDown,
+                onPointerMove: _onReaderPointerMove,
+                onPointerUp: _onReaderPointerUp,
+                onPointerCancel: _onReaderPointerCancel,
+                child: themeProv.pageStyle == PageStyle.page
+                    ? _buildPageBody(
+                        themeProv,
+                        provider,
+                        chapter,
+                        sheetColor: pageBg,
+                      )
+                    : GestureDetector(
+                        onHorizontalDragStart: _onHorizontalDragStart,
+                        onHorizontalDragEnd: _onHorizontalDragEnd,
+                        behavior: HitTestBehavior.opaque,
+                        child: SheetSwitcher(
+                          index: provider.currentIndex,
+                          direction: _chapterSheetDirection,
+                          sheetColor: pageBg,
+                          disableAnimations: reduceMotion,
+                          child: KeyedSubtree(
+                            key: ValueKey('chapter-${chapter.id}'),
+                            child: NotificationListener<ScrollStartNotification>(
+                              onNotification: (notification) {
+                                if (_toolbarVisible) {
+                                  _hideToolbar();
+                                  return true;
+                                }
+                                return false;
+                              },
+                              child: NotificationListener<ScrollUpdateNotification>(
+                                onNotification: _onScrollNotification,
+                                child: SingleChildScrollView(
+                                  controller: _scrollController,
+                                  primary: false,
+                                  padding: EdgeInsets.fromLTRB(
+                                    _horizontalPadding(themeProv.pageWidth),
+                                    MediaQuery.of(context).padding.top + 32,
+                                    _horizontalPadding(themeProv.pageWidth),
+                                    MediaQuery.of(context).padding.bottom + 16,
+                                  ),
+                                  child: Center(
+                                    child: ConstrainedBox(
+                                      constraints: BoxConstraints(
+                                        maxWidth: themeProv.pageWidth,
                                       ),
-                                    ), // RepaintBoundary
-                                  ), // AnimatedSwitcher
-                                ), // ClipRect
-                              ), // ConstrainedBox
-                            ), // Center
-                          ), // SingleChildScrollView
-                        ), // NotificationListener<ScrollUpdateNotification>
-                      ), // NotificationListener<ScrollStartNotification>
-                    ), // GestureDetector
-            ), // Positioned.fill
+                                      child: RepaintBoundary(
+                                        child: Column(
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.start,
+                                          children: [
+                                            Text(
+                                              chapter.title,
+                                              style:
+                                                  AppType.reading(
+                                                    fontSize:
+                                                        themeProv.fontSize,
+                                                    lineHeight:
+                                                        themeProv.lineHeight,
+                                                    color: context
+                                                        .colors
+                                                        .textTertiary,
+                                                  ).copyWith(
+                                                    fontStyle: FontStyle.italic,
+                                                    fontWeight: FontWeight.w500,
+                                                    letterSpacing: 0.1,
+                                                  ),
+                                            ),
+                                            const SizedBox(height: 28),
+                                            ListenableBuilder(
+                                              listenable: Listenable.merge([
+                                                _ttsProvider!,
+                                                _focusCtrl,
+                                              ]),
+                                              builder: (_, _) {
+                                                final doc =
+                                                    TextExtractor.documentCached(
+                                                      chapter.id,
+                                                      chapter.content,
+                                                      kir: provider.currentKir,
+                                                    );
+                                                return RichChapterBody(
+                                                  document: doc,
+                                                  themeProv: themeProv,
+                                                  baseStyle: _readingStyle(
+                                                    themeProv,
+                                                  ),
+                                                  brightness: Theme.of(
+                                                    context,
+                                                  ).brightness,
+                                                  highlights: _highlights,
+                                                  ttsActive:
+                                                      _ttsProvider?.isActive ??
+                                                      false,
+                                                  ttsStart:
+                                                      _ttsProvider
+                                                          ?.currentSentenceOffset ??
+                                                      0,
+                                                  ttsEnd:
+                                                      _ttsProvider
+                                                          ?.currentSentenceEnd ??
+                                                      0,
+                                                  focusStart: _focusStart,
+                                                  focusEnd: _focusEnd,
+                                                  focusAlpha: _focusAlpha,
+                                                  contentKey:
+                                                      'content-$_highlightVersion-${chapter.id}',
+                                                  textAlign:
+                                                      themeProv.textAlign,
+                                                  onSelectionChanged:
+                                                      (selection) {
+                                                        final content =
+                                                            doc.plainText;
+                                                        if (selection.end <=
+                                                            content.length) {
+                                                          _selStart =
+                                                              selection.start;
+                                                          _selectedText = content
+                                                              .substring(
+                                                                selection.start,
+                                                                selection.end,
+                                                              );
+                                                          _showToolbar(
+                                                            Offset.zero,
+                                                          );
+                                                        }
+                                                      },
+                                                  onSelectionCleared:
+                                                      _hideToolbarOnSelectionLost,
+                                                );
+                                              },
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+              ),
+            ),
             // Top bar
             Positioned(
               top: 0,
@@ -984,6 +949,28 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
                     onTtsToggle: _toggleTts,
                     isTtsActive: _ttsProvider?.isActive ?? false,
                   ),
+                ),
+              ),
+            ),
+
+            Positioned(
+              left: 0,
+              right: 0,
+              bottom: 0,
+              child: ValueListenableBuilder<bool>(
+                valueListenable: _showUI,
+                builder: (_, showUI, _) => ReaderBottomBar(
+                  visible: showUI && !_toolbarVisible,
+                  onChapters: () =>
+                      _openChapters(context, ref.read(readerProvider.notifier)),
+                  onPrevious: () => _goAdjacentChapter(next: false),
+                  onNext: () => _goAdjacentChapter(next: true),
+                  canGoNext:
+                      provider.currentIndex < provider.chapters.length - 1,
+                  canGoPrevious: provider.currentIndex > 0,
+                  currentIndex: provider.currentIndex,
+                  totalChapters: provider.chapters.length,
+                  readingTimeRemaining: readingTime,
                 ),
               ),
             ),
@@ -1416,8 +1403,8 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
           _showUI.value = true;
         });
       },
-      onPrevious: () => provider.goToPreviousChapter(),
-      onNext: () => provider.goToNextChapter(),
+      onPrevious: () => _goAdjacentChapter(next: false),
+      onNext: () => _goAdjacentChapter(next: true),
     );
   }
 }

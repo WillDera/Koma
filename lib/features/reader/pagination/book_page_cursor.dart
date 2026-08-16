@@ -25,7 +25,7 @@ class BookPosition {
   String toString() => 'BookPosition(ch $chapterIndex, page $pageIndex)';
 }
 
-/// Maps between book positions and the flat page indices [PageCurlView] wants,
+/// Maps between book positions and a monotonic sheet index,
 /// paginating chapters on demand.
 ///
 /// Chapters are measured lazily — opening a book only measures the chapter being
