@@ -17,6 +17,8 @@ urlencoding = "2"
 koma-core = { git = "https://github.com/WillDera/KRE.git" }
 koma-epub = { git = "https://github.com/WillDera/KRE.git" }
 koma-compiler = { git = "https://github.com/WillDera/KRE.git" }
+koma-scene = { git = "https://github.com/WillDera/KRE.git" }
+cosmic-text = "0.13"
 
 [dev-dependencies]
 tokio = { version = "1", features = ["rt-multi-thread", "macros"] }

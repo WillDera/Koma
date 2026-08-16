@@ -38,7 +38,7 @@ flutter_rust_bridge::frb_generated_boilerplate!(
     default_rust_auto_opaque = RustAutoOpaqueMoi,
 );
 pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_VERSION: &str = "2.12.0";
-pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = -604403930;
+pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = -1840077829;
 
 // Section: executor
 
@@ -75,6 +75,41 @@ fn wire__crate__api__koma__chapter_kir_by_index_impl(
                 transform_result_sse::<_, String>((move || {
                     let output_ok =
                         crate::api::koma::chapter_kir_by_index(api_koma_path, api_index)?;
+                    Ok(output_ok)
+                })())
+            }
+        },
+    )
+}
+fn wire__crate__api__koma__chapter_payload_by_index_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_normal::<flutter_rust_bridge::for_generated::SseCodec, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "chapter_payload_by_index",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_koma_path = <String>::sse_decode(&mut deserializer);
+            let api_index = <u32>::sse_decode(&mut deserializer);
+            deserializer.end();
+            move |context| {
+                transform_result_sse::<_, String>((move || {
+                    let output_ok =
+                        crate::api::koma::chapter_payload_by_index(api_koma_path, api_index)?;
                     Ok(output_ok)
                 })())
             }
@@ -142,6 +177,53 @@ fn wire__crate__api__simple__init_app_impl(
                     let output_ok = Result::<_, ()>::Ok({
                         crate::api::simple::init_app();
                     })?;
+                    Ok(output_ok)
+                })())
+            }
+        },
+    )
+}
+fn wire__crate__api__koma__layout_chapter_pages_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_normal::<flutter_rust_bridge::for_generated::SseCodec, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "layout_chapter_pages",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_koma_path = <String>::sse_decode(&mut deserializer);
+            let api_index = <u32>::sse_decode(&mut deserializer);
+            let api_width = <u32>::sse_decode(&mut deserializer);
+            let api_height = <u32>::sse_decode(&mut deserializer);
+            let api_font_size = <f64>::sse_decode(&mut deserializer);
+            let api_line_height = <f64>::sse_decode(&mut deserializer);
+            let api_margin = <f64>::sse_decode(&mut deserializer);
+            deserializer.end();
+            move |context| {
+                transform_result_sse::<_, String>((move || {
+                    let output_ok = crate::api::koma::layout_chapter_pages(
+                        api_koma_path,
+                        api_index,
+                        api_width,
+                        api_height,
+                        api_font_size,
+                        api_line_height,
+                        api_margin,
+                    )?;
                     Ok(output_ok)
                 })())
             }
@@ -282,6 +364,25 @@ impl SseDecode for bool {
     }
 }
 
+impl SseDecode for crate::api::koma::ChapterPayloadDto {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_chapter = <crate::api::koma::KirChapterDto>::sse_decode(deserializer);
+        let mut var_scene = <Option<crate::api::koma::SceneChromeDto>>::sse_decode(deserializer);
+        return crate::api::koma::ChapterPayloadDto {
+            chapter: var_chapter,
+            scene: var_scene,
+        };
+    }
+}
+
+impl SseDecode for f64 {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        deserializer.cursor.read_f64::<NativeEndian>().unwrap()
+    }
+}
+
 impl SseDecode for i64 {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
@@ -349,6 +450,70 @@ impl SseDecode for crate::api::koma::KomaChapterInfo {
         return crate::api::koma::KomaChapterInfo {
             id: var_id,
             title: var_title,
+        };
+    }
+}
+
+impl SseDecode for crate::api::koma::LayoutGlyphDto {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_x = <f64>::sse_decode(deserializer);
+        let mut var_y = <f64>::sse_decode(deserializer);
+        let mut var_width = <f64>::sse_decode(deserializer);
+        let mut var_height = <f64>::sse_decode(deserializer);
+        let mut var_charStart = <u32>::sse_decode(deserializer);
+        let mut var_charEnd = <u32>::sse_decode(deserializer);
+        return crate::api::koma::LayoutGlyphDto {
+            x: var_x,
+            y: var_y,
+            width: var_width,
+            height: var_height,
+            char_start: var_charStart,
+            char_end: var_charEnd,
+        };
+    }
+}
+
+impl SseDecode for crate::api::koma::LayoutLineDto {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_y = <f64>::sse_decode(deserializer);
+        let mut var_height = <f64>::sse_decode(deserializer);
+        let mut var_charStart = <u32>::sse_decode(deserializer);
+        let mut var_charEnd = <u32>::sse_decode(deserializer);
+        let mut var_glyphs = <Vec<crate::api::koma::LayoutGlyphDto>>::sse_decode(deserializer);
+        return crate::api::koma::LayoutLineDto {
+            y: var_y,
+            height: var_height,
+            char_start: var_charStart,
+            char_end: var_charEnd,
+            glyphs: var_glyphs,
+        };
+    }
+}
+
+impl SseDecode for crate::api::koma::LayoutPageDto {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_charStart = <u32>::sse_decode(deserializer);
+        let mut var_charEnd = <u32>::sse_decode(deserializer);
+        let mut var_lines = <Vec<crate::api::koma::LayoutLineDto>>::sse_decode(deserializer);
+        return crate::api::koma::LayoutPageDto {
+            char_start: var_charStart,
+            char_end: var_charEnd,
+            lines: var_lines,
+        };
+    }
+}
+
+impl SseDecode for crate::api::koma::LayoutResultDto {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_plainText = <String>::sse_decode(deserializer);
+        let mut var_pages = <Vec<crate::api::koma::LayoutPageDto>>::sse_decode(deserializer);
+        return crate::api::koma::LayoutResultDto {
+            plain_text: var_plainText,
+            pages: var_pages,
         };
     }
 }
@@ -431,6 +596,42 @@ impl SseDecode for Vec<crate::api::koma::KomaChapterInfo> {
     }
 }
 
+impl SseDecode for Vec<crate::api::koma::LayoutGlyphDto> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut len_ = <i32>::sse_decode(deserializer);
+        let mut ans_ = Vec::with_capacity(len_ as usize);
+        for idx_ in 0..len_ {
+            ans_.push(<crate::api::koma::LayoutGlyphDto>::sse_decode(deserializer));
+        }
+        return ans_;
+    }
+}
+
+impl SseDecode for Vec<crate::api::koma::LayoutLineDto> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut len_ = <i32>::sse_decode(deserializer);
+        let mut ans_ = Vec::with_capacity(len_ as usize);
+        for idx_ in 0..len_ {
+            ans_.push(<crate::api::koma::LayoutLineDto>::sse_decode(deserializer));
+        }
+        return ans_;
+    }
+}
+
+impl SseDecode for Vec<crate::api::koma::LayoutPageDto> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut len_ = <i32>::sse_decode(deserializer);
+        let mut ans_ = Vec::with_capacity(len_ as usize);
+        for idx_ in 0..len_ {
+            ans_.push(<crate::api::koma::LayoutPageDto>::sse_decode(deserializer));
+        }
+        return ans_;
+    }
+}
+
 impl SseDecode for Vec<u8> {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
@@ -451,6 +652,37 @@ impl SseDecode for Option<String> {
         } else {
             return None;
         }
+    }
+}
+
+impl SseDecode for Option<crate::api::koma::SceneChromeDto> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        if (<bool>::sse_decode(deserializer)) {
+            return Some(<crate::api::koma::SceneChromeDto>::sse_decode(deserializer));
+        } else {
+            return None;
+        }
+    }
+}
+
+impl SseDecode for crate::api::koma::SceneChromeDto {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_environmentKind = <String>::sse_decode(deserializer);
+        let mut var_backgroundHex = <String>::sse_decode(deserializer);
+        let mut var_ambientHex = <String>::sse_decode(deserializer);
+        let mut var_ambientIntensity = <f64>::sse_decode(deserializer);
+        let mut var_frost = <f64>::sse_decode(deserializer);
+        let mut var_fadeSeconds = <f64>::sse_decode(deserializer);
+        return crate::api::koma::SceneChromeDto {
+            environment_kind: var_environmentKind,
+            background_hex: var_backgroundHex,
+            ambient_hex: var_ambientHex,
+            ambient_intensity: var_ambientIntensity,
+            frost: var_frost,
+            fade_seconds: var_fadeSeconds,
+        };
     }
 }
 
@@ -490,10 +722,14 @@ fn pde_ffi_dispatcher_primary_impl(
     // Codec=Pde (Serialization + dispatch), see doc to use other codecs
     match func_id {
         1 => wire__crate__api__koma__chapter_kir_by_index_impl(port, ptr, rust_vec_len, data_len),
-        2 => wire__crate__api__koma__compile_epub_impl(port, ptr, rust_vec_len, data_len),
-        3 => wire__crate__api__simple__init_app_impl(port, ptr, rust_vec_len, data_len),
-        4 => wire__crate__api__metadata__lookup_books_impl(port, ptr, rust_vec_len, data_len),
-        5 => wire__crate__api__koma__package_chapters_impl(port, ptr, rust_vec_len, data_len),
+        2 => {
+            wire__crate__api__koma__chapter_payload_by_index_impl(port, ptr, rust_vec_len, data_len)
+        }
+        3 => wire__crate__api__koma__compile_epub_impl(port, ptr, rust_vec_len, data_len),
+        4 => wire__crate__api__simple__init_app_impl(port, ptr, rust_vec_len, data_len),
+        5 => wire__crate__api__koma__layout_chapter_pages_impl(port, ptr, rust_vec_len, data_len),
+        6 => wire__crate__api__metadata__lookup_books_impl(port, ptr, rust_vec_len, data_len),
+        7 => wire__crate__api__koma__package_chapters_impl(port, ptr, rust_vec_len, data_len),
         _ => unreachable!(),
     }
 }
@@ -560,6 +796,27 @@ impl flutter_rust_bridge::IntoIntoDart<crate::api::metadata::BookMetadataResult>
     for crate::api::metadata::BookMetadataResult
 {
     fn into_into_dart(self) -> crate::api::metadata::BookMetadataResult {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::api::koma::ChapterPayloadDto {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.chapter.into_into_dart().into_dart(),
+            self.scene.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for crate::api::koma::ChapterPayloadDto
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<crate::api::koma::ChapterPayloadDto>
+    for crate::api::koma::ChapterPayloadDto
+{
+    fn into_into_dart(self) -> crate::api::koma::ChapterPayloadDto {
         self
     }
 }
@@ -649,6 +906,123 @@ impl flutter_rust_bridge::IntoIntoDart<crate::api::koma::KomaChapterInfo>
         self
     }
 }
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::api::koma::LayoutGlyphDto {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.x.into_into_dart().into_dart(),
+            self.y.into_into_dart().into_dart(),
+            self.width.into_into_dart().into_dart(),
+            self.height.into_into_dart().into_dart(),
+            self.char_start.into_into_dart().into_dart(),
+            self.char_end.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for crate::api::koma::LayoutGlyphDto
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<crate::api::koma::LayoutGlyphDto>
+    for crate::api::koma::LayoutGlyphDto
+{
+    fn into_into_dart(self) -> crate::api::koma::LayoutGlyphDto {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::api::koma::LayoutLineDto {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.y.into_into_dart().into_dart(),
+            self.height.into_into_dart().into_dart(),
+            self.char_start.into_into_dart().into_dart(),
+            self.char_end.into_into_dart().into_dart(),
+            self.glyphs.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for crate::api::koma::LayoutLineDto
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<crate::api::koma::LayoutLineDto>
+    for crate::api::koma::LayoutLineDto
+{
+    fn into_into_dart(self) -> crate::api::koma::LayoutLineDto {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::api::koma::LayoutPageDto {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.char_start.into_into_dart().into_dart(),
+            self.char_end.into_into_dart().into_dart(),
+            self.lines.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for crate::api::koma::LayoutPageDto
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<crate::api::koma::LayoutPageDto>
+    for crate::api::koma::LayoutPageDto
+{
+    fn into_into_dart(self) -> crate::api::koma::LayoutPageDto {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::api::koma::LayoutResultDto {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.plain_text.into_into_dart().into_dart(),
+            self.pages.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for crate::api::koma::LayoutResultDto
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<crate::api::koma::LayoutResultDto>
+    for crate::api::koma::LayoutResultDto
+{
+    fn into_into_dart(self) -> crate::api::koma::LayoutResultDto {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::api::koma::SceneChromeDto {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.environment_kind.into_into_dart().into_dart(),
+            self.background_hex.into_into_dart().into_dart(),
+            self.ambient_hex.into_into_dart().into_dart(),
+            self.ambient_intensity.into_into_dart().into_dart(),
+            self.frost.into_into_dart().into_dart(),
+            self.fade_seconds.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for crate::api::koma::SceneChromeDto
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<crate::api::koma::SceneChromeDto>
+    for crate::api::koma::SceneChromeDto
+{
+    fn into_into_dart(self) -> crate::api::koma::SceneChromeDto {
+        self
+    }
+}
 
 impl SseEncode for String {
     // Codec=Sse (Serialization based), see doc to use other codecs
@@ -686,6 +1060,21 @@ impl SseEncode for bool {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
         serializer.cursor.write_u8(self as _).unwrap();
+    }
+}
+
+impl SseEncode for crate::api::koma::ChapterPayloadDto {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <crate::api::koma::KirChapterDto>::sse_encode(self.chapter, serializer);
+        <Option<crate::api::koma::SceneChromeDto>>::sse_encode(self.scene, serializer);
+    }
+}
+
+impl SseEncode for f64 {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        serializer.cursor.write_f64::<NativeEndian>(self).unwrap();
     }
 }
 
@@ -733,6 +1122,46 @@ impl SseEncode for crate::api::koma::KomaChapterInfo {
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
         <String>::sse_encode(self.id, serializer);
         <Option<String>>::sse_encode(self.title, serializer);
+    }
+}
+
+impl SseEncode for crate::api::koma::LayoutGlyphDto {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <f64>::sse_encode(self.x, serializer);
+        <f64>::sse_encode(self.y, serializer);
+        <f64>::sse_encode(self.width, serializer);
+        <f64>::sse_encode(self.height, serializer);
+        <u32>::sse_encode(self.char_start, serializer);
+        <u32>::sse_encode(self.char_end, serializer);
+    }
+}
+
+impl SseEncode for crate::api::koma::LayoutLineDto {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <f64>::sse_encode(self.y, serializer);
+        <f64>::sse_encode(self.height, serializer);
+        <u32>::sse_encode(self.char_start, serializer);
+        <u32>::sse_encode(self.char_end, serializer);
+        <Vec<crate::api::koma::LayoutGlyphDto>>::sse_encode(self.glyphs, serializer);
+    }
+}
+
+impl SseEncode for crate::api::koma::LayoutPageDto {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <u32>::sse_encode(self.char_start, serializer);
+        <u32>::sse_encode(self.char_end, serializer);
+        <Vec<crate::api::koma::LayoutLineDto>>::sse_encode(self.lines, serializer);
+    }
+}
+
+impl SseEncode for crate::api::koma::LayoutResultDto {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <String>::sse_encode(self.plain_text, serializer);
+        <Vec<crate::api::koma::LayoutPageDto>>::sse_encode(self.pages, serializer);
     }
 }
 
@@ -796,6 +1225,36 @@ impl SseEncode for Vec<crate::api::koma::KomaChapterInfo> {
     }
 }
 
+impl SseEncode for Vec<crate::api::koma::LayoutGlyphDto> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <i32>::sse_encode(self.len() as _, serializer);
+        for item in self {
+            <crate::api::koma::LayoutGlyphDto>::sse_encode(item, serializer);
+        }
+    }
+}
+
+impl SseEncode for Vec<crate::api::koma::LayoutLineDto> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <i32>::sse_encode(self.len() as _, serializer);
+        for item in self {
+            <crate::api::koma::LayoutLineDto>::sse_encode(item, serializer);
+        }
+    }
+}
+
+impl SseEncode for Vec<crate::api::koma::LayoutPageDto> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <i32>::sse_encode(self.len() as _, serializer);
+        for item in self {
+            <crate::api::koma::LayoutPageDto>::sse_encode(item, serializer);
+        }
+    }
+}
+
 impl SseEncode for Vec<u8> {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
@@ -813,6 +1272,28 @@ impl SseEncode for Option<String> {
         if let Some(value) = self {
             <String>::sse_encode(value, serializer);
         }
+    }
+}
+
+impl SseEncode for Option<crate::api::koma::SceneChromeDto> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <bool>::sse_encode(self.is_some(), serializer);
+        if let Some(value) = self {
+            <crate::api::koma::SceneChromeDto>::sse_encode(value, serializer);
+        }
+    }
+}
+
+impl SseEncode for crate::api::koma::SceneChromeDto {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <String>::sse_encode(self.environment_kind, serializer);
+        <String>::sse_encode(self.background_hex, serializer);
+        <String>::sse_encode(self.ambient_hex, serializer);
+        <f64>::sse_encode(self.ambient_intensity, serializer);
+        <f64>::sse_encode(self.frost, serializer);
+        <f64>::sse_encode(self.fade_seconds, serializer);
     }
 }
 

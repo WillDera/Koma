@@ -32,6 +32,15 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   bool dco_decode_bool(dynamic raw);
 
   @protected
+  SceneChromeDto dco_decode_box_autoadd_scene_chrome_dto(dynamic raw);
+
+  @protected
+  ChapterPayloadDto dco_decode_chapter_payload_dto(dynamic raw);
+
+  @protected
+  double dco_decode_f_64(dynamic raw);
+
+  @protected
   PlatformInt64 dco_decode_i_64(dynamic raw);
 
   @protected
@@ -45,6 +54,18 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   KomaChapterInfo dco_decode_koma_chapter_info(dynamic raw);
+
+  @protected
+  LayoutGlyphDto dco_decode_layout_glyph_dto(dynamic raw);
+
+  @protected
+  LayoutLineDto dco_decode_layout_line_dto(dynamic raw);
+
+  @protected
+  LayoutPageDto dco_decode_layout_page_dto(dynamic raw);
+
+  @protected
+  LayoutResultDto dco_decode_layout_result_dto(dynamic raw);
 
   @protected
   List<String> dco_decode_list_String(dynamic raw);
@@ -65,10 +86,25 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   List<KomaChapterInfo> dco_decode_list_koma_chapter_info(dynamic raw);
 
   @protected
+  List<LayoutGlyphDto> dco_decode_list_layout_glyph_dto(dynamic raw);
+
+  @protected
+  List<LayoutLineDto> dco_decode_list_layout_line_dto(dynamic raw);
+
+  @protected
+  List<LayoutPageDto> dco_decode_list_layout_page_dto(dynamic raw);
+
+  @protected
   Uint8List dco_decode_list_prim_u_8_strict(dynamic raw);
 
   @protected
   String? dco_decode_opt_String(dynamic raw);
+
+  @protected
+  SceneChromeDto? dco_decode_opt_box_autoadd_scene_chrome_dto(dynamic raw);
+
+  @protected
+  SceneChromeDto dco_decode_scene_chrome_dto(dynamic raw);
 
   @protected
   int dco_decode_u_32(dynamic raw);
@@ -94,6 +130,19 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   bool sse_decode_bool(SseDeserializer deserializer);
 
   @protected
+  SceneChromeDto sse_decode_box_autoadd_scene_chrome_dto(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  ChapterPayloadDto sse_decode_chapter_payload_dto(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  double sse_decode_f_64(SseDeserializer deserializer);
+
+  @protected
   PlatformInt64 sse_decode_i_64(SseDeserializer deserializer);
 
   @protected
@@ -107,6 +156,18 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   KomaChapterInfo sse_decode_koma_chapter_info(SseDeserializer deserializer);
+
+  @protected
+  LayoutGlyphDto sse_decode_layout_glyph_dto(SseDeserializer deserializer);
+
+  @protected
+  LayoutLineDto sse_decode_layout_line_dto(SseDeserializer deserializer);
+
+  @protected
+  LayoutPageDto sse_decode_layout_page_dto(SseDeserializer deserializer);
+
+  @protected
+  LayoutResultDto sse_decode_layout_result_dto(SseDeserializer deserializer);
 
   @protected
   List<String> sse_decode_list_String(SseDeserializer deserializer);
@@ -133,10 +194,33 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  List<LayoutGlyphDto> sse_decode_list_layout_glyph_dto(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  List<LayoutLineDto> sse_decode_list_layout_line_dto(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  List<LayoutPageDto> sse_decode_list_layout_page_dto(
+    SseDeserializer deserializer,
+  );
+
+  @protected
   Uint8List sse_decode_list_prim_u_8_strict(SseDeserializer deserializer);
 
   @protected
   String? sse_decode_opt_String(SseDeserializer deserializer);
+
+  @protected
+  SceneChromeDto? sse_decode_opt_box_autoadd_scene_chrome_dto(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  SceneChromeDto sse_decode_scene_chrome_dto(SseDeserializer deserializer);
 
   @protected
   int sse_decode_u_32(SseDeserializer deserializer);
@@ -169,6 +253,21 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   void sse_encode_bool(bool self, SseSerializer serializer);
 
   @protected
+  void sse_encode_box_autoadd_scene_chrome_dto(
+    SceneChromeDto self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_chapter_payload_dto(
+    ChapterPayloadDto self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_f_64(double self, SseSerializer serializer);
+
+  @protected
   void sse_encode_i_64(PlatformInt64 self, SseSerializer serializer);
 
   @protected
@@ -183,6 +282,24 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_koma_chapter_info(
     KomaChapterInfo self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_layout_glyph_dto(
+    LayoutGlyphDto self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_layout_line_dto(LayoutLineDto self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_layout_page_dto(LayoutPageDto self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_layout_result_dto(
+    LayoutResultDto self,
     SseSerializer serializer,
   );
 
@@ -220,6 +337,24 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_list_layout_glyph_dto(
+    List<LayoutGlyphDto> self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_list_layout_line_dto(
+    List<LayoutLineDto> self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_list_layout_page_dto(
+    List<LayoutPageDto> self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_list_prim_u_8_strict(
     Uint8List self,
     SseSerializer serializer,
@@ -227,6 +362,18 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   void sse_encode_opt_String(String? self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_opt_box_autoadd_scene_chrome_dto(
+    SceneChromeDto? self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_scene_chrome_dto(
+    SceneChromeDto self,
+    SseSerializer serializer,
+  );
 
   @protected
   void sse_encode_u_32(int self, SseSerializer serializer);

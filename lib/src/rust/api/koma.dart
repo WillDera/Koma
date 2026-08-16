@@ -6,8 +6,8 @@
 import '../frb_generated.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
-// These functions are ignored because they are not marked as `pub`: `block_to_dto`, `chapter_to_dto`, `spans_to_dto`
-// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `clone`, `clone`, `clone`, `clone`, `fmt`, `fmt`, `fmt`, `fmt`
+// These functions are ignored because they are not marked as `pub`: `block_to_dto`, `chapter_to_dto`, `layout_result_to_dto`, `scene_to_chrome`, `spans_to_dto`
+// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`
 
 /// Compile an EPUB file on disk into `.koma` zip bytes (default theme).
 Future<Uint8List> compileEpub({required String path}) =>
@@ -25,6 +25,55 @@ Future<KirChapterDto> chapterKirByIndex({
   komaPath: komaPath,
   index: index,
 );
+
+/// KIR plus scene chrome in one zip open.
+Future<ChapterPayloadDto> chapterPayloadByIndex({
+  required String komaPath,
+  required int index,
+}) => RustLib.instance.api.crateApiKomaChapterPayloadByIndex(
+  komaPath: komaPath,
+  index: index,
+);
+
+/// Layout one chapter into page-sized glyph boxes (Level 3).
+///
+/// Flutter still paints. Offsets are into the returned `plain_text`, which
+/// matches `KirToDocument` (no chapter title, images 0 chars).
+Future<LayoutResultDto> layoutChapterPages({
+  required String komaPath,
+  required int index,
+  required int width,
+  required int height,
+  required double fontSize,
+  required double lineHeight,
+  required double margin,
+}) => RustLib.instance.api.crateApiKomaLayoutChapterPages(
+  komaPath: komaPath,
+  index: index,
+  width: width,
+  height: height,
+  fontSize: fontSize,
+  lineHeight: lineHeight,
+  margin: margin,
+);
+
+class ChapterPayloadDto {
+  final KirChapterDto chapter;
+  final SceneChromeDto? scene;
+
+  const ChapterPayloadDto({required this.chapter, this.scene});
+
+  @override
+  int get hashCode => chapter.hashCode ^ scene.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is ChapterPayloadDto &&
+          runtimeType == other.runtimeType &&
+          chapter == other.chapter &&
+          scene == other.scene;
+}
 
 /// One KIR block, with quote/list children nested (Dart flattens).
 class KirBlockDto {
@@ -140,4 +189,161 @@ class KomaChapterInfo {
           runtimeType == other.runtimeType &&
           id == other.id &&
           title == other.title;
+}
+
+class LayoutGlyphDto {
+  final double x;
+  final double y;
+  final double width;
+  final double height;
+  final int charStart;
+  final int charEnd;
+
+  const LayoutGlyphDto({
+    required this.x,
+    required this.y,
+    required this.width,
+    required this.height,
+    required this.charStart,
+    required this.charEnd,
+  });
+
+  @override
+  int get hashCode =>
+      x.hashCode ^
+      y.hashCode ^
+      width.hashCode ^
+      height.hashCode ^
+      charStart.hashCode ^
+      charEnd.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is LayoutGlyphDto &&
+          runtimeType == other.runtimeType &&
+          x == other.x &&
+          y == other.y &&
+          width == other.width &&
+          height == other.height &&
+          charStart == other.charStart &&
+          charEnd == other.charEnd;
+}
+
+class LayoutLineDto {
+  final double y;
+  final double height;
+  final int charStart;
+  final int charEnd;
+  final List<LayoutGlyphDto> glyphs;
+
+  const LayoutLineDto({
+    required this.y,
+    required this.height,
+    required this.charStart,
+    required this.charEnd,
+    required this.glyphs,
+  });
+
+  @override
+  int get hashCode =>
+      y.hashCode ^
+      height.hashCode ^
+      charStart.hashCode ^
+      charEnd.hashCode ^
+      glyphs.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is LayoutLineDto &&
+          runtimeType == other.runtimeType &&
+          y == other.y &&
+          height == other.height &&
+          charStart == other.charStart &&
+          charEnd == other.charEnd &&
+          glyphs == other.glyphs;
+}
+
+class LayoutPageDto {
+  final int charStart;
+  final int charEnd;
+  final List<LayoutLineDto> lines;
+
+  const LayoutPageDto({
+    required this.charStart,
+    required this.charEnd,
+    required this.lines,
+  });
+
+  @override
+  int get hashCode => charStart.hashCode ^ charEnd.hashCode ^ lines.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is LayoutPageDto &&
+          runtimeType == other.runtimeType &&
+          charStart == other.charStart &&
+          charEnd == other.charEnd &&
+          lines == other.lines;
+}
+
+class LayoutResultDto {
+  final String plainText;
+  final List<LayoutPageDto> pages;
+
+  const LayoutResultDto({required this.plainText, required this.pages});
+
+  @override
+  int get hashCode => plainText.hashCode ^ pages.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is LayoutResultDto &&
+          runtimeType == other.runtimeType &&
+          plainText == other.plainText &&
+          pages == other.pages;
+}
+
+/// Presentation chrome only — not the effect graph or typography.
+class SceneChromeDto {
+  /// `indoor`, `outdoor`, `space`, or `abstract`.
+  final String environmentKind;
+  final String backgroundHex;
+  final String ambientHex;
+  final double ambientIntensity;
+  final double frost;
+  final double fadeSeconds;
+
+  const SceneChromeDto({
+    required this.environmentKind,
+    required this.backgroundHex,
+    required this.ambientHex,
+    required this.ambientIntensity,
+    required this.frost,
+    required this.fadeSeconds,
+  });
+
+  @override
+  int get hashCode =>
+      environmentKind.hashCode ^
+      backgroundHex.hashCode ^
+      ambientHex.hashCode ^
+      ambientIntensity.hashCode ^
+      frost.hashCode ^
+      fadeSeconds.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is SceneChromeDto &&
+          runtimeType == other.runtimeType &&
+          environmentKind == other.environmentKind &&
+          backgroundHex == other.backgroundHex &&
+          ambientHex == other.ambientHex &&
+          ambientIntensity == other.ambientIntensity &&
+          frost == other.frost &&
+          fadeSeconds == other.fadeSeconds;
 }

@@ -7,6 +7,7 @@ import '../../core/models/chapter.dart';
 import '../../core/providers.dart';
 import '../../core/services/koma_package_store.dart';
 import '../../features/reader/html/kir_model.dart';
+import '../../features/reader/scene/scene_chrome.dart';
 
 /// Immutable state for the ebook reader.
 class ReaderState {
@@ -19,6 +20,7 @@ class ReaderState {
     this.loading = true,
     this.error,
     this.currentKir,
+    this.currentScene,
   });
 
   final Book? book;
@@ -32,6 +34,9 @@ class ReaderState {
   /// KIR for [currentChapter] when a `.koma` exists and spine count matches.
   final KirChapter? currentKir;
 
+  /// Scene chrome for [currentChapter] when KIR is active. Null on HTML.
+  final SceneChrome? currentScene;
+
   ReaderState copyWith({
     Book? Function()? book,
     List<Chapter>? chapters,
@@ -41,6 +46,7 @@ class ReaderState {
     bool? loading,
     String? Function()? error,
     KirChapter? Function()? currentKir,
+    SceneChrome? Function()? currentScene,
   }) {
     return ReaderState(
       book: book != null ? book() : this.book,
@@ -53,6 +59,7 @@ class ReaderState {
       loading: loading ?? this.loading,
       error: error != null ? error() : this.error,
       currentKir: currentKir != null ? currentKir() : this.currentKir,
+      currentScene: currentScene != null ? currentScene() : this.currentScene,
     );
   }
 }
@@ -71,6 +78,7 @@ class ReaderNotifier extends Notifier<ReaderState> {
   int? _pendingOffset;
 
   final Map<int, KirChapter> _kirByIndex = {};
+  final Map<int, SceneChrome> _sceneByIndex = {};
   bool _kirEnabled = false;
   int? _kirBookId;
 
@@ -84,6 +92,7 @@ class ReaderNotifier extends Notifier<ReaderState> {
   Chapter? get currentChapter => state.currentChapter;
   int get currentIndex => state.currentIndex;
   KirChapter? get currentKir => state.currentKir;
+  SceneChrome? get currentScene => state.currentScene;
   double get scrollPosition =>
       _chapterScrollPositions[state.currentIndex] ?? state.scrollPosition;
   bool get loading => state.loading;
@@ -96,6 +105,7 @@ class ReaderNotifier extends Notifier<ReaderState> {
   }) async {
     _elapsedSeconds = 0;
     _kirByIndex.clear();
+    _sceneByIndex.clear();
     _kirEnabled = false;
     _kirBookId = null;
     state = state.copyWith(loading: true, error: () => null);
@@ -137,6 +147,7 @@ class ReaderNotifier extends Notifier<ReaderState> {
           scrollPosition: scrollPos,
           loading: false,
           currentKir: kir,
+          currentScene: kir == null ? null : _sceneByIndex[currentIndex],
         );
         await repos.books.markChapterRead(currentChapter.id);
         _startReadingTimer();
@@ -166,6 +177,8 @@ class ReaderNotifier extends Notifier<ReaderState> {
       currentChapter: () => chapter,
       scrollPosition: scrollPos,
       currentKir: () => _kirByIndex[index],
+      currentScene: () =>
+          _kirByIndex[index] == null ? null : _sceneByIndex[index],
     );
     final repos = ref.read(repositoriesProvider);
     repos.books.markChapterRead(chapter.id);
@@ -294,6 +307,7 @@ class ReaderNotifier extends Notifier<ReaderState> {
 
   Future<void> _prepareKir(int bookId, int chapterCount) async {
     _kirByIndex.clear();
+    _sceneByIndex.clear();
     _kirEnabled = false;
     _kirBookId = bookId;
     final count = await KomaPackageStore.chapterCount(bookId);
@@ -305,12 +319,14 @@ class ReaderNotifier extends Notifier<ReaderState> {
     if (!_kirEnabled || _kirBookId == null) return null;
     final hit = _kirByIndex[index];
     if (hit != null) return hit;
-    final chapter = await KomaPackageStore.chapterByIndex(
+    final payload = await KomaPackageStore.chapterByIndex(
       bookId: _kirBookId!,
       index: index,
     );
-    if (chapter != null) _kirByIndex[index] = chapter;
-    return chapter;
+    if (payload == null) return null;
+    _kirByIndex[index] = payload.chapter;
+    if (payload.scene != null) _sceneByIndex[index] = payload.scene!;
+    return payload.chapter;
   }
 
   void _prefetchKirNeighbours(int index, int length) {

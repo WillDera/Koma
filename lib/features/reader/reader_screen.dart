@@ -28,6 +28,8 @@ import 'pagination/paginated_reader_body.dart';
 import 'pagination/reading_spans.dart';
 import 'pagination/rich_chapter_body.dart';
 import 'reader_provider.dart';
+import 'scene/scene_chrome.dart';
+import 'scene/scene_chrome_layer.dart';
 import 'tts/tts_engine.dart';
 import 'tts_provider.dart';
 
@@ -751,13 +753,26 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
     final chapter = provider.currentChapter!;
     final progress = (provider.currentIndex + 1) / provider.chapters.length;
     final readingTime = _estimateReadingTime(chapter.content);
+    final chrome = provider.currentKir == null ? null : provider.currentScene;
+    final pageBg = SceneChrome.pageBackground(
+      chrome,
+      themeProv.bgColor,
+      userDark: themeProv.isDarkMode,
+    );
+    final pageDark =
+        ThemeData.estimateBrightnessForColor(pageBg) == Brightness.dark;
+    final switchMs = SceneChrome.switchDuration(
+      chrome,
+      AppMotion.sheet,
+      disableAnimations: MediaQuery.disableAnimationsOf(context),
+    );
 
     return AnnotatedRegion<SystemUiOverlayStyle>(
-      value: themeProv.isDark
+      value: pageDark
           ? SystemUiOverlayStyle.light
           : SystemUiOverlayStyle.dark,
       child: Scaffold(
-        backgroundColor: themeProv.bgColor,
+        backgroundColor: pageBg,
         bottomNavigationBar: ValueListenableBuilder<bool>(
           valueListenable: _showUI,
           builder: (_, showUI, _) => ReaderBottomBar(
@@ -776,6 +791,10 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
         ),
         body: Stack(
           children: [
+            if (chrome != null &&
+                (chrome.frostOverlayAlpha > 0 ||
+                    chrome.ambientOverlayAlpha > 0))
+              Positioned.fill(child: SceneChromeLayer(chrome: chrome)),
             Positioned.fill(
               child: kPageCurlUiEnabled && themeProv.pageStyle == PageStyle.curl
                   ? _buildCurlBody(themeProv, provider, chapter)
@@ -810,7 +829,7 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
                                 ),
                                 child: ClipRect(
                                   child: AnimatedSwitcher(
-                                    duration: AppMotion.sheet,
+                                    duration: switchMs,
                                     transitionBuilder: (child, animation) {
                                       var begin = Offset.zero;
                                       switch (_lastSwipeDirection) {
