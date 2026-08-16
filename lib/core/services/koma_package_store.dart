@@ -104,7 +104,9 @@ class KomaPackageStore {
     required int height,
     required double fontSize,
     required double lineHeight,
-    double margin = 48,
+    double margin = 0,
+    double firstPageInset = 0,
+    String fontPath = '',
   }) async {
     try {
       final file = await fileFor(bookId);
@@ -117,6 +119,8 @@ class KomaPackageStore {
         fontSize: fontSize,
         lineHeight: lineHeight,
         margin: margin,
+        firstPageInset: firstPageInset,
+        fontPath: fontPath,
       );
       return _layoutFromDto(dto);
     } catch (e, st) {

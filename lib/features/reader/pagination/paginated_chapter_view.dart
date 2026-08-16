@@ -104,6 +104,10 @@ class PaginatedChapterView extends StatelessWidget {
     return h + gap;
   }
 
+  /// Chapter title style; kept public so [KrePageView] can match it.
+  static TextStyle titleStyleFor(BuildContext context, ThemeState prov) =>
+      _titleStyle(context, prov);
+
   static TextStyle _titleStyle(BuildContext context, ThemeState prov) {
     return AppType.reading(
       fontSize: prov.fontSize,

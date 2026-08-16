@@ -37,8 +37,11 @@ Future<ChapterPayloadDto> chapterPayloadByIndex({
 
 /// Layout one chapter into page-sized glyph boxes (Level 3).
 ///
-/// Flutter still paints. Offsets are into the returned `plain_text`, which
-/// matches `KirToDocument` (no chapter title, images 0 chars).
+/// Offsets are Dart `String` indices (UTF-16) into the returned `plain_text`,
+/// matching `KirToDocument` (no chapter title, images 0 chars). `line_height`
+/// is in pixels (font size times the reader's line-height multiplier).
+/// `first_page_inset` is reserved on page 0 for the chapter title.
+/// `font_path` is the TTF/OTF the reader paints with (empty = platform faces).
 Future<LayoutResultDto> layoutChapterPages({
   required String komaPath,
   required int index,
@@ -47,6 +50,8 @@ Future<LayoutResultDto> layoutChapterPages({
   required double fontSize,
   required double lineHeight,
   required double margin,
+  required double firstPageInset,
+  required String fontPath,
 }) => RustLib.instance.api.crateApiKomaLayoutChapterPages(
   komaPath: komaPath,
   index: index,
@@ -55,6 +60,8 @@ Future<LayoutResultDto> layoutChapterPages({
   fontSize: fontSize,
   lineHeight: lineHeight,
   margin: margin,
+  firstPageInset: firstPageInset,
+  fontPath: fontPath,
 );
 
 class ChapterPayloadDto {

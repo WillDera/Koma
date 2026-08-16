@@ -33,13 +33,22 @@ class BookPosition {
 /// are cached per chapter and invalidated wholesale when the layout changes,
 /// since a [PaginationKey] change moves every break.
 class BookPageCursor {
-  BookPageCursor({required this.chapters, required this.paginatorFor});
+  BookPageCursor({
+    required this.chapters,
+    required this.paginatorFor,
+    this.deferMeasure,
+  });
 
   final List<Chapter> chapters;
 
   /// Supplies a paginator configured for a chapter. Takes the chapter index
   /// because the title inset differs per chapter (titles wrap differently).
   final ChapterPaginator Function(int chapterIndex) paginatorFor;
+
+  /// When true, [pagesFor] will not TextPainter-measure that chapter — KRE
+  /// layout is expected to [putPages] shortly. Returns a one-empty-page
+  /// placeholder so a turn onto an unloaded chapter does not block.
+  final bool Function(int chapterIndex)? deferMeasure;
 
   final Map<int, PaginatedChapter> _cache = {};
   PaginationKey? _key;
@@ -64,6 +73,15 @@ class BookPageCursor {
 
     final cached = _cache[chapterIndex];
     if (cached != null) return cached;
+
+    if (deferMeasure?.call(chapterIndex) == true) {
+      return PaginatedChapter(
+        chapterId: chapters[chapterIndex].id,
+        pages: const [PageBreak(0, 0)],
+        key: key,
+        textLength: 0,
+      );
+    }
 
     final chapter = chapters[chapterIndex];
     final text = TextExtractor.extractCached(chapter.id, chapter.content);
@@ -151,6 +169,11 @@ class BookPageCursor {
     final f = fraction.isFinite ? fraction.clamp(0.0, 1.0) : 0.0;
     final offset = (f * pages.textLength).round();
     return BookPosition(chapterIndex, pages.pageIndexForOffset(offset));
+  }
+
+  /// Install KRE (or any precomputed) pagination for [chapterIndex].
+  void putPages(int chapterIndex, PaginatedChapter pages) {
+    _cache[chapterIndex] = pages;
   }
 
   void invalidate() => _cache.clear();

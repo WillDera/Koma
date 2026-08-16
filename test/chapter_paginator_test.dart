@@ -294,4 +294,12 @@ void main() {
     );
     expect(result.pageCount, greaterThan(1));
   });
+
+  test('PaginationKey.from snaps viewport to whole pixels', () {
+    const prov = ThemeState();
+    final a = PaginationKey.from(prov, const Size(400.2, 599.8));
+    final b = PaginationKey.from(prov, const Size(400.4, 600.2));
+    expect(a, b);
+    expect(a.viewport, const Size(400, 600));
+  });
 }

@@ -212,6 +212,8 @@ fn wire__crate__api__koma__layout_chapter_pages_impl(
             let api_font_size = <f64>::sse_decode(&mut deserializer);
             let api_line_height = <f64>::sse_decode(&mut deserializer);
             let api_margin = <f64>::sse_decode(&mut deserializer);
+            let api_first_page_inset = <f64>::sse_decode(&mut deserializer);
+            let api_font_path = <String>::sse_decode(&mut deserializer);
             deserializer.end();
             move |context| {
                 transform_result_sse::<_, String>((move || {
@@ -223,6 +225,8 @@ fn wire__crate__api__koma__layout_chapter_pages_impl(
                         api_font_size,
                         api_line_height,
                         api_margin,
+                        api_first_page_inset,
+                        api_font_path,
                     )?;
                     Ok(output_ok)
                 })())

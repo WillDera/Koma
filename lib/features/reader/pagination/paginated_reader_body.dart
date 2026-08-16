@@ -4,10 +4,15 @@ import 'package:flutter/material.dart';
 
 import '../../../core/models/chapter.dart';
 import '../../../core/models/highlight.dart';
+import '../../../core/services/koma_package_store.dart';
 import '../../../core/utils/text_extractor.dart';
 import '../../../theme/app_theme.dart';
 import '../../../theme/theme_state.dart';
+import '../../../widgets/loading_skeleton.dart';
 import '../html/kir_model.dart';
+import '../layout/kre_layout.dart';
+import '../layout/kre_page_view.dart';
+import '../layout/reading_font_file.dart';
 import '../sheet/sheet_switcher.dart';
 import 'book_page_cursor.dart';
 import 'chapter_paginator.dart';
@@ -59,6 +64,7 @@ class PaginatedReaderBody extends StatefulWidget {
     this.onSelectionCleared,
     this.onSelectionCollapsed,
     this.kirForChapter,
+    this.bookId,
     this.sheetColor,
     this.disableAnimations = false,
   });
@@ -119,6 +125,11 @@ class PaginatedReaderBody extends StatefulWidget {
   /// Optional KIR per chapter index (Level 1). Null → HTML [TextExtractor].
   final KirChapter? Function(int chapterIndex)? kirForChapter;
 
+  /// When set, page mode lays out through KRE ([KomaPackageStore.layoutPages])
+  /// and paints [KrePageView]. Null or a failed layout falls back to Flutter
+  /// [ChapterPaginator].
+  final int? bookId;
+
   /// Opaque sheet fill. Defaults to [ThemeState.bgColor].
   final Color? sheetColor;
 
@@ -163,6 +174,17 @@ class _PaginatedReaderBodyState extends State<PaginatedReaderBody> {
   int _warmGeneration = 0;
   final Set<int> _warmingChapters = {};
 
+  /// KRE layout by chapter index. Missing entry means not yet requested or
+  /// still in flight; [_kreFailed] means use Flutter measurement.
+  final Map<int, LayoutResult> _kreLayouts = {};
+  final Map<int, PaginationKey> _kreKeys = {};
+  final Set<int> _kreFailed = {};
+  final Set<int> _kreLoading = {};
+  int _kreGeneration = 0;
+
+  /// Character offset to restore after a settings-driven KRE relayout.
+  int? _heldOffset;
+
   @override
   void initState() {
     super.initState();
@@ -181,12 +203,14 @@ class _PaginatedReaderBodyState extends State<PaginatedReaderBody> {
       _markSettling();
     }
 
-    if (!identical(widget.chapters, old.chapters)) {
+    if (!identical(widget.chapters, old.chapters) ||
+        widget.bookId != old.bookId) {
       _cursor = null;
       _measuredKey = null;
       _seeded = false;
       _warmGeneration++;
       _warmingChapters.clear();
+      _clearKre();
     }
 
     // A chapter change the host initiated (not one of our page turns).
@@ -226,6 +250,9 @@ class _PaginatedReaderBodyState extends State<PaginatedReaderBody> {
 
     final cursor = BookPageCursor(
       chapters: widget.chapters,
+      deferMeasure: widget.bookId == null
+          ? null
+          : (i) => !_kreFailed.contains(i) && !_kreLayouts.containsKey(i),
       paginatorFor: (i) {
         final chapter = widget.chapters[i];
         final doc = TextExtractor.documentCached(
@@ -275,6 +302,93 @@ class _PaginatedReaderBodyState extends State<PaginatedReaderBody> {
     );
   }
 
+  void _clearKre() {
+    _kreGeneration++;
+    _kreLayouts.clear();
+    _kreKeys.clear();
+    _kreFailed.clear();
+    _kreLoading.clear();
+  }
+
+  bool _krePending(int chapterIndex) =>
+      widget.bookId != null &&
+      !_kreFailed.contains(chapterIndex) &&
+      !_kreLayouts.containsKey(chapterIndex);
+
+  void _installKre(BookPageCursor cursor, PaginationKey key, int chapterIndex) {
+    final layout = _kreLayouts[chapterIndex];
+    if (layout == null) return;
+    cursor.putPages(
+      chapterIndex,
+      PaginatedChapter.fromLayout(
+        chapterId: widget.chapters[chapterIndex].id,
+        layout: layout,
+        key: key,
+      ),
+    );
+  }
+
+  /// Fire KRE layout for [chapterIndex] if this book has a `.koma`.
+  void _requestKre(int chapterIndex, PaginationKey key) {
+    final bookId = widget.bookId;
+    if (bookId == null ||
+        chapterIndex < 0 ||
+        chapterIndex >= widget.chapters.length ||
+        _kreFailed.contains(chapterIndex) ||
+        _kreKeys[chapterIndex] == key ||
+        !_kreLoading.add(chapterIndex)) {
+      return;
+    }
+    final gen = _kreGeneration;
+    final width = _viewport.width.round().clamp(1, 100000);
+    final height = _viewport.height.round().clamp(1, 100000);
+    final fontSize = _textScaler.scale(widget.themeProv.fontSize);
+    final lineHeightPx = fontSize * widget.themeProv.lineHeight;
+    final inset = _titleInsetFor(chapterIndex);
+    final theme = widget.themeProv;
+    () async {
+      var fontPath = '';
+      try {
+        fontPath = await readingFontFilePath(theme) ?? '';
+      } catch (_) {}
+      if (!mounted || gen != _kreGeneration) return null;
+      return KomaPackageStore.layoutPages(
+        bookId: bookId,
+        index: chapterIndex,
+        width: width,
+        height: height,
+        fontSize: fontSize,
+        lineHeight: lineHeightPx,
+        margin: 0,
+        firstPageInset: inset,
+        fontPath: fontPath,
+      );
+    }().then((layout) {
+      if (!mounted || gen != _kreGeneration) return;
+      _kreLoading.remove(chapterIndex);
+      if (layout == null || layout.pages.isEmpty) {
+        _kreFailed.add(chapterIndex);
+        setState(() {});
+        return;
+      }
+      _kreLayouts[chapterIndex] = layout;
+      _kreKeys[chapterIndex] = key;
+      final cursor = _cursor;
+      if (cursor != null) {
+        _installKre(cursor, key, chapterIndex);
+        if (_position.chapterIndex == chapterIndex) {
+          final offset =
+              _heldOffset ??
+              widget.charOffsetFor(chapterIndex) ??
+              cursor.offsetAt(_position);
+          _position = cursor.positionForOffset(chapterIndex, offset);
+          _seeded = true;
+        }
+      }
+      setState(() {});
+    });
+  }
+
   /// Opens the "settings are changing" window, during which only the chapter
   /// being read is measured. Each further change pushes the window out, so a
   /// slider drag re-measures one chapter per step instead of three.
@@ -293,14 +407,21 @@ class _PaginatedReaderBodyState extends State<PaginatedReaderBody> {
   /// Called from build so the per-chapter title inset it measures with reflects
   /// the settings being applied, not the ones being replaced.
   void _applyKeyChange(BookPageCursor cursor, PaginationKey key) {
-    // Read the offset under the *old* pagination, before it is discarded.
     final offset = _seeded ? cursor.offsetAt(_position) : 0;
     cursor.updateKey(key);
     _measuredKey = key;
     _warmGeneration++;
     _warmingChapters.clear();
+    _kreGeneration++;
+    _kreLoading.clear();
+    _kreFailed.clear();
+    // Keep [_kreLayouts] so a chrome/inset flicker does not flash the
+    // skeleton. [_requestKre] refetches when [_kreKeys] no longer match.
     if (_seeded) {
-      _position = cursor.positionForOffset(_position.chapterIndex, offset);
+      _heldOffset = offset;
+      if (widget.bookId == null) {
+        _position = cursor.positionForOffset(_position.chapterIndex, offset);
+      }
     }
   }
 
@@ -377,9 +498,14 @@ class _PaginatedReaderBodyState extends State<PaginatedReaderBody> {
       _position.chapterIndex - 1,
       _position.chapterIndex + 1,
     ]) {
-      if (chapterIndex < 0 ||
-          chapterIndex >= widget.chapters.length ||
-          cursor.isPaginated(chapterIndex) ||
+      if (chapterIndex < 0 || chapterIndex >= widget.chapters.length) {
+        continue;
+      }
+      if (widget.bookId != null && !_kreFailed.contains(chapterIndex)) {
+        _requestKre(chapterIndex, _keyFor(_viewport));
+        continue;
+      }
+      if (cursor.isPaginated(chapterIndex) ||
           !_warmingChapters.add(chapterIndex)) {
         continue;
       }
@@ -412,42 +538,52 @@ class _PaginatedReaderBodyState extends State<PaginatedReaderBody> {
       pos = step;
     }
 
-    // pageAt yields an empty range when the chapter has no pages to show.
-    final page = cursor.pageAt(pos);
-    if (page.isEmpty) return null;
-    final chapter = widget.chapters[pos.chapterIndex];
-    final doc = TextExtractor.documentCached(
-      chapter.id,
-      chapter.content,
-      kir: widget.kirForChapter?.call(pos.chapterIndex),
-    );
-    final text = doc.plainText;
-
     final isCurrentChapter = pos.chapterIndex == widget.chapterIndex;
-    Widget buildPage(double focusAlpha) => PaginatedChapterView(
-      text: text,
-      document: doc,
-      page: page,
-      chapterTitle: chapter.title,
-      showTitle: pos.pageIndex == 0,
-      themeProv: widget.themeProv,
-      contentWidth: _viewport.width,
-      // Highlights are per-chapter, so they only apply to pages of the chapter
-      // the host loaded them for.
-      highlights: isCurrentChapter ? widget.highlights : const [],
-      highlightVersion: widget.highlightVersion,
-      ttsActive:
-          (widget.ttsActiveForBuild?.call() ?? widget.ttsActive) &&
-          isCurrentChapter,
-      ttsStart: widget.ttsStartForBuild?.call() ?? widget.ttsStart,
-      ttsEnd: widget.ttsEndForBuild?.call() ?? widget.ttsEnd,
-      focusStart: isCurrentChapter ? widget.focusStart : 0,
-      focusEnd: isCurrentChapter ? widget.focusEnd : 0,
-      focusAlpha: isCurrentChapter ? focusAlpha : 0,
-      onSelected: widget.onSelected,
-      onSelectionCleared: widget.onSelectionCleared,
-      onSelectionCollapsed: widget.onSelectionCollapsed,
-    );
+
+    if (widget.bookId != null && !_kreFailed.contains(pos.chapterIndex)) {
+      _requestKre(pos.chapterIndex, _keyFor(_viewport));
+      if (_krePending(pos.chapterIndex)) {
+        return _krePlaceholder();
+      }
+    }
+
+    Widget buildPage(double focusAlpha) {
+      final kre = _kreLayouts[pos.chapterIndex];
+      if (kre != null && pos.pageIndex < kre.pages.length) {
+        return _krePageAt(pos, kre, isCurrentChapter, focusAlpha);
+      }
+
+      final page = cursor.pageAt(pos);
+      if (page.isEmpty) return const SizedBox.shrink();
+      final chapter = widget.chapters[pos.chapterIndex];
+      final doc = TextExtractor.documentCached(
+        chapter.id,
+        chapter.content,
+        kir: widget.kirForChapter?.call(pos.chapterIndex),
+      );
+      return PaginatedChapterView(
+        text: doc.plainText,
+        document: doc,
+        page: page,
+        chapterTitle: chapter.title,
+        showTitle: pos.pageIndex == 0,
+        themeProv: widget.themeProv,
+        contentWidth: _viewport.width,
+        highlights: isCurrentChapter ? widget.highlights : const [],
+        highlightVersion: widget.highlightVersion,
+        ttsActive:
+            (widget.ttsActiveForBuild?.call() ?? widget.ttsActive) &&
+            isCurrentChapter,
+        ttsStart: widget.ttsStartForBuild?.call() ?? widget.ttsStart,
+        ttsEnd: widget.ttsEndForBuild?.call() ?? widget.ttsEnd,
+        focusStart: isCurrentChapter ? widget.focusStart : 0,
+        focusEnd: isCurrentChapter ? widget.focusEnd : 0,
+        focusAlpha: isCurrentChapter ? focusAlpha : 0,
+        onSelected: widget.onSelected,
+        onSelectionCleared: widget.onSelectionCleared,
+        onSelectionCollapsed: widget.onSelectionCollapsed,
+      );
+    }
 
     final focusAnimation = widget.focusAnimation;
     final listenables = <Listenable>[
@@ -469,6 +605,62 @@ class _PaginatedReaderBodyState extends State<PaginatedReaderBody> {
       );
     }
     return buildPage(widget.focusAlpha);
+  }
+
+  Widget _krePlaceholder() {
+    return ColoredBox(
+      color: widget.sheetColor ?? widget.themeProv.bgColor,
+      child: const Padding(
+        padding: EdgeInsets.symmetric(vertical: 24, horizontal: 8),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Skeleton(width: double.infinity, height: 18),
+            SizedBox(height: 12),
+            Skeleton(width: double.infinity, height: 18),
+            SizedBox(height: 12),
+            Skeleton(width: 220, height: 18),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _krePageAt(
+    BookPosition pos,
+    LayoutResult layout,
+    bool isCurrentChapter,
+    double focusAlpha,
+  ) {
+    final chapter = widget.chapters[pos.chapterIndex];
+    final doc = TextExtractor.documentCached(
+      chapter.id,
+      chapter.content,
+      kir: widget.kirForChapter?.call(pos.chapterIndex),
+    );
+    return KrePageView(
+      page: layout.pages[pos.pageIndex],
+      plainText: layout.plainText,
+      document: doc,
+      chapterTitle: chapter.title,
+      showTitle: pos.pageIndex == 0,
+      themeProv: widget.themeProv,
+      highlights: isCurrentChapter ? widget.highlights : const [],
+      highlightVersion: widget.highlightVersion,
+      ttsActive:
+          (widget.ttsActiveForBuild?.call() ?? widget.ttsActive) &&
+          isCurrentChapter,
+      ttsStart: widget.ttsStartForBuild?.call() ?? widget.ttsStart,
+      ttsEnd: widget.ttsEndForBuild?.call() ?? widget.ttsEnd,
+      focusStart: isCurrentChapter ? widget.focusStart : 0,
+      focusEnd: isCurrentChapter ? widget.focusEnd : 0,
+      focusAlpha: isCurrentChapter ? focusAlpha : 0,
+      embeds: doc.embeds,
+      imageSlotBase: imageSlotBase(layout, pos.pageIndex),
+      onSelected: widget.onSelected,
+      onSelectionCleared: widget.onSelectionCleared,
+      onSelectionCollapsed: widget.onSelectionCollapsed,
+    );
   }
 
   @override
@@ -493,6 +685,15 @@ class _PaginatedReaderBodyState extends State<PaginatedReaderBody> {
           // Covers both a settings change and a resize, since the viewport is
           // part of the key.
           _applyKeyChange(cursor, key);
+        }
+        if (widget.bookId != null &&
+            !_kreFailed.contains(widget.chapterIndex)) {
+          _requestKre(widget.chapterIndex, key);
+          final layout = _kreLayouts[widget.chapterIndex];
+          if (layout != null) _installKre(cursor, key, widget.chapterIndex);
+          if (_krePending(widget.chapterIndex)) {
+            return _krePlaceholder();
+          }
         }
         if (!_seeded) _seed(cursor);
         _warmNeighborChapters(cursor);

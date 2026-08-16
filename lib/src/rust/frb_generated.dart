@@ -101,6 +101,8 @@ abstract class RustLibApi extends BaseApi {
     required double fontSize,
     required double lineHeight,
     required double margin,
+    required double firstPageInset,
+    required String fontPath,
   });
 
   Future<List<BookMetadataResult>> crateApiMetadataLookupBooks({
@@ -255,6 +257,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     required double fontSize,
     required double lineHeight,
     required double margin,
+    required double firstPageInset,
+    required String fontPath,
   }) {
     return handler.executeNormal(
       NormalTask(
@@ -267,6 +271,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           sse_encode_f_64(fontSize, serializer);
           sse_encode_f_64(lineHeight, serializer);
           sse_encode_f_64(margin, serializer);
+          sse_encode_f_64(firstPageInset, serializer);
+          sse_encode_String(fontPath, serializer);
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
@@ -287,6 +293,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           fontSize,
           lineHeight,
           margin,
+          firstPageInset,
+          fontPath,
         ],
         apiImpl: this,
       ),
@@ -304,6 +312,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           "fontSize",
           "lineHeight",
           "margin",
+          "firstPageInset",
+          "fontPath",
         ],
       );
 

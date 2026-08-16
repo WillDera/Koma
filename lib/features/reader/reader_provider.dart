@@ -93,6 +93,9 @@ class ReaderNotifier extends Notifier<ReaderState> {
   int get currentIndex => state.currentIndex;
   KirChapter? get currentKir => state.currentKir;
   SceneChrome? get currentScene => state.currentScene;
+
+  /// True when a `.koma` exists and spine count matches chapter count.
+  bool get kirEnabled => _kirEnabled;
   double get scrollPosition =>
       _chapterScrollPositions[state.currentIndex] ?? state.scrollPosition;
   bool get loading => state.loading;

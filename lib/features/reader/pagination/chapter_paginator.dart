@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../../theme/theme_state.dart';
+import '../layout/kre_layout.dart';
 
 /// One page of a chapter, as a half-open character range into the chapter's
 /// extracted plain text: `[start, end)`.
@@ -56,9 +57,15 @@ class PaginationKey {
   });
 
   /// Derives a key from the current theme state and the measured content box.
+  ///
+  /// Viewport is snapped to whole pixels so a sub-pixel MediaQuery flicker
+  /// (system bars showing/hiding) cannot invalidate pagination.
   factory PaginationKey.from(ThemeState prov, Size viewport) {
     return PaginationKey(
-      viewport: viewport,
+      viewport: Size(
+        viewport.width.roundToDouble(),
+        viewport.height.roundToDouble(),
+      ),
       fontSize: prov.fontSize,
       lineHeight: prov.lineHeight,
       textAlign: prov.textAlign,
@@ -137,6 +144,26 @@ class PaginatedChapter {
   PageBreak pageAt(int pageIndex) {
     if (pages.isEmpty) return const PageBreak(0, 0);
     return pages[pageIndex.clamp(0, pages.length - 1)];
+  }
+
+  /// Page breaks from a KRE [LayoutResult]. Empty layout → one empty page.
+  factory PaginatedChapter.fromLayout({
+    required int chapterId,
+    required LayoutResult layout,
+    required PaginationKey key,
+  }) {
+    final ranges = pageCharRanges(layout);
+    return PaginatedChapter(
+      chapterId: chapterId,
+      pages: [
+        if (ranges.isEmpty)
+          const PageBreak(0, 0)
+        else
+          for (final r in ranges) PageBreak(r.$1, r.$2),
+      ],
+      key: key,
+      textLength: layout.plainText.length,
+    );
   }
 }
 

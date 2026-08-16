@@ -1,8 +1,8 @@
 //! EPUB → `.koma` compile, KIR decode, scene chrome, and layout boxes.
 //!
 //! Does not link `koma-renderer` (no wgpu). Layout is cosmic-text in this
-//! crate. Flutter still paints; Level 3 consumes glyph boxes for paginate
-//! and hit-test. Scene effects stay inert.
+//! crate. The reader paginates and paints from glyph boxes. Scene effects
+//! stay inert.
 
 use std::collections::HashMap;
 use std::io::Cursor;
@@ -118,8 +118,11 @@ pub fn chapter_payload_by_index(
 
 /// Layout one chapter into page-sized glyph boxes (Level 3).
 ///
-/// Flutter still paints. Offsets are into the returned `plain_text`, which
-/// matches `KirToDocument` (no chapter title, images 0 chars).
+/// Offsets are Dart `String` indices (UTF-16) into the returned `plain_text`,
+/// matching `KirToDocument` (no chapter title, images 0 chars). `line_height`
+/// is in pixels (font size times the reader's line-height multiplier).
+/// `first_page_inset` is reserved on page 0 for the chapter title.
+/// `font_path` is the TTF/OTF the reader paints with (empty = platform faces).
 pub fn layout_chapter_pages(
     koma_path: String,
     index: u32,
@@ -128,11 +131,14 @@ pub fn layout_chapter_pages(
     font_size: f64,
     line_height: f64,
     margin: f64,
+    first_page_inset: f64,
+    font_path: String,
 ) -> Result<LayoutResultDto, String> {
     let mut pkg = KomaPackage::open_file(&koma_path).map_err(|e| e.to_string())?;
     let chapter = pkg
         .chapter_by_index(index as usize)
         .map_err(|e| e.to_string())?;
+    let lh = line_height as f32;
     let result = crate::kre_layout::layout_chapter(
         &chapter,
         crate::kre_layout::LayoutParams {
@@ -140,10 +146,12 @@ pub fn layout_chapter_pages(
             height,
             margin: margin as f32,
             font_size: font_size as f32,
-            line_height: line_height as f32,
-            paragraph_spacing: (line_height as f32) * 0.4,
+            line_height: lh,
+            paragraph_spacing: lh * 0.4,
+            first_page_inset: first_page_inset as f32,
+            font_path,
         },
-    );
+    )?;
     Ok(layout_result_to_dto(result))
 }
 

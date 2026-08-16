@@ -67,6 +67,13 @@ enum _SwipeDirection { none, next, previous }
 class _ReaderScreenState extends ConsumerState<ReaderScreen>
     with TickerProviderStateMixin {
   final ScrollController _scrollController = ScrollController();
+
+  /// True when exactly one scroll view owns [_scrollController].
+  ///
+  /// [ScrollController.hasClients] is also true during a chapter sheet
+  /// transition (outgoing + incoming both attached). Reading [position] or
+  /// [offset] in that state asserts `_positions.length == 1`.
+  bool get _scrollReady => _scrollController.positions.length == 1;
   ReaderNotifier? _provider;
 
   /// Highlights loaded for the current chapter, used to decorate the
@@ -286,9 +293,9 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
         return false;
       }
 
-      if (!_scrollController.hasClients) {
-        // Content not attached yet (still swapping off the spinner).
-        if (start != null && !_snippetScrollSeekDone) retry();
+      if (!_scrollReady) {
+        // Not attached yet, or two sheets share the controller mid-turn.
+        retry();
         return;
       }
 
@@ -376,6 +383,7 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
     }
     // Jump to the saved scroll position for this chapter — or the snippet
     // character offset when opening from a snippet link.
+    _snippetSeekAttempts = 0;
     _seekScrollForSnippetOrResume();
   }
 
@@ -395,7 +403,7 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
 
   void _scrollToTtsSentence() {
     final tts = _ttsProvider;
-    if (tts == null || !_scrollController.hasClients) return;
+    if (tts == null || !_scrollReady) return;
     if (!tts.isPlaying && !tts.isPaused) return;
     final text = _currentText;
     if (text.isEmpty) return;
@@ -497,7 +505,7 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
 
   bool _onScrollNotification(ScrollNotification notification) {
     if (notification is ScrollUpdateNotification) {
-      final currentOffset = _scrollController.hasClients
+      final currentOffset = _scrollReady
           ? _scrollController.offset
           : _lastScrollOffset;
       _provider?.updateScrollPosition(currentOffset);
@@ -644,14 +652,9 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
     Chapter chapter, {
     required Color sheetColor,
   }) {
-    final pad = _horizontalPadding(themeProv.pageWidth);
+    final pad = _readingPadding(themeProv);
     return Padding(
-      padding: EdgeInsets.fromLTRB(
-        pad,
-        MediaQuery.of(context).padding.top + 32,
-        pad,
-        MediaQuery.of(context).padding.bottom + 16,
-      ),
+      padding: pad,
       child: Center(
         child: ConstrainedBox(
           constraints: BoxConstraints(maxWidth: themeProv.pageWidth),
@@ -661,6 +664,7 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
             themeProv: themeProv,
             kirForChapter: (i) =>
                 i == provider.currentIndex ? provider.currentKir : null,
+            bookId: _provider?.kirEnabled == true ? provider.book?.id : null,
             highlights: _highlights,
             highlightVersion: _highlightVersion,
             ttsActive: _ttsProvider?.isActive ?? false,
@@ -813,12 +817,7 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
                                 child: SingleChildScrollView(
                                   controller: _scrollController,
                                   primary: false,
-                                  padding: EdgeInsets.fromLTRB(
-                                    _horizontalPadding(themeProv.pageWidth),
-                                    MediaQuery.of(context).padding.top + 32,
-                                    _horizontalPadding(themeProv.pageWidth),
-                                    MediaQuery.of(context).padding.bottom + 16,
-                                  ),
+                                  padding: _readingPadding(themeProv),
                                   child: Center(
                                     child: ConstrainedBox(
                                       constraints: BoxConstraints(
@@ -1119,7 +1118,7 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
     await tts.init(text, chapterId: chapterId);
     if (!mounted) return;
 
-    if (_scrollController.hasClients &&
+    if (_scrollReady &&
         tts.totalSentences > 0 &&
         _scrollController.position.maxScrollExtent > 0) {
       final ratio =
@@ -1148,6 +1147,22 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
     final screenWidth = MediaQuery.of(context).size.width;
     final leftover = (screenWidth - maxWidth) / 2;
     return leftover < 20 ? 20 : leftover;
+  }
+
+  /// Insets for the reading surface.
+  ///
+  /// Uses [MediaQuery.viewPadding] rather than [MediaQuery.padding]: showing
+  /// or hiding system bars changes `padding` and would otherwise resize the
+  /// page box, forcing a KRE relayout (and a skeleton flash) on a chrome tap.
+  EdgeInsets _readingPadding(ThemeState themeProv) {
+    final mq = MediaQuery.of(context);
+    final h = _horizontalPadding(themeProv.pageWidth);
+    return EdgeInsets.fromLTRB(
+      h,
+      mq.viewPadding.top + 32,
+      h,
+      mq.viewPadding.bottom + 16,
+    );
   }
 
   String? _estimateReadingTime(String content) {
@@ -1352,9 +1367,7 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
         startOff = contentStr.indexOf(selected, from);
         if (startOff < 0) startOff = contentStr.indexOf(selected);
       }
-      final currPos = _scrollController.hasClients
-          ? _scrollController.offset
-          : null;
+      final currPos = _scrollReady ? _scrollController.offset : null;
       await snippetsProv.createSnippet(
         text: selected,
         note: noteCtrl.text.trim().isNotEmpty ? noteCtrl.text.trim() : null,
