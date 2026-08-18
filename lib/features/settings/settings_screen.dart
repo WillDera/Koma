@@ -2134,14 +2134,15 @@ Future<Source?> _sourceDialog(BuildContext context, Source? existing) async {
           borderRadius: BorderRadius.circular(18),
           side: BorderSide(color: c.border, width: 0.5),
         ),
-        content: SizedBox(
-          width: double.maxFinite,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                existing == null ? 'Add source' : 'Edit source',
+        content: SingleChildScrollView(
+          child: SizedBox(
+            width: double.maxFinite,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  existing == null ? 'Add source' : 'Edit source',
                 style: TextStyle(
                   color: c.textPrimary,
                   fontSize: 16,
@@ -2188,13 +2189,15 @@ Future<Source?> _sourceDialog(BuildContext context, Source? existing) async {
                 ),
               ),
               const SizedBox(height: 12),
-              TextField(
-                controller: extCtrl,
-                decoration: const InputDecoration(
-                  hintText: 'File types (comma-separated, e.g. epub, pdf, mobi)',
+                TextField(
+                  controller: extCtrl,
+                  decoration: const InputDecoration(
+                    hintText:
+                        'File types (comma-separated, e.g. epub, pdf, mobi)',
+                  ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
         ),
         actions: [

@@ -1,5 +1,6 @@
 import 'dart:io';
 import 'dart:typed_data';
+import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/io_client.dart' as http_io;
 import 'package:html/parser.dart' as html_parser;
@@ -294,62 +295,71 @@ class SourceService {
   }) async {
     try {
       final client = MClient.init();
-      try {
-        final request = http.Request('GET', Uri.parse(url));
-        request.headers['User-Agent'] = kBrowserUserAgent;
-        final response = await client.send(request);
+      final request = http.Request('GET', Uri.parse(url));
+      request.headers.addAll(hostAwareHeaders(url));
+      final response = await client.send(request);
 
-        if (response.statusCode != 200) return null;
-
-        final total = response.contentLength;
-        var received = 0;
-        final chunks = <List<int>>[];
-        await for (final chunk in response.stream) {
-          chunks.add(chunk);
-          received += chunk.length;
-          if (total != null && total > 0) {
-            onProgress?.call(received / total);
-          }
+      if (response.statusCode < 200 || response.statusCode >= 300) {
+        if (kDebugMode) {
+          debugPrint('downloadFromLink HTTP ${response.statusCode}: $url');
         }
-        onProgress?.call(1.0);
-
-        final bytes = Uint8List(received);
-        var offset = 0;
-        for (final chunk in chunks) {
-          bytes.setRange(offset, offset + chunk.length, chunk);
-          offset += chunk.length;
-        }
-
-        final dir = await getApplicationDocumentsDirectory();
-        final filePath =
-            '${dir.path}/downloads/${DateTime.now().millisecondsSinceEpoch}.$ext';
-        final file = File(filePath);
-        await file.create(recursive: true);
-        await file.writeAsBytes(bytes);
-
-        final result = await _ebook.parse(file.path);
-        if (result == null) return null;
-
-        final bookId = await _repos.books.insertBook(result.book);
-        final chapters = await EbookMediaStore.promote(
-          sessionId: result.mediaSessionId,
-          bookId: bookId,
-          chapters: result.chapters,
-        );
-        for (final ch in chapters) {
-          await _repos.books.insertChapter(ch);
-        }
-        if (ext == 'epub') {
-          await KomaPackageStore.compileEpub(
-            bookId: bookId,
-            epubPath: file.path,
-          );
-        }
-        return bookId;
-      } finally {
-        client.close();
+        return null;
       }
-    } catch (_) {
+
+      final total = response.contentLength;
+      var received = 0;
+      final chunks = <List<int>>[];
+      await for (final chunk in response.stream) {
+        chunks.add(chunk);
+        received += chunk.length;
+        if (total != null && total > 0) {
+          onProgress?.call(received / total);
+        }
+      }
+      onProgress?.call(1.0);
+
+      final bytes = Uint8List(received);
+      var offset = 0;
+      for (final chunk in chunks) {
+        bytes.setRange(offset, offset + chunk.length, chunk);
+        offset += chunk.length;
+      }
+
+      final dir = await getApplicationDocumentsDirectory();
+      final filePath =
+          '${dir.path}/downloads/${DateTime.now().millisecondsSinceEpoch}.$ext';
+      final file = File(filePath);
+      await file.create(recursive: true);
+      await file.writeAsBytes(bytes);
+
+      final result = await _ebook.parse(file.path);
+      if (result == null) {
+        if (kDebugMode) {
+          debugPrint('downloadFromLink parse failed: $filePath');
+        }
+        return null;
+      }
+
+      final bookId = await _repos.books.insertBook(result.book);
+      final chapters = await EbookMediaStore.promote(
+        sessionId: result.mediaSessionId,
+        bookId: bookId,
+        chapters: result.chapters,
+      );
+      for (final ch in chapters) {
+        await _repos.books.insertChapter(ch);
+      }
+      if (ext == 'epub') {
+        await KomaPackageStore.compileEpub(
+          bookId: bookId,
+          epubPath: file.path,
+        );
+      }
+      return bookId;
+    } catch (e, st) {
+      if (kDebugMode) {
+        debugPrint('downloadFromLink failed: $e\n$st');
+      }
       return null;
     }
   }

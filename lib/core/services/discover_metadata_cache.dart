@@ -59,20 +59,7 @@ String preferMediumCoverUrl(String url) {
 }
 
 /// Headers for loading enriched cover URLs in Discover cards.
-Map<String, String> discoverCoverHeaders(String url) {
-  final headers = <String, String>{'User-Agent': kBrowserUserAgent};
-  final host = Uri.tryParse(url)?.host ?? '';
-  if (host.contains('openlibrary.org')) {
-    headers['Referer'] = 'https://openlibrary.org/';
-  } else if (host.contains('googleapis.com') ||
-      host.contains('googleusercontent.com') ||
-      host.contains('books.google')) {
-    headers['Referer'] = 'https://books.google.com/';
-  } else if (host.contains('libgen.')) {
-    headers['Referer'] = 'https://libgen.li/';
-  }
-  return headers;
-}
+Map<String, String> discoverCoverHeaders(String url) => hostAwareHeaders(url);
 
 int _syntheticId(String key) => key.hashCode & 0x7fffffff;
 

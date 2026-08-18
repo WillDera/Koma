@@ -12,11 +12,44 @@ import '../../repositories/cookie_repository.dart';
 import '../extension_client_settings.dart';
 import 'cf_proxy_client.dart';
 import 'doh_resolver.dart';
+import 'http_prefs.dart';
 
 /// Browser-like User-Agent applied to image requests and (as a fallback) by
 /// [MCookieManager]. Mirrors mangayomi's default UA for Mihon-style requests.
 const kBrowserUserAgent =
     'Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 Koma/1.0';
+
+/// Host-aware Referer / UA for LibGen covers, Open Library, Google Books, etc.
+Map<String, String> hostAwareHeaders(String url) {
+  final headers = <String, String>{'User-Agent': kBrowserUserAgent};
+  final host = Uri.tryParse(url)?.host ?? '';
+  if (host.contains('openlibrary.org')) {
+    headers['Referer'] = 'https://openlibrary.org/';
+  } else if (host.contains('googleapis.com') ||
+      host.contains('googleusercontent.com') ||
+      host.contains('books.google')) {
+    headers['Referer'] = 'https://books.google.com/';
+  } else if (host.contains('libgen.')) {
+    headers['Referer'] = 'https://libgen.li/';
+  }
+  return headers;
+}
+
+/// Ignores [close] so pooled [InterceptedClient]s cannot tear down shared IO.
+class _PooledTransport extends http.BaseClient {
+  _PooledTransport(this._inner);
+
+  http.Client _inner;
+
+  void replaceInner(http.Client inner) => _inner = inner;
+
+  @override
+  Future<http.StreamedResponse> send(http.BaseRequest request) =>
+      _inner.send(request);
+
+  @override
+  void close() {}
+}
 
 /// Shared [webview.WebViewEnvironment] for [webview.HeadlessInAppWebView]s.
 ///
@@ -58,7 +91,10 @@ class MClient {
 
   /// Shared plain HTTP client used as the inner transport for intercepted
   /// clients. Mirrors mangayomi's `MClient.defaultClient`.
-  static http.Client defaultClient = _buildTransport();
+  static http.Client _rawTransport = _buildTransport();
+  static http.Client defaultClient = _rawTransport;
+  static final _PooledTransport _poolTransport =
+      _PooledTransport(_rawTransport);
 
   /// Per-source [InterceptedClient] cache (connection reuse / pool).
   static final Map<String, InterceptedClient> _clientPool = {};
@@ -82,24 +118,33 @@ class MClient {
         : kBrowserUserAgent;
   }
 
-  static http.Client _buildTransport() {
+  static http.Client _buildTransport({bool dohEnabled = false}) {
     final raw = HttpClient();
-    raw.connectionFactory =
-        (Uri url, String? proxyHost, int? proxyPort) async {
-          final host = url.host;
-          final address = await DohResolver.resolve(host);
-          return Socket.startConnect(address, url.port);
-        };
+    // Custom connectionFactory bypasses normal DNS/TLS on some hosts (e.g.
+    // libgen.li). Only attach when DoH is explicitly enabled in settings.
+    if (dohEnabled) {
+      raw.connectionFactory =
+          (Uri url, String? proxyHost, int? proxyPort) async {
+            final ip = await DohResolver.lookupA(url.host);
+            if (ip != null) {
+              return Socket.startConnect(ip, url.port);
+            }
+            return Socket.startConnect(url.host, url.port);
+          };
+    }
     return IOClient(raw);
   }
 
   /// Rebuild the shared transport after DoH / network pref changes.
   static Future<void> refreshTransport() async {
     DohResolver.clearCache();
+    final doh = await HttpPrefs.dohEnabled();
     try {
-      defaultClient.close();
+      _rawTransport.close();
     } catch (_) {}
-    defaultClient = _buildTransport();
+    _rawTransport = _buildTransport(dohEnabled: doh);
+    defaultClient = _rawTransport;
+    _poolTransport.replaceInner(_rawTransport);
     for (final client in _clientPool.values) {
       try {
         client.close();
@@ -124,7 +169,7 @@ class MClient {
     return _clientPool.putIfAbsent(
       poolKey,
       () => InterceptedClient.build(
-        client: defaultClient,
+        client: _poolTransport,
         retryPolicy: ResolveCloudFlareChallenge(showCloudFlareError),
         interceptors: [
           MCookieManager(sourceId: sid, reqcopyWith: reqcopyWith),
