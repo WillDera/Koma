@@ -777,7 +777,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> with RouteAware {
         ImportOption(
           icon: Icons.file_present_outlined,
           title: 'Import file',
-          subtitle: 'EPUB, TXT, or Markdown',
+          subtitle: 'EPUB, PDF, TXT, or Markdown',
           onTap: () => _importFile(context),
         ),
         ImportOption(
@@ -809,6 +809,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> with RouteAware {
         type: FileType.custom,
         allowedExtensions: [
           'epub',
+          'pdf',
           'fb2',
           'txt',
           'mobi',

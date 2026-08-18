@@ -195,6 +195,7 @@ class StatsRepository {
     baseUrl: s.baseUrl,
     enabled: s.enabled,
     language: s.language,
+    fileExtensions: s.fileExtensions ?? const [],
   );
 
   static i.Source _sourceFromModel(Source s) => i.Source(
@@ -204,5 +205,6 @@ class StatsRepository {
     baseUrl: s.baseUrl,
     enabled: s.enabled,
     language: s.language,
+    fileExtensions: s.fileExtensions.isEmpty ? null : s.fileExtensions.toList(),
   );
 }

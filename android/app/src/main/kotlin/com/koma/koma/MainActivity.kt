@@ -1,15 +1,21 @@
 package com.koma.koma
 
+import android.app.SearchManager
 import android.content.ContentValues
+import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageInfo
 import android.content.pm.PackageManager
 import android.media.MediaScannerConnection
 import android.net.Uri
+import android.os.BatteryManager
 import android.os.Build
+import android.os.Bundle
 import android.os.Environment
 import android.provider.MediaStore
 import android.util.Log
+import android.net.ConnectivityManager
+import android.net.NetworkCapabilities
 import androidx.core.content.FileProvider
 import androidx.core.content.pm.PackageInfoCompat
 import com.koma.koma.piper.PiperMethodChannel
@@ -25,6 +31,30 @@ import java.security.MessageDigest
 class MainActivity : FlutterActivity() {
 
     private var piperChannel: PiperMethodChannel? = null
+    private var searchChannel: MethodChannel? = null
+    private var initialSearchQuery: String? = null
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        captureSearchIntent(intent)
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        captureSearchIntent(intent)
+    }
+
+    private fun captureSearchIntent(intent: Intent?) {
+        if (intent?.action != Intent.ACTION_SEARCH) return
+        val query = intent.getStringExtra(SearchManager.QUERY)?.trim().orEmpty()
+        if (query.isEmpty()) return
+        if (searchChannel != null) {
+            searchChannel?.invokeMethod("onSearchIntent", query)
+        } else {
+            initialSearchQuery = query
+        }
+    }
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
@@ -37,6 +67,25 @@ class MainActivity : FlutterActivity() {
             ),
         )
         piperChannel = piper
+        searchChannel = MethodChannel(
+            flutterEngine.dartExecutor.binaryMessenger,
+            "com.koma.koma/search",
+        ).also { channel ->
+            channel.setMethodCallHandler { call, result ->
+                when (call.method) {
+                    "getInitialSearchQuery" -> {
+                        val q = initialSearchQuery
+                        initialSearchQuery = null
+                        result.success(q)
+                    }
+                    else -> result.notImplemented()
+                }
+            }
+            initialSearchQuery?.let { q ->
+                initialSearchQuery = null
+                channel.invokeMethod("onSearchIntent", q)
+            }
+        }
         MethodChannel(
             flutterEngine.dartExecutor.binaryMessenger,
             "eu.kanade.tachiyomi/keiyoushi",
@@ -91,6 +140,24 @@ class MainActivity : FlutterActivity() {
                         Log.e("AppUpdate", "installApk failed", e)
                         result.error("INSTALL_APK", e.message, null)
                     }
+                }
+                "getDeviceConstraints" -> {
+                    result.success(readDeviceConstraints())
+                }
+                "installApkViaPackageInstaller" -> {
+                    Thread {
+                        try {
+                            val apkPath = call.argument<String>("apkPath")
+                                ?: throw IllegalArgumentException("missing apkPath")
+                            PackageInstallerHelper.install(applicationContext, apkPath)
+                            runOnUiThread { result.success(null) }
+                        } catch (e: Throwable) {
+                            Log.e("PkgInstaller", "install failed", e)
+                            runOnUiThread {
+                                result.error("PKG_INSTALL", e.message, null)
+                            }
+                        }
+                    }.start()
                 }
                 else -> result.notImplemented()
             }
@@ -232,6 +299,16 @@ class MainActivity : FlutterActivity() {
                 else -> result.notImplemented()
             }
         }
+    }
+
+    private fun readDeviceConstraints(): Map<String, Any> {
+        val cm = getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+        val network = cm.activeNetwork
+        val caps = network?.let { cm.getNetworkCapabilities(it) }
+        val unmetered = caps?.hasCapability(NetworkCapabilities.NET_CAPABILITY_NOT_METERED) == true
+        val bm = getSystemService(Context.BATTERY_SERVICE) as BatteryManager
+        val charging = bm.isCharging
+        return mapOf("unmetered" to unmetered, "charging" to charging)
     }
 
     private fun coerceByteArray(raw: Any?): ByteArray? = when (raw) {

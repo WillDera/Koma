@@ -95,6 +95,9 @@ class _MigrateSearchScreenState extends ConsumerState<MigrateSearchScreen> {
         flags: MigrationFlags(
           chapters: choice.chapters,
           removeDownloads: choice.removeDownloads,
+          categories: choice.categories,
+          notes: choice.notes,
+          customCover: choice.customCover,
         ),
       );
       if (!mounted) return;
@@ -172,11 +175,17 @@ class _MigrateChoice {
     required this.replace,
     required this.chapters,
     required this.removeDownloads,
+    required this.categories,
+    required this.notes,
+    required this.customCover,
   });
 
   final bool replace;
   final bool chapters;
   final bool removeDownloads;
+  final bool categories;
+  final bool notes;
+  final bool customCover;
 }
 
 class _MigrateConfirmDialog extends StatefulWidget {
@@ -197,6 +206,9 @@ class _MigrateConfirmDialog extends StatefulWidget {
 class _MigrateConfirmDialogState extends State<_MigrateConfirmDialog> {
   bool _chapters = true;
   bool _removeDownloads = true;
+  bool _categories = true;
+  bool _notes = true;
+  bool _customCover = true;
 
   @override
   Widget build(BuildContext context) {
@@ -226,6 +238,27 @@ class _MigrateConfirmDialogState extends State<_MigrateConfirmDialog> {
               value: _removeDownloads,
               onChanged: (v) => setState(() => _removeDownloads = v ?? true),
             ),
+            CheckboxListTile(
+              contentPadding: EdgeInsets.zero,
+              title: const Text('Categories'),
+              subtitle: const Text('Copy library category membership'),
+              value: _categories,
+              onChanged: (v) => setState(() => _categories = v ?? true),
+            ),
+            CheckboxListTile(
+              contentPadding: EdgeInsets.zero,
+              title: const Text('Notes'),
+              subtitle: const Text('Copy user notes'),
+              value: _notes,
+              onChanged: (v) => setState(() => _notes = v ?? true),
+            ),
+            CheckboxListTile(
+              contentPadding: EdgeInsets.zero,
+              title: const Text('Custom cover'),
+              subtitle: const Text('Copy local cover override if set'),
+              value: _customCover,
+              onChanged: (v) => setState(() => _customCover = v ?? true),
+            ),
           ],
         ),
       ),
@@ -241,6 +274,9 @@ class _MigrateConfirmDialogState extends State<_MigrateConfirmDialog> {
               replace: false,
               chapters: _chapters,
               removeDownloads: _removeDownloads,
+              categories: _categories,
+              notes: _notes,
+              customCover: _customCover,
             ),
           ),
           child: const Text('Copy'),
@@ -252,6 +288,9 @@ class _MigrateConfirmDialogState extends State<_MigrateConfirmDialog> {
               replace: true,
               chapters: _chapters,
               removeDownloads: _removeDownloads,
+              categories: _categories,
+              notes: _notes,
+              customCover: _customCover,
             ),
           ),
           child: const Text('Migrate'),

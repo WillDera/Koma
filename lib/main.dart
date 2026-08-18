@@ -14,7 +14,10 @@ import 'core/isar/isar.dart';
 import 'core/providers.dart';
 import 'core/repositories/repositories.dart';
 import 'core/services/background_task.dart';
+import 'core/services/extension_install_listener.dart';
 import 'core/services/extension_manager.dart';
+import 'core/services/source_pref_store.dart';
+import 'core/services/search_intent_listener.dart';
 import 'core/services/http/m_client.dart';
 import 'core/services/keiyoushi_service.dart';
 import 'core/services/notification_service.dart';
@@ -46,7 +49,8 @@ void main() {
     unawaited(NotificationService.instance.init());
 
     final isar = await openIsar();
-      final repos = Repositories(isar);
+    SourcePrefStore.bind(isar);
+    final repos = Repositories(isar);
 
       // Wire the Cloudflare / cookie HTTP pipeline (mangayomi parity): the
     // intercepted client reads cookies through MClient.cookies, and the local
@@ -71,6 +75,8 @@ void main() {
     final keiyoushiService = KeiyoushiService();
     final extensionManager = ExtensionManager(repos, keiyoushiService,
     );
+    ExtensionInstallListener.init(extensionManager);
+    SearchIntentListener.init();
     unawaited(extensionManager.reloadAll().then((_) {
       unawaited(_checkExtensionUpdates(extensionManager));
     }));

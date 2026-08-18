@@ -23,9 +23,7 @@ void main() {
     );
   });
 
-  test('default source points at libgen.li', () {
-    final src = SourceService.defaultSources().single;
-    expect(src.baseUrl, 'https://libgen.li/index.php');
-    expect(src.tag, 'libgen');
+  test('default sources list is empty (user adds sources)', () {
+    expect(SourceService.defaultSources(), isEmpty);
   });
 }

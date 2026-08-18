@@ -69,7 +69,10 @@ class Client {
 }
 ''';
 
-Future<void> injectHttpBridge(JavascriptRuntime runtime) async {
+Future<void> injectHttpBridge(
+  JavascriptRuntime runtime, {
+  required String sourceId,
+}) async {
   List<dynamic> asList(dynamic args) {
     if (args is List) return args;
     if (args is String) {
@@ -83,35 +86,36 @@ Future<void> injectHttpBridge(JavascriptRuntime runtime) async {
 
   runtime.onMessage('http_head', (dynamic args) async {
     final list = asList(args);
-    return await _toHttpResponse(_client(list), 'HEAD', list);
+    return await _toHttpResponse(_client(list, sourceId), 'HEAD', list);
   });
   runtime.onMessage('http_get', (dynamic args) async {
     final list = asList(args);
-    return await _toHttpResponse(_client(list), 'GET', list);
+    return await _toHttpResponse(_client(list, sourceId), 'GET', list);
   });
   runtime.onMessage('http_post', (dynamic args) async {
     final list = asList(args);
-    return await _toHttpResponse(_client(list), 'POST', list);
+    return await _toHttpResponse(_client(list, sourceId), 'POST', list);
   });
   runtime.onMessage('http_put', (dynamic args) async {
     final list = asList(args);
-    return await _toHttpResponse(_client(list), 'PUT', list);
+    return await _toHttpResponse(_client(list, sourceId), 'PUT', list);
   });
   runtime.onMessage('http_delete', (dynamic args) async {
     final list = asList(args);
-    return await _toHttpResponse(_client(list), 'DELETE', list);
+    return await _toHttpResponse(_client(list, sourceId), 'DELETE', list);
   });
   runtime.onMessage('http_patch', (dynamic args) async {
     final list = asList(args);
-    return await _toHttpResponse(_client(list), 'PATCH', list);
+    return await _toHttpResponse(_client(list, sourceId), 'PATCH', list);
   });
 
   runtime.evaluate(mangayomiClientCode);
 }
 
-InterceptedClient _client(List args) {
+InterceptedClient _client(List args, String sourceId) {
   final reqcopyWith = args.length > 1 ? args[1] as Map? : null;
   return MClient.init(
+    sourceId: sourceId,
     reqcopyWith: reqcopyWith?.map((k, v) => MapEntry(k.toString(), v)),
   );
 }

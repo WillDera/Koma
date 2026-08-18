@@ -1,3 +1,8 @@
+import 'dart:io';
+
+import 'package:path/path.dart' as p;
+import 'package:path_provider/path_provider.dart';
+
 import '../models/manga.dart';
 import '../models/manga_chapter.dart';
 import '../repositories/manga_repository.dart';
@@ -7,21 +12,24 @@ import '../../eval/dispatch_service.dart';
 import 'extension_source_resolve.dart';
 import 'keiyoushi_service.dart';
 
-/// Mihon-shaped migration flags supported by Koma's MVP.
+/// Mihon-shaped migration flags supported by Koma.
 class MigrationFlags {
   const MigrationFlags({
     this.chapters = true,
     this.removeDownloads = true,
+    this.categories = true,
+    this.notes = true,
+    this.customCover = true,
   });
 
   final bool chapters;
   final bool removeDownloads;
+  final bool categories;
+  final bool notes;
+  final bool customCover;
 }
 
-/// Port of Mihon's [MigrateMangaUseCase] for the flags Koma can support today:
-/// CHAPTER matching by recognized number, optional REMOVE_DOWNLOAD, and
-/// `replace` (unfavorite old / favorite target). Categories, notes, custom
-/// covers, and trackers are not implemented (schema gaps).
+/// Port of Mihon's [MigrateMangaUseCase] for the flags Koma supports today.
 class MigrateMangaUseCase {
   MigrateMangaUseCase({
     required Repositories repositories,
@@ -166,6 +174,12 @@ class MigrateMangaUseCase {
       await _transferChapters(current: current, targetId: target.id);
     }
 
+    await _transferExtras(
+      current: current,
+      targetId: target.id,
+      flags: flags,
+    );
+
     if (flags.removeDownloads) {
       await _removeDownloads(current);
     }
@@ -177,6 +191,55 @@ class MigrateMangaUseCase {
 
     final refreshed = await _manga.getMangaById(target.id);
     return refreshed ?? target.copyWith(inLibrary: true);
+  }
+
+  Future<void> _transferExtras({
+    required Manga current,
+    required int targetId,
+    required MigrationFlags flags,
+  }) async {
+    if (!flags.categories && !flags.notes && !flags.customCover) return;
+
+    final target = await _manga.getMangaById(targetId);
+    if (target == null) return;
+
+    var categoryIds = target.categoryIds;
+    var notes = target.notes;
+    var customCoverPath = target.customCoverPath;
+
+    if (flags.categories && current.categoryIds.isNotEmpty) {
+      categoryIds = current.categoryIds;
+    }
+    if (flags.notes &&
+        current.notes != null &&
+        current.notes!.trim().isNotEmpty) {
+      notes = current.notes;
+    }
+    if (flags.customCover && current.customCoverPath != null) {
+      customCoverPath = await _copyCustomCover(
+        current.customCoverPath!,
+        targetId,
+      );
+    }
+
+    await _manga.updateMangaExtras(
+      targetId,
+      categoryIds: categoryIds,
+      notes: notes,
+      customCoverPath: customCoverPath,
+    );
+  }
+
+  Future<String?> _copyCustomCover(String fromPath, int targetMangaId) async {
+    final src = File(fromPath);
+    if (!await src.exists()) return null;
+    final support = await getApplicationSupportDirectory();
+    final dir = Directory(p.join(support.path, 'manga_covers'));
+    await dir.create(recursive: true);
+    final ext = p.extension(fromPath);
+    final dest = File(p.join(dir.path, '$targetMangaId${ext.isEmpty ? '.jpg' : ext}'));
+    await src.copy(dest.path);
+    return dest.path;
   }
 
   Future<void> _backfillChapterNumbers(Manga manga) async {

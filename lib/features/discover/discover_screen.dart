@@ -84,12 +84,6 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
     try {
       final repos = ref.read(repositoriesProvider);
       var sources = await repos.stats.getSources();
-      if (sources.isEmpty) {
-        for (final s in SourceService.defaultSources()) {
-          await repos.stats.insertSource(s);
-        }
-        sources = await repos.stats.getSources();
-      }
       if (!mounted) return;
       final enabled = sources.where((s) => s.enabled).toList();
       setState(() {
@@ -790,10 +784,17 @@ class _DiscoverBookResults extends ConsumerWidget {
       headers: displayUrl != null ? discoverCoverHeaders(displayUrl) : null,
       badge: result.sourceName,
       secondaryBadge: result.size,
+      formatBadge: _formatLabel(result.extension),
       showBadge: showSourcePills,
       variant: variant,
       downloadProgress: downloading[result.title],
       onTap: () => onTap(result),
     );
+  }
+
+  static String? _formatLabel(String? extension) {
+    if (extension == null) return null;
+    final label = extension.trim().replaceAll('.', '').toUpperCase();
+    return label.isEmpty ? null : label;
   }
 }

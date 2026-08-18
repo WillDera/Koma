@@ -9,6 +9,7 @@ import '../models/source.dart';
 import '../repositories/repositories.dart';
 import 'ebook_service.dart';
 import 'ebook_media_store.dart';
+import 'http/m_client.dart';
 import 'koma_package_store.dart';
 
 /// LibGen HTML uses relative cover paths like
@@ -111,13 +112,7 @@ class SourceService {
 
   Future<List<SourceSearchResult>> search(String query) async {
     if (query.trim().isEmpty) return [];
-    var sources = await _repos.stats.getSources();
-    if (sources.isEmpty) {
-      for (final s in defaultSources()) {
-        await _repos.stats.insertSource(s);
-      }
-      sources = await _repos.stats.getSources();
-    }
+    final sources = await _repos.stats.getSources();
     final active = sources.where((s) => s.enabled).toList();
     if (active.isEmpty) return [];
     final batches = await Future.wait(
@@ -257,6 +252,13 @@ class SourceService {
           )
           .toList();
     }
+    if (source.fileExtensions.isNotEmpty) {
+      final allowed = source.fileExtensions.map((e) => e.toLowerCase()).toSet();
+      results = results.where((r) {
+        final ext = (r.extension ?? '').toLowerCase().replaceAll('.', '');
+        return ext.isNotEmpty && allowed.contains(ext);
+      }).toList();
+    }
     return results;
   }
 
@@ -291,11 +293,10 @@ class SourceService {
     void Function(double progress)? onProgress,
   }) async {
     try {
-      final client = http.Client();
+      final client = MClient.init();
       try {
         final request = http.Request('GET', Uri.parse(url));
-        request.headers['User-Agent'] =
-            'Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 Koma/1.0';
+        request.headers['User-Agent'] = kBrowserUserAgent;
         final response = await client.send(request);
 
         if (response.statusCode != 200) return null;
@@ -357,11 +358,5 @@ class SourceService {
     return _resolveRelativeUrl(base, relative);
   }
 
-  static List<Source> defaultSources() => [
-    Source(
-      name: 'Library Genesis',
-      tag: 'libgen',
-      baseUrl: 'https://libgen.li/index.php',
-    ),
-  ];
+  static List<Source> defaultSources() => [];
 }

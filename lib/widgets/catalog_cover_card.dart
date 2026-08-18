@@ -19,6 +19,7 @@ class CatalogCoverCard extends StatelessWidget {
     this.headers,
     this.badge,
     this.secondaryBadge,
+    this.formatBadge,
     this.showBadge = true,
     this.inLibrary = false,
     this.coverMaxBytes,
@@ -34,6 +35,9 @@ class CatalogCoverCard extends StatelessWidget {
   final String? badge;
   /// Second pill (e.g. file size) — bottom-left of the cover.
   final String? secondaryBadge;
+  /// File format pill (e.g. EPUB) shown beside [secondaryBadge] on covers,
+  /// or beside [subtitle] in list layout.
+  final String? formatBadge;
   final bool showBadge;
   /// Accent heart when this title is already in the user's library.
   final bool inLibrary;
@@ -102,6 +106,36 @@ class CatalogCoverCard extends StatelessWidget {
     return _pill(secondaryBadge!, fontSize: fontSize);
   }
 
+  Widget? _formatChip({double fontSize = 10}) {
+    if (formatBadge == null || formatBadge!.isEmpty) return null;
+    return _pill(formatBadge!, fontSize: fontSize);
+  }
+
+  Widget? _coverMetaPills({double fontSize = 10}) {
+    final size = _secondaryChip(fontSize: fontSize);
+    final format = _formatChip(fontSize: fontSize);
+    if (size == null && format == null) return null;
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        if (size != null) size,
+        if (size != null && format != null) const SizedBox(width: 4),
+        if (format != null) format,
+      ],
+    );
+  }
+
+  String? get _listSubtitle {
+    final author = subtitle?.trim();
+    final format = formatBadge?.trim();
+    final hasAuthor = author != null && author.isNotEmpty;
+    final hasFormat = format != null && format.isNotEmpty;
+    if (hasAuthor && hasFormat) return '$author · $format';
+    if (hasAuthor) return author;
+    if (hasFormat) return format;
+    return null;
+  }
+
   Widget _pill(String label, {double fontSize = 10}) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
@@ -137,7 +171,7 @@ class CatalogCoverCard extends StatelessWidget {
   Widget _grid(BuildContext context) {
     final c = context.colors;
     final chip = _badgeChip();
-    final sizeChip = _secondaryChip();
+    final metaPills = _coverMetaPills();
     final heart = _inLibraryHeart(c);
     return AnimatedPress(
       onTap: _busy ? null : onTap,
@@ -156,8 +190,8 @@ class CatalogCoverCard extends StatelessWidget {
                 if (chip != null) Positioned(top: 6, left: 6, child: chip),
                 if (heart != null)
                   Positioned(top: 6, right: 6, child: heart),
-                if (sizeChip != null)
-                  Positioned(bottom: 6, left: 6, child: sizeChip),
+                if (metaPills != null)
+                  Positioned(bottom: 6, left: 6, child: metaPills),
                 if (_busy)
                   Positioned(
                     left: 0,
@@ -202,7 +236,7 @@ class CatalogCoverCard extends StatelessWidget {
   Widget _compact(BuildContext context) {
     final c = context.colors;
     final chip = _badgeChip(fontSize: 9);
-    final sizeChip = _secondaryChip(fontSize: 9);
+    final metaPills = _coverMetaPills(fontSize: 9);
     final heart = _inLibraryHeart(c);
     return AnimatedPress(
       onTap: _busy ? null : onTap,
@@ -221,8 +255,8 @@ class CatalogCoverCard extends StatelessWidget {
                 if (chip != null) Positioned(top: 4, left: 4, child: chip),
                 if (heart != null)
                   Positioned(top: 4, right: 4, child: heart),
-                if (sizeChip != null)
-                  Positioned(bottom: 4, left: 4, child: sizeChip),
+                if (metaPills != null)
+                  Positioned(bottom: 4, left: 4, child: metaPills),
                 if (_busy)
                   Positioned(
                     left: 0,
@@ -258,7 +292,7 @@ class CatalogCoverCard extends StatelessWidget {
   Widget _overlay(BuildContext context) {
     final c = context.colors;
     final chip = _badgeChip();
-    final sizeChip = _secondaryChip();
+    final metaPills = _coverMetaPills();
     final heart = _inLibraryHeart(c);
     return AnimatedPress(
       onTap: _busy ? null : onTap,
@@ -286,8 +320,8 @@ class CatalogCoverCard extends StatelessWidget {
             if (chip != null) Positioned(top: 6, left: 6, child: chip),
             if (heart != null)
               Positioned(top: 6, right: 6, child: heart),
-            if (sizeChip != null)
-              Positioned(bottom: 36, left: 6, child: sizeChip),
+            if (metaPills != null)
+              Positioned(bottom: 36, left: 6, child: metaPills),
             Positioned(
               left: 8,
               right: 8,
@@ -333,6 +367,7 @@ class CatalogCoverCard extends StatelessWidget {
     final chip = _badgeChip(fontSize: 9);
     final sizeChip = _secondaryChip(fontSize: 9);
     final heart = _inLibraryHeart(c);
+    final listSub = _listSubtitle;
     return AnimatedPress(
       onTap: _busy ? null : onTap,
       scaleDown: 0.99,
@@ -378,10 +413,10 @@ class CatalogCoverCard extends StatelessWidget {
                       height: 1.3,
                     ),
                   ),
-                  if (subtitle != null && subtitle!.isNotEmpty) ...[
+                  if (listSub != null && listSub.isNotEmpty) ...[
                     const SizedBox(height: 2),
                     Text(
-                      subtitle!,
+                      listSub,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(color: c.textSecondary, fontSize: 13),

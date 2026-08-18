@@ -3,6 +3,8 @@ import 'dart:convert';
 import 'package:flutter_qjs/flutter_qjs.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../../../core/services/source_pref_store.dart';
+
 /// Mangayomi-faithful [SharedPreferences] for JS extensions
 /// (`new SharedPreferences().get(key)` — **synchronous** sendMessage returns).
 ///
@@ -69,13 +71,16 @@ String _prefStorageKey(String sourceId, String key) =>
 /// Typed read from PrefsCache (mangayomi [getPreferenceValue] counterpart for
 /// the JS path — PrefsCache already stores the resolved typed value).
 dynamic getJsPreferenceValue(String sourceId, String key) {
-  return PrefsCache.instance.get(_prefStorageKey(sourceId, key));
+  final cached = PrefsCache.instance.get(_prefStorageKey(sourceId, key));
+  if (cached != null) return cached;
+  return SourcePrefStore.get(sourceId, key);
 }
 
 /// Typed write into PrefsCache so subsequent JS `SharedPreferences.get` sees
 /// UI updates without restart.
 void setJsPreferenceValue(String sourceId, String key, dynamic value) {
   PrefsCache.instance.putJson(_prefStorageKey(sourceId, key), value);
+  SourcePrefStore.put(sourceId, key, value);
 }
 
 /// Seed unset preference keys from `extention.getSourcePreferences()` defaults,
