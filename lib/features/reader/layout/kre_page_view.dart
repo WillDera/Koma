@@ -37,6 +37,7 @@ class KrePageView extends StatefulWidget {
     this.onSelected,
     this.onSelectionCleared,
     this.onSelectionCollapsed,
+    this.onZoomed,
   });
 
   final LayoutPage page;
@@ -59,6 +60,7 @@ class KrePageView extends StatefulWidget {
   final void Function(int start, int end)? onSelected;
   final VoidCallback? onSelectionCleared;
   final VoidCallback? onSelectionCollapsed;
+  final ValueChanged<bool>? onZoomed;
 
   @override
   State<KrePageView> createState() => _KrePageViewState();
@@ -67,6 +69,25 @@ class KrePageView extends StatefulWidget {
 class _KrePageViewState extends State<KrePageView> {
   int? _selStart;
   int? _selEnd;
+  LayoutPage _displayPage = const LayoutPage(charStart: 0, charEnd: 0);
+  final Set<int> _zoomedSlots = {};
+
+  @override
+  void dispose() {
+    if (_zoomedSlots.isNotEmpty) widget.onZoomed?.call(false);
+    super.dispose();
+  }
+
+  void _setSlotZoomed(int slot, bool zoomed) {
+    final was = _zoomedSlots.isNotEmpty;
+    if (zoomed) {
+      _zoomedSlots.add(slot);
+    } else {
+      _zoomedSlots.remove(slot);
+    }
+    final now = _zoomedSlots.isNotEmpty;
+    if (was != now) widget.onZoomed?.call(now);
+  }
 
   void _clearSelection({required bool collapsed}) {
     if (_selStart == null) return;
@@ -82,7 +103,7 @@ class _KrePageViewState extends State<KrePageView> {
   }
 
   void _extendSelection(Offset local) {
-    final hit = hitTestLayoutPage(widget.page, local);
+    final hit = hitTestLayoutPage(_displayPage, local);
     if (hit == null) return;
     final anchor = _selStart ?? hit;
     final a = math.min(anchor, hit);
@@ -103,7 +124,6 @@ class _KrePageViewState extends State<KrePageView> {
       context.colors.textPrimary,
     );
     final brightness = Theme.of(context).brightness;
-    var imageSlot = widget.imageSlotBase;
 
     return ColoredBox(
       color: widget.themeProv.bgColor,
@@ -121,62 +141,72 @@ class _KrePageViewState extends State<KrePageView> {
             SizedBox(height: widget.titleGap),
           ],
           Expanded(
-            child: ClipRect(
-              child: Stack(
-                fit: StackFit.expand,
-                children: [
-                  CustomPaint(
-                    key: ValueKey(widget.highlightVersion),
-                    size: Size.infinite,
-                    painter: _KrePagePainter(
-                      page: widget.page,
-                      plainText: widget.plainText,
-                      document: widget.document,
-                      baseStyle: baseStyle,
-                      textScaler: MediaQuery.textScalerOf(context),
-                      highlights: widget.highlights,
-                      ttsActive: widget.ttsActive,
-                      ttsStart: widget.ttsStart,
-                      ttsEnd: widget.ttsEnd,
-                      focusStart: widget.focusStart,
-                      focusEnd: widget.focusEnd,
-                      focusAlpha: widget.focusAlpha,
-                      brightness: brightness,
-                      isSepia: widget.themeProv.sepiaMode,
-                      accent: widget.themeProv.accentColor,
-                      selStart: _selStart,
-                      selEnd: _selEnd,
-                    ),
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                final size = constraints.biggest;
+                final expand = imageExpandLayout(widget.page, size.height);
+                final display = rebaseExpandedImagePage(
+                  widget.page,
+                  expand,
+                  size.height,
+                );
+                _displayPage = display;
+                return ClipRect(
+                  child: Stack(
+                    fit: StackFit.expand,
+                    children: [
+                      CustomPaint(
+                        key: ValueKey(widget.highlightVersion),
+                        size: Size.infinite,
+                        painter: _KrePagePainter(
+                          page: display,
+                          plainText: widget.plainText,
+                          document: widget.document,
+                          baseStyle: baseStyle,
+                          textScaler: MediaQuery.textScalerOf(context),
+                          highlights: widget.highlights,
+                          ttsActive: widget.ttsActive,
+                          ttsStart: widget.ttsStart,
+                          ttsEnd: widget.ttsEnd,
+                          focusStart: widget.focusStart,
+                          focusEnd: widget.focusEnd,
+                          focusAlpha: widget.focusAlpha,
+                          brightness: brightness,
+                          isSepia: widget.themeProv.sepiaMode,
+                          accent: widget.themeProv.accentColor,
+                          selStart: _selStart,
+                          selEnd: _selEnd,
+                        ),
+                      ),
+                      GestureDetector(
+                        behavior: HitTestBehavior.translucent,
+                        onTap: () {
+                          if (_selStart != null) {
+                            _clearSelection(collapsed: true);
+                          }
+                        },
+                        onLongPressStart: (d) {
+                          _selStart = hitTestLayoutPage(
+                            display,
+                            d.localPosition,
+                          );
+                          _selEnd = _selStart;
+                        },
+                        onLongPressMoveUpdate: (d) =>
+                            _extendSelection(d.localPosition),
+                        onLongPressEnd: (_) {
+                          final a = _selStart;
+                          final b = _selEnd;
+                          if (a == null || b == null || a == b) {
+                            _clearSelection(collapsed: true);
+                          }
+                        },
+                      ),
+                      ..._imageLayer(size, expand),
+                    ],
                   ),
-                  for (final line in widget.page.lines)
-                    if (line.isImage)
-                      _imageAt(line, imageSlot++),
-                  GestureDetector(
-                    behavior: HitTestBehavior.translucent,
-                    onTap: () {
-                      if (_selStart != null) {
-                        _clearSelection(collapsed: true);
-                      }
-                    },
-                    onLongPressStart: (d) {
-                      _selStart = hitTestLayoutPage(
-                        widget.page,
-                        d.localPosition,
-                      );
-                      _selEnd = _selStart;
-                    },
-                    onLongPressMoveUpdate: (d) =>
-                        _extendSelection(d.localPosition),
-                    onLongPressEnd: (_) {
-                      final a = _selStart;
-                      final b = _selEnd;
-                      if (a == null || b == null || a == b) {
-                        _clearSelection(collapsed: true);
-                      }
-                    },
-                  ),
-                ],
-              ),
+                );
+              },
             ),
           ),
         ],
@@ -184,19 +214,54 @@ class _KrePageViewState extends State<KrePageView> {
     );
   }
 
-  Widget _imageAt(LayoutLine line, int slot) {
+  List<Widget> _imageLayer(Size size, ImageExpandLayout expand) {
+    final lines = [
+      for (final line in widget.page.lines)
+        if (line.isImage) line,
+    ];
+    if (lines.isEmpty) return const [];
+
+    var slot = widget.imageSlotBase;
+    if (expand.expand) {
+      return [
+        Positioned(
+          top: expand.top,
+          left: 0,
+          right: 0,
+          bottom: expand.bottom,
+          child: Column(
+            children: [
+              for (var i = 0; i < lines.length; i++)
+                Expanded(
+                  child: _imageForSlot(slot++, fill: true),
+                ),
+            ],
+          ),
+        ),
+      ];
+    }
+
+    return [
+      for (final line in lines)
+        Positioned(
+          top: line.y,
+          left: 0,
+          right: 0,
+          height: line.height,
+          child: ClipRect(child: _imageForSlot(slot++)),
+        ),
+    ];
+  }
+
+  Widget _imageForSlot(int slot, {bool fill = false}) {
     if (slot < 0 || slot >= widget.embeds.length) {
       return const SizedBox.shrink();
     }
-    final embed = widget.embeds[slot];
-    return Positioned(
-      top: line.y,
-      left: 0,
-      right: 0,
-      height: line.height,
-      child: ClipRect(
-        child: _KreEmbedImage(path: embed.path),
-      ),
+    return _ZoomableEmbedImage(
+      key: ValueKey('$slot-${widget.embeds[slot].path}'),
+      path: widget.embeds[slot].path,
+      fill: fill,
+      onZoomed: (zoomed) => _setSlotZoomed(slot, zoomed),
     );
   }
 }
@@ -383,28 +448,107 @@ class _KrePagePainter extends CustomPainter {
   }
 }
 
-class _KreEmbedImage extends StatelessWidget {
-  const _KreEmbedImage({required this.path});
+class _ZoomableEmbedImage extends StatefulWidget {
+  const _ZoomableEmbedImage({
+    super.key,
+    required this.path,
+    required this.fill,
+    this.onZoomed,
+  });
 
   final String path;
+  final bool fill;
+  final ValueChanged<bool>? onZoomed;
+
+  @override
+  State<_ZoomableEmbedImage> createState() => _ZoomableEmbedImageState();
+}
+
+class _ZoomableEmbedImageState extends State<_ZoomableEmbedImage> {
+  final _ctrl = TransformationController();
+  var _zoomed = false;
+  Offset _doubleTap = Offset.zero;
+
+  @override
+  void initState() {
+    super.initState();
+    _ctrl.addListener(_onTransform);
+  }
+
+  @override
+  void dispose() {
+    _ctrl.removeListener(_onTransform);
+    _ctrl.dispose();
+    if (_zoomed) widget.onZoomed?.call(false);
+    super.dispose();
+  }
+
+  void _onTransform() {
+    final zoomed = _ctrl.value.getMaxScaleOnAxis() > 1.05;
+    if (zoomed == _zoomed) return;
+    _zoomed = zoomed;
+    widget.onZoomed?.call(zoomed);
+    setState(() {});
+  }
+
+  void _toggleZoom() {
+    if (_zoomed) {
+      _ctrl.value = Matrix4.identity();
+      return;
+    }
+    const target = 2.5;
+    final focal = _doubleTap;
+    _ctrl.value = Matrix4.identity()
+      ..translateByDouble(focal.dx, focal.dy, 0, 1)
+      ..scaleByDouble(target, target, target, 1)
+      ..translateByDouble(-focal.dx, -focal.dy, 0, 1);
+  }
+
+  void _snapIfNearIdentity(ScaleEndDetails _) {
+    if (_ctrl.value.getMaxScaleOnAxis() < 1.05) {
+      _ctrl.value = Matrix4.identity();
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
-    final file = File(path);
+    final filePath = widget.path.startsWith('file:')
+        ? Uri.parse(widget.path).toFilePath()
+        : widget.path;
+    final file = File(filePath);
     if (!file.existsSync()) {
-      return Icon(Icons.broken_image_outlined, color: context.colors.textTertiary);
+      return Icon(
+        Icons.broken_image_outlined,
+        color: context.colors.textTertiary,
+      );
     }
+    final image = Image.file(
+      file,
+      fit: BoxFit.contain,
+      alignment: widget.fill ? Alignment.center : Alignment.topCenter,
+      width: double.infinity,
+      height: double.infinity,
+      filterQuality: _zoomed ? FilterQuality.high : FilterQuality.medium,
+    );
+    final body = InteractiveViewer(
+      transformationController: _ctrl,
+      minScale: 1,
+      maxScale: 5,
+      panEnabled: _zoomed,
+      clipBehavior: Clip.hardEdge,
+      onInteractionEnd: _snapIfNearIdentity,
+      child: image,
+    );
+    final zoomable = GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onDoubleTapDown: (d) => _doubleTap = d.localPosition,
+      onDoubleTap: _toggleZoom,
+      child: body,
+    );
+    if (widget.fill) return zoomable;
     return ClipRRect(
       borderRadius: BorderRadius.circular(10),
-      child: SizedBox.expand(
-        child: Image.file(
-          file,
-          fit: BoxFit.contain,
-          alignment: Alignment.topCenter,
-          width: double.infinity,
-          height: double.infinity,
-        ),
-      ),
+      child: SizedBox.expand(child: zoomable),
     );
   }
 }

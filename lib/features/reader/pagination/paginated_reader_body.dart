@@ -149,6 +149,9 @@ class _PaginatedReaderBodyState extends State<PaginatedReaderBody> {
   SheetTurnDirection _sheetDirection = SheetTurnDirection.none;
   Offset? _panStart;
   Duration? _panStartAt;
+  int _pointerDowns = 0;
+  bool _sawMultiTouch = false;
+  bool _imageZoomed = false;
 
   /// Set once the first layout has resolved a resume position, so build knows
   /// whether [_position] is meaningful yet.
@@ -470,6 +473,7 @@ class _PaginatedReaderBodyState extends State<PaginatedReaderBody> {
       _sheetDirection = forward
           ? SheetTurnDirection.forward
           : SheetTurnDirection.back;
+      _imageZoomed = false;
     });
 
     widget.onPositionChanged?.call(
@@ -643,7 +647,8 @@ class _PaginatedReaderBodyState extends State<PaginatedReaderBody> {
       plainText: layout.plainText,
       document: doc,
       chapterTitle: chapter.title,
-      showTitle: pos.pageIndex == 0,
+      showTitle: pos.pageIndex == 0 &&
+          !layout.pages[pos.pageIndex].isImageOnly,
       themeProv: widget.themeProv,
       highlights: isCurrentChapter ? widget.highlights : const [],
       highlightVersion: widget.highlightVersion,
@@ -660,6 +665,10 @@ class _PaginatedReaderBodyState extends State<PaginatedReaderBody> {
       onSelected: widget.onSelected,
       onSelectionCleared: widget.onSelectionCleared,
       onSelectionCollapsed: widget.onSelectionCollapsed,
+      onZoomed: (zoomed) {
+        if (!mounted) return;
+        _imageZoomed = zoomed;
+      },
     );
   }
 
@@ -703,18 +712,31 @@ class _PaginatedReaderBodyState extends State<PaginatedReaderBody> {
 
         return Listener(
           onPointerDown: (event) {
-            _panStart = event.position;
-            _panStartAt = event.timeStamp;
+            _pointerDowns++;
+            if (_pointerDowns == 1) {
+              _panStart = event.position;
+              _panStartAt = event.timeStamp;
+              _sawMultiTouch = false;
+            } else {
+              _sawMultiTouch = true;
+            }
           },
           onPointerCancel: (_) {
+            _pointerDowns = 0;
+            _sawMultiTouch = false;
             _panStart = null;
             _panStartAt = null;
           },
           onPointerUp: (event) {
+            _pointerDowns = _pointerDowns > 0 ? _pointerDowns - 1 : 0;
+            if (_pointerDowns > 0) return;
             final start = _panStart;
             final startedAt = _panStartAt;
+            final multi = _sawMultiTouch;
             _panStart = null;
             _panStartAt = null;
+            _sawMultiTouch = false;
+            if (multi || _imageZoomed) return;
             if (start == null || startedAt == null) return;
             final dx = event.position.dx - start.dx;
             final dy = event.position.dy - start.dy;

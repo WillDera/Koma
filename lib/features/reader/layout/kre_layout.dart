@@ -1,5 +1,9 @@
 import 'dart:ui' show Offset, Rect;
 
+/// Text lines allowed above, between, or below figures before the image
+/// stays an in-flow band instead of expanding into leftover page space.
+const int kImageCaptionLineLimit = 5;
+
 /// Level 3 layout boxes from KRE-shaped KIR.
 ///
 /// [charStart]/[charEnd] are Dart `String` indices (UTF-16 code units) into
@@ -54,6 +58,149 @@ class LayoutPage {
   final int charStart;
   final int charEnd;
   final List<LayoutLine> lines;
+
+  /// True when the sheet has figures and no text (cover / plate / splash).
+  bool get isImageOnly =>
+      lines.isNotEmpty && lines.every((l) => l.isImage);
+
+  /// Figure sheet: at least one image, and at most [kImageCaptionLineLimit]
+  /// text lines above, between, and below the figure(s).
+  bool get expandsImage => imageExpandLayout(this, 0).expand;
+}
+
+/// Where the figure band sits when [LayoutPage.expandsImage] is true.
+class ImageExpandLayout {
+  const ImageExpandLayout({
+    required this.expand,
+    this.top = 0,
+    this.bottom = 0,
+  });
+
+  final bool expand;
+
+  /// Distance from the page top to the image band.
+  final double top;
+
+  /// Distance from the page bottom to the image band.
+  final double bottom;
+
+  static const none = ImageExpandLayout(expand: false);
+}
+
+/// [height] is only used to place the band; pass 0 when checking [expand].
+ImageExpandLayout imageExpandLayout(
+  LayoutPage page,
+  double height, {
+  double gap = 8,
+  int captionLines = kImageCaptionLineLimit,
+}) {
+  if (!page.lines.any((l) => l.isImage)) return ImageExpandLayout.none;
+  final first = page.lines.indexWhere((l) => l.isImage);
+  final last = page.lines.lastIndexWhere((l) => l.isImage);
+  var before = 0;
+  var after = 0;
+  var between = 0;
+  for (var i = 0; i < page.lines.length; i++) {
+    if (page.lines[i].isImage) continue;
+    if (i < first) {
+      before++;
+    } else if (i > last) {
+      after++;
+    } else {
+      between++;
+    }
+  }
+  if (before > captionLines ||
+      after > captionLines ||
+      between > captionLines) {
+    return ImageExpandLayout.none;
+  }
+  if (page.isImageOnly || height <= 0) {
+    return const ImageExpandLayout(expand: true);
+  }
+
+  var leadingBottom = 0.0;
+  for (var i = 0; i < first; i++) {
+    final line = page.lines[i];
+    if (line.isImage) continue;
+    final bottom = line.y + line.height;
+    if (bottom > leadingBottom) leadingBottom = bottom;
+  }
+
+  var hasTrail = false;
+  var trailMin = 0.0;
+  var trailMax = 0.0;
+  for (var i = last + 1; i < page.lines.length; i++) {
+    final line = page.lines[i];
+    if (line.isImage) continue;
+    if (!hasTrail) {
+      trailMin = line.y;
+      trailMax = line.y + line.height;
+      hasTrail = true;
+    } else {
+      if (line.y < trailMin) trailMin = line.y;
+      final bottom = line.y + line.height;
+      if (bottom > trailMax) trailMax = bottom;
+    }
+  }
+  final trailH = hasTrail ? trailMax - trailMin : 0.0;
+  final top = leadingBottom > 0 ? leadingBottom + gap : 0.0;
+  final bottom = trailH > 0 ? trailH + gap : 0.0;
+  if (height - top - bottom < 48) {
+    return ImageExpandLayout.none;
+  }
+  return ImageExpandLayout(expand: true, top: top, bottom: bottom);
+}
+
+/// Moves caption lines under an expanded figure to the bottom of the sheet
+/// so highlights and hit-testing match what is painted.
+LayoutPage rebaseExpandedImagePage(
+  LayoutPage page,
+  ImageExpandLayout layout,
+  double height,
+) {
+  if (!layout.expand || page.isImageOnly || layout.bottom <= 0) return page;
+  final last = page.lines.lastIndexWhere((l) => l.isImage);
+  var trailMin = double.infinity;
+  for (var i = last + 1; i < page.lines.length; i++) {
+    if (page.lines[i].isImage) continue;
+    if (page.lines[i].y < trailMin) trailMin = page.lines[i].y;
+  }
+  if (trailMin.isInfinite) return page;
+  final trailH = layout.bottom > 8 ? layout.bottom - 8 : layout.bottom;
+  final dy = (height - trailH) - trailMin;
+  if (dy.abs() < 0.5) return page;
+  return LayoutPage(
+    charStart: page.charStart,
+    charEnd: page.charEnd,
+    lines: [
+      for (var i = 0; i < page.lines.length; i++)
+        if (i > last && !page.lines[i].isImage)
+          _shiftLine(page.lines[i], dy)
+        else
+          page.lines[i],
+    ],
+  );
+}
+
+LayoutLine _shiftLine(LayoutLine line, double dy) {
+  return LayoutLine(
+    y: line.y + dy,
+    height: line.height,
+    charStart: line.charStart,
+    charEnd: line.charEnd,
+    glyphs: [
+      for (final g in line.glyphs)
+        LayoutGlyph(
+          x: g.x,
+          y: g.y + dy,
+          width: g.width,
+          height: g.height,
+          charStart: g.charStart,
+          charEnd: g.charEnd,
+        ),
+    ],
+  );
 }
 
 class LayoutResult {
