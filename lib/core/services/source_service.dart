@@ -1,5 +1,6 @@
 import 'dart:io';
 import 'dart:typed_data';
+import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/io_client.dart' as http_io;
 import 'package:html/parser.dart' as html_parser;
@@ -9,6 +10,49 @@ import '../models/source.dart';
 import '../repositories/repositories.dart';
 import 'ebook_service.dart';
 import 'ebook_media_store.dart';
+import 'http/m_client.dart';
+import 'koma_package_store.dart';
+
+/// LibGen HTML uses relative cover paths like
+/// `/fictionruscovers/221000/<hash>_small.jpg` or `/fictioncovers/...`.
+/// Those assets are served from [libgen.li](https://libgen.li), not from
+/// search mirrors such as libgen.gs.
+String? resolveLibgenCoverUrl(String searchPageUrl, String? imgSrc) {
+  if (imgSrc == null || imgSrc.trim().isEmpty) return null;
+  final raw = imgSrc.trim();
+  final resolved = raw.startsWith('http')
+      ? raw
+      : _resolveRelativeUrl(searchPageUrl, raw);
+  final uri = Uri.tryParse(resolved);
+  if (uri == null) return resolved;
+
+  final path = uri.path;
+  final lower = path.toLowerCase();
+  final isCoverPath = lower.contains('fictionruscovers') ||
+      lower.contains('fictioncovers') ||
+      lower.contains('comicscovers') ||
+      lower.contains('/covers/');
+  if (!isCoverPath) return resolved;
+
+  var coverPath = path;
+  if (coverPath.endsWith('_small.jpg')) {
+    coverPath =
+        '${coverPath.substring(0, coverPath.length - '_small.jpg'.length)}.jpg';
+  } else if (coverPath.endsWith('_small.png')) {
+    coverPath =
+        '${coverPath.substring(0, coverPath.length - '_small.png'.length)}.png';
+  } else if (coverPath.endsWith('_small.webp')) {
+    coverPath =
+        '${coverPath.substring(0, coverPath.length - '_small.webp'.length)}.webp';
+  }
+  return 'https://libgen.li$coverPath';
+}
+
+String _resolveRelativeUrl(String base, String relative) {
+  final uri = Uri.tryParse(relative);
+  if (uri == null || uri.hasScheme) return relative;
+  return Uri.parse(base).resolve(relative).toString();
+}
 
 class SourceSearchResult {
   final String title;
@@ -69,13 +113,7 @@ class SourceService {
 
   Future<List<SourceSearchResult>> search(String query) async {
     if (query.trim().isEmpty) return [];
-    var sources = await _repos.stats.getSources();
-    if (sources.isEmpty) {
-      for (final s in defaultSources()) {
-        await _repos.stats.insertSource(s);
-      }
-      sources = await _repos.stats.getSources();
-    }
+    final sources = await _repos.stats.getSources();
     final active = sources.where((s) => s.enabled).toList();
     if (active.isEmpty) return [];
     final batches = await Future.wait(
@@ -195,7 +233,7 @@ class SourceService {
               size: size,
               extension: ext,
               language: language,
-              poster: imgSrc != null ? '${_base(source.baseUrl)}$imgSrc' : null,
+              poster: resolveLibgenCoverUrl(url, imgSrc),
               downloadUrl: downloadUrl,
               sourceName: source.name,
               tag: 'libgen',
@@ -214,6 +252,13 @@ class SourceService {
                 true,
           )
           .toList();
+    }
+    if (source.fileExtensions.isNotEmpty) {
+      final allowed = source.fileExtensions.map((e) => e.toLowerCase()).toSet();
+      results = results.where((r) {
+        final ext = (r.extension ?? '').toLowerCase().replaceAll('.', '');
+        return ext.isNotEmpty && allowed.contains(ext);
+      }).toList();
     }
     return results;
   }
@@ -241,87 +286,87 @@ class SourceService {
     return getDownloadLinks(result.downloadUrl!);
   }
 
-  Future<bool> downloadFromLink(
+  /// Downloads [url], imports the ebook, and returns the new library book id.
+  Future<int?> downloadFromLink(
     String url,
     String title,
     String ext, {
     void Function(double progress)? onProgress,
   }) async {
     try {
-      final client = http.Client();
-      try {
-        final request = http.Request('GET', Uri.parse(url));
-        request.headers['User-Agent'] =
-            'Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 Koma/1.0';
-        final response = await client.send(request);
+      final client = MClient.init();
+      final request = http.Request('GET', Uri.parse(url));
+      request.headers.addAll(hostAwareHeaders(url));
+      final response = await client.send(request);
 
-        if (response.statusCode != 200) return false;
-
-        final total = response.contentLength;
-        var received = 0;
-        final chunks = <List<int>>[];
-        await for (final chunk in response.stream) {
-          chunks.add(chunk);
-          received += chunk.length;
-          if (total != null && total > 0) {
-            onProgress?.call(received / total);
-          }
+      if (response.statusCode < 200 || response.statusCode >= 300) {
+        if (kDebugMode) {
+          debugPrint('downloadFromLink HTTP ${response.statusCode}: $url');
         }
-        onProgress?.call(1.0);
-
-        final bytes = Uint8List(received);
-        var offset = 0;
-        for (final chunk in chunks) {
-          bytes.setRange(offset, offset + chunk.length, chunk);
-          offset += chunk.length;
-        }
-
-        final dir = await getApplicationDocumentsDirectory();
-        final filePath =
-            '${dir.path}/downloads/${DateTime.now().millisecondsSinceEpoch}.$ext';
-        final file = File(filePath);
-        await file.create(recursive: true);
-        await file.writeAsBytes(bytes);
-
-        final result = await _ebook.parse(file.path);
-        if (result == null) return false;
-
-        final bookId = await _repos.books.insertBook(result.book);
-        final chapters = await EbookMediaStore.promote(
-          sessionId: result.mediaSessionId,
-          bookId: bookId,
-          chapters: result.chapters,
-        );
-        for (final ch in chapters) {
-          await _repos.books.insertChapter(ch);
-        }
-        return true;
-      } finally {
-        client.close();
+        return null;
       }
-    } catch (_) {
-      return false;
+
+      final total = response.contentLength;
+      var received = 0;
+      final chunks = <List<int>>[];
+      await for (final chunk in response.stream) {
+        chunks.add(chunk);
+        received += chunk.length;
+        if (total != null && total > 0) {
+          onProgress?.call(received / total);
+        }
+      }
+      onProgress?.call(1.0);
+
+      final bytes = Uint8List(received);
+      var offset = 0;
+      for (final chunk in chunks) {
+        bytes.setRange(offset, offset + chunk.length, chunk);
+        offset += chunk.length;
+      }
+
+      final dir = await getApplicationDocumentsDirectory();
+      final filePath =
+          '${dir.path}/downloads/${DateTime.now().millisecondsSinceEpoch}.$ext';
+      final file = File(filePath);
+      await file.create(recursive: true);
+      await file.writeAsBytes(bytes);
+
+      final result = await _ebook.parse(file.path);
+      if (result == null) {
+        if (kDebugMode) {
+          debugPrint('downloadFromLink parse failed: $filePath');
+        }
+        return null;
+      }
+
+      final bookId = await _repos.books.insertBook(result.book);
+      final chapters = await EbookMediaStore.promote(
+        sessionId: result.mediaSessionId,
+        bookId: bookId,
+        chapters: result.chapters,
+      );
+      for (final ch in chapters) {
+        await _repos.books.insertChapter(ch);
+      }
+      if (ext == 'epub') {
+        await KomaPackageStore.compileEpub(
+          bookId: bookId,
+          epubPath: file.path,
+        );
+      }
+      return bookId;
+    } catch (e, st) {
+      if (kDebugMode) {
+        debugPrint('downloadFromLink failed: $e\n$st');
+      }
+      return null;
     }
   }
 
-  String _base(String url) {
-    final uri = Uri.tryParse(url);
-    if (uri == null) return '';
-    return '${uri.scheme}://${uri.host}';
-  }
-
   String _resolveUrl(String base, String relative) {
-    final uri = Uri.tryParse(relative);
-    if (uri == null || uri.hasScheme) return relative;
-    final baseUri = Uri.parse(base);
-    return baseUri.resolve(relative).toString();
+    return _resolveRelativeUrl(base, relative);
   }
 
-  static List<Source> defaultSources() => [
-    Source(
-      name: 'Library Genesis',
-      tag: 'libgen',
-      baseUrl: 'https://libgen.gs/index.php',
-    ),
-  ];
+  static List<Source> defaultSources() => [];
 }

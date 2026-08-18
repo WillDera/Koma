@@ -29,6 +29,10 @@ class ReaderTopBar extends StatelessWidget {
     this.background,
   });
 
+  /// Height of the bar below [MediaQuery.viewPadding.top] (row + progress).
+  /// Keep in sync with the Column below; page padding uses this.
+  static const double bodyHeight = 50;
+
   @override
   Widget build(BuildContext context) {
     final c = context.colors;
@@ -37,7 +41,9 @@ class ReaderTopBar extends StatelessWidget {
       duration: AppMotion.base,
       curve: AppMotion.standard,
       offset: visible ? Offset.zero : const Offset(0, -1),
-      child: GlassBlur.layer(
+      child: IgnorePointer(
+        ignoring: !visible,
+        child: GlassBlur.layer(
         child: Container(
           color: bg.withValues(alpha: 0.78),
           child: SafeArea(
@@ -114,7 +120,6 @@ class ReaderTopBar extends StatelessWidget {
                       ],
                     ),
                   ),
-                  // Thin progress line at the very top
                   SizedBox(
                     height: 2,
                     child: LayoutBuilder(
@@ -136,7 +141,8 @@ class ReaderTopBar extends StatelessWidget {
             ),
           ),
         ),
-      );
+      ),
+    );
   }
 }
 

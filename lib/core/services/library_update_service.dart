@@ -46,7 +46,8 @@ class LibraryUpdateReport {
 /// `LibUpdatesAlarm` catch-per-manga pattern.
 ///
 /// Manga skip filters follow Mihon's [LibraryUpdateJob.addMangaToQueue]
-/// restrictions (completed / unread / not-started). Categories deferred.
+/// restrictions (completed / unread / not-started). Category include/exclude
+/// follows Mihon library update category prefs.
 class LibraryUpdateService {
   final Repositories _repos;
   final ExtensionDispatchService _dispatch;
@@ -91,15 +92,19 @@ class LibraryUpdateService {
 
   Future<LibraryUpdateReport> checkForNewChapters({
     LibraryUpdateMangaRestrictions? restrictions,
+    LibraryUpdateCategoryFilters? categoryFilters,
   }) async {
     final mangas = await _repos.manga.getMangasInLibrary();
     final r = restrictions ?? await LibraryUpdatePrefs.loadMangaRestrictions();
+    final cats =
+        categoryFilters ?? await LibraryUpdatePrefs.loadCategoryFilters();
     final newByManga = <int, int>{};
     final updatedNames = <String>[];
     final additions = <LibraryUpdateAddition>[];
 
     for (final manga in mangas) {
       try {
+        if (cats.shouldSkipManga(manga.categoryIds)) continue;
         if (await _shouldSkip(manga, r)) continue;
 
         final sourceId = await _resolveSourceId(manga.sourceId);

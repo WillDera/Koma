@@ -22,8 +22,13 @@ const MangaExtrasSchema = CollectionSchema(
       name: r'categoryIds',
       type: IsarType.longList,
     ),
-    r'mangaId': PropertySchema(id: 1, name: r'mangaId', type: IsarType.long),
-    r'notes': PropertySchema(id: 2, name: r'notes', type: IsarType.string),
+    r'customCoverPath': PropertySchema(
+      id: 1,
+      name: r'customCoverPath',
+      type: IsarType.string,
+    ),
+    r'mangaId': PropertySchema(id: 2, name: r'mangaId', type: IsarType.long),
+    r'notes': PropertySchema(id: 3, name: r'notes', type: IsarType.string),
   },
 
   estimateSize: _mangaExtrasEstimateSize,
@@ -68,6 +73,12 @@ int _mangaExtrasEstimateSize(
     }
   }
   {
+    final value = object.customCoverPath;
+    if (value != null) {
+      bytesCount += 3 + value.length * 3;
+    }
+  }
+  {
     final value = object.notes;
     if (value != null) {
       bytesCount += 3 + value.length * 3;
@@ -83,8 +94,9 @@ void _mangaExtrasSerialize(
   Map<Type, List<int>> allOffsets,
 ) {
   writer.writeLongList(offsets[0], object.categoryIds);
-  writer.writeLong(offsets[1], object.mangaId);
-  writer.writeString(offsets[2], object.notes);
+  writer.writeString(offsets[1], object.customCoverPath);
+  writer.writeLong(offsets[2], object.mangaId);
+  writer.writeString(offsets[3], object.notes);
 }
 
 MangaExtras _mangaExtrasDeserialize(
@@ -95,9 +107,10 @@ MangaExtras _mangaExtrasDeserialize(
 ) {
   final object = MangaExtras(
     categoryIds: reader.readLongList(offsets[0]),
+    customCoverPath: reader.readStringOrNull(offsets[1]),
     id: id,
-    mangaId: reader.readLong(offsets[1]),
-    notes: reader.readStringOrNull(offsets[2]),
+    mangaId: reader.readLong(offsets[2]),
+    notes: reader.readStringOrNull(offsets[3]),
   );
   return object;
 }
@@ -112,8 +125,10 @@ P _mangaExtrasDeserializeProp<P>(
     case 0:
       return (reader.readLongList(offset)) as P;
     case 1:
-      return (reader.readLong(offset)) as P;
+      return (reader.readStringOrNull(offset)) as P;
     case 2:
+      return (reader.readLong(offset)) as P;
+    case 3:
       return (reader.readStringOrNull(offset)) as P;
     default:
       throw IsarError('Unknown property with id $propertyId');
@@ -516,6 +531,165 @@ extension MangaExtrasQueryFilter
     });
   }
 
+  QueryBuilder<MangaExtras, MangaExtras, QAfterFilterCondition>
+  customCoverPathIsNull() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        const FilterCondition.isNull(property: r'customCoverPath'),
+      );
+    });
+  }
+
+  QueryBuilder<MangaExtras, MangaExtras, QAfterFilterCondition>
+  customCoverPathIsNotNull() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        const FilterCondition.isNotNull(property: r'customCoverPath'),
+      );
+    });
+  }
+
+  QueryBuilder<MangaExtras, MangaExtras, QAfterFilterCondition>
+  customCoverPathEqualTo(String? value, {bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.equalTo(
+          property: r'customCoverPath',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<MangaExtras, MangaExtras, QAfterFilterCondition>
+  customCoverPathGreaterThan(
+    String? value, {
+    bool include = false,
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.greaterThan(
+          include: include,
+          property: r'customCoverPath',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<MangaExtras, MangaExtras, QAfterFilterCondition>
+  customCoverPathLessThan(
+    String? value, {
+    bool include = false,
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.lessThan(
+          include: include,
+          property: r'customCoverPath',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<MangaExtras, MangaExtras, QAfterFilterCondition>
+  customCoverPathBetween(
+    String? lower,
+    String? upper, {
+    bool includeLower = true,
+    bool includeUpper = true,
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.between(
+          property: r'customCoverPath',
+          lower: lower,
+          includeLower: includeLower,
+          upper: upper,
+          includeUpper: includeUpper,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<MangaExtras, MangaExtras, QAfterFilterCondition>
+  customCoverPathStartsWith(String value, {bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.startsWith(
+          property: r'customCoverPath',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<MangaExtras, MangaExtras, QAfterFilterCondition>
+  customCoverPathEndsWith(String value, {bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.endsWith(
+          property: r'customCoverPath',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<MangaExtras, MangaExtras, QAfterFilterCondition>
+  customCoverPathContains(String value, {bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.contains(
+          property: r'customCoverPath',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<MangaExtras, MangaExtras, QAfterFilterCondition>
+  customCoverPathMatches(String pattern, {bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.matches(
+          property: r'customCoverPath',
+          wildcard: pattern,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<MangaExtras, MangaExtras, QAfterFilterCondition>
+  customCoverPathIsEmpty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.equalTo(property: r'customCoverPath', value: ''),
+      );
+    });
+  }
+
+  QueryBuilder<MangaExtras, MangaExtras, QAfterFilterCondition>
+  customCoverPathIsNotEmpty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.greaterThan(property: r'customCoverPath', value: ''),
+      );
+    });
+  }
+
   QueryBuilder<MangaExtras, MangaExtras, QAfterFilterCondition> idIsNull() {
     return QueryBuilder.apply(this, (query) {
       return query.addFilterCondition(
@@ -822,6 +996,19 @@ extension MangaExtrasQueryLinks
 
 extension MangaExtrasQuerySortBy
     on QueryBuilder<MangaExtras, MangaExtras, QSortBy> {
+  QueryBuilder<MangaExtras, MangaExtras, QAfterSortBy> sortByCustomCoverPath() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'customCoverPath', Sort.asc);
+    });
+  }
+
+  QueryBuilder<MangaExtras, MangaExtras, QAfterSortBy>
+  sortByCustomCoverPathDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'customCoverPath', Sort.desc);
+    });
+  }
+
   QueryBuilder<MangaExtras, MangaExtras, QAfterSortBy> sortByMangaId() {
     return QueryBuilder.apply(this, (query) {
       return query.addSortBy(r'mangaId', Sort.asc);
@@ -849,6 +1036,19 @@ extension MangaExtrasQuerySortBy
 
 extension MangaExtrasQuerySortThenBy
     on QueryBuilder<MangaExtras, MangaExtras, QSortThenBy> {
+  QueryBuilder<MangaExtras, MangaExtras, QAfterSortBy> thenByCustomCoverPath() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'customCoverPath', Sort.asc);
+    });
+  }
+
+  QueryBuilder<MangaExtras, MangaExtras, QAfterSortBy>
+  thenByCustomCoverPathDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'customCoverPath', Sort.desc);
+    });
+  }
+
   QueryBuilder<MangaExtras, MangaExtras, QAfterSortBy> thenById() {
     return QueryBuilder.apply(this, (query) {
       return query.addSortBy(r'id', Sort.asc);
@@ -894,6 +1094,17 @@ extension MangaExtrasQueryWhereDistinct
     });
   }
 
+  QueryBuilder<MangaExtras, MangaExtras, QDistinct> distinctByCustomCoverPath({
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addDistinctBy(
+        r'customCoverPath',
+        caseSensitive: caseSensitive,
+      );
+    });
+  }
+
   QueryBuilder<MangaExtras, MangaExtras, QDistinct> distinctByMangaId() {
     return QueryBuilder.apply(this, (query) {
       return query.addDistinctBy(r'mangaId');
@@ -921,6 +1132,13 @@ extension MangaExtrasQueryProperty
   categoryIdsProperty() {
     return QueryBuilder.apply(this, (query) {
       return query.addPropertyName(r'categoryIds');
+    });
+  }
+
+  QueryBuilder<MangaExtras, String?, QQueryOperations>
+  customCoverPathProperty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addPropertyName(r'customCoverPath');
     });
   }
 

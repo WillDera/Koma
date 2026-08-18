@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../../theme/theme_state.dart';
+import '../layout/kre_layout.dart';
 
 /// One page of a chapter, as a half-open character range into the chapter's
 /// extracted plain text: `[start, end)`.
@@ -56,9 +57,15 @@ class PaginationKey {
   });
 
   /// Derives a key from the current theme state and the measured content box.
+  ///
+  /// Viewport is floored to whole pixels so a sub-pixel MediaQuery flicker
+  /// cannot invalidate pagination, and KRE never wraps wider than the paint box.
   factory PaginationKey.from(ThemeState prov, Size viewport) {
     return PaginationKey(
-      viewport: viewport,
+      viewport: Size(
+        viewport.width.floorToDouble(),
+        viewport.height.floorToDouble(),
+      ),
       fontSize: prov.fontSize,
       lineHeight: prov.lineHeight,
       textAlign: prov.textAlign,
@@ -138,6 +145,26 @@ class PaginatedChapter {
     if (pages.isEmpty) return const PageBreak(0, 0);
     return pages[pageIndex.clamp(0, pages.length - 1)];
   }
+
+  /// Page breaks from a KRE [LayoutResult]. Empty layout → one empty page.
+  factory PaginatedChapter.fromLayout({
+    required int chapterId,
+    required LayoutResult layout,
+    required PaginationKey key,
+  }) {
+    final ranges = pageCharRanges(layout);
+    return PaginatedChapter(
+      chapterId: chapterId,
+      pages: [
+        if (ranges.isEmpty)
+          const PageBreak(0, 0)
+        else
+          for (final r in ranges) PageBreak(r.$1, r.$2),
+      ],
+      key: key,
+      textLength: layout.plainText.length,
+    );
+  }
 }
 
 /// Splits chapter text into pages by measuring it against a viewport.
@@ -192,12 +219,22 @@ class ChapterPaginator {
       );
     }
 
+    final span = TextSpan(children: spanBuilder(0, text.length));
     final painter = TextPainter(
-      text: TextSpan(children: spanBuilder(0, text.length)),
+      text: span,
       textDirection: TextDirection.ltr,
       textAlign: key.textAlign,
       textScaler: textScaler,
-    )..layout(maxWidth: width);
+    );
+    // WidgetSpan.build asserts dimensions != null. TextPainter only fills
+    // those when we pass placeholder sizes; without this, any chapter that
+    // contains an image throws during paginate (warm-neighbour and chapter
+    // turns are the usual triggers).
+    final placeholders = _placeholderDimensionsOf(span);
+    if (placeholders.isNotEmpty) {
+      painter.setPlaceholderDimensions(placeholders);
+    }
+    painter.layout(maxWidth: width);
 
     final lines = painter.computeLineMetrics();
     if (lines.isEmpty) {
@@ -251,14 +288,42 @@ class ChapterPaginator {
 
   /// Character offset of the first character on [line].
   ///
-  /// Probes just below the line's top edge at the leading horizontal edge, then
-  /// asks the painter which text position sits there.
+  /// Probes the vertical centre of the line at x=0, then snaps to that line's
+  /// start. A probe at the top edge can land on the previous line or one
+  /// grapheme in, which used to leave a broken last line on the page.
   int _offsetAtLineTop(TextPainter painter, LineMetrics line, double width) {
-    final y = line.baseline - line.ascent + 1.0;
-    // Probe from the line's own left edge so centred and right-aligned text
-    // resolve to the first glyph rather than to empty margin.
-    final x = line.left + 0.5;
-    final pos = painter.getPositionForOffset(Offset(x.clamp(0.0, width), y));
-    return pos.offset;
+    final yMid = line.baseline - line.ascent + (line.height / 2);
+    final x = 0.0.clamp(0.0, width);
+    final pos = painter.getPositionForOffset(Offset(x, yMid));
+    return painter.getLineBoundary(pos).start;
   }
+}
+
+/// Placeholder sizes for [WidgetSpan]s in [root], in document order.
+///
+/// Image spans in [ReadingSpans] wrap a [SizedBox] with an explicit width and
+/// height; those become the paragraph placeholders. Anything else is empty so
+/// layout still succeeds.
+List<PlaceholderDimensions> _placeholderDimensionsOf(InlineSpan root) {
+  final out = <PlaceholderDimensions>[];
+  root.visitChildren((span) {
+    if (span is WidgetSpan) {
+      out.add(
+        PlaceholderDimensions(
+          size: _placeholderSize(span.child),
+          alignment: span.alignment,
+          baseline: span.baseline ?? TextBaseline.alphabetic,
+        ),
+      );
+    }
+    return true;
+  });
+  return out;
+}
+
+Size _placeholderSize(Widget child) {
+  if (child is SizedBox) {
+    return Size(child.width ?? 0, child.height ?? 0);
+  }
+  return Size.zero;
 }

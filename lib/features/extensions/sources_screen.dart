@@ -52,9 +52,16 @@ class _SourcesScreenState extends ConsumerState<SourcesScreen> {
     final sources = await repos.extensions.getInstalledExtensions();
     if (!mounted) return;
     setState(() {
-      _sources = sources.where((s) => s.isActive).toList();
+      _sources = sources
+          .where((s) => s.isActive && _isMangaProduct(s))
+          .toList();
       _loading = false;
     });
+  }
+
+  bool _isMangaProduct(ExtensionSource s) {
+    final t = s.itemType.trim().toLowerCase();
+    return t.isEmpty || t == 'manga';
   }
 
   Future<void> _navigateToSource(ExtensionSource src) async {

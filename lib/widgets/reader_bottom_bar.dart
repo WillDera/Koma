@@ -30,6 +30,10 @@ class ReaderBottomBar extends StatelessWidget {
     this.background,
   });
 
+  /// Height of the bar above [MediaQuery.viewPadding.bottom] (padding + buttons).
+  /// Keep in sync with the Row below; page padding uses this.
+  static const double bodyHeight = 56;
+
   @override
   Widget build(BuildContext context) {
     final c = context.colors;
@@ -38,7 +42,9 @@ class ReaderBottomBar extends StatelessWidget {
       duration: AppMotion.base,
       curve: AppMotion.standard,
       offset: visible ? Offset.zero : const Offset(0, 1),
-      child: GlassBlur.layer(
+      child: IgnorePointer(
+        ignoring: !visible,
+        child: GlassBlur.layer(
         child: Container(
             color: bg.withValues(alpha: 0.78),
             child: SafeArea(
@@ -98,6 +104,7 @@ class ReaderBottomBar extends StatelessWidget {
               ),
             ),
           ),
+        ),
       ),
     );
   }

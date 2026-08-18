@@ -26,6 +26,7 @@ import 'bookmark_repository.dart';
 import 'category_repository.dart';
 import 'cookie_repository.dart';
 import 'extension_repository.dart';
+import 'library_group_repository.dart';
 import 'manga_repository.dart';
 import 'snippet_repository.dart';
 import 'stats_repository.dart';
@@ -40,6 +41,7 @@ class Repositories {
   final BookmarkRepository bookmarks;
   final CookieRepository cookies;
   final CategoryRepository categories;
+  final LibraryGroupRepository groups;
 
   Repositories(this.isar)
     : books = BookRepository(isar),
@@ -49,7 +51,8 @@ class Repositories {
       stats = StatsRepository(isar),
       bookmarks = BookmarkRepository(isar),
       cookies = CookieRepository(isar),
-      categories = CategoryRepository(isar);
+      categories = CategoryRepository(isar),
+      groups = LibraryGroupRepository(isar);
 
   /// Convenience: open Isar with the Koma schema list and wrap all
   /// repositories in one call. Mirrors [DatabaseService.getInstance].

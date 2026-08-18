@@ -12,6 +12,7 @@ import '../../../eval/dispatch_service.dart';
 import '../../../eval/models/m_chapter.dart';
 import '../../repositories/repositories.dart';
 import '../extension_source_resolve.dart';
+import '../download_prefs.dart';
 import '../keiyoushi_service.dart';
 import '../notification_service.dart';
 import 'chapter_download.dart';
@@ -44,7 +45,7 @@ String _urlKey(String url) =>
 
 /// Mihon-faithful chapter download queue (DownloadManager + Downloader).
 ///
-/// One chapter at a time (per-source concurrency deferred). WorkManager
+/// Concurrent downloads across distinct [sourceId] groups (max 3). WorkManager
 /// one-off drains the same [DownloadStore] when the UI runner is idle.
 ///
 /// Mihon APKs stream through [KeiyoushiService.downloadChapters]; JS sources
@@ -67,12 +68,15 @@ class DownloadManager extends ChangeNotifier {
   final DownloadStore _store;
 
   static const downloadTaskName = 'com.koma.download_chapters';
+  static const _maxConcurrent = 3;
 
   final List<ChapterDownload> _queue = [];
   bool _running = false;
   bool _paused = false;
   int _orderCounter = 0;
-  DownloadAbortController? _activeAbort;
+  final Set<DownloadAbortController> _activeAborts = {};
+  final Set<String> _activeSourceIds = {};
+  final Map<String, Future<void>> _inFlight = {};
 
   List<ChapterDownload> get queue => List.unmodifiable(_queue);
   bool get isRunning => _running;
@@ -204,7 +208,9 @@ class DownloadManager extends ChangeNotifier {
   Future<void> pauseDownloads() async {
     _paused = true;
     await _store.setPaused(true);
-    _activeAbort?.abort();
+    for (final abort in _activeAborts) {
+      abort.abort();
+    }
     for (final d in _queue) {
       if (d.status == DownloadState.downloading) {
         d.status = DownloadState.queue;
@@ -218,7 +224,9 @@ class DownloadManager extends ChangeNotifier {
   }
 
   Future<void> clearQueue() async {
-    _activeAbort?.abort();
+    for (final abort in _activeAborts) {
+      abort.abort();
+    }
     _queue.clear();
     _paused = false;
     await _store.clear();
@@ -233,7 +241,9 @@ class DownloadManager extends ChangeNotifier {
     final keys = downloads.map((d) => d.chapterKey).toSet();
     final wasRunning = _running;
     if (wasRunning) {
-      _activeAbort?.abort();
+      for (final abort in _activeAborts) {
+        abort.abort();
+      }
     }
     _queue.removeWhere((d) => keys.contains(d.chapterKey));
     await _persist();
@@ -281,20 +291,44 @@ class DownloadManager extends ChangeNotifier {
     await _store.setRunner(runner);
     try {
       while (!_paused) {
-        ChapterDownload? next;
-        for (final d in _queue) {
-          if (d.status == DownloadState.queue) {
-            next = d;
-            break;
-          }
+        if (!await DownloadPrefs.canDownloadNow()) {
+          await Future<void>.delayed(const Duration(seconds: 15));
+          continue;
         }
-        if (next == null) break;
-        await _downloadOne(next);
-        if (_paused) break;
+
+        final slots = _maxConcurrent - _inFlight.length;
+        var started = 0;
+        for (final d in _queue) {
+          if (started >= slots) break;
+          if (d.status != DownloadState.queue) continue;
+          if (_activeSourceIds.contains(d.sourceId)) continue;
+          if (_inFlight.containsKey(d.chapterKey)) continue;
+          _activeSourceIds.add(d.sourceId);
+          final key = d.chapterKey;
+          _inFlight[key] = _downloadOne(d).whenComplete(() {
+            _activeSourceIds.remove(d.sourceId);
+            _inFlight.remove(key);
+          });
+          started++;
+        }
+
+        if (_inFlight.isEmpty) {
+          final waiting = _queue.any((d) => d.status == DownloadState.queue);
+          if (!waiting) break;
+          await Future<void>.delayed(const Duration(milliseconds: 400));
+          continue;
+        }
+
+        await Future.any(_inFlight.values);
+      }
+      if (_inFlight.isNotEmpty) {
+        await Future.wait(_inFlight.values);
       }
     } finally {
       _running = false;
-      _activeAbort = null;
+      _activeAborts.clear();
+      _activeSourceIds.clear();
+      _inFlight.clear();
       final current = await _store.runner();
       if (current == runner) {
         await _store.setRunner('none');
@@ -326,7 +360,7 @@ class DownloadManager extends ChangeNotifier {
     );
 
     final abort = DownloadAbortController();
-    _activeAbort = abort;
+    _activeAborts.add(abort);
     try {
       if (!_chapterMemoLooksReady(download.chapterMemo)) {
         await _ensureChapterMemo(download);
@@ -406,9 +440,7 @@ class DownloadManager extends ChangeNotifier {
       await _persist();
       notifyListeners();
     } finally {
-      if (identical(_activeAbort, abort)) {
-        _activeAbort = null;
-      }
+      _activeAborts.remove(abort);
     }
   }
 
@@ -585,11 +617,14 @@ class DownloadManager extends ChangeNotifier {
   Future<void> _scheduleWorkManager() async {
     if (kIsWeb || defaultTargetPlatform != TargetPlatform.android) return;
     try {
+      final constraints = DownloadPrefs.workConstraints(
+        await DownloadPrefs.loadDeviceConstraints(),
+      );
       await Workmanager().registerOneOffTask(
         downloadTaskName,
         downloadTaskName,
         existingWorkPolicy: ExistingWorkPolicy.replace,
-        constraints: Constraints(networkType: NetworkType.connected),
+        constraints: constraints,
         backoffPolicy: BackoffPolicy.linear,
         backoffPolicyDelay: const Duration(seconds: 30),
       );

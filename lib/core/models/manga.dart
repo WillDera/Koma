@@ -25,6 +25,9 @@ class Manga {
   /// Mihon user notes. Stored in the MangaExtras sidecar.
   final String? notes;
 
+  /// Local custom cover path. Stored in the MangaExtras sidecar.
+  final String? customCoverPath;
+
   final DateTime createdAt;
   final DateTime updatedAt;
 
@@ -44,6 +47,7 @@ class Manga {
     this.memo,
     List<int>? categoryIds,
     this.notes,
+    this.customCoverPath,
     DateTime? createdAt,
     DateTime? updatedAt,
   }) : genres = List.unmodifiable(genres ?? const []),
@@ -67,6 +71,7 @@ class Manga {
     String? memo,
     List<int>? categoryIds,
     String? notes,
+    String? customCoverPath,
     DateTime? createdAt,
     DateTime? updatedAt,
   }) {
@@ -86,6 +91,7 @@ class Manga {
       memo: memo ?? this.memo,
       categoryIds: categoryIds ?? this.categoryIds,
       notes: notes ?? this.notes,
+      customCoverPath: customCoverPath ?? this.customCoverPath,
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
     );
@@ -107,6 +113,7 @@ class Manga {
     'memo': memo,
     'category_ids': categoryIds,
     'notes': notes,
+    'custom_cover_path': customCoverPath,
     'created_at': createdAt.toIso8601String(),
     'updated_at': updatedAt.toIso8601String(),
   };
@@ -129,6 +136,7 @@ class Manga {
         ?.map((e) => (e as num).toInt())
         .toList(),
     notes: json['notes'] as String?,
+    customCoverPath: json['custom_cover_path'] as String?,
     createdAt: json['created_at'] != null
         ? DateTime.parse(json['created_at'] as String)
         : DateTime.now(),

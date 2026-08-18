@@ -246,7 +246,7 @@ void main() {
             utf8.encode(json),
           ),
         );
-      final zip = ZipEncoder().encode(archive)!;
+      final zip = ZipEncoder().encode(archive);
 
       final result = await BackupImporter(repos).importForeign(
         decodeMangayomiBackup(Uint8List.fromList(zip)),

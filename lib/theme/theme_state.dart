@@ -257,11 +257,13 @@ enum HandMode { left, right }
 
 /// How the ebook reader presents a chapter.
 ///
-/// [scroll] is the long-standing continuous scroll view. [curl] paginates the
-/// chapter and turns pages with an interactive curl.
+/// [scroll] is continuous vertical scrolling; chapter changes use sheet turns.
+/// [page] paginates into screen-sized sheets (not a mesh curl).
+///
+/// Index 1 used to be `curl`. Stored prefs keep working: old curl → page.
 enum PageStyle {
   scroll(label: 'Scroll'),
-  curl(label: 'Curl');
+  page(label: 'Page');
 
   const PageStyle({required this.label});
 

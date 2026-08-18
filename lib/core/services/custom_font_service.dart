@@ -125,6 +125,22 @@ class CustomFontService {
     return font;
   }
 
+  /// Absolute path of a face file, preferring [weight] (400 = regular).
+  Future<String?> facePath(CustomFont font, {int weight = 400}) async {
+    final root = await _fontsRoot();
+    CustomFontFace? face;
+    for (final f in font.faces) {
+      if (f.weight == weight) {
+        face = f;
+        break;
+      }
+    }
+    face ??= font.faces.isEmpty ? null : font.faces.first;
+    if (face == null) return null;
+    final file = File(p.join(root.path, font.id, face.relativePath));
+    return file.existsSync() ? file.path : null;
+  }
+
   Future<void> deleteFont(String id) async {
     final catalog = await listFonts();
     for (final font in catalog) {

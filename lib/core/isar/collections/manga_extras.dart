@@ -18,11 +18,15 @@ class MangaExtras {
   /// Mihon user notes.
   String? notes;
 
+  /// Local override cover file path (app support dir).
+  String? customCoverPath;
+
   MangaExtras({
     this.id = Isar.autoIncrement,
     required this.mangaId,
     this.categoryIds,
     this.notes,
+    this.customCoverPath,
   });
 
   Map<String, dynamic> toJson() => {
@@ -30,6 +34,7 @@ class MangaExtras {
     'manga_id': mangaId,
     'category_ids': categoryIds ?? const <int>[],
     'notes': notes,
+    'custom_cover_path': customCoverPath,
   };
 
   factory MangaExtras.fromJson(Map<String, dynamic> json) => MangaExtras(
@@ -39,5 +44,6 @@ class MangaExtras {
         ?.map((e) => (e as num).toInt())
         .toList(),
     notes: json['notes'] as String?,
+    customCoverPath: json['custom_cover_path'] as String?,
   );
 }

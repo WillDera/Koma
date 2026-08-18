@@ -12,6 +12,7 @@ import 'package:workmanager/workmanager.dart';
 
 import '../../core/models/book.dart';
 import '../../core/models/library_category.dart';
+import '../../core/models/library_group.dart';
 import '../../core/models/manga.dart';
 import '../../core/providers.dart';
 import '../../core/services/background_task.dart';
@@ -27,6 +28,7 @@ class LibraryState {
     this.books = const [],
     this.mangas = const [],
     this.categories = const [],
+    this.groups = const [],
     this.loading = true,
     this.error,
     this.selectedIds = const {},
@@ -42,6 +44,7 @@ class LibraryState {
   final List<Book> books;
   final List<Manga> mangas;
   final List<LibraryCategory> categories;
+  final List<LibraryGroupInfo> groups;
   final bool loading;
   final String? error;
   final Set<String> selectedIds;
@@ -57,10 +60,17 @@ class LibraryState {
 
   int get totalNewChapters => newChapters.values.fold(0, (a, b) => a + b);
 
+  /// Member keys currently assigned to any group.
+  Set<String> get groupedMemberKeys => {
+        for (final g in groups)
+          for (final m in g.members) m.memberKey,
+      };
+
   LibraryState copyWith({
     List<Book>? books,
     List<Manga>? mangas,
     List<LibraryCategory>? categories,
+    List<LibraryGroupInfo>? groups,
     bool? loading,
     String? Function()? error,
     Set<String>? selectedIds,
@@ -76,6 +86,7 @@ class LibraryState {
       books: books ?? this.books,
       mangas: mangas ?? this.mangas,
       categories: categories ?? this.categories,
+      groups: groups ?? this.groups,
       loading: loading ?? this.loading,
       error: error != null ? error() : this.error,
       selectedIds: selectedIds ?? this.selectedIds,
@@ -147,6 +158,7 @@ class LibraryNotifier extends Notifier<LibraryState> {
       final books = await repos.books.getBooks();
       final mangas = await repos.manga.getMangasInLibrary();
       final categories = await repos.categories.getCategories();
+      final groups = await repos.groups.getAllGroups();
       final newChapters = await repos.manga.countNewChaptersByManga();
       final extNames = <String, String>{};
       final extensions = await repos.extensions.getInstalledExtensions();
@@ -160,6 +172,7 @@ class LibraryNotifier extends Notifier<LibraryState> {
         books: books,
         mangas: mangas,
         categories: categories,
+        groups: groups,
         extensionNames: extNames,
         newChapters: newChapters,
         loading: false,
@@ -178,6 +191,7 @@ class LibraryNotifier extends Notifier<LibraryState> {
 
   Future<void> deleteBook(int id) async {
     final repos = ref.read(repositoriesProvider);
+    await repos.groups.removeItemEverywhere(kind: 'book', itemId: id);
     await repos.books.deleteBook(id);
     final ids = Set<String>.from(state.selectedIds)..remove('b:$id');
     state = state.copyWith(selectedIds: ids);
@@ -210,6 +224,7 @@ class LibraryNotifier extends Notifier<LibraryState> {
         }
       } catch (_) {}
     }
+    await repos.groups.removeItemEverywhere(kind: 'manga', itemId: id);
     await repos.manga.deleteMangaChapters(id);
     await repos.manga.deleteManga(id);
     final ids = Set<String>.from(state.selectedIds)..remove('m:$id');
@@ -235,17 +250,21 @@ class LibraryNotifier extends Notifier<LibraryState> {
   }
 
   void selectAll() {
-    if (state.selectedIds.length == state.books.length + state.mangas.length &&
-        state.books.length + state.mangas.length > 0) {
-      clearSelection();
-      return;
-    }
+    final grouped = state.groupedMemberKeys;
     final ids = <String>{};
     for (final book in state.books) {
-      ids.add('b:${book.id}');
+      final key = 'b:${book.id}';
+      if (!grouped.contains(key)) ids.add(key);
     }
     for (final manga in state.mangas) {
-      ids.add('m:${manga.id}');
+      final key = 'm:${manga.id}';
+      if (!grouped.contains(key)) ids.add(key);
+    }
+    if (ids.isEmpty ||
+        (state.selectedIds.length == ids.length &&
+            state.selectedIds.containsAll(ids))) {
+      clearSelection();
+      return;
     }
     state = state.copyWith(selectedIds: ids, selectionMode: true);
   }
@@ -256,6 +275,7 @@ class LibraryNotifier extends Notifier<LibraryState> {
     for (final key in state.selectedIds.toList()) {
       if (key.startsWith('b:')) {
         final id = int.parse(key.substring(2));
+        await repos.groups.removeItemEverywhere(kind: 'book', itemId: id);
         await repos.books.deleteBook(id);
       } else if (key.startsWith('m:')) {
         final id = int.parse(key.substring(2));
@@ -282,12 +302,66 @@ class LibraryNotifier extends Notifier<LibraryState> {
               await thumbFile.delete();
             }
           } catch (_) {}
+          await repos.groups.removeItemEverywhere(kind: 'manga', itemId: id);
           await repos.manga.deleteMangaChapters(id);
           await repos.manga.deleteManga(id);
         }
       }
     }
     state = state.copyWith(selectedIds: {}, selectionMode: false);
+    await loadBooks();
+  }
+
+  Future<int> createGroupFromSelection(String name) async {
+    final keys = state.selectedIds.toList();
+    if (keys.length < 2) {
+      throw ArgumentError('Select at least 2 items');
+    }
+    final id = await ref.read(repositoriesProvider).groups.createGroup(
+          name: name,
+          memberKeys: keys,
+        );
+    state = state.copyWith(selectedIds: {}, selectionMode: false);
+    await loadBooks();
+    return id;
+  }
+
+  Future<void> renameGroup(int groupId, String name) async {
+    await ref.read(repositoriesProvider).groups.renameGroup(groupId, name);
+    await loadBooks();
+  }
+
+  Future<void> dissolveGroup(int groupId) async {
+    await ref.read(repositoriesProvider).groups.dissolveGroup(groupId);
+    await loadBooks();
+  }
+
+  Future<void> setGroupReadingOrder(String memberKey, int order) async {
+    await ref
+        .read(repositoriesProvider)
+        .groups
+        .setReadingOrder(memberKey, order);
+    await loadBooks();
+  }
+
+  Future<void> clearGroupReadingOrder(String memberKey) async {
+    await ref.read(repositoriesProvider).groups.clearReadingOrder(memberKey);
+    await loadBooks();
+  }
+
+  Future<void> reorderGroupMembers(
+    int groupId,
+    List<String> orderedKeys,
+  ) async {
+    await ref
+        .read(repositoriesProvider)
+        .groups
+        .reorderMembers(groupId, orderedKeys);
+    await loadBooks();
+  }
+
+  Future<void> removeFromGroup(String memberKey) async {
+    await ref.read(repositoriesProvider).groups.removeMember(memberKey);
     await loadBooks();
   }
 }

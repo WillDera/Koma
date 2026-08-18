@@ -18,6 +18,8 @@ import '../../core/models/manga_chapter.dart';
 import '../../core/models/manga_page.dart';
 import '../../core/providers.dart';
 import '../../core/repositories/repositories.dart';
+import '../../core/services/chapter_auto_delete.dart';
+import '../../core/services/download_prefs.dart';
 import '../../core/services/extension_manager.dart';
 import '../../core/services/extension_source_resolve.dart';
 import '../../core/services/keiyoushi_service.dart';
@@ -810,6 +812,24 @@ class _MangaReaderScreenState extends ConsumerState<MangaReaderScreen>
           .length;
       if (chPages > 0 && chapterRelativeIndex >= chPages - 1) {
         await _repos!.manga.markMangaChapterRead(chapterId);
+        if (await DownloadPrefs.isDeleteAfterReadEnabled()) {
+          final manga = await _repos!.manga.getMangaById(ch.mangaId);
+          if (manga != null) {
+            unawaited(
+              ChapterAutoDelete(
+                repos: _repos!,
+                keiyoushi: _keiyoushi,
+                downloadManager: ref.read(downloadManagerProvider.notifier).manager,
+              ).deleteIfDownloaded(
+                mangaId: ch.mangaId,
+                chapterId: chapterId,
+                sourceId: manga.sourceId,
+                mangaUrl: manga.url,
+                chapterUrl: ch.url,
+              ),
+            );
+          }
+        }
       }
     }
 

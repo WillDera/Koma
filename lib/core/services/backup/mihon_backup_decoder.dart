@@ -46,9 +46,7 @@ Uint8List encodeMihonBackup(ForeignLibraryBackup backup, {bool gzip = true}) {
   }
   final proto = root.toBytes();
   if (!gzip) return proto;
-  final compressed = GZipEncoder().encode(proto);
-  if (compressed == null) return proto;
-  return Uint8List.fromList(compressed);
+  return Uint8List.fromList(GZipEncoder().encode(proto));
 }
 
 ForeignLibraryBackup _decodeBackup(ProtoReader r) {

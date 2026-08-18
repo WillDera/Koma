@@ -58,6 +58,29 @@ class MangaRepository {
     await _writeExtras(manga.id, manga);
   }
 
+  /// Patch MangaExtras sidecar (categories, notes, custom cover).
+  Future<void> updateMangaExtras(
+    int mangaId, {
+    List<int>? categoryIds,
+    String? notes,
+    String? customCoverPath,
+  }) async {
+    final existing = await getMangaById(mangaId);
+    if (existing == null) return;
+    await _writeExtras(
+      mangaId,
+      existing.copyWith(
+        categoryIds: categoryIds ?? existing.categoryIds,
+        notes: notes ?? existing.notes,
+        customCoverPath: customCoverPath ?? existing.customCoverPath,
+      ),
+    );
+  }
+
+  Future<void> setMangaNotes(int mangaId, String? notes) async {
+    await updateMangaExtras(mangaId, notes: notes);
+  }
+
   Future<void> setMangaInLibrary(int mangaId, bool inLibrary) async {
     await _isar.writeTxn(() async {
       final row = await _isar.mangas.get(mangaId);
@@ -269,6 +292,11 @@ class MangaRepository {
     });
   }
 
+  Future<MangaChapter?> getMangaChapterById(int chapterId) async {
+    final row = await _isar.mangaChapters.get(chapterId);
+    return row == null ? null : _chapterToModel(row);
+  }
+
   Future<void> markMangaChapterOpened(int chapterId) async {
     await _isar.writeTxn(() async {
       final row = await _isar.mangaChapters.get(chapterId);
@@ -366,12 +394,14 @@ class MangaRepository {
   Future<void> _writeExtras(int mangaId, Manga manga) async {
     final hasCats = manga.categoryIds.isNotEmpty;
     final hasNotes = manga.notes != null && manga.notes!.isNotEmpty;
+    final hasCover =
+        manga.customCoverPath != null && manga.customCoverPath!.isNotEmpty;
     await _isar.writeTxn(() async {
       final existing = await _isar.mangaExtras
           .where()
           .mangaIdEqualTo(mangaId)
           .findFirst();
-      if (!hasCats && !hasNotes) {
+      if (!hasCats && !hasNotes && !hasCover) {
         if (existing != null) {
           await _isar.mangaExtras.delete(existing.id ?? 0);
         }
@@ -383,11 +413,13 @@ class MangaRepository {
             mangaId: mangaId,
             categoryIds: manga.categoryIds,
             notes: manga.notes,
+            customCoverPath: manga.customCoverPath,
           ),
         );
       } else {
         existing.categoryIds = manga.categoryIds;
         existing.notes = manga.notes;
+        existing.customCoverPath = manga.customCoverPath;
         await _isar.mangaExtras.put(existing);
       }
     });
@@ -409,6 +441,7 @@ class MangaRepository {
     memo: m.memo,
     categoryIds: extras?.categoryIds,
     notes: extras?.notes,
+    customCoverPath: extras?.customCoverPath,
     createdAt: m.createdAt,
     updatedAt: m.updatedAt,
   );

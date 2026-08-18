@@ -9,11 +9,47 @@ import 'package:http/io_client.dart';
 import 'package:http_interceptor/http_interceptor.dart';
 
 import '../../repositories/cookie_repository.dart';
+import '../extension_client_settings.dart';
+import 'cf_proxy_client.dart';
+import 'doh_resolver.dart';
+import 'http_prefs.dart';
 
 /// Browser-like User-Agent applied to image requests and (as a fallback) by
 /// [MCookieManager]. Mirrors mangayomi's default UA for Mihon-style requests.
 const kBrowserUserAgent =
     'Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 Koma/1.0';
+
+/// Host-aware Referer / UA for LibGen covers, Open Library, Google Books, etc.
+Map<String, String> hostAwareHeaders(String url) {
+  final headers = <String, String>{'User-Agent': kBrowserUserAgent};
+  final host = Uri.tryParse(url)?.host ?? '';
+  if (host.contains('openlibrary.org')) {
+    headers['Referer'] = 'https://openlibrary.org/';
+  } else if (host.contains('googleapis.com') ||
+      host.contains('googleusercontent.com') ||
+      host.contains('books.google')) {
+    headers['Referer'] = 'https://books.google.com/';
+  } else if (host.contains('libgen.')) {
+    headers['Referer'] = 'https://libgen.li/';
+  }
+  return headers;
+}
+
+/// Ignores [close] so pooled [InterceptedClient]s cannot tear down shared IO.
+class _PooledTransport extends http.BaseClient {
+  _PooledTransport(this._inner);
+
+  http.Client _inner;
+
+  void replaceInner(http.Client inner) => _inner = inner;
+
+  @override
+  Future<http.StreamedResponse> send(http.BaseRequest request) =>
+      _inner.send(request);
+
+  @override
+  void close() {}
+}
 
 /// Shared [webview.WebViewEnvironment] for [webview.HeadlessInAppWebView]s.
 ///
@@ -55,7 +91,67 @@ class MClient {
 
   /// Shared plain HTTP client used as the inner transport for intercepted
   /// clients. Mirrors mangayomi's `MClient.defaultClient`.
-  static final http.Client defaultClient = IOClient(HttpClient());
+  static http.Client _rawTransport = _buildTransport();
+  static http.Client defaultClient = _rawTransport;
+  static final _PooledTransport _poolTransport =
+      _PooledTransport(_rawTransport);
+
+  /// Per-source [InterceptedClient] cache (connection reuse / pool).
+  static final Map<String, InterceptedClient> _clientPool = {};
+
+  static String? _resolveSourceId(Object? source) {
+    if (source == null) return null;
+    try {
+      final dynamic s = source;
+      final sid = s.sourceId as String?;
+      if (sid != null && sid.isNotEmpty) return sid;
+      final id = s.id;
+      if (id != null) return id.toString();
+    } catch (_) {}
+    return null;
+  }
+
+  static Future<String> extensionUserAgent(String sourceId) async {
+    final settings = await ExtensionClientSettings.load(sourceId);
+    return settings.userAgent.isNotEmpty
+        ? settings.userAgent
+        : kBrowserUserAgent;
+  }
+
+  static http.Client _buildTransport({bool dohEnabled = false}) {
+    final raw = HttpClient();
+    // Custom connectionFactory bypasses normal DNS/TLS on some hosts (e.g.
+    // libgen.li). Only attach when DoH is explicitly enabled in settings.
+    if (dohEnabled) {
+      raw.connectionFactory =
+          (Uri url, String? proxyHost, int? proxyPort) async {
+            final ip = await DohResolver.lookupA(url.host);
+            if (ip != null) {
+              return Socket.startConnect(ip, url.port);
+            }
+            return Socket.startConnect(url.host, url.port);
+          };
+    }
+    return IOClient(raw);
+  }
+
+  /// Rebuild the shared transport after DoH / network pref changes.
+  static Future<void> refreshTransport() async {
+    DohResolver.clearCache();
+    final doh = await HttpPrefs.dohEnabled();
+    try {
+      _rawTransport.close();
+    } catch (_) {}
+    _rawTransport = _buildTransport(dohEnabled: doh);
+    defaultClient = _rawTransport;
+    _poolTransport.replaceInner(_rawTransport);
+    for (final client in _clientPool.values) {
+      try {
+        client.close();
+      } catch (_) {}
+    }
+    _clientPool.clear();
+  }
 
   /// Builds an [InterceptedClient] with the Cloudflare retry policy and the
   /// cookie/logging interceptors.
@@ -64,17 +160,28 @@ class MClient {
   /// currently branch on the extension source object.
   static InterceptedClient init({
     Object? source,
+    String? sourceId,
     Map<String, dynamic>? reqcopyWith,
     bool showCloudFlareError = true,
   }) {
-    return InterceptedClient.build(
-      client: defaultClient,
-      retryPolicy: ResolveCloudFlareChallenge(showCloudFlareError),
-      interceptors: [
-        MCookieManager(reqcopyWith),
-        LoggerInterceptor(showCloudFlareError),
-      ],
+    final sid = sourceId ?? _resolveSourceId(source);
+    final poolKey = sid ?? '_default';
+    return _clientPool.putIfAbsent(
+      poolKey,
+      () => InterceptedClient.build(
+        client: _poolTransport,
+        retryPolicy: ResolveCloudFlareChallenge(showCloudFlareError),
+        interceptors: [
+          MCookieManager(sourceId: sid, reqcopyWith: reqcopyWith),
+          LoggerInterceptor(showCloudFlareError),
+        ],
+      ),
     );
+  }
+
+  static void rememberSolvedUserAgent(String url, String ua) {
+    if (ua.isEmpty) return;
+    _solvedUserAgents[Uri.parse(url).host] = ua;
   }
 
   /// Returns the `Cookie` header for [url]'s host if a stored cookie matches.
@@ -172,8 +279,9 @@ class MClient {
 /// Injects stored cookies into outgoing requests. Port of mangayomi's
 /// [MCookieManager].
 class MCookieManager extends InterceptorContract {
-  MCookieManager(this.reqcopyWith);
+  MCookieManager({this.sourceId, this.reqcopyWith});
 
+  final String? sourceId;
   Map<String, dynamic>? reqcopyWith;
 
   @override
@@ -181,18 +289,18 @@ class MCookieManager extends InterceptorContract {
     required http.BaseRequest request,
   }) async {
     final cookie = await MClient.getCookiesPref(request.url.toString());
-    if (cookie.isNotEmpty) {
-      if (request.headers[HttpHeaders.cookieHeader] == null) {
-        request.headers.addAll(cookie);
-      }
-      // Reuse the exact UA the Cloudflare-bypass WebView resolved with, since
-      // `cf_clearance` is bound to it. The extension's own headers usually set
-      // a User-Agent, so the solved UA must take precedence (mangayomi applies
-      // settings.userAgent here). Fall back to the app's browser UA only when
-      // the solved UA isn't available.
-      final solved = MClient.getSolvedUserAgent(request.url.toString());
-      if (solved != null && solved.isNotEmpty) {
-        request.headers[HttpHeaders.userAgentHeader] = solved;
+    if (cookie.isNotEmpty &&
+        request.headers[HttpHeaders.cookieHeader] == null) {
+      request.headers.addAll(cookie);
+    }
+    final solved = MClient.getSolvedUserAgent(request.url.toString());
+    if (solved != null && solved.isNotEmpty) {
+      request.headers[HttpHeaders.userAgentHeader] = solved;
+    } else {
+      final sid = sourceId;
+      if (sid != null && sid.isNotEmpty) {
+        request.headers[HttpHeaders.userAgentHeader] =
+            await MClient.extensionUserAgent(sid);
       } else if (request.headers[HttpHeaders.userAgentHeader] == null) {
         request.headers[HttpHeaders.userAgentHeader] = kBrowserUserAgent;
       }
@@ -293,6 +401,16 @@ class ResolveCloudFlareChallenge extends RetryPolicy {
     if (!showCloudFlareError) return false;
     if (!isCloudflare(response)) return false;
     final url = response.request!.url.toString();
+
+    final proxy = await CfProxyClient.solve(url);
+    if (proxy != null) {
+      if (proxy.cookie.isNotEmpty) {
+        await MClient.setCookie(url, proxy.userAgent, null, cookie: proxy.cookie);
+      } else if (proxy.userAgent.isNotEmpty) {
+        MClient.rememberSolvedUserAgent(url, proxy.userAgent);
+      }
+      return true;
+    }
 
     if (Platform.isLinux) return false;
     try {

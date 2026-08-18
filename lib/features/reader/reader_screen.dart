@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -17,17 +18,21 @@ import '../../theme/tokens/app_spacing.dart';
 import '../../theme/tokens/app_type.dart';
 import '../../widgets/chapter_nav_overlay.dart';
 import '../../widgets/empty_state.dart';
-import '../../widgets/highlight_color_picker.dart';
 import '../../widgets/reader_bottom_bar.dart';
 import '../../widgets/reader_settings_sheet.dart';
 import '../../widgets/reader_top_bar.dart';
 import '../../widgets/text_selection_toolbar.dart';
 import '../../widgets/toast.dart';
 import '../../widgets/tts_controls.dart';
+import 'pagination/highlight_range.dart';
 import 'pagination/paginated_reader_body.dart';
+import 'pagination/reading_position.dart';
 import 'pagination/reading_spans.dart';
 import 'pagination/rich_chapter_body.dart';
 import 'reader_provider.dart';
+import 'scene/scene_chrome.dart';
+import 'scene/scene_chrome_layer.dart';
+import 'sheet/sheet_switcher.dart';
 import 'tts/tts_engine.dart';
 import 'tts_provider.dart';
 
@@ -61,9 +66,26 @@ class ReaderScreen extends ConsumerStatefulWidget {
 
 enum _SwipeDirection { none, next, previous }
 
+/// Equal top/bottom inset that clears whichever chrome bar is taller.
+///
+/// Uses [MediaQuery.viewPadding] so showing or hiding system bars does not
+/// resize the page box.
+double readerVerticalChromeInset(EdgeInsets viewPadding) {
+  final top = viewPadding.top + ReaderTopBar.bodyHeight;
+  final bottom = viewPadding.bottom + ReaderBottomBar.bodyHeight;
+  return math.max(top, bottom);
+}
+
 class _ReaderScreenState extends ConsumerState<ReaderScreen>
     with TickerProviderStateMixin {
   final ScrollController _scrollController = ScrollController();
+
+  /// True when exactly one scroll view owns [_scrollController].
+  ///
+  /// [ScrollController.hasClients] is also true during a chapter sheet
+  /// transition (outgoing + incoming both attached). Reading [position] or
+  /// [offset] in that state asserts `_positions.length == 1`.
+  bool get _scrollReady => _scrollController.positions.length == 1;
   ReaderNotifier? _provider;
 
   /// Highlights loaded for the current chapter, used to decorate the
@@ -84,16 +106,23 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
   /// Pending dismissal of the quick toolbar after its selection went away.
   /// Held so a new selection can cancel it — see [_showToolbar].
   Timer? _selectionLostTimer;
-  bool _colorPickerVisible = false;
-  int _highlightVersion = 0;
   double _lastScrollOffset = 0;
-  Offset _selectionOrigin = Offset.zero;
+
+  /// True while we jump the incoming chapter to its saved offset. The new
+  /// scroll view mounts at 0 and would otherwise persist that 0 (and a
+  /// matching character offset) over the resume position we are about to
+  /// restore.
+  bool _restoringScroll = false;
   _SwipeDirection _lastSwipeDirection = _SwipeDirection.none;
   double? _dragStartX;
+  Offset? _pointerDown;
 
   TtsProvider? _ttsProvider;
   bool _ttsListening = false;
-  int _highlightColorIndex = 0;
+  int _highlightVersion = 0;
+
+  /// Last mark/remove so the toast Undo can restore the previous marks.
+  ({List<Highlight> removed, Highlight? added})? _highlightUndo;
 
   /// Index of the chapter we're currently showing. Used to detect a
   /// chapter change after navigation so we can jump the scroll back
@@ -101,7 +130,6 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
   int _lastSeenChapterIndex = -1;
 
   late final AnimationController _toolbarCtrl;
-  late final AnimationController _colorCtrl;
   late final AnimationController _focusCtrl;
 
   Timer? _uiHideTimer;
@@ -131,7 +159,6 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
   void initState() {
     super.initState();
     _toolbarCtrl = AnimationController(vsync: this, duration: AppMotion.sheet);
-    _colorCtrl = AnimationController(vsync: this, duration: AppMotion.base);
     _focusCtrl = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 1500),
@@ -150,12 +177,31 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
       readerProvider.select((state) => state.currentIndex),
       (_, next) => _onChapterChanged(next),
     );
+    ref.listenManual<PageStyle>(
+      themeProvider.select((state) => state.pageStyle),
+      (prev, next) {
+        if (!_sessionReady || prev == next) return;
+        if (next == PageStyle.page) {
+          _syncCharOffsetFromScroll();
+          return;
+        }
+        _snippetSeekAttempts = 0;
+        _snippetSeekSettleCount = 0;
+        _restoringScroll = true;
+        _seekScrollForSnippetOrResume(
+          ignoreSnippet:
+              widget.snippetStartOffset == null ||
+              _snippetScrollSeekDone ||
+              _snippetCharConsumed,
+        );
+      },
+    );
     unawaited(_ttsProvider!.loadPrefs());
     Future.microtask(() => _loadAndRestore());
   }
 
   void _scheduleDirectionReset() {
-    Future.delayed(AppMotion.sheet, () {
+    Future.delayed(AppMotion.pageTurn, () {
       if (mounted) setState(() => _lastSwipeDirection = _SwipeDirection.none);
     });
   }
@@ -173,13 +219,9 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
     _applySystemUiMode();
     if (ref.read(themeProvider).immersiveAutoHide &&
         !_toolbarVisible &&
-        !_colorPickerVisible &&
         !(_ttsProvider?.isActive ?? false)) {
       _uiHideTimer = Timer(_autoHideDelay, () {
-        if (mounted &&
-            !_toolbarVisible &&
-            !_colorPickerVisible &&
-            !(_ttsProvider?.isActive ?? false)) {
+        if (mounted && !_toolbarVisible && !(_ttsProvider?.isActive ?? false)) {
           _showUI.value = false;
           _applySystemUiMode();
         }
@@ -190,10 +232,7 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
   void _applySystemUiMode() {
     if (!mounted) return;
     final showSystemUi =
-        _showUI.value ||
-        _toolbarVisible ||
-        _colorPickerVisible ||
-        (_ttsProvider?.isActive ?? false);
+        _showUI.value || _toolbarVisible || (_ttsProvider?.isActive ?? false);
     SystemChrome.setEnabledSystemUIMode(
       showSystemUi ? SystemUiMode.edgeToEdge : SystemUiMode.immersiveSticky,
     );
@@ -265,41 +304,62 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
     }
   }
 
-  /// Scroll mode: jump to [snippetStartOffset] via char/length ratio, falling
-  /// back to the provider's pixel scroll for older snippets without offsets.
-  void _seekScrollForSnippetOrResume() {
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted || !_sessionReady) return;
+  bool get _usingScrollStyle =>
+      ref.read(themeProvider).pageStyle == PageStyle.scroll;
 
-      final start = widget.snippetStartOffset;
+  void _finishScrollRestore() {
+    _restoringScroll = false;
+    if (_scrollReady) {
+      _lastScrollOffset = _scrollController.offset;
+    }
+  }
+
+  /// Scroll mode: jump to [snippetStartOffset] via char/length ratio, then the
+  /// stored character offset, then legacy pixel scroll.
+  void _seekScrollForSnippetOrResume({bool ignoreSnippet = false}) {
+    _restoringScroll = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || !_sessionReady) {
+        _finishScrollRestore();
+        return;
+      }
+      if (!_usingScrollStyle) {
+        _finishScrollRestore();
+        return;
+      }
+
+      final start = ignoreSnippet ? null : widget.snippetStartOffset;
 
       bool retry() {
         _snippetSeekAttempts++;
         if (_snippetSeekAttempts < _snippetSeekMaxAttempts) {
-          _seekScrollForSnippetOrResume();
+          _seekScrollForSnippetOrResume(ignoreSnippet: ignoreSnippet);
           return true;
         }
+        _finishScrollRestore();
         return false;
       }
 
-      if (!_scrollController.hasClients) {
-        // Content not attached yet (still swapping off the spinner).
-        if (start != null && !_snippetScrollSeekDone) retry();
+      if (!_scrollReady) {
+        // Not attached yet, or two sheets share the controller mid-turn.
+        retry();
         return;
       }
 
       // Snippet jump wins over saved reading progress (often the chapter end
       // after the user finished scrolling the chapter).
-      if (start != null) {
-        if (_snippetScrollSeekDone) return;
+      if (start != null && !_snippetScrollSeekDone) {
         final text = _currentText;
         final extent = _scrollController.position.maxScrollExtent;
         if (text.isEmpty || extent <= 0) {
           retry();
           return;
         }
-        final ratio = start.clamp(0, text.length) / text.length;
-        final target = (ratio * extent).clamp(0.0, extent);
+        final target = scrollPixelsFromChar(
+          charOffset: start,
+          textLength: text.length,
+          maxExtent: extent,
+        );
         if ((_scrollController.offset - target).abs() > 1.0) {
           _scrollController.jumpTo(target);
           _snippetSeekSettleCount = 0; // extent moved us; resettle
@@ -312,7 +372,36 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
           return;
         }
         _snippetScrollSeekDone = true;
+        _provider?.updateReadingOffset(start.clamp(0, text.length));
         _armSnippetFocusIfNeeded();
+        _finishScrollRestore();
+        return;
+      }
+
+      final charOff = _provider?.readingOffsetFor(_provider!.currentIndex);
+      if (charOff != null) {
+        final text = _currentText;
+        final extent = _scrollController.position.maxScrollExtent;
+        if (text.isEmpty || extent <= 0) {
+          retry();
+          return;
+        }
+        final target = scrollPixelsFromChar(
+          charOffset: charOff,
+          textLength: text.length,
+          maxExtent: extent,
+        );
+        if ((_scrollController.offset - target).abs() > 1.0) {
+          _scrollController.jumpTo(target);
+          _snippetSeekSettleCount = 0;
+        } else {
+          _snippetSeekSettleCount++;
+        }
+        if (_snippetSeekSettleCount < _snippetSeekSettleFrames) {
+          retry();
+          return;
+        }
+        _finishScrollRestore();
         return;
       }
 
@@ -320,11 +409,30 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
       _scrollController.jumpTo(
         pos.clamp(0.0, _scrollController.position.maxScrollExtent),
       );
+      _finishScrollRestore();
     });
   }
 
   void _restoreScrollPosition() {
+    if (!_usingScrollStyle) return;
     _seekScrollForSnippetOrResume();
+  }
+
+  void _syncCharOffsetFromScroll() {
+    final text = _currentText;
+    if (text.isEmpty) return;
+    final pixels = _scrollReady ? _scrollController.offset : _lastScrollOffset;
+    final extent = _scrollReady
+        ? _scrollController.position.maxScrollExtent
+        : 0.0;
+    if (extent <= 0) return;
+    _provider?.updateReadingOffset(
+      charOffsetFromScroll(
+        textLength: text.length,
+        pixels: pixels,
+        maxExtent: extent,
+      ),
+    );
   }
 
   /// Called from the Consumer builder when the current chapter index
@@ -335,6 +443,7 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
     if (newIndex == _lastSeenChapterIndex) return;
     _lastSeenChapterIndex = newIndex;
     _lastScrollOffset = 0;
+    if (_usingScrollStyle) _restoringScroll = true;
     // Load highlights for this chapter.
     final ch = _provider?.chapters;
     if (ch != null && newIndex >= 0 && newIndex < ch.length) {
@@ -357,7 +466,11 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
     if (_ttsProvider != null && _ttsListening && ch != null) {
       final tts = _ttsProvider!;
       final chapter = ch[newIndex];
-      final text = TextExtractor.extractCached(chapter.id, chapter.content);
+      final text = TextExtractor.extractCached(
+        chapter.id,
+        chapter.content,
+        kir: _provider?.currentKir,
+      );
       tts.stop();
       unawaited(() async {
         await tts.init(text, chapterId: chapter.id.toString());
@@ -368,7 +481,11 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
     }
     // Jump to the saved scroll position for this chapter — or the snippet
     // character offset when opening from a snippet link.
-    _seekScrollForSnippetOrResume();
+    if (_usingScrollStyle) {
+      _snippetSeekAttempts = 0;
+      _snippetSeekSettleCount = 0;
+      _seekScrollForSnippetOrResume();
+    }
   }
 
   bool _didHandleBack = false;
@@ -387,14 +504,17 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
 
   void _scrollToTtsSentence() {
     final tts = _ttsProvider;
-    if (tts == null || !_scrollController.hasClients) return;
+    if (tts == null || !_scrollReady) return;
     if (!tts.isPlaying && !tts.isPaused) return;
     final text = _currentText;
     if (text.isEmpty) return;
     final offset = tts.currentSentenceOffset;
     if (offset <= 0) return;
-    final ratio = offset / text.length;
-    final target = ratio * _scrollController.position.maxScrollExtent;
+    final target = scrollPixelsFromChar(
+      charOffset: offset,
+      textLength: text.length,
+      maxExtent: _scrollController.position.maxScrollExtent,
+    );
     if ((target - _scrollController.offset).abs() > 60) {
       _scrollController.animateTo(
         target.clamp(0, _scrollController.position.maxScrollExtent),
@@ -432,19 +552,13 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
 
   String get _currentText {
     final ch = _provider?.currentChapter;
-    return ch != null ? TextExtractor.extractCached(ch.id, ch.content) : '';
-  }
-
-  String get _nextHighlightColor {
-    final palette = HighlightColorPicker.palette;
-    if (palette.isEmpty) return 'yellow';
-    return palette[_highlightColorIndex % palette.length];
-  }
-
-  void _advanceHighlightColor() {
-    final palette = HighlightColorPicker.palette;
-    if (palette.isEmpty) return;
-    _highlightColorIndex = (_highlightColorIndex + 1) % palette.length;
+    return ch != null
+        ? TextExtractor.extractCached(
+            ch.id,
+            ch.content,
+            kir: _provider?.currentKir,
+          )
+        : '';
   }
 
   @override
@@ -457,7 +571,6 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
     _scrollController.dispose();
     _toolbarCtrl.dispose();
     _showUI.dispose();
-    _colorCtrl.dispose();
     _focusCtrl.dispose();
     super.dispose();
   }
@@ -471,29 +584,11 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
     final velocity = details.velocity.pixelsPerSecond.dx;
 
     if (velocity < -500) {
-      _lastSwipeDirection = _SwipeDirection.next;
-      _provider?.goToNextChapter();
-      if (mounted) {
-        setState(() {
-          _lastScrollOffset = 0;
-          _showUI.value = true;
-        });
-      }
+      _goAdjacentChapter(next: true);
       HapticFeedback.lightImpact();
-      _scheduleDirectionReset();
-      _resetUiHideTimer();
     } else if (velocity > 500) {
-      _lastSwipeDirection = _SwipeDirection.previous;
-      _provider?.goToPreviousChapter();
-      if (mounted) {
-        setState(() {
-          _lastScrollOffset = 0;
-          _showUI.value = true;
-        });
-      }
+      _goAdjacentChapter(next: false);
       HapticFeedback.lightImpact();
-      _scheduleDirectionReset();
-      _resetUiHideTimer();
     }
 
     _dragStartX = null;
@@ -501,14 +596,15 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
 
   bool _onScrollNotification(ScrollNotification notification) {
     if (notification is ScrollUpdateNotification) {
-      final currentOffset = _scrollController.hasClients
-          ? _scrollController.offset
-          : _lastScrollOffset;
+      // Incoming chapter mounts at 0; two sheets share the controller mid
+      // turn. Either case would stamp 0 over the saved resume position.
+      if (_restoringScroll || !_scrollReady) return false;
+      final currentOffset = _scrollController.offset;
       _provider?.updateScrollPosition(currentOffset);
+      _syncCharOffsetFromScroll();
 
-      // Hide UI chrome while scrolling down, show on scroll up.
-      // Only transition chrome / SystemChrome on the edge — calling
-      // setEnabledSystemUIMode on every scroll-up tick makes flings stutter.
+      // Hide UI chrome while scrolling down. Tap toggles it back; do not
+      // show again on scroll-up (that fought tap-to-toggle).
       final diff = currentOffset - _lastScrollOffset;
       if (diff > 8 && currentOffset > 80) {
         if (_showUI.value) {
@@ -519,58 +615,81 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
             _applySystemUiMode();
           }
         }
-        _lastScrollOffset = currentOffset;
-      } else if (diff < -4 || currentOffset <= 0) {
-        if (!_showUI.value) {
-          _showUI.value = true;
-          _resetUiHideTimer();
-        }
-        _lastScrollOffset = currentOffset;
       }
+      _lastScrollOffset = currentOffset;
     }
     return false;
   }
 
-  void _handleTapUp(TapUpDetails details) {
+  static const _tapSlop = 18.0;
+
+  void _onReaderPointerDown(PointerDownEvent event) {
+    _pointerDown = event.position;
+  }
+
+  void _onReaderPointerMove(PointerMoveEvent event) {
+    final start = _pointerDown;
+    if (start != null && (event.position - start).distance > _tapSlop) {
+      _pointerDown = null;
+    }
+  }
+
+  void _onReaderPointerUp(PointerUpEvent event) {
+    if (_pointerDown == null) return;
+    _pointerDown = null;
+    _onReaderTap();
+  }
+
+  void _onReaderPointerCancel(PointerCancelEvent event) {
+    _pointerDown = null;
+  }
+
+  void _onReaderTap() {
     if (!mounted) return;
     if (_toolbarVisible) {
       _hideToolbar();
-      _resetUiHideTimer();
       return;
     }
-    final RenderBox renderBox = context.findRenderObject()! as RenderBox;
-    final localPos = renderBox.globalToLocal(details.globalPosition);
-    final screenWidth = renderBox.size.width;
-
-    final provider = _provider!;
-    if (provider.chapters.length > 1) {
-      if (localPos.dx < screenWidth / 3) {
-        _lastSwipeDirection = _SwipeDirection.previous;
-        provider.goToPreviousChapter();
-        setState(() {
-          _lastScrollOffset = 0;
-          _showUI.value = true;
-        });
-        _scheduleDirectionReset();
-        _resetUiHideTimer();
-        return;
-      } else if (localPos.dx > 2 * screenWidth / 3) {
-        _lastSwipeDirection = _SwipeDirection.next;
-        provider.goToNextChapter();
-        setState(() {
-          _lastScrollOffset = 0;
-          _showUI.value = true;
-        });
-        _scheduleDirectionReset();
-        _resetUiHideTimer();
-        return;
-      }
+    _showUI.value = !_showUI.value;
+    if (_showUI.value) {
+      _resetUiHideTimer();
+    } else {
+      _cancelUiHideTimer();
+      _applySystemUiMode();
     }
-    // Middle tap: force show UI (not toggle).
+  }
+
+  SheetTurnDirection get _chapterSheetDirection {
+    switch (_lastSwipeDirection) {
+      case _SwipeDirection.next:
+        return SheetTurnDirection.forward;
+      case _SwipeDirection.previous:
+        return SheetTurnDirection.back;
+      case _SwipeDirection.none:
+        return SheetTurnDirection.none;
+    }
+  }
+
+  void _goAdjacentChapter({required bool next}) {
+    _lastSwipeDirection = next
+        ? _SwipeDirection.next
+        : _SwipeDirection.previous;
+    if (next) {
+      _provider?.goToNextChapter();
+    } else {
+      _provider?.goToPreviousChapter();
+    }
+    if (mounted) {
+      setState(() {
+        _lastScrollOffset = 0;
+        _showUI.value = true;
+      });
+    }
+    _scheduleDirectionReset();
     _resetUiHideTimer();
   }
 
-  void _showToolbar(Offset origin) {
+  void _showToolbar() {
     // A new selection supersedes any pending dismissal — otherwise the timer
     // armed by the tap that *started* this selection fires a moment later and
     // hides a toolbar the user just summoned.
@@ -579,7 +698,6 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
     _cancelUiHideTimer();
     setState(() {
       _toolbarVisible = true;
-      _selectionOrigin = origin;
     });
     _applySystemUiMode();
     _toolbarCtrl.forward(from: 0);
@@ -601,13 +719,12 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
   }
 
   void _hideToolbar() {
-    if (!_toolbarVisible && !_colorPickerVisible) return;
+    if (!_toolbarVisible) return;
     _selectionLostTimer?.cancel();
     _selectionLostTimer = null;
     _toolbarCtrl.reverse();
     setState(() {
       _toolbarVisible = false;
-      _colorPickerVisible = false;
     });
     // _selectedText/_selStart are deliberately left alone: the save paths call
     // this before reading them, and they clear their own state when done.
@@ -615,24 +732,20 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
     _resetUiHideTimer();
   }
 
-  /// The paginated + page-curl reading surface.
+  /// The paginated (page-style) reading surface.
   ///
   /// Deliberately does not wire the horizontal-drag chapter jump used by scroll
-  /// mode: the curl owns horizontal drags, and both competing in the gesture
-  /// arena would make page turns unreliable.
-  Widget _buildCurlBody(
+  /// mode: the sheet pager owns horizontal drags, and both competing in the
+  /// gesture arena would make page turns unreliable.
+  Widget _buildPageBody(
     ThemeState themeProv,
     ReaderState provider,
-    Chapter chapter,
-  ) {
-    final pad = _horizontalPadding(themeProv.pageWidth);
+    Chapter chapter, {
+    required Color sheetColor,
+  }) {
+    final pad = _readingPadding(themeProv);
     return Padding(
-      padding: EdgeInsets.fromLTRB(
-        pad,
-        MediaQuery.of(context).padding.top + 32,
-        pad,
-        MediaQuery.of(context).padding.bottom + 16,
-      ),
+      padding: pad,
       child: Center(
         child: ConstrainedBox(
           constraints: BoxConstraints(maxWidth: themeProv.pageWidth),
@@ -640,6 +753,9 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
             chapters: provider.chapters,
             chapterIndex: provider.currentIndex,
             themeProv: themeProv,
+            kirForChapter: (i) =>
+                i == provider.currentIndex ? provider.currentKir : null,
+            bookId: _provider?.kirEnabled == true ? provider.book?.id : null,
             highlights: _highlights,
             highlightVersion: _highlightVersion,
             ttsActive: _ttsProvider?.isActive ?? false,
@@ -666,24 +782,18 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
             pixelOffsetFor: (i) => i < provider.chapters.length
                 ? provider.chapters[i].scrollPosition
                 : 0,
-            // Edge taps belong to the curl (it turns pages with them), so a tap
-            // reaching us is a middle tap: manage the UI only, never jump
-            // chapters the way scroll mode's edge taps do.
-            onTap: () {
-              if (_toolbarVisible) {
-                _hideToolbar();
-              }
-              _resetUiHideTimer();
-            },
+            sheetColor: sheetColor,
+            disableAnimations: MediaQuery.disableAnimationsOf(context),
             onSelected: (start, end) {
               final text = TextExtractor.extractCached(
                 chapter.id,
                 chapter.content,
+                kir: provider.currentKir,
               );
               if (end <= text.length) {
                 _selStart = start;
                 _selectedText = text.substring(start, end);
-                _showToolbar(Offset.zero);
+                _showToolbar();
               }
             },
             onSelectionCleared: _hideToolbarOnSelectionLost,
@@ -738,193 +848,167 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
     final chapter = provider.currentChapter!;
     final progress = (provider.currentIndex + 1) / provider.chapters.length;
     final readingTime = _estimateReadingTime(chapter.content);
+    final chrome = provider.currentKir == null ? null : provider.currentScene;
+    final pageBg = SceneChrome.pageBackground(
+      chrome,
+      themeProv.bgColor,
+      userDark: themeProv.isDarkMode,
+    );
+    final pageDark =
+        ThemeData.estimateBrightnessForColor(pageBg) == Brightness.dark;
+    final reduceMotion = MediaQuery.disableAnimationsOf(context);
 
     return AnnotatedRegion<SystemUiOverlayStyle>(
-      value: themeProv.isDark
-          ? SystemUiOverlayStyle.light
-          : SystemUiOverlayStyle.dark,
+      value: pageDark ? SystemUiOverlayStyle.light : SystemUiOverlayStyle.dark,
       child: Scaffold(
-        backgroundColor: themeProv.bgColor,
-        bottomNavigationBar: ValueListenableBuilder<bool>(
-          valueListenable: _showUI,
-          builder: (_, showUI, _) => ReaderBottomBar(
-            visible: showUI && !_toolbarVisible,
-            onChapters: () =>
-                _openChapters(context, ref.read(readerProvider.notifier)),
-            onPrevious: () =>
-                ref.read(readerProvider.notifier).goToPreviousChapter(),
-            onNext: () => ref.read(readerProvider.notifier).goToNextChapter(),
-            canGoNext: provider.currentIndex < provider.chapters.length - 1,
-            canGoPrevious: provider.currentIndex > 0,
-            currentIndex: provider.currentIndex,
-            totalChapters: provider.chapters.length,
-            readingTimeRemaining: readingTime,
-          ),
-        ),
+        backgroundColor: pageBg,
         body: Stack(
           children: [
+            if (chrome != null &&
+                (chrome.frostOverlayAlpha > 0 ||
+                    chrome.ambientOverlayAlpha > 0))
+              Positioned.fill(child: SceneChromeLayer(chrome: chrome)),
             Positioned.fill(
-              child: themeProv.pageStyle == PageStyle.curl
-                  ? _buildCurlBody(themeProv, provider, chapter)
-                  : GestureDetector(
-                      onTapUp: _handleTapUp,
-                      onHorizontalDragStart: _onHorizontalDragStart,
-                      onHorizontalDragEnd: _onHorizontalDragEnd,
-                      behavior: HitTestBehavior.opaque,
-                      child: NotificationListener<ScrollStartNotification>(
-                        onNotification: (notification) {
-                          if (_toolbarVisible) {
-                            _hideToolbar();
-                            return true;
-                          }
-                          return false;
-                        },
-                        child: NotificationListener<ScrollUpdateNotification>(
-                          onNotification: _onScrollNotification,
-                          child: SingleChildScrollView(
-                            controller: _scrollController,
-                            primary: false,
-                            padding: EdgeInsets.fromLTRB(
-                              _horizontalPadding(themeProv.pageWidth),
-                              MediaQuery.of(context).padding.top + 32,
-                              _horizontalPadding(themeProv.pageWidth),
-                              MediaQuery.of(context).padding.bottom + 16,
-                            ),
-                            child: Center(
-                              child: ConstrainedBox(
-                                constraints: BoxConstraints(
-                                  maxWidth: themeProv.pageWidth,
-                                ),
-                                child: ClipRect(
-                                  child: AnimatedSwitcher(
-                                    duration: AppMotion.sheet,
-                                    transitionBuilder: (child, animation) {
-                                      var begin = Offset.zero;
-                                      switch (_lastSwipeDirection) {
-                                        case _SwipeDirection.next:
-                                          begin = const Offset(1, 0);
-                                        case _SwipeDirection.previous:
-                                          begin = const Offset(-1, 0);
-                                        case _SwipeDirection.none:
-                                          begin = Offset.zero;
-                                      }
-                                      final slide = Tween(
-                                        begin: begin,
-                                        end: Offset.zero,
-                                      );
-                                      final scale = Tween(
-                                        begin: 0.96,
-                                        end: 1.0,
-                                      );
-                                      return SlideTransition(
-                                        position: animation.drive(slide),
-                                        child: ScaleTransition(
-                                          scale: animation.drive(scale),
-                                          child: FadeTransition(
-                                            opacity: animation,
-                                            child: child,
-                                          ),
-                                        ),
-                                      );
-                                    },
-                                    child: RepaintBoundary(
-                                      key: ValueKey('chapter-${chapter.id}'),
-                                      child: Column(
-                                        crossAxisAlignment:
-                                            CrossAxisAlignment.start,
-                                        children: [
-                                          // Chapter title
-                                          Text(
-                                            chapter.title,
-                                            style:
-                                                AppType.reading(
-                                                  fontSize: themeProv.fontSize,
-                                                  lineHeight:
-                                                      themeProv.lineHeight,
-                                                  color: context
-                                                      .colors
-                                                      .textTertiary,
-                                                ).copyWith(
-                                                  fontStyle: FontStyle.italic,
-                                                  fontWeight: FontWeight.w500,
-                                                  letterSpacing: 0.1,
-                                                ),
-                                          ),
-                                          const SizedBox(height: 28),
-                                          ListenableBuilder(
-                                            listenable: Listenable.merge([
-                                              _ttsProvider!,
-                                              _focusCtrl,
-                                            ]),
-                                            builder: (_, _) {
-                                              final doc =
-                                                  TextExtractor.documentCached(
-                                                    chapter.id,
-                                                    chapter.content,
-                                                  );
-                                              return RichChapterBody(
-                                                document: doc,
-                                                themeProv: themeProv,
-                                                baseStyle: _readingStyle(
-                                                  themeProv,
-                                                ),
-                                                brightness: Theme.of(
-                                                  context,
-                                                ).brightness,
-                                                highlights: _highlights,
-                                                ttsActive:
-                                                    _ttsProvider?.isActive ??
-                                                    false,
-                                                ttsStart:
-                                                    _ttsProvider
-                                                        ?.currentSentenceOffset ??
-                                                    0,
-                                                ttsEnd:
-                                                    _ttsProvider
-                                                        ?.currentSentenceEnd ??
-                                                    0,
-                                                focusStart: _focusStart,
-                                                focusEnd: _focusEnd,
-                                                focusAlpha: _focusAlpha,
-                                                contentKey:
-                                                    'content-$_highlightVersion-${chapter.id}',
-                                                textAlign: themeProv.textAlign,
-                                                onSelectionChanged:
-                                                    (selection) {
-                                                      final content =
-                                                          doc.plainText;
-                                                      if (selection.end <=
-                                                          content.length) {
-                                                        _selStart =
-                                                            selection.start;
-                                                        _selectedText = content
-                                                            .substring(
-                                                              selection.start,
-                                                              selection.end,
-                                                            );
-                                                        _showToolbar(
-                                                          Offset.zero,
-                                                        );
-                                                      }
-                                                    },
-                                                onSelectionCleared:
-                                                    _hideToolbarOnSelectionLost,
-                                              );
-                                            },
-                                          ),
-                                          const SizedBox(height: 80),
-                                        ],
+              child: Listener(
+                behavior: HitTestBehavior.translucent,
+                onPointerDown: _onReaderPointerDown,
+                onPointerMove: _onReaderPointerMove,
+                onPointerUp: _onReaderPointerUp,
+                onPointerCancel: _onReaderPointerCancel,
+                child: themeProv.pageStyle == PageStyle.page
+                    ? _buildPageBody(
+                        themeProv,
+                        provider,
+                        chapter,
+                        sheetColor: pageBg,
+                      )
+                    : GestureDetector(
+                        onHorizontalDragStart: _onHorizontalDragStart,
+                        onHorizontalDragEnd: _onHorizontalDragEnd,
+                        behavior: HitTestBehavior.opaque,
+                        child: SheetSwitcher(
+                          index: provider.currentIndex,
+                          direction: _chapterSheetDirection,
+                          sheetColor: pageBg,
+                          disableAnimations: reduceMotion,
+                          child: KeyedSubtree(
+                            key: ValueKey('chapter-${chapter.id}'),
+                            child: NotificationListener<ScrollStartNotification>(
+                              onNotification: (notification) {
+                                if (_toolbarVisible) {
+                                  _hideToolbar();
+                                  return true;
+                                }
+                                return false;
+                              },
+                              child: NotificationListener<ScrollUpdateNotification>(
+                                onNotification: _onScrollNotification,
+                                child: SingleChildScrollView(
+                                  controller: _scrollController,
+                                  primary: false,
+                                  padding: _readingPadding(themeProv),
+                                  child: Center(
+                                    child: ConstrainedBox(
+                                      constraints: BoxConstraints(
+                                        maxWidth: themeProv.pageWidth,
                                       ),
-                                    ), // RepaintBoundary
-                                  ), // AnimatedSwitcher
-                                ), // ClipRect
-                              ), // ConstrainedBox
-                            ), // Center
-                          ), // SingleChildScrollView
-                        ), // NotificationListener<ScrollUpdateNotification>
-                      ), // NotificationListener<ScrollStartNotification>
-                    ), // GestureDetector
-            ), // Positioned.fill
+                                      child: RepaintBoundary(
+                                        child: Column(
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.start,
+                                          children: [
+                                            Text(
+                                              chapter.title,
+                                              style:
+                                                  AppType.reading(
+                                                    fontSize:
+                                                        themeProv.fontSize,
+                                                    lineHeight:
+                                                        themeProv.lineHeight,
+                                                    color: context
+                                                        .colors
+                                                        .textTertiary,
+                                                  ).copyWith(
+                                                    fontStyle: FontStyle.italic,
+                                                    fontWeight: FontWeight.w500,
+                                                    letterSpacing: 0.1,
+                                                  ),
+                                            ),
+                                            const SizedBox(height: 28),
+                                            ListenableBuilder(
+                                              listenable: Listenable.merge([
+                                                _ttsProvider!,
+                                                _focusCtrl,
+                                              ]),
+                                              builder: (_, _) {
+                                                final doc =
+                                                    TextExtractor.documentCached(
+                                                      chapter.id,
+                                                      chapter.content,
+                                                      kir: provider.currentKir,
+                                                    );
+                                                return RichChapterBody(
+                                                  document: doc,
+                                                  themeProv: themeProv,
+                                                  baseStyle: _readingStyle(
+                                                    themeProv,
+                                                  ),
+                                                  brightness: Theme.of(
+                                                    context,
+                                                  ).brightness,
+                                                  highlights: _highlights,
+                                                  ttsActive:
+                                                      _ttsProvider?.isActive ??
+                                                      false,
+                                                  ttsStart:
+                                                      _ttsProvider
+                                                          ?.currentSentenceOffset ??
+                                                      0,
+                                                  ttsEnd:
+                                                      _ttsProvider
+                                                          ?.currentSentenceEnd ??
+                                                      0,
+                                                  focusStart: _focusStart,
+                                                  focusEnd: _focusEnd,
+                                                  focusAlpha: _focusAlpha,
+                                                  contentKey:
+                                                      'content-$_highlightVersion-${chapter.id}',
+                                                  textAlign:
+                                                      themeProv.textAlign,
+                                                  onSelectionChanged:
+                                                      (selection) {
+                                                        final content =
+                                                            doc.plainText;
+                                                        if (selection.end <=
+                                                            content.length) {
+                                                          _selStart =
+                                                              selection.start;
+                                                          _selectedText =
+                                                              content.substring(
+                                                                selection.start,
+                                                                selection.end,
+                                                              );
+                                                          _showToolbar();
+                                                        }
+                                                      },
+                                                  onSelectionCleared:
+                                                      _hideToolbarOnSelectionLost,
+                                                );
+                                              },
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+              ),
+            ),
             // Top bar
             Positioned(
               top: 0,
@@ -955,88 +1039,90 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
               ),
             ),
 
-            // Selection toolbar overlay
+            Positioned(
+              left: 0,
+              right: 0,
+              bottom: 0,
+              child: ValueListenableBuilder<bool>(
+                valueListenable: _showUI,
+                builder: (_, showUI, _) => ReaderBottomBar(
+                  visible: showUI && !_toolbarVisible,
+                  onChapters: () =>
+                      _openChapters(context, ref.read(readerProvider.notifier)),
+                  onPrevious: () => _goAdjacentChapter(next: false),
+                  onNext: () => _goAdjacentChapter(next: true),
+                  canGoNext:
+                      provider.currentIndex < provider.chapters.length - 1,
+                  canGoPrevious: provider.currentIndex > 0,
+                  currentIndex: provider.currentIndex,
+                  totalChapters: provider.chapters.length,
+                  readingTimeRemaining: readingTime,
+                ),
+              ),
+            ),
+
+            // Selection toolbar overlay. Positioned must be a direct Stack
+            // child — the pill used to wrap itself in Positioned, which broke
+            // once the colour-picker Stack around it went away.
             if (_toolbarVisible)
-              FadeTransition(
-                opacity: _toolbarCtrl,
-                child: SlideTransition(
-                  position:
-                      Tween<Offset>(
-                        begin: const Offset(0, 0.3),
-                        end: Offset.zero,
-                      ).animate(
-                        CurvedAnimation(
-                          parent: _toolbarCtrl,
-                          curve: AppMotion.standard,
-                        ),
-                      ),
-                  child: Stack(
-                    children: [
-                      ReaderSelectionToolbar(
-                        selectedText: _selectedText ?? '',
-                        defaultHighlightColor: _nextHighlightColor,
-                        position: _selectionOrigin,
-                        onHighlight: (color) {
-                          _saveHighlight(color);
-                        },
-                        onNote: () {
-                          _createSnippetFromSelection();
-                        },
-                        onCopy: () {
-                          if (_selectedText != null) {
-                            Clipboard.setData(
-                              ClipboardData(text: _selectedText!),
-                            );
-                            StashToast.show(
-                              context,
-                              message: 'Copied to clipboard',
-                              icon: Icons.check,
-                            );
-                          }
-                          _hideToolbar();
-                        },
-                        onShare: () {
-                          if (_selectedText != null) {
-                            Clipboard.setData(
-                              ClipboardData(text: _selectedText!),
-                            );
-                            StashToast.show(
-                              context,
-                              message: 'Quote copied · share anywhere',
-                              icon: Icons.ios_share,
-                            );
-                          }
-                          _hideToolbar();
-                        },
-                      ),
-                      if (_colorPickerVisible)
-                        Positioned(
-                          left: 0,
-                          right: 0,
-                          bottom: 180,
-                          child: Center(
-                            child: ScaleTransition(
-                              scale: CurvedAnimation(
-                                parent: _colorCtrl,
-                                curve: AppMotion.standard,
-                              ),
-                              child: HighlightColorPicker(
-                                colors: HighlightColorPicker.palette,
-                                selected: _nextHighlightColor,
-                                onChanged: (color) {
-                                  ref
-                                      .read(themeProvider.notifier)
-                                      .setDefaultHighlight(color);
-                                  final idx = HighlightColorPicker.palette
-                                      .indexOf(color);
-                                  if (idx >= 0) _highlightColorIndex = idx;
-                                  _saveHighlight(color);
-                                },
-                              ),
-                            ),
+              Positioned(
+                left: 16,
+                right: 16,
+                bottom: 120,
+                child: FadeTransition(
+                  opacity: _toolbarCtrl,
+                  child: SlideTransition(
+                    position:
+                        Tween<Offset>(
+                          begin: const Offset(0, 0.3),
+                          end: Offset.zero,
+                        ).animate(
+                          CurvedAnimation(
+                            parent: _toolbarCtrl,
+                            curve: AppMotion.standard,
                           ),
                         ),
-                    ],
+                    child: ReaderSelectionToolbar(
+                      selectedColor: themeProv.defaultHighlight,
+                      onHighlight: (color) {
+                        ref
+                            .read(themeProvider.notifier)
+                            .setDefaultHighlight(color);
+                        _saveHighlight(color);
+                      },
+                      onRemove: _selectionOverlapsHighlight
+                          ? _removeOverlappingHighlights
+                          : null,
+                      onNote: () {
+                        _createSnippetFromSelection();
+                      },
+                      onCopy: () {
+                        if (_selectedText != null) {
+                          Clipboard.setData(
+                            ClipboardData(text: _selectedText!),
+                          );
+                          StashToast.show(
+                            context,
+                            message: 'Copied to clipboard',
+                            icon: Icons.check,
+                          );
+                        }
+                        _hideToolbar();
+                      },
+                      onShare: () {
+                        if (_selectedText != null) {
+                          Clipboard.setData(
+                            ClipboardData(text: _selectedText!),
+                          );
+                          StashToast.show(
+                            context,
+                            message: 'Quote copied · share anywhere',
+                            icon: Icons.ios_share,
+                          );
+                        }
+                        _hideToolbar();
+                      },
+                    ),
                   ),
                 ),
               ),
@@ -1099,7 +1185,7 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
     await tts.init(text, chapterId: chapterId);
     if (!mounted) return;
 
-    if (_scrollController.hasClients &&
+    if (_scrollReady &&
         tts.totalSentences > 0 &&
         _scrollController.position.maxScrollExtent > 0) {
       final ratio =
@@ -1130,6 +1216,18 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
     return leftover < 20 ? 20 : leftover;
   }
 
+  /// Insets for the reading surface.
+  ///
+  /// Top and bottom are equal and large enough for either chrome bar, using
+  /// [MediaQuery.viewPadding] (stable when system bars show/hide) so the page
+  /// box does not resize on a chrome tap. Text fills everything between.
+  EdgeInsets _readingPadding(ThemeState themeProv) {
+    final mq = MediaQuery.of(context);
+    final h = _horizontalPadding(themeProv.pageWidth);
+    final v = readerVerticalChromeInset(mq.viewPadding);
+    return EdgeInsets.fromLTRB(h, v, h, v);
+  }
+
   String? _estimateReadingTime(String content) {
     final words = content.split(RegExp(r'\s+')).length;
     final mins = (words / 230).round();
@@ -1137,15 +1235,133 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
     return '$mins min left';
   }
 
+  bool get _selectionOverlapsHighlight {
+    final start = _selStart;
+    final text = _selectedText;
+    if (start == null || text == null || text.isEmpty) return false;
+    return highlightsOverlapping(
+      _highlights,
+      start: start,
+      end: start + text.length,
+    ).isNotEmpty;
+  }
+
+  void _dismissSelectionUi() {
+    _hideToolbar();
+    _selectedText = null;
+    _selStart = null;
+    setState(() => _highlightVersion++);
+    FocusScope.of(context).unfocus();
+  }
+
+  Future<void> _undoLastHighlightEdit() async {
+    final edit = _highlightUndo;
+    if (edit == null) return;
+    _highlightUndo = null;
+    final repos = ref.read(repositoriesProvider);
+    final chapterId = _provider?.currentChapter?.id;
+    try {
+      if (edit.added != null) {
+        await repos.books.deleteHighlight(edit.added!.id);
+      }
+      final restored = <Highlight>[];
+      for (final h in edit.removed) {
+        final id = await repos.books.insertHighlight(h);
+        restored.add(
+          Highlight(
+            id: id,
+            snippetId: h.snippetId,
+            bookId: h.bookId,
+            chapterId: h.chapterId,
+            startOffset: h.startOffset,
+            endOffset: h.endOffset,
+            color: h.color,
+            text: h.text,
+            createdAt: h.createdAt,
+            updatedAt: h.updatedAt,
+          ),
+        );
+      }
+      if (!mounted) return;
+      final touchesCurrent =
+          chapterId != null &&
+          (edit.added?.chapterId == chapterId ||
+              edit.removed.any((h) => h.chapterId == chapterId));
+      if (!touchesCurrent) return;
+      setState(() {
+        if (edit.added != null) {
+          _highlights.removeWhere((h) => h.id == edit.added!.id);
+        }
+        for (final h in restored) {
+          if (_highlights.any((x) => x.id == h.id)) continue;
+          _highlights.add(h);
+        }
+        _highlightVersion++;
+      });
+    } catch (e) {
+      if (mounted) {
+        StashToast.show(
+          context,
+          message: 'Failed: $e',
+          icon: Icons.error_outline,
+        );
+      }
+    }
+  }
+
+  Future<void> _removeOverlappingHighlights() async {
+    final start = _selStart;
+    final text = _selectedText;
+    if (start == null || text == null || text.isEmpty) return;
+    final overlapping = highlightsOverlapping(
+      _highlights,
+      start: start,
+      end: start + text.length,
+    );
+    if (overlapping.isEmpty) return;
+    final repos = ref.read(repositoriesProvider);
+    try {
+      for (final h in overlapping) {
+        await repos.books.deleteHighlight(h.id);
+      }
+      _highlightUndo = (removed: List<Highlight>.of(overlapping), added: null);
+      if (mounted) {
+        setState(() {
+          final ids = overlapping.map((h) => h.id).toSet();
+          _highlights.removeWhere((h) => ids.contains(h.id));
+        });
+        StashToast.show(
+          context,
+          message: overlapping.length == 1
+              ? 'Highlight removed'
+              : 'Highlights removed',
+          icon: Icons.format_color_reset,
+          actionLabel: 'Undo',
+          onAction: _undoLastHighlightEdit,
+          duration: const Duration(seconds: 4),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        StashToast.show(
+          context,
+          message: 'Failed: $e',
+          icon: Icons.error_outline,
+        );
+      }
+    } finally {
+      if (mounted) _dismissSelectionUi();
+    }
+  }
+
   Future<void> _saveHighlight(String color) async {
     final p = _provider!;
     if (_selectedText == null || _selectedText!.trim().isEmpty) return;
-    final focusScope = FocusScope.of(context);
     try {
-      final repos = ref.watch(repositoriesProvider);
+      final repos = ref.read(repositoriesProvider);
       final ch = p.currentChapter;
       final contentStr = ch != null
-          ? TextExtractor.extractCached(ch.id, ch.content)
+          ? TextExtractor.extractCached(ch.id, ch.content, kir: p.currentKir)
           : '';
       final selected = _selectedText!.trim();
       int? startOff;
@@ -1161,19 +1377,24 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
         startOff = contentStr.indexOf(selected, from);
         if (startOff < 0) startOff = contentStr.indexOf(selected);
       }
-      // Bug 1 fix: save ONLY to the highlights table, NOT to snippets.
-      // Only "Note" (renamed to "Snippet") creates a snippet row.
+      // Save ONLY to the highlights table, NOT to snippets.
+      // Only "Snippet" creates a snippet row.
       if (p.book != null && ch != null && startOff != null && startOff >= 0) {
-        // Bound to non-nullable locals: the promotion of startOff/ch does not
-        // survive the await below.
         final start = startOff;
         final bookId = p.book!.id;
         final chapterId = ch.id;
         final end = start + selected.length;
+        final overlapping = highlightsOverlapping(
+          _highlights,
+          start: start,
+          end: end,
+        );
+        for (final h in overlapping) {
+          await repos.books.deleteHighlight(h.id);
+        }
         final storedId = await repos.books.insertHighlight(
           Highlight(
             id: 0,
-            // No snippetId — marks are separate from snippets
             bookId: bookId,
             chapterId: chapterId,
             startOffset: start,
@@ -1182,24 +1403,26 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
             text: selected,
           ),
         );
-        // Only mutate the in-memory list when we're still viewing the chapter
-        // this mark belongs to. Otherwise a mid-await chapter change replaces
-        // `_highlights` with another chapter's rows and we'd append here,
-        // orphaning the mark until the user navigates back.
+        final added = Highlight(
+          id: storedId,
+          bookId: bookId,
+          chapterId: chapterId,
+          startOffset: start,
+          endOffset: end,
+          color: color,
+          text: selected,
+        );
+        _highlightUndo = (
+          removed: List<Highlight>.of(overlapping),
+          added: added,
+        );
         if (mounted && _provider?.currentChapter?.id == chapterId) {
           setState(() {
-            if (_highlights.any((h) => h.id == storedId)) return;
-            _highlights.add(
-              Highlight(
-                id: storedId,
-                bookId: bookId,
-                chapterId: chapterId,
-                startOffset: start,
-                endOffset: end,
-                color: color,
-                text: selected,
-              ),
-            );
+            final ids = overlapping.map((h) => h.id).toSet();
+            _highlights.removeWhere((h) => ids.contains(h.id));
+            if (!_highlights.any((h) => h.id == storedId)) {
+              _highlights.add(added);
+            }
           });
         }
       }
@@ -1208,6 +1431,9 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
           context,
           message: 'Marked',
           icon: Icons.format_color_fill,
+          actionLabel: 'Undo',
+          onAction: _undoLastHighlightEdit,
+          duration: const Duration(seconds: 4),
         );
       }
     } catch (e) {
@@ -1219,23 +1445,7 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
         );
       }
     } finally {
-      if (mounted) {
-        // Cycle to the next highlight color for the next mark.
-        _advanceHighlightColor();
-        // Discard the old selection so the next long-press can create
-        // fresh selection handles.
-        // The highlight toolbar just saved — hide it, then increment the
-        // SelectableText key so the widget unmounts/remounts cleanly,
-        // discarding the old selection state.  Next long-press creates
-        // new handles.
-        _hideToolbar();
-        _selectedText = null;
-        _selStart = null;
-        setState(() => _highlightVersion++);
-        // Dismiss keyboard/selection focus so the next long-press
-        // creates a fresh set of selection handles.
-        focusScope.unfocus();
-      }
+      if (mounted) _dismissSelectionUi();
     }
   }
 
@@ -1309,7 +1519,7 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
       final snippetsProv = ref.read(snippetsProvider.notifier);
       final ch = p.currentChapter;
       final contentStr = ch != null
-          ? TextExtractor.extractCached(ch.id, ch.content)
+          ? TextExtractor.extractCached(ch.id, ch.content, kir: p.currentKir)
           : '';
       final selected = _selectedText?.trim() ?? '';
       int? startOff;
@@ -1324,9 +1534,7 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
         startOff = contentStr.indexOf(selected, from);
         if (startOff < 0) startOff = contentStr.indexOf(selected);
       }
-      final currPos = _scrollController.hasClients
-          ? _scrollController.offset
-          : null;
+      final currPos = _scrollReady ? _scrollController.offset : null;
       await snippetsProv.createSnippet(
         text: selected,
         note: noteCtrl.text.trim().isNotEmpty ? noteCtrl.text.trim() : null,
@@ -1375,8 +1583,8 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
           _showUI.value = true;
         });
       },
-      onPrevious: () => provider.goToPreviousChapter(),
-      onNext: () => provider.goToNextChapter(),
+      onPrevious: () => _goAdjacentChapter(next: false),
+      onNext: () => _goAdjacentChapter(next: true),
     );
   }
 }

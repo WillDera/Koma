@@ -5,6 +5,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/models/book.dart';
 import '../../core/models/chapter.dart';
 import '../../core/providers.dart';
+import '../../core/services/koma_package_store.dart';
+import '../../features/reader/html/kir_model.dart';
+import '../../features/reader/scene/scene_chrome.dart';
 
 /// Immutable state for the ebook reader.
 class ReaderState {
@@ -16,6 +19,8 @@ class ReaderState {
     this.scrollPosition = 0.0,
     this.loading = true,
     this.error,
+    this.currentKir,
+    this.currentScene,
   });
 
   final Book? book;
@@ -26,6 +31,12 @@ class ReaderState {
   final bool loading;
   final String? error;
 
+  /// KIR for [currentChapter] when a `.koma` exists and spine count matches.
+  final KirChapter? currentKir;
+
+  /// Scene chrome for [currentChapter] when KIR is active. Null on HTML.
+  final SceneChrome? currentScene;
+
   ReaderState copyWith({
     Book? Function()? book,
     List<Chapter>? chapters,
@@ -34,6 +45,8 @@ class ReaderState {
     double? scrollPosition,
     bool? loading,
     String? Function()? error,
+    KirChapter? Function()? currentKir,
+    SceneChrome? Function()? currentScene,
   }) {
     return ReaderState(
       book: book != null ? book() : this.book,
@@ -45,6 +58,8 @@ class ReaderState {
       scrollPosition: scrollPosition ?? this.scrollPosition,
       loading: loading ?? this.loading,
       error: error != null ? error() : this.error,
+      currentKir: currentKir != null ? currentKir() : this.currentKir,
+      currentScene: currentScene != null ? currentScene() : this.currentScene,
     );
   }
 }
@@ -62,6 +77,11 @@ class ReaderNotifier extends Notifier<ReaderState> {
   Timer? _offsetPersistTimer;
   int? _pendingOffset;
 
+  final Map<int, KirChapter> _kirByIndex = {};
+  final Map<int, SceneChrome> _sceneByIndex = {};
+  bool _kirEnabled = false;
+  int? _kirBookId;
+
   @override
   ReaderState build() => const ReaderState();
 
@@ -71,6 +91,11 @@ class ReaderNotifier extends Notifier<ReaderState> {
   List<Chapter> get chapters => state.chapters;
   Chapter? get currentChapter => state.currentChapter;
   int get currentIndex => state.currentIndex;
+  KirChapter? get currentKir => state.currentKir;
+  SceneChrome? get currentScene => state.currentScene;
+
+  /// True when a `.koma` exists and spine count matches chapter count.
+  bool get kirEnabled => _kirEnabled;
   double get scrollPosition =>
       _chapterScrollPositions[state.currentIndex] ?? state.scrollPosition;
   bool get loading => state.loading;
@@ -82,6 +107,10 @@ class ReaderNotifier extends Notifier<ReaderState> {
     double? targetScrollOffset,
   }) async {
     _elapsedSeconds = 0;
+    _kirByIndex.clear();
+    _sceneByIndex.clear();
+    _kirEnabled = false;
+    _kirBookId = null;
     state = state.copyWith(loading: true, error: () => null);
     final repos = ref.watch(repositoriesProvider);
 
@@ -110,6 +139,9 @@ class ReaderNotifier extends Notifier<ReaderState> {
         final scrollPos =
             targetScrollOffset ?? (chPos > 0 ? chPos : book.scrollPosition);
 
+        await _prepareKir(book.id, chapters.length);
+        final kir = await _kirFor(currentIndex);
+
         state = ReaderState(
           book: book,
           chapters: chapters,
@@ -117,9 +149,12 @@ class ReaderNotifier extends Notifier<ReaderState> {
           currentIndex: currentIndex,
           scrollPosition: scrollPos,
           loading: false,
+          currentKir: kir,
+          currentScene: kir == null ? null : _sceneByIndex[currentIndex],
         );
         await repos.books.markChapterRead(currentChapter.id);
         _startReadingTimer();
+        _prefetchKirNeighbours(currentIndex, chapters.length);
       } else {
         state = state.copyWith(
           book: () => book,
@@ -144,10 +179,14 @@ class ReaderNotifier extends Notifier<ReaderState> {
       currentIndex: index,
       currentChapter: () => chapter,
       scrollPosition: scrollPos,
+      currentKir: () => _kirByIndex[index],
+      currentScene: () =>
+          _kirByIndex[index] == null ? null : _sceneByIndex[index],
     );
     final repos = ref.read(repositoriesProvider);
     repos.books.markChapterRead(chapter.id);
     _updateBookProgress();
+    _prefetchKirNeighbours(index, state.chapters.length);
   }
 
   void goToNextChapter() {
@@ -187,10 +226,10 @@ class ReaderNotifier extends Notifier<ReaderState> {
   int? readingOffsetFor(int chapterIndex) =>
       _chapterReadingOffsets[chapterIndex];
 
-  /// Records the paginated reading position, debounced like scroll.
+  /// Records the reading position as a character offset, debounced like scroll.
   ///
-  /// Page turns are far less frequent than scroll ticks, but a fast flick
-  /// through several pages still shouldn't mean a write per page.
+  /// Shared by page turns and scroll ticks so Scroll ↔ Page keep the same
+  /// place in the chapter. A fast flick still shouldn't mean a write per page.
   void updateReadingOffset(int charOffset) {
     _chapterReadingOffsets[state.currentIndex] = charOffset;
     _pendingOffset = charOffset;
@@ -267,5 +306,37 @@ class ReaderNotifier extends Notifier<ReaderState> {
       stats.trackCompletion(book.id);
     }
     await _updateBookProgress();
+  }
+
+  Future<void> _prepareKir(int bookId, int chapterCount) async {
+    _kirByIndex.clear();
+    _sceneByIndex.clear();
+    _kirEnabled = false;
+    _kirBookId = bookId;
+    final count = await KomaPackageStore.chapterCount(bookId);
+    if (count == null || count != chapterCount) return;
+    _kirEnabled = true;
+  }
+
+  Future<KirChapter?> _kirFor(int index) async {
+    if (!_kirEnabled || _kirBookId == null) return null;
+    final hit = _kirByIndex[index];
+    if (hit != null) return hit;
+    final payload = await KomaPackageStore.chapterByIndex(
+      bookId: _kirBookId!,
+      index: index,
+    );
+    if (payload == null) return null;
+    _kirByIndex[index] = payload.chapter;
+    if (payload.scene != null) _sceneByIndex[index] = payload.scene!;
+    return payload.chapter;
+  }
+
+  void _prefetchKirNeighbours(int index, int length) {
+    if (!_kirEnabled) return;
+    for (final i in {index - 1, index + 1}) {
+      if (i < 0 || i >= length || _kirByIndex.containsKey(i)) continue;
+      unawaited(_kirFor(i));
+    }
   }
 }

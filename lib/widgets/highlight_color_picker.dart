@@ -32,7 +32,7 @@ class HighlightColorPicker extends StatelessWidget {
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
-        children: palette.map((key) {
+        children: colors.map((key) {
           final isSelected = selected == key;
           final color = AppColors.highlight(
             key,

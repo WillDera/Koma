@@ -17,10 +17,15 @@ import '../../core/services/app_update/get_application_release.dart';
 import '../../core/services/export_service.dart';
 import '../../core/services/extension_manager.dart';
 import '../../core/services/keiyoushi_service.dart';
+import '../../core/services/discover_metadata_cache.dart';
+import '../../core/services/download_prefs.dart';
+import '../../core/services/http/http_prefs.dart';
+import '../../core/services/http/m_client.dart';
 import '../../core/services/library_update_prefs.dart';
 import '../../core/services/metadata_enrichment_service.dart';
 import '../../core/services/source_service.dart';
 import '../../router/router.dart';
+import '../library/library_provider.dart';
 import 'custom_font_ui.dart';
 import 'open_source_licenses_sheet.dart';
 import '../../theme/app_theme.dart';
@@ -249,7 +254,7 @@ class _SourcesAndPluginsPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return const Column(
-      children: [_SourcesSection(), SizedBox(height: 20), _PluginsSection()],
+      children: [_SourcesSection(), SizedBox(height: 20), _PluginsSection(), SizedBox(height: 20), _HttpNetworkSection()],
     );
   }
 }
@@ -1359,6 +1364,9 @@ class _BookMetadataSectionState extends ConsumerState<_BookMetadataSection> {
   Widget build(BuildContext context) {
     final c = context.colors;
     final progress = ref.watch(metadataEnrichmentProvider);
+    final discoverEnrich =
+        ref.watch(discoverMetadataEnabledProvider).value ??
+        kDiscoverMetadataEnabledDefault;
     return SettingsSection(
       title: 'Book metadata',
       headerColor: AppColors.figmaAmber,
@@ -1366,6 +1374,19 @@ class _BookMetadataSectionState extends ConsumerState<_BookMetadataSection> {
       footer:
           'Looks up author, cover, genres, and release date via Open Library (primary) and Google Books (fallback). An API key improves Google Books rate limits but is optional.',
       children: [
+        SettingsRow(
+          icon: Icons.travel_explore_outlined,
+          title: 'Enrich Discover book covers',
+          subtitle: discoverEnrich
+              ? 'Open Library lookups run after each book search'
+              : 'Off — Discover shows source posters only (faster)',
+          trailing: Switch(
+            value: discoverEnrich,
+            activeThumbColor: c.accent,
+            onChanged: (v) =>
+                ref.read(discoverMetadataEnabledProvider.notifier).setEnabled(v),
+          ),
+        ),
         Padding(
           padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
           child: TextField(
@@ -1401,6 +1422,131 @@ class _BookMetadataSectionState extends ConsumerState<_BookMetadataSection> {
   }
 }
 
+// ─── Library update category filters ───────────────────────────────────
+class _LibraryCategoryFilterRow extends ConsumerStatefulWidget {
+  const _LibraryCategoryFilterRow();
+
+  @override
+  ConsumerState<_LibraryCategoryFilterRow> createState() =>
+      _LibraryCategoryFilterRowState();
+}
+
+class _LibraryCategoryFilterRowState
+    extends ConsumerState<_LibraryCategoryFilterRow> {
+  LibraryUpdateCategoryFilters? _filters;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    final f = await LibraryUpdatePrefs.loadCategoryFilters();
+    if (mounted) setState(() => _filters = f);
+  }
+
+  Future<void> _edit() async {
+    final cats = ref.read(libraryProvider).categories;
+    if (cats.isEmpty) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('No library categories yet')),
+      );
+      return;
+    }
+    final current = _filters ?? const LibraryUpdateCategoryFilters();
+    final include = Set<int>.from(current.includeCategoryIds);
+    final exclude = Set<int>.from(current.excludeCategoryIds);
+
+    final result = await showDialog<LibraryUpdateCategoryFilters>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDlg) => AlertDialog(
+          title: const Text('Update poll categories'),
+          content: SizedBox(
+            width: double.maxFinite,
+            child: SingleChildScrollView(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text('Include only (empty = all):'),
+                  ...cats.map(
+                    (c) => CheckboxListTile(
+                      contentPadding: EdgeInsets.zero,
+                      title: Text(c.name),
+                      value: include.contains(c.id),
+                      onChanged: (v) => setDlg(() {
+                        if (v == true) {
+                          include.add(c.id);
+                        } else {
+                          include.remove(c.id);
+                        }
+                      }),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  const Text('Exclude:'),
+                  ...cats.map(
+                    (c) => CheckboxListTile(
+                      contentPadding: EdgeInsets.zero,
+                      title: Text(c.name),
+                      value: exclude.contains(c.id),
+                      onChanged: (v) => setDlg(() {
+                        if (v == true) {
+                          exclude.add(c.id);
+                        } else {
+                          exclude.remove(c.id);
+                        }
+                      }),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(
+                ctx,
+                LibraryUpdateCategoryFilters(
+                  includeCategoryIds: include.toList(),
+                  excludeCategoryIds: exclude.toList(),
+                ),
+              ),
+              child: const Text('Save'),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (result == null) return;
+    await LibraryUpdatePrefs.saveCategoryFilters(result);
+    if (mounted) setState(() => _filters = result);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final f = _filters;
+    final subtitle = f == null
+        ? 'Loading…'
+        : (f.includeCategoryIds.isEmpty && f.excludeCategoryIds.isEmpty)
+        ? 'All categories (no filters)'
+        : 'Include ${f.includeCategoryIds.length} · exclude ${f.excludeCategoryIds.length}';
+    return SettingsRow(
+      icon: Icons.category_outlined,
+      title: 'Category filters',
+      subtitle: subtitle,
+      trailing: const Icon(Icons.chevron_right, size: 18),
+      onTap: _edit,
+    );
+  }
+}
+
 // ─── Download queue ────────────────────────────────────────────────────
 class _DownloadQueueSection extends ConsumerWidget {
   const _DownloadQueueSection();
@@ -1413,7 +1559,7 @@ class _DownloadQueueSection extends ConsumerWidget {
       headerColor: AppColors.figmaAmber,
       padding: const EdgeInsets.symmetric(horizontal: 16),
       footer:
-          'Chapter downloads run in a shared queue across titles. Pause, cancel, or retry from the queue screen.',
+          'Chapter downloads run in a shared queue across titles. Wi‑Fi and charging gates apply to the download queue (not manual library checks).',
       children: [
         SettingsRow(
           icon: Icons.download_outlined,
@@ -1423,6 +1569,30 @@ class _DownloadQueueSection extends ConsumerWidget {
               : 'Pause, cancel, or retry chapter downloads',
           trailing: const Icon(Icons.chevron_right, size: 18),
           onTap: () => context.pushNamed(Routes.downloadQueue),
+        ),
+        _PrefSwitchRow(
+          key: const Key('download_wifi_only'),
+          icon: Icons.wifi,
+          title: 'Download over Wi‑Fi only',
+          subtitle: 'Queue waits for an unmetered network',
+          prefKey: DownloadPrefs.keyWifiOnly,
+          defaultValue: DownloadPrefs.defaultWifiOnly,
+        ),
+        _PrefSwitchRow(
+          key: const Key('download_charging_only'),
+          icon: Icons.battery_charging_full,
+          title: 'Download only while charging',
+          subtitle: 'Queue waits until the device is charging',
+          prefKey: DownloadPrefs.keyChargingOnly,
+          defaultValue: DownloadPrefs.defaultChargingOnly,
+        ),
+        _PrefSwitchRow(
+          key: const Key('download_delete_after_read'),
+          icon: Icons.auto_delete_outlined,
+          title: 'Delete downloads after read',
+          subtitle: 'Remove local chapter files when marked read',
+          prefKey: DownloadPrefs.keyDeleteAfterRead,
+          defaultValue: DownloadPrefs.defaultDeleteAfterRead,
         ),
       ],
     );
@@ -1547,6 +1717,7 @@ class _LibraryUpdateSection extends ConsumerWidget {
           prefKey: LibraryUpdatePrefs.keyDownloadNew,
           defaultValue: LibraryUpdatePrefs.defaultDownloadNew,
         ),
+        _LibraryCategoryFilterRow(),
         SettingsRow(
           icon: Icons.refresh,
           title: 'Check now',
@@ -1848,14 +2019,16 @@ class _SourcesSectionState extends ConsumerState<_SourcesSection> {
       final repos = ref.read(repositoriesProvider);
       final sources = await repos.stats.getSources();
       if (sources.isEmpty) {
-        for (final s in SourceService.defaultSources()) {
-          await repos.stats.insertSource(s);
-        }
+        if (!mounted) return;
+        setState(() {
+          _sources = const [];
+          _loading = false;
+        });
+        return;
       }
-      final updated = await repos.stats.getSources();
       if (!mounted) return;
       setState(() {
-        _sources = updated;
+        _sources = sources;
         _loading = false;
       });
     } catch (e) {
@@ -1891,7 +2064,7 @@ class _SourcesSectionState extends ConsumerState<_SourcesSection> {
       headerColor: AppColors.figmaCyan,
       padding: const EdgeInsets.symmetric(horizontal: 16),
       footer:
-          'Discover tab searches all enabled sources. Add sources with the correct tag for the scraper to use.',
+          'Discover tab searches all enabled sources. Add sources in Settings → Ebook sources (e.g. Library Genesis with tag `libgen`).',
       children: [
         ..._sources.map(
           (s) => _SourceRow(
@@ -1946,6 +2119,9 @@ Future<Source?> _sourceDialog(BuildContext context, Source? existing) async {
   final nameCtrl = TextEditingController(text: existing?.name ?? '');
   final urlCtrl = TextEditingController(text: existing?.baseUrl ?? '');
   final langCtrl = TextEditingController(text: existing?.language ?? '');
+  final extCtrl = TextEditingController(
+    text: existing?.fileExtensions.join(', ') ?? 'epub',
+  );
   String tag = existing?.tag ?? 'libgen';
   final c = context.colors;
 
@@ -1958,14 +2134,15 @@ Future<Source?> _sourceDialog(BuildContext context, Source? existing) async {
           borderRadius: BorderRadius.circular(18),
           side: BorderSide(color: c.border, width: 0.5),
         ),
-        content: SizedBox(
-          width: double.maxFinite,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                existing == null ? 'Add source' : 'Edit source',
+        content: SingleChildScrollView(
+          child: SizedBox(
+            width: double.maxFinite,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  existing == null ? 'Add source' : 'Edit source',
                 style: TextStyle(
                   color: c.textPrimary,
                   fontSize: 16,
@@ -2001,7 +2178,7 @@ Future<Source?> _sourceDialog(BuildContext context, Source? existing) async {
               TextField(
                 controller: urlCtrl,
                 decoration: const InputDecoration(
-                  hintText: 'Base URL (e.g. https://libgen.gs/index.php)',
+                  hintText: 'Base URL (e.g. https://libgen.li/index.php)',
                 ),
               ),
               const SizedBox(height: 12),
@@ -2011,7 +2188,16 @@ Future<Source?> _sourceDialog(BuildContext context, Source? existing) async {
                   hintText: 'Language filter (e.g. English, French)',
                 ),
               ),
-            ],
+              const SizedBox(height: 12),
+                TextField(
+                  controller: extCtrl,
+                  decoration: const InputDecoration(
+                    hintText:
+                        'File types (comma-separated, e.g. epub, pdf, mobi)',
+                  ),
+                ),
+              ],
+            ),
           ),
         ),
         actions: [
@@ -2024,6 +2210,11 @@ Future<Source?> _sourceDialog(BuildContext context, Source? existing) async {
               if (nameCtrl.text.trim().isEmpty || urlCtrl.text.trim().isEmpty) {
                 return;
               }
+              final exts = extCtrl.text
+                  .split(',')
+                  .map((e) => e.trim().toLowerCase().replaceAll('.', ''))
+                  .where((e) => e.isNotEmpty)
+                  .toList();
               Navigator.of(ctx).pop(
                 Source(
                   id: existing?.id ?? 0,
@@ -2034,6 +2225,7 @@ Future<Source?> _sourceDialog(BuildContext context, Source? existing) async {
                   language: langCtrl.text.trim().isEmpty
                       ? null
                       : langCtrl.text.trim(),
+                  fileExtensions: exts,
                 ),
               );
             },
@@ -2586,6 +2778,139 @@ class _PluginsSection extends ConsumerWidget {
               : 'Revoked all user-trusted extensions',
         ),
       ),
+    );
+  }
+}
+
+// ─── HTTP / network (extension requests) ────────────────────────────────
+class _HttpNetworkSection extends StatefulWidget {
+  const _HttpNetworkSection();
+
+  @override
+  State<_HttpNetworkSection> createState() => _HttpNetworkSectionState();
+}
+
+class _HttpNetworkSectionState extends State<_HttpNetworkSection> {
+  bool _loading = true;
+  bool _dohEnabled = false;
+  late final TextEditingController _dohCtrl;
+  late final TextEditingController _cfCtrl;
+
+  @override
+  void initState() {
+    super.initState();
+    _dohCtrl = TextEditingController();
+    _cfCtrl = TextEditingController();
+    _load();
+  }
+
+  Future<void> _load() async {
+    final dohOn = await HttpPrefs.dohEnabled();
+    final dohUrl = await HttpPrefs.dohUrl();
+    final cfUrl = await HttpPrefs.cfProxyUrl();
+    if (!mounted) return;
+    setState(() {
+      _dohEnabled = dohOn;
+      _dohCtrl.text = dohUrl;
+      _cfCtrl.text = cfUrl;
+      _loading = false;
+    });
+  }
+
+  Future<void> _applyNetworkPrefs() async {
+    await HttpPrefs.setDohEnabled(_dohEnabled);
+    await HttpPrefs.setDohUrl(_dohCtrl.text);
+    await HttpPrefs.setCfProxyUrl(_cfCtrl.text);
+    await MClient.refreshTransport();
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Network settings saved')),
+    );
+  }
+
+  @override
+  void dispose() {
+    _dohCtrl.dispose();
+    _cfCtrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.colors;
+    if (_loading) {
+      return const SizedBox(
+        height: 48,
+        child: Center(child: CircularProgressIndicator(strokeWidth: 2)),
+      );
+    }
+    return SettingsSection(
+      title: 'HTTP',
+      headerColor: AppColors.figmaViolet,
+      padding: const EdgeInsets.symmetric(horizontal: 16),
+      footer:
+          'DoH resolves hostnames via DNS-over-HTTPS. CF proxy URL is tried before the in-app WebView solver (FlareSolverr / Byparr: http://host:8191). Per-source User-Agent overrides apply to all extension HTTP.',
+      children: [
+        SettingsRow(
+          icon: Icons.dns_outlined,
+          iconColor: AppColors.figmaViolet,
+          title: 'DNS-over-HTTPS',
+          subtitle: 'Resolve hostnames via DoH instead of system DNS',
+          trailing: Switch.adaptive(
+            value: _dohEnabled,
+            onChanged: (v) => setState(() => _dohEnabled = v),
+          ),
+        ),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+          child: TextField(
+            controller: _dohCtrl,
+            enabled: _dohEnabled,
+            style: TextStyle(color: c.textPrimary, fontSize: 14),
+            decoration: InputDecoration(
+              labelText: 'DoH endpoint',
+              hintText: HttpPrefs.defaultDohUrl,
+              labelStyle: TextStyle(color: c.textSecondary),
+              hintStyle: TextStyle(color: c.textTertiary),
+              enabledBorder: OutlineInputBorder(
+                borderSide: BorderSide(color: c.border),
+              ),
+              focusedBorder: OutlineInputBorder(
+                borderSide: BorderSide(color: c.accent),
+              ),
+            ),
+          ),
+        ),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+          child: TextField(
+            controller: _cfCtrl,
+            style: TextStyle(color: c.textPrimary, fontSize: 14),
+            decoration: InputDecoration(
+              labelText: 'Cloudflare proxy base URL',
+              hintText: 'http://127.0.0.1:8191',
+              labelStyle: TextStyle(color: c.textSecondary),
+              hintStyle: TextStyle(color: c.textTertiary),
+              enabledBorder: OutlineInputBorder(
+                borderSide: BorderSide(color: c.border),
+              ),
+              focusedBorder: OutlineInputBorder(
+                borderSide: BorderSide(color: c.accent),
+              ),
+            ),
+          ),
+        ),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+          child: SizedBox(
+            width: double.infinity,
+            child: FilledButton(
+              onPressed: _applyNetworkPrefs,
+              child: const Text('Save network settings'),
+            ),
+          ),
+        ),
+      ],
     );
   }
 }

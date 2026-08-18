@@ -104,6 +104,10 @@ class PaginatedChapterView extends StatelessWidget {
     return h + gap;
   }
 
+  /// Chapter title style; kept public so [KrePageView] can match it.
+  static TextStyle titleStyleFor(BuildContext context, ThemeState prov) =>
+      _titleStyle(context, prov);
+
   static TextStyle _titleStyle(BuildContext context, ThemeState prov) {
     return AppType.reading(
       fontSize: prov.fontSize,
@@ -165,6 +169,7 @@ class PaginatedChapterView extends StatelessWidget {
         children: children,
       ),
       textAlign: themeProv.textAlign,
+      textWidthBasis: TextWidthBasis.parent,
       contextMenuBuilder: emptyTextSelectionContextMenu,
       onSelectionChanged: (selection, cause) {
         if (selection.isValid && !selection.isCollapsed) {
@@ -182,10 +187,6 @@ class PaginatedChapterView extends StatelessWidget {
     );
 
     return ColoredBox(
-      // Opaque page background. The curl stacks this page under its neighbour
-      // and snapshots both to textures mid-turn, so a transparent page would
-      // let the one underneath show through — idle *and* while turning — and
-      // would capture a blank texture for the mesh to curl.
       color: themeProv.bgColor,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -196,9 +197,13 @@ class PaginatedChapterView extends StatelessWidget {
           ],
           // The page is measured to fit, so the body takes the space it needs
           // and any rounding slack falls to the bottom rather than clipping
-          // text.
-          Flexible(
-            child: Align(alignment: Alignment.topLeft, child: body),
+          // text. Width is locked so block-image WidgetSpans cannot shrink
+          // and let following text sit beside the figure.
+          Expanded(
+            child: Align(
+              alignment: Alignment.topLeft,
+              child: SizedBox(width: width, child: body),
+            ),
           ),
         ],
       ),
