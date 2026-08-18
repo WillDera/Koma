@@ -410,10 +410,15 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
       ),
     );
     if (chosen == null || chosen.isEmpty) return;
-    await _downloadDirect(result, chosen);
+    final fallbacks = links.values.where((u) => u != chosen).toList();
+    await _downloadDirect(result, chosen, fallbackUrls: fallbacks);
   }
 
-  Future<void> _downloadDirect(SourceSearchResult result, String url) async {
+  Future<void> _downloadDirect(
+    SourceSearchResult result,
+    String url, {
+    List<String> fallbackUrls = const [],
+  }) async {
     final title = result.title;
     final ext = result.extension ?? 'epub';
     setState(() => _downloading[title] = 0.0);
@@ -421,6 +426,7 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
       url,
       title,
       ext,
+      fallbackUrls: fallbackUrls,
       onProgress: (p) {
         if (mounted) setState(() => _downloading[title] = p);
       },
