@@ -807,7 +807,7 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
                 _provider?.navigateToChapter(index);
               }
             },
-            onPositionChanged: (pos, charOffset, {required exact}) {
+            onPositionChanged: (pos, charOffset, {required exact, pageEnd}) {
               _provider?.updateReadingOffset(charOffset);
               _armSnippetFocusIfNeeded();
             },
@@ -1158,11 +1158,6 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
     if (tts.isActive) {
       tts.stop();
       _ttsListening = false;
-      return;
-    }
-
-    if (tts.rememberSelection) {
-      await _startTtsFromScroll();
       return;
     }
 

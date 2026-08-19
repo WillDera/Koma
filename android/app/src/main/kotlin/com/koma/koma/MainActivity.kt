@@ -67,6 +67,12 @@ class MainActivity : FlutterActivity() {
             ),
         )
         piperChannel = piper
+        StorageAccessChannel(this).register(
+            MethodChannel(
+                flutterEngine.dartExecutor.binaryMessenger,
+                "com.koma.koma/storage",
+            ),
+        )
         searchChannel = MethodChannel(
             flutterEngine.dartExecutor.binaryMessenger,
             "com.koma.koma/search",

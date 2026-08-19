@@ -4,7 +4,7 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:path/path.dart' as p;
-import 'package:path_provider/path_provider.dart';
+import 'app_storage.dart';
 import 'package:uuid/uuid.dart';
 
 import '../models/piper_voice.dart';
@@ -77,7 +77,7 @@ class PiperVoiceService {
   String? _espeakPath;
 
   Future<Directory> _voicesRoot() async {
-    final docs = await getApplicationDocumentsDirectory();
+    final docs = await AppStorage.documents();
     final dir = Directory(p.join(docs.path, 'piper_voices'));
     if (!dir.existsSync()) {
       await dir.create(recursive: true);

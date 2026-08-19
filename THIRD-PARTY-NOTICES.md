@@ -18,7 +18,7 @@ On-device neural TTS via a native JNI bridge (`koma_piper`).
 
 ## ONNX Runtime
 
-- **Package:** `com.microsoft.onnxruntime:onnxruntime-android:1.22.0`
+- **Package:** `com.microsoft.onnxruntime:onnxruntime-android:1.23.0`
 - **Also pinned in:** [`android/app/src/main/cpp/CMakeLists.txt`](android/app/src/main/cpp/CMakeLists.txt) (`ONNXRUNTIME_VERSION`)
 - **License:** MIT
 - **Copyright:** Microsoft Corporation

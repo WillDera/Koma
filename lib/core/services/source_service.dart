@@ -5,7 +5,7 @@ import 'package:http/http.dart' as http;
 import 'package:http/io_client.dart' as http_io;
 import 'package:html/parser.dart' as html_parser;
 
-import 'package:path_provider/path_provider.dart';
+import 'app_storage.dart';
 import '../models/source.dart';
 import '../repositories/repositories.dart';
 import 'ebook_service.dart';
@@ -485,7 +485,7 @@ class SourceService {
         final bytes = await _fetchEbookBytes(attempt, onProgress);
         if (bytes == null) continue;
 
-        final dir = await getApplicationDocumentsDirectory();
+        final dir = await AppStorage.documents();
         final filePath =
             '${dir.path}/downloads/${DateTime.now().millisecondsSinceEpoch}.$ext';
         final file = File(filePath);

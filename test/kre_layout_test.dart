@@ -92,4 +92,95 @@ void main() {
     expect(layoutSlice(plain, 0, 4), 'It\u2019s');
     expect(layoutSlice(plain, 4, 11), ' a test');
   });
+
+  test('expandsImage is true for a figure with short captions', () {
+    const caption = LayoutLine(
+      y: 0,
+      height: 20,
+      charStart: 0,
+      charEnd: 4,
+      glyphs: [
+        LayoutGlyph(
+          x: 0,
+          y: 0,
+          width: 10,
+          height: 20,
+          charStart: 0,
+          charEnd: 4,
+        ),
+      ],
+    );
+    const image = LayoutLine(y: 24, height: 80, charStart: 0, charEnd: 0);
+    const page = LayoutPage(
+      charStart: 0,
+      charEnd: 4,
+      lines: [caption, image, caption],
+    );
+    expect(page.expandsImage, isTrue);
+    expect(page.isImageOnly, isFalse);
+
+    const crowded = LayoutPage(
+      charStart: 0,
+      charEnd: 4,
+      lines: [
+        caption,
+        caption,
+        caption,
+        caption,
+        caption,
+        caption,
+        image,
+      ],
+    );
+    expect(crowded.expandsImage, isFalse);
+  });
+
+  test('imageExpandLayout leaves a band for captions', () {
+    const caption = LayoutLine(
+      y: 10,
+      height: 20,
+      charStart: 0,
+      charEnd: 4,
+      glyphs: [
+        LayoutGlyph(
+          x: 0,
+          y: 10,
+          width: 10,
+          height: 20,
+          charStart: 0,
+          charEnd: 4,
+        ),
+      ],
+    );
+    const image = LayoutLine(y: 40, height: 80, charStart: 0, charEnd: 0);
+    const below = LayoutLine(
+      y: 130,
+      height: 20,
+      charStart: 4,
+      charEnd: 8,
+      glyphs: [
+        LayoutGlyph(
+          x: 0,
+          y: 130,
+          width: 10,
+          height: 20,
+          charStart: 4,
+          charEnd: 8,
+        ),
+      ],
+    );
+    const page = LayoutPage(
+      charStart: 0,
+      charEnd: 8,
+      lines: [caption, image, below],
+    );
+    final layout = imageExpandLayout(page, 600);
+    expect(layout.expand, isTrue);
+    expect(layout.top, 10 + 20 + 8);
+    expect(layout.bottom, 20 + 8);
+
+    final rebased = rebaseExpandedImagePage(page, layout, 600);
+    final trail = rebased.lines.last;
+    expect(trail.y, closeTo(600 - 20, 0.5));
+  });
 }

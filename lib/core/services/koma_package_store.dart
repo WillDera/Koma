@@ -1,7 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
-import 'package:path_provider/path_provider.dart';
+import 'app_storage.dart';
 
 import '../../features/reader/html/kir_model.dart';
 import '../../features/reader/layout/kre_layout.dart';
@@ -25,7 +25,7 @@ class KomaPackageStore {
   static const _rootName = 'koma';
 
   static Future<Directory> _root() async {
-    final docs = await getApplicationDocumentsDirectory();
+    final docs = await AppStorage.documents();
     final dir = Directory('${docs.path}/$_rootName');
     if (!await dir.exists()) await dir.create(recursive: true);
     return dir;

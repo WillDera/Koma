@@ -54,8 +54,8 @@ class DeviceTtsEngine implements TtsEngine {
     } catch (_) {
       _voices = [];
     }
-    await _tts.setSpeechRate(_rate);
-    await _tts.setPitch(_pitch);
+    await _tts.setSpeechRate(_rate.clamp(0.0, 1.0));
+    await _tts.setPitch(_pitch.clamp(0.5, 2.0));
   }
 
   @override
@@ -180,14 +180,14 @@ class DeviceTtsEngine implements TtsEngine {
 
   @override
   void setRate(double rate) {
-    _rate = rate;
-    _tts.setSpeechRate(rate);
+    _rate = rate.clamp(0.0, 1.0);
+    _tts.setSpeechRate(_rate);
   }
 
   @override
   void setPitch(double pitch) {
-    _pitch = pitch;
-    _tts.setPitch(pitch);
+    _pitch = pitch.clamp(0.5, 2.0);
+    _tts.setPitch(_pitch);
   }
 
   @override

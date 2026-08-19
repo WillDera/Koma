@@ -5,7 +5,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart' as webview;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path/path.dart' as p;
-import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:workmanager/workmanager.dart';
 
@@ -13,6 +12,7 @@ import 'app.dart';
 import 'core/isar/isar.dart';
 import 'core/providers.dart';
 import 'core/repositories/repositories.dart';
+import 'core/services/app_storage.dart';
 import 'core/services/background_task.dart';
 import 'core/services/extension_install_listener.dart';
 import 'core/services/extension_manager.dart';
@@ -38,91 +38,120 @@ void main() {
     // Keep the native LaunchTheme visible until startup work finishes
     // (flutter_native_splash is dev-only for asset generation).
     widgetsBinding.deferFirstFrame();
+    try {
+      // Rust metadata engine (Open Library / Google Books) via flutter_rust_bridge.
+      await RustLib.init();
+      await AppStorage.init();
 
-    // Rust metadata engine (Open Library / Google Books) via flutter_rust_bridge.
-    await RustLib.init();
+      // WorkManager periodic polling (library updates). Initialized once so the
+      // native side can wake the Dart callback in a background isolate.
+      unawaited(Workmanager().initialize(backgroundCallbackDispatcher));
+      // System notifications (library + extension updates).
+      unawaited(NotificationService.instance.init());
 
-    // WorkManager periodic polling (library updates). Initialized once so the
-    // native side can wake the Dart callback in a background isolate.
-    unawaited(Workmanager().initialize(backgroundCallbackDispatcher));
-    // System notifications (library + extension updates).
-    unawaited(NotificationService.instance.init());
-
-    final isar = await openIsar();
-    SourcePrefStore.bind(isar);
-    final repos = Repositories(isar);
+      final isar = await openIsar();
+      SourcePrefStore.bind(isar);
+      final repos = Repositories(isar);
 
       // Wire the Cloudflare / cookie HTTP pipeline (mangayomi parity): the
-    // intercepted client reads cookies through MClient.cookies, and the local
-    // loopback server drives the headless-WebView challenge solver.
-    MClient.cookies = repos.cookies;
-    unawaited(webviewServer());
-    if (!kIsWeb && defaultTargetPlatform == TargetPlatform.windows) {
-      final availableVersion = await webview.WebViewEnvironment
-          .getAvailableVersion();
-      if (availableVersion != null) {
-        final document = await getApplicationDocumentsDirectory();
-        webViewEnvironment = await webview.WebViewEnvironment.create(
-          settings: webview.WebViewEnvironmentSettings(
-            userDataFolder: p.join(document.path, 'flutter_inappwebview'),
-          ),
-        );
-      }
-    }
-
-    final statsService = StatsService(repos);
-
-    final keiyoushiService = KeiyoushiService();
-    final extensionManager = ExtensionManager(repos, keiyoushiService,
-    );
-    ExtensionInstallListener.init(extensionManager);
-    SearchIntentListener.init();
-    unawaited(extensionManager.reloadAll().then((_) {
-      unawaited(_checkExtensionUpdates(extensionManager));
-    }));
-
-
-    final container = ProviderContainer(
-      overrides: [
-        isarProvider.overrideWithValue(isar),
-        statsServiceProvider.overrideWithValue(statsService),
-        keiyoushiServiceProvider.overrideWithValue(keiyoushiService),
-        extensionManagerProvider.overrideWithValue(extensionManager),
-      ],
-    );
-
-    // Initialize Notifiers that need SharedPreferences loaded before
-    // first paint. The Notifier instances are created by the container
-    // automatically — we just call their init() methods.
-    await container.read(themeProvider.notifier).init();
-    await container.read(libraryProvider.notifier).init();
-    // Start the library chapter poller (reads its enabled/interval prefs and
-    // schedules a periodic check if auto-update is on).
-    await container.read(libraryUpdateProvider.notifier).init();
-    // Restore persisted chapter download queue (Mihon DownloadStore parity).
-    unawaited(container.read(downloadManagerProvider.notifier).restore());
-
-    runApp(
-      UncontrolledProviderScope(
-        container: container,
-        child: const KomaApp(),
-      ),
-    );
-
-    widgetsBinding.allowFirstFrame();
-
-    // Surface the extension-update badge once the startup index check has
-    // written versionLast flags for every repo (mangayomi parity: it shows a
-    // system notification when updates are found on app start).
-    unawaited(_checkExtensionUpdates(extensionManager).then((_) async {
-      try {
-        await container.read(extensionUpdateCountProvider.notifier).refresh();
-        final count = container.read(extensionUpdateCountProvider);
-        if (count > 0) {
-          await NotificationService.instance.notifyExtensionUpdates(count);
+      // intercepted client reads cookies through MClient.cookies, and the local
+      // loopback server drives the headless-WebView challenge solver.
+      MClient.cookies = repos.cookies;
+      unawaited(webviewServer());
+      if (!kIsWeb && defaultTargetPlatform == TargetPlatform.windows) {
+        final availableVersion =
+            await webview.WebViewEnvironment.getAvailableVersion();
+        if (availableVersion != null) {
+          final document = await AppStorage.documents();
+          webViewEnvironment = await webview.WebViewEnvironment.create(
+            settings: webview.WebViewEnvironmentSettings(
+              userDataFolder: p.join(document.path, 'flutter_inappwebview'),
+            ),
+          );
         }
-      } catch (_) {}
-    }));
+      }
+
+      final statsService = StatsService(repos);
+
+      final keiyoushiService = KeiyoushiService();
+      final extensionManager = ExtensionManager(
+        repos,
+        keiyoushiService,
+      );
+      ExtensionInstallListener.init(extensionManager);
+      SearchIntentListener.init();
+      unawaited(extensionManager.reloadAll().then((_) {
+        unawaited(_checkExtensionUpdates(extensionManager));
+      }));
+
+      final container = ProviderContainer(
+        overrides: [
+          isarProvider.overrideWithValue(isar),
+          statsServiceProvider.overrideWithValue(statsService),
+          keiyoushiServiceProvider.overrideWithValue(keiyoushiService),
+          extensionManagerProvider.overrideWithValue(extensionManager),
+        ],
+      );
+
+      // Initialize Notifiers that need SharedPreferences loaded before
+      // first paint. The Notifier instances are created by the container
+      // automatically — we just call their init() methods.
+      try {
+        await container.read(themeProvider.notifier).init();
+      } catch (e) {
+        debugPrint('theme init skipped: $e');
+      }
+      try {
+        await container.read(libraryProvider.notifier).init();
+      } catch (e) {
+        debugPrint('library init skipped: $e');
+      }
+      // Start the library chapter poller (reads its enabled/interval prefs and
+      // schedules a periodic check if auto-update is on).
+      try {
+        await container.read(libraryUpdateProvider.notifier).init();
+      } catch (e) {
+        debugPrint('library update init skipped: $e');
+      }
+      // Restore persisted chapter download queue (Mihon DownloadStore parity).
+      unawaited(container.read(downloadManagerProvider.notifier).restore());
+
+      runApp(
+        UncontrolledProviderScope(
+          container: container,
+          child: const KomaApp(),
+        ),
+      );
+
+      // Surface the extension-update badge once the startup index check has
+      // written versionLast flags for every repo (mangayomi parity: it shows a
+      // system notification when updates are found on app start).
+      unawaited(_checkExtensionUpdates(extensionManager).then((_) async {
+        try {
+          await container.read(extensionUpdateCountProvider.notifier).refresh();
+          final count = container.read(extensionUpdateCountProvider);
+          if (count > 0) {
+            await NotificationService.instance.notifyExtensionUpdates(count);
+          }
+        } catch (_) {}
+      }));
+    } catch (e, stack) {
+      debugPrint('Startup failed: $e\n$stack');
+      runApp(
+        MaterialApp(
+          home: Scaffold(
+            body: SafeArea(
+              child: Padding(
+                padding: const EdgeInsets.all(24),
+                child: SelectableText('Startup failed:\n$e'),
+              ),
+            ),
+          ),
+        ),
+      );
+    } finally {
+      widgetsBinding.allowFirstFrame();
+    }
   }, (error, stack) {
     debugPrint('Unhandled error: $error\n$stack');
   });

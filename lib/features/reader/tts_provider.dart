@@ -26,6 +26,7 @@ class TtsProvider extends ChangeNotifier {
   bool _rememberSelection = false;
   bool _optimistic = false;
   bool _prefsLoaded = false;
+  Future<void>? _prefsInFlight;
   double _rate = 0.5;
   double _pitch = 1.0;
 
@@ -84,41 +85,50 @@ class TtsProvider extends ChangeNotifier {
   int get selectedVoiceIndex =>
       voices.indexWhere((v) => v.id == _engine.selectedVoice?.id);
 
-  Future<void> loadPrefs() async {
-    if (_prefsLoaded) return;
-    final prefs = await SharedPreferences.getInstance();
-    _rememberSelection = prefs.getBool(prefsRemember) ?? false;
-    _optimistic = prefs.getBool(prefsOptimistic) ?? false;
-    final engineName = prefs.getString(prefsEngine);
-    final type = switch (engineName) {
-      'edge' => TtsEngineType.edge,
-      'piper' => TtsEngineType.piper,
-      // Migrate removed Google Cloud preference to device.
-      'googleCloud' => TtsEngineType.device,
-      _ => TtsEngineType.device,
-    };
-    await _switchEngine(type);
-    await _engine.init();
+  Future<void> loadPrefs() {
+    if (_prefsLoaded) return Future.value();
+    return _prefsInFlight ??= _loadPrefsBody();
+  }
 
-    final savedRate = prefs.getDouble(prefsRate);
-    final savedPitch = prefs.getDouble(prefsPitch);
-    _rate = savedRate ?? _defaultRate(type);
-    _pitch = savedPitch ?? _defaultPitch(type);
-    _engine.setRate(_rate);
-    _engine.setPitch(_pitch);
+  Future<void> _loadPrefsBody() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      _rememberSelection = prefs.getBool(prefsRemember) ?? false;
+      _optimistic = prefs.getBool(prefsOptimistic) ?? false;
+      final engineName = prefs.getString(prefsEngine);
+      final type = switch (engineName) {
+        'edge' => TtsEngineType.edge,
+        'piper' => TtsEngineType.piper,
+        'googleCloud' => TtsEngineType.device,
+        'neural' => TtsEngineType.device,
+        _ => TtsEngineType.device,
+      };
+      await _switchEngine(type);
+      await _engine.init();
 
-    final voiceId = prefs.getString(prefsVoice);
-    if (voiceId != null && voiceId.isNotEmpty) {
-      final match = voices.cast<TtsVoice?>().firstWhere(
-        (v) => v!.id == voiceId,
-        orElse: () => null,
-      );
-      if (match != null) await _engine.setVoice(match);
+      _rate = _coerce(prefs.getDouble(prefsRate), type, rate: true);
+      _pitch = _coerce(prefs.getDouble(prefsPitch), type, rate: false);
+      _engine.setRate(_rate);
+      _engine.setPitch(_pitch);
+
+      final voiceId = prefs.getString(prefsVoice);
+      if (voiceId != null && voiceId.isNotEmpty) {
+        final match = voices.cast<TtsVoice?>().firstWhere(
+          (v) => v!.id == voiceId,
+          orElse: () => null,
+        );
+        if (match != null) await _engine.setVoice(match);
+      }
+
+      _configureEdge();
+      _prefsLoaded = true;
+      notifyListeners();
+    } catch (e, st) {
+      debugPrint('[TTS] loadPrefs failed: $e\n$st');
+      _prefsLoaded = true;
+    } finally {
+      _prefsInFlight = null;
     }
-
-    _configureEdge();
-    _prefsLoaded = true;
-    notifyListeners();
   }
 
   Future<void> persistSelection() async {
@@ -163,6 +173,26 @@ class TtsProvider extends ChangeNotifier {
     TtsEngineType.edge => -0.02,
     TtsEngineType.piper => 0.0,
   };
+
+  static (double, double) _rateRange(TtsEngineType type) => switch (type) {
+    TtsEngineType.device => (0.0, 1.0),
+    TtsEngineType.edge => (0.25, 2.0),
+    TtsEngineType.piper => (0.25, 2.0),
+  };
+
+  static (double, double) _pitchRange(TtsEngineType type) => switch (type) {
+    TtsEngineType.device => (0.5, 2.0),
+    TtsEngineType.edge => (-0.5, 0.5),
+    TtsEngineType.piper => (-0.5, 0.5),
+  };
+
+  static double _coerce(double? saved, TtsEngineType type, {required bool rate}) {
+    final fallback = rate ? _defaultRate(type) : _defaultPitch(type);
+    if (saved == null) return fallback;
+    final (min, max) = rate ? _rateRange(type) : _pitchRange(type);
+    if (saved < min || saved > max) return fallback;
+    return saved;
+  }
 
   void _configureEdge() {
     if (_engine is EdgeTtsEngine) {

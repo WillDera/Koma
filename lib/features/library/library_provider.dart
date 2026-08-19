@@ -6,7 +6,7 @@ import 'package:collection/collection.dart';
 import 'package:crypto/crypto.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:path_provider/path_provider.dart';
+import '../../core/services/app_storage.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:workmanager/workmanager.dart';
 
@@ -203,7 +203,7 @@ class LibraryNotifier extends Notifier<LibraryState> {
     final manga = state.mangas.firstWhereOrNull((m) => m.id == id);
     if (manga != null) {
       try {
-        final supportDir = await getApplicationSupportDirectory();
+        final supportDir = await AppStorage.support();
         final mangaKey = sha256
             .convert(utf8.encode(manga.url))
             .toString()
@@ -214,7 +214,7 @@ class LibraryNotifier extends Notifier<LibraryState> {
         if (await mangaDir.exists()) {
           await mangaDir.delete(recursive: true);
         }
-        final docsDir = await getApplicationDocumentsDirectory();
+        final docsDir = await AppStorage.documents();
         final thumbHash = sha256
             .convert(utf8.encode(manga.imageUrl ?? ''))
             .toString();
@@ -282,7 +282,7 @@ class LibraryNotifier extends Notifier<LibraryState> {
         final manga = state.mangas.firstWhereOrNull((m) => m.id == id);
         if (manga != null) {
           try {
-            final supportDir = await getApplicationSupportDirectory();
+            final supportDir = await AppStorage.support();
             final mangaKey = sha256
                 .convert(utf8.encode(manga.url))
                 .toString()
@@ -293,7 +293,7 @@ class LibraryNotifier extends Notifier<LibraryState> {
             if (await mangaDir.exists()) {
               await mangaDir.delete(recursive: true);
             }
-            final docsDir = await getApplicationDocumentsDirectory();
+            final docsDir = await AppStorage.documents();
             final thumbHash = sha256
                 .convert(utf8.encode(manga.imageUrl ?? ''))
                 .toString();

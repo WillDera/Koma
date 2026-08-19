@@ -1,6 +1,6 @@
 import 'package:isar_community/isar.dart';
 import 'package:path/path.dart' as p;
-import 'package:path_provider/path_provider.dart';
+import '../services/app_storage.dart';
 
 import 'collections/book.dart';
 import 'collections/book_metadata.dart';
@@ -76,7 +76,7 @@ const List<CollectionSchema<dynamic>> komaIsarSchemas = [
 
 /// Open (or create) the Koma Isar instance in the app documents dir.
 Future<Isar> openIsar({String? directory, String? file}) async {
-  final dir = directory ?? (await getApplicationDocumentsDirectory()).path;
+  final dir = directory ?? (await AppStorage.documents()).path;
   return Isar.open(
     komaIsarSchemas,
     directory: dir,

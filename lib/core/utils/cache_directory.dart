@@ -1,7 +1,7 @@
 import 'dart:io';
 
 import 'package:path/path.dart' as path;
-import 'package:path_provider/path_provider.dart';
+import '../services/app_storage.dart';
 
 /// LNStash-side mirror of mangayomi's [StorageProvider] cache-directory APIs.
 ///
@@ -20,7 +20,7 @@ class CacheDirectory {
   /// This mirrors mangayomi's [StorageProvider.getCacheDirectory] precisely,
   /// including the default folder name.
   static Future<Directory> get(String? imageCacheFolderName) async {
-    final dir = await getApplicationCacheDirectory();
+    final dir = await AppStorage.cache();
     final cacheImagesDirectory = path.join(
       dir.path,
       imageCacheFolderName ?? 'cacheimagecover',

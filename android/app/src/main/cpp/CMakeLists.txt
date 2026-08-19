@@ -19,7 +19,7 @@ include(ExternalProject)
 # and must stay on the same version.
 
 if(NOT DEFINED ONNXRUNTIME_VERSION)
-    set(ONNXRUNTIME_VERSION "1.22.0")
+    set(ONNXRUNTIME_VERSION "1.23.0")
 endif()
 
 set(ONNXRUNTIME_ROOT "${PIPER_ROOT}/onnxruntime")

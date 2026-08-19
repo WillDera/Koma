@@ -9,7 +9,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:http/http.dart' as http;
 import 'package:path/path.dart' as p;
-import 'package:path_provider/path_provider.dart';
+import '../../core/services/app_storage.dart';
 import 'package:scrollable_positioned_list/scrollable_positioned_list.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
@@ -385,7 +385,7 @@ class _MangaReaderScreenState extends ConsumerState<MangaReaderScreen>
     required String mangaUrl,
     required String chapterUrl,
   }) async {
-    final supportDir = await getApplicationSupportDirectory();
+    final supportDir = await AppStorage.support();
     final mangaKey =
         sha256.convert(utf8.encode(mangaUrl)).toString().substring(0, 16);
     final chKey =

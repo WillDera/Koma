@@ -3,7 +3,7 @@ import 'dart:io';
 
 import 'package:flutter/services.dart';
 import 'package:path/path.dart' as p;
-import 'package:path_provider/path_provider.dart';
+import 'app_storage.dart';
 import 'package:uuid/uuid.dart';
 
 import '../models/custom_font.dart';
@@ -20,7 +20,7 @@ class CustomFontService {
   final Set<String> _loadedFamilies = {};
 
   Future<Directory> _fontsRoot() async {
-    final docs = await getApplicationDocumentsDirectory();
+    final docs = await AppStorage.documents();
     final dir = Directory(p.join(docs.path, 'fonts'));
     if (!dir.existsSync()) {
       await dir.create(recursive: true);

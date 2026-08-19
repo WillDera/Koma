@@ -104,7 +104,7 @@ class OpenSourceLicensesSheet extends StatelessWidget {
                         _heading(c, 'ONNX Runtime'),
                         const SizedBox(height: 4),
                         Text(
-                          'Microsoft ONNX Runtime (onnxruntime-android 1.22.0). '
+                          'Microsoft ONNX Runtime (onnxruntime-android 1.23.0). '
                           'Licensed under MIT.',
                           style: TextStyle(
                             color: c.textSecondary,

@@ -1,7 +1,7 @@
 import 'dart:io';
 
 import 'package:path/path.dart' as p;
-import 'package:path_provider/path_provider.dart';
+import 'app_storage.dart';
 
 import '../models/manga.dart';
 import '../models/manga_chapter.dart';
@@ -233,7 +233,7 @@ class MigrateMangaUseCase {
   Future<String?> _copyCustomCover(String fromPath, int targetMangaId) async {
     final src = File(fromPath);
     if (!await src.exists()) return null;
-    final support = await getApplicationSupportDirectory();
+    final support = await AppStorage.support();
     final dir = Directory(p.join(support.path, 'manga_covers'));
     await dir.create(recursive: true);
     final ext = p.extension(fromPath);
