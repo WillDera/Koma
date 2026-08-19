@@ -11,6 +11,8 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../../core/app_version.dart';
 import '../../core/models/source.dart';
 import '../../core/providers.dart';
+import '../../core/services/app_storage.dart';
+import '../../core/services/android_storage_access.dart';
 import '../../core/services/app_update/app_update_checker.dart';
 import '../../core/services/app_update/app_update_manager.dart';
 import '../../core/services/app_update/get_application_release.dart';
@@ -162,7 +164,7 @@ class _SettingsHub extends StatelessWidget {
           icon: Icons.storage_outlined,
           iconColor: AppColors.figmaAmber,
           title: 'Data',
-          subtitle: 'Export and import your library data',
+          subtitle: 'Storage folder, export and import',
           onTap: () => _open(context, 'Data', const _DataAndStatsPage()),
         ),
         SettingsRow(
@@ -234,6 +236,8 @@ class _DataAndStatsPage extends StatelessWidget {
   Widget build(BuildContext context) {
     return const Column(
       children: [
+        _StorageSection(),
+        SizedBox(height: 20),
         _DataSection(),
         SizedBox(height: 20),
         _DownloadQueueSection(),
@@ -1853,6 +1857,208 @@ class _TintedActionChip extends StatelessWidget {
   }
 }
 
+// ─── Storage ─────────────────────────────────────────────────────────────
+class _StorageSection extends ConsumerStatefulWidget {
+  const _StorageSection();
+
+  @override
+  ConsumerState<_StorageSection> createState() => _StorageSectionState();
+}
+
+class _StorageSectionState extends ConsumerState<_StorageSection> {
+  bool _picking = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final amber = AppColors.figmaAmber;
+    final path = AppStorage.rootPath;
+    return SettingsSection(
+      title: 'Storage',
+      headerColor: amber,
+      padding: const EdgeInsets.symmetric(horizontal: 16),
+      footer:
+          'Downloaded ebooks, manga chapters, covers, fonts, Piper voices, '
+          'and the library database are stored here. Changing the folder '
+          'moves Koma’s library files. On Android 11+, shared folders '
+          '(like /storage/emulated/0/koma) need All files access.',
+      children: [
+        SettingsRow(
+          icon: Icons.folder_outlined,
+          iconColor: amber,
+          title: 'Data folder',
+          subtitle: path ?? 'App default (internal storage)',
+          trailing: _picking
+              ? const SizedBox(
+                  width: 18,
+                  height: 18,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              : const Icon(Icons.chevron_right),
+          onTap: _picking ? null : _pickFolder,
+        ),
+        if (path != null)
+          SettingsRow(
+            icon: Icons.restart_alt,
+            iconColor: amber,
+            title: 'Use app default',
+            subtitle: 'Move data back to internal storage',
+            onTap: _clearFolder,
+          ),
+      ],
+    );
+  }
+
+  Future<void> _pickFolder() async {
+    setState(() => _picking = true);
+    try {
+      if (!await _ensureSharedStorageAccess()) return;
+      final picked = await FilePicker.getDirectoryPath(
+        dialogTitle: 'Choose Koma data folder',
+      );
+      if (picked == null || !mounted) return;
+      if (AndroidStorageAccess.needsAllFilesAccess(picked) &&
+          !await AndroidStorageAccess.hasAllFilesAccess()) {
+        if (mounted) {
+          StashToast.show(
+            context,
+            message:
+                'Android blocked this folder. Grant All files access, then try again.',
+            icon: Icons.error_outline,
+          );
+        }
+        return;
+      }
+      await _relocateTo(picked);
+    } catch (e) {
+      if (mounted) {
+        StashToast.show(
+          context,
+          message: _folderError(e),
+          icon: Icons.error_outline,
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _picking = false);
+    }
+  }
+
+  Future<bool> _ensureSharedStorageAccess() async {
+    if (!AndroidStorageAccess.needsAllFilesAccess('/storage/emulated/0')) {
+      return true;
+    }
+    if (await AndroidStorageAccess.hasAllFilesAccess()) return true;
+    if (!mounted) return false;
+    final go = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('All files access'),
+        content: const Text(
+          'Android does not let apps write the library database into a '
+          'shared folder (for example /storage/emulated/0/koma) unless you '
+          'grant All files access. This is a system restriction, not a '
+          'Koma bug.\n\n'
+          'Open the next screen, enable access for Koma, then come back '
+          'and choose the folder again.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Grant access'),
+          ),
+        ],
+      ),
+    );
+    if (go != true) return false;
+    await AndroidStorageAccess.requestAllFilesAccess();
+    return false;
+  }
+
+  String _folderError(Object e) {
+    final text = e.toString();
+    if (text.contains('Operation not permitted') ||
+        text.contains('PathAccessException') ||
+        text.contains('errno = 1')) {
+      return 'Android blocked writing to that folder. Grant All files '
+          'access in system settings, then try again.';
+    }
+    return 'Could not set folder: $e';
+  }
+
+  Future<void> _clearFolder() async {
+    try {
+      await _relocateTo(null);
+    } catch (e) {
+      if (mounted) {
+        StashToast.show(
+          context,
+          message: 'Could not restore default folder: $e',
+          icon: Icons.error_outline,
+        );
+      }
+    }
+  }
+
+  Future<void> _relocateTo(String? path) async {
+    if (!mounted) return;
+    showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => const AlertDialog(
+        title: Text('Moving data'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            CircularProgressIndicator(),
+            SizedBox(height: 16),
+            Text(
+              'Koma is moving your library to the new folder. '
+              'Keep the app open until this finishes.',
+            ),
+          ],
+        ),
+      ),
+    );
+    try {
+      try {
+        await ref.read(downloadManagerProvider.notifier).manager.pauseDownloads();
+      } catch (_) {}
+      try {
+        await ref.read(isarProvider).close();
+      } catch (_) {}
+      await AppStorage.migrateAndSetRoot(path);
+    } finally {
+      if (mounted) Navigator.of(context, rootNavigator: true).pop();
+    }
+    if (!mounted) return;
+    setState(() {});
+    await _promptRestart();
+  }
+
+  Future<void> _promptRestart() async {
+    if (!mounted) return;
+    await showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Restart required'),
+        content: const Text(
+          'Your files are in the new folder. Close and reopen Koma so it '
+          'can open the library from there.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('OK'),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 // ─── Data ────────────────────────────────────────────────────────────────
 class _DataSection extends ConsumerStatefulWidget {
   const _DataSection();
@@ -1927,19 +2133,33 @@ class _DataSectionState extends ConsumerState<_DataSection> {
           .replaceAll(':', '-')
           .split('.')
           .first;
-      final saved = await FilePicker.saveFile(
-        dialogTitle: 'Save Koma backup',
-        fileName: 'koma_$stamp.json',
-        type: FileType.custom,
-        allowedExtensions: const ['json'],
-        bytes: Uint8List.fromList(utf8.encode(jsonStr)),
-      );
-      if (mounted && saved != null) {
-        StashToast.show(
-          context,
-          message: 'Backup saved',
-          icon: Icons.check,
+      final fileName = 'koma_$stamp.json';
+      if (AppStorage.usesCustomRoot) {
+        final dir = Directory('${(await AppStorage.documents()).path}/exports');
+        if (!await dir.exists()) await dir.create(recursive: true);
+        await File('${dir.path}/$fileName').writeAsString(jsonStr);
+        if (mounted) {
+          StashToast.show(
+            context,
+            message: 'Backup saved to exports/$fileName',
+            icon: Icons.check,
+          );
+        }
+      } else {
+        final saved = await FilePicker.saveFile(
+          dialogTitle: 'Save Koma backup',
+          fileName: fileName,
+          type: FileType.custom,
+          allowedExtensions: const ['json'],
+          bytes: Uint8List.fromList(utf8.encode(jsonStr)),
         );
+        if (mounted && saved != null) {
+          StashToast.show(
+            context,
+            message: 'Backup saved',
+            icon: Icons.check,
+          );
+        }
       }
     } catch (e) {
       if (mounted) {

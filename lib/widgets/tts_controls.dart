@@ -128,6 +128,7 @@ class TtsSettingsSheet extends StatefulWidget {
     if (!context.mounted) return false;
     await showModalBottomSheet<void>(
       context: context,
+      useRootNavigator: true,
       backgroundColor: Colors.transparent,
       isScrollControlled: true,
       builder: (_) => TtsSettingsSheet(
@@ -342,7 +343,18 @@ class _TtsSettingsSheetState extends State<TtsSettingsSheet> {
                     style: TextStyle(color: c.textSecondary, fontSize: 13),
                   ),
                   Slider(
-                    value: _rate,
+                    value: _rate.clamp(
+                      switch (_engineType) {
+                        TtsEngineType.device => 0.0,
+                        TtsEngineType.edge => 0.25,
+                        TtsEngineType.piper => 0.25,
+                      },
+                      switch (_engineType) {
+                        TtsEngineType.device => 1.0,
+                        TtsEngineType.edge => 2.0,
+                        TtsEngineType.piper => 2.0,
+                      },
+                    ),
                     min: switch (_engineType) {
                       TtsEngineType.device => 0.0,
                       TtsEngineType.edge => 0.25,
@@ -429,7 +441,7 @@ class _TtsSettingsSheetState extends State<TtsSettingsSheet> {
                 style: TextStyle(color: c.textPrimary, fontSize: 14),
               ),
               subtitle: Text(
-                'Skip this sheet next time and start with these settings',
+                'Keep engine, voice, speed, and pitch',
                 style: TextStyle(color: c.textSecondary, fontSize: 12),
               ),
               value: _remember,

@@ -1,7 +1,7 @@
 import 'dart:io';
 import 'package:epub_pro/epub_pro.dart';
 import 'package:image/image.dart' as img;
-import 'package:path_provider/path_provider.dart';
+import 'app_storage.dart';
 import '../models/book.dart';
 import '../models/chapter.dart';
 import 'ebook_media_store.dart';
@@ -41,7 +41,7 @@ class EpubService {
       try {
         final coverImage = epubBook.coverImage;
         if (coverImage != null) {
-          final appDir = await getApplicationDocumentsDirectory();
+          final appDir = await AppStorage.documents();
           final coverDir = Directory('${appDir.path}/covers');
           if (!await coverDir.exists()) {
             await coverDir.create(recursive: true);

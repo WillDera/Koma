@@ -1,7 +1,7 @@
 import 'dart:io';
 
 import 'package:google_fonts/google_fonts.dart';
-import 'package:path_provider/path_provider.dart';
+import '../../../core/services/app_storage.dart';
 
 import '../../../core/services/custom_font_service.dart';
 import '../../../theme/theme_state.dart';
@@ -38,7 +38,7 @@ Future<String?> readingFontFilePath(ThemeState theme) async {
 
 Future<String?> _cachedGoogleFontFile(String family) async {
   try {
-    final dir = await getApplicationSupportDirectory();
+    final dir = await AppStorage.support();
     if (!dir.existsSync()) return null;
     final key = family.toLowerCase();
     File? regular;

@@ -4,7 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:http/http.dart' as http;
 import 'package:path/path.dart' as p;
-import 'package:path_provider/path_provider.dart';
+import 'app_storage.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/book.dart';
@@ -172,7 +172,7 @@ class MetadataEnrichmentService {
         );
         if (body.isEmpty) return null;
 
-        final appDir = await getApplicationDocumentsDirectory();
+        final appDir = await AppStorage.documents();
         final coverDir = Directory(p.join(appDir.path, 'covers'));
         if (!await coverDir.exists()) {
           await coverDir.create(recursive: true);

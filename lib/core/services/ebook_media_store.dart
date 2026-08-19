@@ -2,7 +2,7 @@ import 'dart:io';
 import 'dart:math';
 
 import 'package:crypto/crypto.dart';
-import 'package:path_provider/path_provider.dart';
+import 'app_storage.dart';
 
 import '../models/chapter.dart';
 
@@ -25,7 +25,7 @@ class EbookMediaStore {
   }
 
   static Future<Directory> _root() async {
-    final docs = await getApplicationDocumentsDirectory();
+    final docs = await AppStorage.documents();
     final dir = Directory('${docs.path}/$_rootName');
     if (!await dir.exists()) await dir.create(recursive: true);
     return dir;

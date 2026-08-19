@@ -1,6 +1,6 @@
 import 'dart:io';
 import 'package:flutter/foundation.dart';
-import 'package:path_provider/path_provider.dart';
+import 'app_storage.dart';
 import '../models/book.dart';
 import '../models/chapter.dart';
 import 'ebook_media_store.dart';
@@ -95,7 +95,7 @@ class MobiService {
       String? coverPath;
       if (raw.coverBytes != null && raw.coverExtension != null) {
         try {
-          final appDir = await getApplicationDocumentsDirectory();
+          final appDir = await AppStorage.documents();
           final coverDir = Directory('${appDir.path}/covers');
           if (!await coverDir.exists()) await coverDir.create(recursive: true);
           final outFile = File(

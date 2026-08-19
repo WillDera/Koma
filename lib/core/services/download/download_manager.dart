@@ -5,7 +5,7 @@ import 'dart:io';
 import 'package:crypto/crypto.dart';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
-import 'package:path_provider/path_provider.dart';
+import '../app_storage.dart';
 import 'package:workmanager/workmanager.dart';
 
 import '../../../eval/dispatch_service.dart';
@@ -479,7 +479,7 @@ class DownloadManager extends ChangeNotifier {
     download.pagesDone = 0;
     notifyListeners();
 
-    final supportDir = await getApplicationSupportDirectory();
+    final supportDir = await AppStorage.support();
     final mangaKey = _urlKey(download.mangaUrl);
     final chKey = _urlKey(download.chapterUrl);
     final chDir = Directory(

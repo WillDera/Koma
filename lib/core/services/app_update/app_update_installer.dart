@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
+import '../app_storage.dart';
 import 'package:path_provider/path_provider.dart';
 
 /// Downloads the update APK and hands it to the system package installer
@@ -21,6 +22,11 @@ class AppUpdateInstaller {
   File? get apkFile => _apkFile;
 
   Future<Directory> _cacheDir() async {
+    if (AppStorage.usesCustomRoot) {
+      final dir = Directory('${(await AppStorage.documents()).path}/updates');
+      if (!await dir.exists()) await dir.create(recursive: true);
+      return dir;
+    }
     if (!kIsWeb && Platform.isAndroid) {
       final dirs = await getExternalCacheDirectories();
       if (dirs != null && dirs.isNotEmpty) return dirs.first;

@@ -1,7 +1,7 @@
 name: koma
 description: "A hybrid reader + knowledge snippet manager."
 publish_to: 'none'
-version: 2.41.10+347
+version: 2.43.6+362
 
 environment:
   sdk: ^3.12.2
@@ -99,6 +99,9 @@ dev_dependencies:
 # kindle_unpack 0.1.1 still pins archive ^3.6.1; epub_pro needs archive 4.
 dependency_overrides:
   archive: ^4.0.7
+  # Koma's native image-decoder hook needs hooks 2 + toolchain 0.19.
+  hooks: ^2.0.2
+  native_toolchain_c: ^0.19.2
 
 flutter:
   uses-material-design: true

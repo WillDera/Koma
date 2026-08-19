@@ -7,7 +7,7 @@ import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-import 'package:path_provider/path_provider.dart';
+import '../../core/services/app_storage.dart';
 
 import '../../app.dart' show routeObserver;
 import '../../core/models/book.dart';
@@ -97,7 +97,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> with RouteAware {
 
   Future<void> _loadThumbnails() async {
     try {
-      final appDir = await getApplicationDocumentsDirectory();
+      final appDir = await AppStorage.documents();
       final thumbDir = Directory('${appDir.path}/thumbnails');
       if (!await thumbDir.exists()) return;
       final provider = ref.read(libraryProvider);

@@ -49,7 +49,7 @@ void main() {
             charOffsetFor: charOffsetFor ?? (_) => null,
             pixelOffsetFor: (_) => 0,
             disableAnimations: true,
-            onPositionChanged: (pos, offset, {required exact}) {
+            onPositionChanged: (pos, offset, {required exact, pageEnd}) {
               positions.add(pos);
             },
             onChapterChanged: chapterChanges?.add,
@@ -122,7 +122,7 @@ void main() {
             pixelOffsetFor: (_) => 3000,
             contentHeightFor: (_) => 6000,
             disableAnimations: true,
-            onPositionChanged: (pos, offset, {required exact}) {
+            onPositionChanged: (pos, offset, {required exact, pageEnd}) {
               if (!exact) positions.add(pos);
             },
           ),

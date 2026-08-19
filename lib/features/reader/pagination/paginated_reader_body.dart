@@ -112,6 +112,7 @@ class PaginatedReaderBody extends StatefulWidget {
     BookPosition position,
     int charOffset, {
     required bool exact,
+    int? pageEnd,
   })?
   onPositionChanged;
 
@@ -435,7 +436,12 @@ class _PaginatedReaderBodyState extends State<PaginatedReaderBody> {
       _position = cursor.positionForOffset(widget.chapterIndex, override);
       _seeded = true;
       widget.onOverrideApplied?.call();
-      widget.onPositionChanged?.call(_position, override, exact: true);
+      widget.onPositionChanged?.call(
+        _position,
+        override,
+        exact: true,
+        pageEnd: cursor.pageAt(_position).end,
+      );
       return;
     }
 
@@ -456,6 +462,7 @@ class _PaginatedReaderBodyState extends State<PaginatedReaderBody> {
         _position,
         cursor.offsetAt(_position),
         exact: false,
+        pageEnd: cursor.pageAt(_position).end,
       );
     }
   }
@@ -480,6 +487,7 @@ class _PaginatedReaderBodyState extends State<PaginatedReaderBody> {
       step,
       cursor.offsetAt(step),
       exact: true,
+      pageEnd: cursor.pageAt(step).end,
     );
     if (step.chapterIndex != previousChapter) {
       widget.onChapterChanged?.call(step.chapterIndex);

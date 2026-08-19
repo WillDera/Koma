@@ -7,7 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:http/http.dart' as http;
 import 'package:intl/intl.dart';
-import 'package:path_provider/path_provider.dart';
+import '../../core/services/app_storage.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../core/models/manga.dart';
@@ -482,7 +482,7 @@ class _MangaDetailScreenState extends ConsumerState<MangaDetailScreen> {
     Map<String, String>? headers,
   }) async {
     try {
-      final appDir = await getApplicationDocumentsDirectory();
+      final appDir = await AppStorage.documents();
       final hash = sha256.convert(utf8.encode(url)).toString();
       final thumbDir = Directory('${appDir.path}/thumbnails');
       if (!await thumbDir.exists()) await thumbDir.create(recursive: true);

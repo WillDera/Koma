@@ -2,7 +2,7 @@ import 'dart:io';
 
 import 'package:crypto/crypto.dart';
 import 'package:flutter/services.dart';
-import 'package:path_provider/path_provider.dart';
+import 'app_storage.dart';
 
 import '../repositories/repositories.dart';
 import 'download/download_manager.dart';
@@ -72,7 +72,7 @@ class ChapterAutoDelete {
     String mangaUrl,
     String chapterUrl,
   ) async {
-    final supportDir = await getApplicationSupportDirectory();
+    final supportDir = await AppStorage.support();
     final mangaKey = _urlKey(mangaUrl);
     final chKey = _urlKey(chapterUrl);
     final dir = Directory(
