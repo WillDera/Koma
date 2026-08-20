@@ -10,6 +10,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../models/book.dart';
 import '../providers.dart';
 import '../repositories/book_repository.dart';
+import 'cover_enhance_service.dart';
 import 'discover_metadata_cache.dart';
 import 'http/m_client.dart';
 import '../../src/rust/api/metadata.dart' as rust;
@@ -120,11 +121,41 @@ class MetadataEnrichmentService {
 
   /// Apply a Discover-session [DiscoverMetadataHit] after the book is imported.
   /// Skips another Open Library / Google lookup.
-  Future<void> applyDiscoverHit(int bookId, DiscoverMetadataHit hit) async {
-    if (!hit.found) return;
+  ///
+  /// [coverUrlOverride] is the URL actually shown on the Discover card
+  /// (enriched cover or LibGen poster). When set, that image is downloaded,
+  /// enhanced, and stored as the library cover.
+  Future<void> applyDiscoverHit(
+    int bookId,
+    DiscoverMetadataHit hit, {
+    String? coverUrlOverride,
+  }) async {
+    if (!hit.found &&
+        (coverUrlOverride == null || coverUrlOverride.isEmpty)) {
+      return;
+    }
     String? localCover;
-    if (hit.coverUrl != null && hit.coverUrl!.isNotEmpty) {
-      localCover = await _downloadCover(bookId, hit.coverUrl!);
+    final coverUrl = (coverUrlOverride != null && coverUrlOverride.isNotEmpty)
+        ? coverUrlOverride
+        : hit.coverUrl;
+    if (coverUrl != null && coverUrl.isNotEmpty) {
+      localCover = await downloadAndEnhanceCover(bookId, coverUrl);
+    }
+    if (!hit.found) {
+      if (localCover != null) {
+        await _books.applyEnrichment(
+          bookId: bookId,
+          author: null,
+          localCoverPath: localCover,
+          genres: const [],
+          releaseDate: null,
+          source: 'discover',
+          remoteId: null,
+          coverUrl: coverUrl,
+          rawTitle: null,
+        );
+      }
+      return;
     }
     DateTime? releaseDate;
     if (hit.releaseDate != null && hit.releaseDate!.isNotEmpty) {
@@ -138,10 +169,14 @@ class MetadataEnrichmentService {
       releaseDate: releaseDate,
       source: hit.source,
       remoteId: hit.remoteId,
-      coverUrl: hit.coverUrl,
+      coverUrl: hit.coverUrl ?? coverUrl,
       rawTitle: null,
     );
   }
+
+  /// Download [url], enhance for library display, write under `covers/`.
+  Future<String?> downloadAndEnhanceCover(int bookId, String url) =>
+      _downloadCover(bookId, url);
 
   Future<String?> _downloadCover(int bookId, String url) async {
     try {
@@ -160,6 +195,8 @@ class MetadataEnrichmentService {
         } else if (uri.host.contains('googleapis.com') ||
             uri.host.contains('googleusercontent.com')) {
           request.headers['Referer'] = 'https://books.google.com/';
+        } else if (uri.host.contains('libgen')) {
+          request.headers['Referer'] = 'https://libgen.li/';
         }
         final streamed = await client
             .send(request)
@@ -172,22 +209,21 @@ class MetadataEnrichmentService {
         );
         if (body.isEmpty) return null;
 
+        final enhanced = await CoverEnhanceService.enhance(body);
+
         final appDir = await AppStorage.documents();
         final coverDir = Directory(p.join(appDir.path, 'covers'));
         if (!await coverDir.exists()) {
           await coverDir.create(recursive: true);
         }
-        final ext = _guessExt(
-          resolved,
-          streamed.headers['content-type'],
-        );
+        // Enhanced output is always JPEG.
         final file = File(
           p.join(
             coverDir.path,
-            '${bookId}_${DateTime.now().millisecondsSinceEpoch}$ext',
+            '${bookId}_${DateTime.now().millisecondsSinceEpoch}.jpg',
           ),
         );
-        await file.writeAsBytes(body, flush: true);
+        await file.writeAsBytes(enhanced, flush: true);
         return file.path;
       } finally {
         client.close();
@@ -196,17 +232,6 @@ class MetadataEnrichmentService {
       debugPrint('cover download failed: $e\n$st');
       return null;
     }
-  }
-
-  String _guessExt(String url, String? contentType) {
-    final lower = url.toLowerCase();
-    if (lower.contains('.png')) return '.png';
-    if (lower.contains('.webp')) return '.webp';
-    if (contentType != null) {
-      if (contentType.contains('png')) return '.png';
-      if (contentType.contains('webp')) return '.webp';
-    }
-    return '.jpg';
   }
 }
 

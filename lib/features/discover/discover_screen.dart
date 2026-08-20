@@ -437,10 +437,22 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
       final hit = ref.read(discoverMetadataProvider)[
         discoverMetadataCacheKey(result.title, result.author)
       ];
-      if (hit != null && hit.found) {
+      // Same preference as the Discover card: enriched cover, else LibGen poster.
+      final poster = result.poster;
+      final enrichedCover = hit?.coverUrl;
+      final displayCover =
+          (enrichedCover != null && enrichedCover.isNotEmpty)
+          ? enrichedCover
+          : (poster != null && poster.isNotEmpty ? poster : null);
+      if ((hit != null && hit.found) ||
+          (displayCover != null && displayCover.isNotEmpty)) {
         await MetadataEnrichmentService(
           ref.read(repositoriesProvider).books,
-        ).applyDiscoverHit(bookId, hit);
+        ).applyDiscoverHit(
+          bookId,
+          hit ?? const DiscoverMetadataHit(found: false),
+          coverUrlOverride: displayCover,
+        );
       }
       if (!mounted) return;
       ref.read(libraryProvider.notifier).loadBooks();
