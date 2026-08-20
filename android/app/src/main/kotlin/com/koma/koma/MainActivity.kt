@@ -147,6 +147,38 @@ class MainActivity : FlutterActivity() {
                         result.error("INSTALL_APK", e.message, null)
                     }
                 }
+                // Mihon AppUpdateDownloadJob — foreground WorkManager download.
+                "startAppUpdateDownload" -> {
+                    try {
+                        val url = call.argument<String>("url")
+                            ?: throw IllegalArgumentException("missing url")
+                        AppUpdateDownloadJob.start(applicationContext, url)
+                        result.success(null)
+                    } catch (e: Throwable) {
+                        Log.e("AppUpdate", "startAppUpdateDownload failed", e)
+                        result.error("APP_UPDATE_START", e.message, null)
+                    }
+                }
+                "cancelAppUpdateDownload" -> {
+                    try {
+                        AppUpdateDownloadJob.stop(applicationContext)
+                        result.success(null)
+                    } catch (e: Throwable) {
+                        result.error("APP_UPDATE_CANCEL", e.message, null)
+                    }
+                }
+                "getAppUpdateDownloadState" -> {
+                    Thread {
+                        try {
+                            val snap = AppUpdateDownloadJob.snapshot(applicationContext)
+                            runOnUiThread { result.success(snap) }
+                        } catch (e: Throwable) {
+                            runOnUiThread {
+                                result.error("APP_UPDATE_STATE", e.message, null)
+                            }
+                        }
+                    }.start()
+                }
                 "getDeviceConstraints" -> {
                     result.success(readDeviceConstraints())
                 }

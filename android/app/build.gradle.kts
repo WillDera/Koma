@@ -125,6 +125,8 @@ dependencies {
     implementation("androidx.appcompat:appcompat:1.7.0")
     // FileProvider + MediaStore helpers for gallery export / share
     implementation("androidx.core:core-ktx:1.15.0")
+    // AppUpdateDownloadJob (Mihon-parity foreground APK download).
+    implementation("androidx.work:work-runtime-ktx:2.10.0")
     // Keiyoushi extensions expect Injekt (dependency injection) at runtime
     implementation("com.github.mihonapp:injekt:91edab2317")
     // Keep ONNXRUNTIME_VERSION in src/main/cpp/CMakeLists.txt in sync (Piper).
