@@ -1,10 +1,9 @@
 import 'dart:async';
-import 'dart:convert';
-import 'dart:io';
-import 'dart:math';
-import 'package:crypto/crypto.dart';
+
 import 'package:flutter/foundation.dart';
+import 'package:flutter_edge_tts/flutter_edge_tts.dart';
 import 'package:just_audio/just_audio.dart';
+
 import 'tts_engine.dart';
 
 class _PrefetchedChapter {
@@ -29,8 +28,11 @@ class _SynthTurn {
   const _SynthTurn(this.audio, this.timestamps);
 }
 
+/// Edge online TTS. Synthesis goes through [FlutterEdgeTts]; playback,
+/// prefetch, chunking, and word→char progress stay in-engine.
 class EdgeTtsEngine implements TtsEngine {
   final AudioPlayer _player = AudioPlayer();
+  FlutterEdgeTts? _client;
 
   String _voiceName = 'en-US-AndrewMultilingualNeural';
   double _rate = 0.88;
@@ -54,10 +56,7 @@ class EdgeTtsEngine implements TtsEngine {
   static final Map<String, _PrefetchedChapter> _prefetchCache = {};
   static final Set<String> _prefetchInFlight = {};
 
-  static const _trustedClientToken = '6A5AA1D4EAFF4E9FB37E23D68491D6F4';
-  static const _chromiumMajor = '143';
-  static const _chromiumFull = '143.0.3650.96';
-  // Edge outputFormat: audio-24khz-48kbitrate-mono-mp3
+  // Matches audio-24khz-48kbitrate-mono-mp3.
   static const _mp3BytesPerSecond = 6000.0;
 
   @override
@@ -89,15 +88,22 @@ class EdgeTtsEngine implements TtsEngine {
   String _cacheKey(String chapterId) =>
       '$chapterId|$_voiceName|$_rate|$_pitch';
 
+  /// SSML relative rate (package passes this straight into `<prosody rate>`).
   String get _ratePercent {
     final p = (_rate - 1.0) * 100;
     return '${p >= 0 ? "+" : ""}${p.toStringAsFixed(1)}%';
   }
 
+  /// SSML relative pitch (keeps prior Koma semantics: `_pitch` × 100 as %).
   String get _pitchPercent {
     final p = _pitch * 100;
     return '${p >= 0 ? "+" : ""}${p.round()}%';
   }
+
+  EdgeTtsProsody get _prosody => EdgeTtsProsody(
+    rate: _ratePercent,
+    pitch: _pitchPercent,
+  );
 
   static Duration _estimateMp3Duration(Uint8List bytes) {
     if (bytes.isEmpty) return Duration.zero;
@@ -105,8 +111,40 @@ class EdgeTtsEngine implements TtsEngine {
     return Duration(milliseconds: ms.clamp(1, 3600000));
   }
 
+  FlutterEdgeTts _ensureClient() {
+    final locale =
+        selectedVoice?.locale ?? _localeFromVoiceId(_voiceName) ?? 'en-US';
+    final config = EdgeTtsConfig(
+      voice: _voiceName,
+      voiceLocale: locale,
+      outputFormat: EdgeTtsOutputFormat.audio24Khz48KbitrateMonoMp3,
+      enableWordBoundary: true,
+    );
+    final existing = _client;
+    if (existing == null) {
+      final created = FlutterEdgeTts(
+        voice: config.voice,
+        voiceLocale: config.voiceLocale,
+        outputFormat: config.outputFormat,
+        enableWordBoundary: true,
+      );
+      _client = created;
+      return created;
+    }
+    existing.updateConfig(config);
+    return existing;
+  }
+
+  static String? _localeFromVoiceId(String id) {
+    final parts = id.split('-');
+    if (parts.length < 2) return null;
+    return '${parts[0]}-${parts[1]}';
+  }
+
   @override
-  Future<void> init() async {}
+  Future<void> init() async {
+    _ensureClient();
+  }
 
   /// Background-synthesize a chapter for optimistic playback.
   Future<void> prefetchChapter(String chapterId, String text) async {
@@ -141,7 +179,6 @@ class EdgeTtsEngine implements TtsEngine {
         rate: _rate,
         pitch: _pitch,
       );
-      // Bound cache size: keep at most 2 chapters.
       while (_prefetchCache.length > 2) {
         _prefetchCache.remove(_prefetchCache.keys.first);
       }
@@ -209,7 +246,6 @@ class EdgeTtsEngine implements TtsEngine {
     List<_Chunk> chunks,
     int gen,
   ) async {
-    // Try prefetch cache for current chapter when starting from offset 0.
     final chapterId = _chapterId;
     if (chapterId != null && startOffset == 0) {
       final key = _cacheKey(chapterId);
@@ -339,245 +375,42 @@ class EdgeTtsEngine implements TtsEngine {
     await _player.play();
   }
 
-  Future<WebSocket> _connect() async {
-    final wsUrl = _buildWsUrl();
-    final uri = Uri.parse(wsUrl).replace(scheme: 'https');
-    final client = HttpClient();
-    final request = await client.getUrl(uri);
-    request.headers.set('Upgrade', 'websocket');
-    request.headers.set('Connection', 'Upgrade');
-    request.headers.set('Sec-WebSocket-Version', '13');
-    request.headers.set(
-      'Sec-WebSocket-Key',
-      base64Encode(List.generate(16, (_) => Random.secure().nextInt(256))),
-    );
-    request.headers.set(
-      'User-Agent',
-      'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-          ' (KHTML, like Gecko) Chrome/$_chromiumMajor.0.0.0 Safari/537.36'
-          ' Edg/$_chromiumMajor.0.0.0',
-    );
-    request.headers.set(
-      'Origin',
-      'chrome-extension://jdiccldimpdaibmpdkjnbmckianbfold',
-    );
-    final response = await request.close();
-    if (response.statusCode != HttpStatus.switchingProtocols) {
-      final body = await response.transform(utf8.decoder).join();
-      throw WebSocketException(
-        "Connection to '$wsUrl' was not upgraded to websocket, "
-        'HTTP status code: ${response.statusCode} ($body)',
-      );
-    }
-    final socket = await response.detachSocket();
-    return WebSocket.fromUpgradedSocket(
-      socket,
-      serverSide: false,
-      protocol: null,
-    );
-  }
-
-  String _buildWsUrl() {
-    final connectId = _connectId();
-    final secMsGec = _generateSecMsGec();
-    return 'wss://speech.platform.bing.com/consumer/speech/synthesize/readaloud/edge/v1'
-        '?TrustedClientToken=$_trustedClientToken'
-        '&Sec-MS-GEC=$secMsGec'
-        '&Sec-MS-GEC-Version=1-$_chromiumFull'
-        '&ConnectionId=$connectId';
-  }
-
   Future<List<_SynthTurn>> _synthesizeTurns(List<String> texts) async {
-    if (texts.isEmpty) return [];
-    if (texts.length == 1) {
-      return [await _synthesizeOneTurn(texts.first)];
-    }
-
-    final ws = await _connect();
-    ws.add(_buildConfigMessage());
-
-    final results = <_SynthTurn>[];
-    final turnAudio = <int>[];
-    var turnTimestamps = <WordTimestamp>[];
-    Completer<void>? turnDone;
-
-    final sub = ws.listen(
-      (message) {
-        if (message is String) {
-          if (message.contains('\r\nPath:turn.end') && turnDone != null) {
-            if (!turnDone!.isCompleted) turnDone!.complete();
-            turnDone = null;
-          }
-          _collectWordBoundaries(message, turnTimestamps);
-        } else if (message is List<int>) {
-          final audio = _extractAudio(message);
-          if (audio != null) turnAudio.addAll(audio);
-        }
-      },
-      onError: (e) {
-        debugPrint('edge-tts stream error: $e');
-        if (turnDone != null && !turnDone!.isCompleted) turnDone!.complete();
-      },
-    );
-
+    if (texts.isEmpty) return const [];
+    final out = <_SynthTurn>[];
     for (final text in texts) {
-      turnAudio.clear();
-      turnTimestamps = <WordTimestamp>[];
-      turnDone = Completer<void>();
-      ws.add(_buildSsmlMessage(text));
-      await turnDone!.future.timeout(const Duration(seconds: 30));
-      results.add(
-        _SynthTurn(
-          Uint8List.fromList(List.from(turnAudio)),
-          List.of(turnTimestamps),
-        ),
-      );
+      out.add(await _synthesizeOneTurn(text));
     }
-
-    await sub.cancel();
-    await ws.close();
-    return results;
+    return out;
   }
 
   Future<_SynthTurn> _synthesizeOneTurn(String text) async {
-    final ws = await _connect();
-    final allAudio = <int>[];
-    final timestamps = <WordTimestamp>[];
-    final completer = Completer<_SynthTurn>();
-
-    ws.listen(
-      (message) {
-        if (message is String) {
-          if (message.contains('\r\nPath:turn.end') &&
-              !completer.isCompleted) {
-            completer.complete(
-              _SynthTurn(Uint8List.fromList(List.from(allAudio)), timestamps),
-            );
-            ws.close();
-            return;
-          }
-          _collectWordBoundaries(message, timestamps);
-        } else if (message is List<int>) {
-          final audio = _extractAudio(message);
-          if (audio != null) allAudio.addAll(audio);
-        }
-      },
-      onError: (e) {
-        debugPrint('edge-tts stream error: $e');
-        if (!completer.isCompleted) {
-          completer.complete(
-            _SynthTurn(Uint8List.fromList(List.from(allAudio)), timestamps),
-          );
-        }
-      },
-      onDone: () {
-        if (!completer.isCompleted) {
-          completer.complete(
-            _SynthTurn(Uint8List.fromList(List.from(allAudio)), timestamps),
-          );
-        }
-      },
-    );
-
-    ws.add(_buildConfigMessage());
-    ws.add(_buildSsmlMessage(text));
-
-    Timer(const Duration(seconds: 30), () {
-      if (!completer.isCompleted) {
-        ws.close();
-        completer.complete(
-          _SynthTurn(Uint8List.fromList(List.from(allAudio)), timestamps),
-        );
-      }
-    });
-
-    return completer.future;
-  }
-
-  String _buildConfigMessage() {
-    return 'X-Timestamp:${_dateToString()}\r\n'
-        'Content-Type:application/json; charset=utf-8\r\n'
-        'Path:speech.config\r\n\r\n'
-        '{"context":{"synthesis":{"audio":{"metadataoptions":{'
-        '"sentenceBoundaryEnabled":"false","wordBoundaryEnabled":"true"'
-        '},"outputFormat":"audio-24khz-48kbitrate-mono-mp3"}}}}';
-  }
-
-  String _buildSsmlMessage(String text) {
-    final requestId = _connectId();
-    final ssml = _buildSsml(text);
-    return 'X-RequestId:$requestId\r\n'
-        'Content-Type:application/ssml+xml\r\n'
-        'X-Timestamp:${_dateToString()}Z\r\n'
-        'Path:ssml\r\n\r\n'
-        '$ssml';
-  }
-
-  void _collectWordBoundaries(String msg, List<WordTimestamp> into) {
-    final headerEnd = msg.indexOf('\r\n\r\n');
-    if (headerEnd < 0) return;
-    final headerBlock = msg.substring(0, headerEnd);
-    final body = msg.substring(headerEnd + 4);
-
-    if (headerBlock.contains('Path:turn.end')) return;
-
-    if (headerBlock.contains('Path:WordBoundary') ||
-        headerBlock.contains('Path:SentenceBoundary')) {
-      try {
-        final data = jsonDecode(body) as Map<String, dynamic>;
-        final metadata = data['Metadata'] as List<dynamic>? ?? [];
-        for (final m in metadata) {
-          final mData = m['Data'] as Map<String, dynamic>? ?? {};
-          final textObj = mData['text'] as Map<String, dynamic>? ?? {};
-          final word = textObj['Text'] as String? ?? '';
-          final offset = (mData['Offset'] as num?)?.toInt() ?? 0;
-          if (word.isNotEmpty) {
-            into.add(
-              WordTimestamp(
-                word,
-                Duration(microseconds: (offset / 10).round()),
-                0,
-              ),
-            );
-          }
-        }
-      } catch (_) {}
+    if (text.trim().isEmpty) {
+      return _SynthTurn(Uint8List(0), const []);
     }
+    final client = _ensureClient();
+    final result = await client.synthesize(text, prosody: _prosody);
+    return _SynthTurn(result.audioBytes, _timestampsFromMetadata(result.metadata));
   }
 
-  Uint8List? _extractAudio(List<int> data) {
-    final start = _indexOf(data, _pathAudioNeedle);
-    if (start < 0) return null;
-    return Uint8List.fromList(data.sublist(start + _pathAudioNeedle.length));
-  }
-
-  static const _pathAudioNeedle = <int>[
-    80,
-    97,
-    116,
-    104,
-    58,
-    97,
-    117,
-    100,
-    105,
-    111,
-    13,
-    10,
-  ]; // "Path:audio\r\n"
-
-  static int _indexOf(List<int> haystack, List<int> needle) {
-    for (int i = 0; i <= haystack.length - needle.length; i++) {
-      var match = true;
-      for (int j = 0; j < needle.length; j++) {
-        if (haystack[i + j] != needle[j]) {
-          match = false;
-          break;
-        }
-      }
-      if (match) return i;
+  static List<WordTimestamp> _timestampsFromMetadata(
+    List<EdgeTtsMetadataItem> metadata,
+  ) {
+    final out = <WordTimestamp>[];
+    for (final item in metadata) {
+      if (item.type != 'WordBoundary') continue;
+      final word = item.data.text?.text ?? '';
+      if (word.isEmpty) continue;
+      // Edge offsets are in 100-nanosecond units.
+      out.add(
+        WordTimestamp(
+          word,
+          Duration(microseconds: (item.data.offset / 10).round()),
+          0,
+        ),
+      );
     }
-    return -1;
+    return out;
   }
 
   void _onPosition(Duration position) {
@@ -603,9 +436,9 @@ class EdgeTtsEngine implements TtsEngine {
     int baseOffset,
   ) {
     final words = text.split(RegExp(r'\s+'));
-    int charsConsumed = 0;
-    int tsIndex = 0;
-    for (int i = 0; i < words.length && tsIndex < timestamps.length; i++) {
+    var charsConsumed = 0;
+    var tsIndex = 0;
+    for (var i = 0; i < words.length && tsIndex < timestamps.length; i++) {
       if (words[i] == timestamps[tsIndex].word) {
         timestamps[tsIndex] = WordTimestamp(
           timestamps[tsIndex].word,
@@ -616,17 +449,6 @@ class EdgeTtsEngine implements TtsEngine {
       }
       charsConsumed += words[i].length + 1;
     }
-  }
-
-  String _buildSsml(String text) {
-    final escaped = _escapeXml(text);
-    return "<speak version='1.0' xmlns='http://www.w3.org/2001/10/synthesis' xml:lang='en-US'>"
-        "<voice name='$_voiceName'>"
-        "<prosody pitch='$_pitchPercent' rate='$_ratePercent'>"
-        "$escaped"
-        "</prosody>"
-        "</voice>"
-        "</speak>";
   }
 
   void _onTtsComplete() {
@@ -674,6 +496,7 @@ class EdgeTtsEngine implements TtsEngine {
   @override
   Future<void> setVoice(TtsVoice voice) async {
     _voiceName = voice.id;
+    _ensureClient();
   }
 
   @override
@@ -690,18 +513,21 @@ class EdgeTtsEngine implements TtsEngine {
   void dispose() {
     _cleanup();
     _player.dispose();
+    final client = _client;
+    _client = null;
+    if (client != null) {
+      unawaited(client.close());
+    }
   }
 
   List<_Chunk> _splitChunks(String text, int baseOffset) {
     final chunks = <_Chunk>[];
     final paragraphs = text.split(RegExp(r'\n\n+'));
-    int offset = baseOffset;
+    var offset = baseOffset;
 
     for (final p in paragraphs) {
       if (p.trim().isEmpty) {
         offset += p.length;
-        // Account for the split delimiter roughly — paragraphs from split
-        // lose separators; keep absolute offsets best-effort via running total.
         continue;
       }
       if (p.length <= 1500) {
@@ -728,59 +554,6 @@ class EdgeTtsEngine implements TtsEngine {
       }
     }
     return chunks;
-  }
-
-  static String _generateSecMsGec() {
-    final ticks =
-        (DateTime.now().toUtc().millisecondsSinceEpoch ~/ 1000) + 11644473600;
-    final rounded = ticks - (ticks % 300);
-    final windowsTicks = rounded * 10000000;
-    final toHash = '$windowsTicks$_trustedClientToken';
-    final bytes = utf8.encode(toHash);
-    final digest = sha256.convert(bytes);
-    return digest.toString().toUpperCase();
-  }
-
-  static String _connectId() {
-    final rand = Random.secure();
-    final b = List.generate(16, (_) => rand.nextInt(256));
-    b[6] = (b[6] & 0x0F) | 0x40;
-    b[8] = (b[8] & 0x3F) | 0x80;
-    final hex = b.map((v) => v.toRadixString(16).padLeft(2, '0')).join();
-    return '${hex.substring(0, 8)}-${hex.substring(8, 12)}'
-        '-${hex.substring(12, 16)}-${hex.substring(16, 20)}-${hex.substring(20)}';
-  }
-
-  static String _dateToString() {
-    final now = DateTime.now().toUtc();
-    const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-    const months = [
-      'Jan',
-      'Feb',
-      'Mar',
-      'Apr',
-      'May',
-      'Jun',
-      'Jul',
-      'Aug',
-      'Sep',
-      'Oct',
-      'Nov',
-      'Dec',
-    ];
-    return '${days[now.weekday % 7]} ${months[now.month - 1]} '
-        '${now.day.toString().padLeft(2, '0')} ${now.year} '
-        '${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}:${now.second.toString().padLeft(2, '0')} '
-        'GMT+0000 (Coordinated Universal Time)';
-  }
-
-  static String _escapeXml(String text) {
-    return text
-        .replaceAll('&', '&amp;')
-        .replaceAll('<', '&lt;')
-        .replaceAll('>', '&gt;')
-        .replaceAll('"', '&quot;')
-        .replaceAll("'", '&apos;');
   }
 
   static final List<TtsVoice> _curatedVoices = [
