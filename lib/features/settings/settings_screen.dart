@@ -13,6 +13,8 @@ import '../../core/models/source.dart';
 import '../../core/providers.dart';
 import '../../core/services/app_storage.dart';
 import '../../core/services/android_storage_access.dart';
+import '../../core/services/storage_path_rewrite.dart';
+import '../../core/isar/isar.dart' show openIsar;
 import '../../core/services/app_update/app_update_checker.dart';
 import '../../core/services/app_update/app_update_manager.dart';
 import '../../core/services/app_update/get_application_release.dart';
@@ -2029,7 +2031,23 @@ class _StorageSectionState extends ConsumerState<_StorageSection> {
       try {
         await ref.read(isarProvider).close();
       } catch (_) {}
-      await AppStorage.migrateAndSetRoot(path);
+      final moved = await AppStorage.migrateAndSetRoot(path);
+      if (moved != null) {
+        try {
+          final isar = await openIsar();
+          try {
+            await StoragePathRewrite.afterMigrate(
+              isar: isar,
+              oldDocuments: moved.oldDocuments,
+              oldSupport: moved.oldSupport,
+              newDocuments: moved.newDocuments,
+              newSupport: moved.newSupport,
+            );
+          } finally {
+            await isar.close();
+          }
+        } catch (_) {}
+      }
     } finally {
       if (mounted) Navigator.of(context, rootNavigator: true).pop();
     }

@@ -1,6 +1,7 @@
 import 'package:isar_community/isar.dart';
 import 'package:path/path.dart' as p;
 import '../services/app_storage.dart';
+import '../services/storage_path_rewrite.dart';
 
 import 'collections/book.dart';
 import 'collections/book_metadata.dart';
@@ -75,14 +76,22 @@ const List<CollectionSchema<dynamic>> komaIsarSchemas = [
 ];
 
 /// Open (or create) the Koma Isar instance in the app documents dir.
+///
+/// Also remaps absolute cover/media paths that no longer resolve after a
+/// data-folder move (best-effort repair for libraries migrated before path
+/// rewrite shipped).
 Future<Isar> openIsar({String? directory, String? file}) async {
   final dir = directory ?? (await AppStorage.documents()).path;
-  return Isar.open(
+  final isar = await Isar.open(
     komaIsarSchemas,
     directory: dir,
     name: file ?? 'koma',
     inspector: true,
   );
+  try {
+    await StoragePathRewrite.repairBrokenAbsolutePaths(isar);
+  } catch (_) {}
+  return isar;
 }
 
 /// Convenience for tests that need an in-memory Isar. Isar.open is

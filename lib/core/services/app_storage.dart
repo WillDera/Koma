@@ -6,6 +6,22 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import 'android_storage_access.dart';
 
+/// Paths before/after [AppStorage.migrateAndSetRoot] when files actually moved.
+/// Callers rewrite Isar absolute paths with [StoragePathRewrite.afterMigrate].
+class StorageMigrateResult {
+  const StorageMigrateResult({
+    required this.oldDocuments,
+    required this.oldSupport,
+    required this.newDocuments,
+    required this.newSupport,
+  });
+
+  final String oldDocuments;
+  final String oldSupport;
+  final String newDocuments;
+  final String newSupport;
+}
+
 class _StorageLayout {
   const _StorageLayout({
     required this.documents,
@@ -62,13 +78,17 @@ class AppStorage {
   ///
   /// Close Isar (and pause downloads) before calling this so database files
   /// are not locked.
-  static Future<void> migrateAndSetRoot(String? path) async {
+  ///
+  /// Returns [StorageMigrateResult] when files moved so the caller can rewrite
+  /// absolute paths stored in Isar (ebook covers, chapter media, …).
+  static Future<StorageMigrateResult?> migrateAndSetRoot(String? path) async {
     await init();
     final from = await _layoutFor(_root);
     final trimmed = path?.trim();
     final nextRoot = (trimmed == null || trimmed.isEmpty) ? null : trimmed;
     final to = await _layoutFor(nextRoot);
-    if (!from.sameAs(to)) {
+    final moved = !from.sameAs(to);
+    if (moved) {
       _assertNotNested(from, to);
       if (to.unified) {
         await Directory(to.documents).create(recursive: true);
@@ -86,9 +106,18 @@ class AppStorage {
       await prefs.setString(prefsKey, nextRoot);
     }
     _root = nextRoot;
+    if (!moved) return null;
+    return StorageMigrateResult(
+      oldDocuments: from.documents,
+      oldSupport: from.support,
+      newDocuments: to.documents,
+      newSupport: to.support,
+    );
   }
 
-  static Future<void> setRootPath(String? path) => migrateAndSetRoot(path);
+  static Future<void> setRootPath(String? path) async {
+    await migrateAndSetRoot(path);
+  }
 
   static Future<Directory> documents() async {
     await init();

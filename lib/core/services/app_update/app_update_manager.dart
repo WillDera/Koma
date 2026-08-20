@@ -57,6 +57,9 @@ class AppUpdateManager extends ChangeNotifier {
   }
 
   /// Starts (or resumes showing) a background APK download.
+  ///
+  /// On Android the bytes are fetched by [AppUpdateDownloadJob] (WorkManager
+  /// foreground / dataSync), so leaving the app does not cancel the transfer.
   Future<void> startDownload() async {
     final release = _release;
     if (release == null || _downloadRunning) return;
@@ -65,6 +68,7 @@ class AppUpdateManager extends ChangeNotifier {
     _stage = AppUpdateStage.downloading;
     _progress = 0;
     notifyListeners();
+    await _persistRelease(release);
     unawaited(
       NotificationService.instance.notifyAppUpdateProgress(
         progress: 0,
@@ -105,10 +109,25 @@ class AppUpdateManager extends ChangeNotifier {
 
   Future<void> install() => _installer.installUpdate();
 
-  /// If a previous download finished while the app was closed, restore state.
-  /// Drops the APK when that release is already running (post-install).
+  /// If a previous download finished (or is still running in WorkManager)
+  /// while the UI was away, restore state.
   Future<void> restoreCachedDownload() async {
     if (_stage == AppUpdateStage.downloading || _downloadRunning) return;
+
+    final persisted = await _loadPersistedRelease();
+    final native = await _installer.nativeDownloadSnapshot();
+    final nativeState = (native?['state'] as String? ?? '').toUpperCase();
+    final inFlight = nativeState == 'RUNNING' ||
+        nativeState == 'ENQUEUED' ||
+        nativeState == 'BLOCKED';
+
+    if (inFlight && persisted != null) {
+      _release = persisted;
+      // Resume observing the WorkManager job without enqueueing a new one.
+      unawaited(_awaitNativeDownload(persisted));
+      return;
+    }
+
     final cached = await _installer.cachedApkFile();
     if (cached == null) {
       await _clearPersistedRelease();
@@ -120,7 +139,6 @@ class AppUpdateManager extends ChangeNotifier {
       }
       return;
     }
-    final persisted = await _loadPersistedRelease();
     if (persisted == null || await isCachedReleaseInstalled(persisted)) {
       _installer.adoptCachedApk(cached);
       clear();
@@ -131,6 +149,41 @@ class AppUpdateManager extends ChangeNotifier {
     _stage = AppUpdateStage.downloaded;
     _progress = 100;
     notifyListeners();
+  }
+
+  Future<void> _awaitNativeDownload(AppRelease release) async {
+    if (_downloadRunning) return;
+    _downloadRunning = true;
+    _stage = AppUpdateStage.downloading;
+    _progress = 0;
+    notifyListeners();
+    try {
+      await _installer.awaitNativeDownload(
+        onProgress: (p) {
+          _progress = p;
+          notifyListeners();
+          unawaited(
+            NotificationService.instance.notifyAppUpdateProgress(
+              progress: p,
+              version: release.version,
+            ),
+          );
+        },
+      );
+      _progress = 100;
+      _stage = AppUpdateStage.downloaded;
+      notifyListeners();
+      await _persistRelease(release);
+      await NotificationService.instance.notifyAppUpdateReady(release.version);
+    } catch (_) {
+      _stage = AppUpdateStage.failed;
+      _progress = 0;
+      notifyListeners();
+      await NotificationService.instance.notifyAppUpdateError();
+    } finally {
+      _downloadRunning = false;
+      notifyListeners();
+    }
   }
 
   /// True when [release] is already the running app (or older).
