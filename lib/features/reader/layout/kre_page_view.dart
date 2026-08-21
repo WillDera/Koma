@@ -314,6 +314,16 @@ class _KrePagePainter extends CustomPainter {
       }
     }
 
+    void fillRounded(List<Rect> rects, Color color, {double radius = 6}) {
+      final paint = Paint()
+        ..color = color
+        ..isAntiAlias = true;
+      for (final r in rects) {
+        final rr = Radius.circular(math.min(radius, r.height / 2));
+        canvas.drawRRect(RRect.fromRectAndRadius(r, rr), paint);
+      }
+    }
+
     for (final h in highlights) {
       fill(
         glyphRectsOverlapping(page, h.startOffset, h.endOffset),
@@ -321,9 +331,12 @@ class _KrePagePainter extends CustomPainter {
       );
     }
     if (ttsActive && ttsEnd > ttsStart) {
-      fill(
-        glyphRectsOverlapping(page, ttsStart, ttsEnd),
-        accent.withValues(alpha: 0.15),
+      // Continuous rounded bands (not per-glyph boxes) so the spoken sentence
+      // reads as one clean pill without hairlines between words.
+      fillRounded(
+        highlightBandsOverlapping(page, ttsStart, ttsEnd),
+        accent.withValues(alpha: 0.32),
+        radius: 8,
       );
     }
     if (focusAlpha > 0 && focusEnd > focusStart) {

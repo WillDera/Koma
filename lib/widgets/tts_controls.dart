@@ -10,7 +10,15 @@ import 'icon_button_round.dart';
 class TtsControls extends StatelessWidget {
   final TtsProvider provider;
 
-  const TtsControls({super.key, required this.provider});
+  /// When false, skip bottom [SafeArea] padding — use when this panel sits
+  /// above another chrome bar that already clears the home indicator.
+  final bool padBottomSafeArea;
+
+  const TtsControls({
+    super.key,
+    required this.provider,
+    this.padBottomSafeArea = true,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -23,30 +31,32 @@ class TtsControls extends StatelessWidget {
             color: c.bg.withValues(alpha: 0.82),
             child: SafeArea(
               top: false,
+              bottom: padBottomSafeArea,
               child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                // Match [ReaderBottomBar] inset so the two rows align.
+                padding: const EdgeInsets.fromLTRB(20, 8, 20, 8),
                 child: Row(
                   children: [
                     IconButtonRound(
                       icon: Icons.close,
-                      size: 36,
+                      size: 40,
                       variant: IconButtonVariant.tonal,
                       onPressed: () => provider.stop(),
                     ),
-                    const SizedBox(width: 4),
+                    const SizedBox(width: 8),
                     IconButtonRound(
                       icon: Icons.skip_previous,
-                      size: 36,
+                      size: 40,
                       variant: IconButtonVariant.tonal,
                       onPressed: provider.currentIndex > 0
                           ? () => provider.previousSentence()
                           : null,
                     ),
-                    const SizedBox(width: 4),
+                    const SizedBox(width: 8),
                     provider.isBuffering
                         ? SizedBox(
-                            width: 36,
-                            height: 36,
+                            width: 40,
+                            height: 40,
                             child: CircularProgressIndicator(
                               strokeWidth: 2,
                               color: c.accent,
@@ -56,7 +66,7 @@ class TtsControls extends StatelessWidget {
                             icon: provider.isPaused
                                 ? Icons.play_arrow
                                 : Icons.pause,
-                            size: 36,
+                            size: 40,
                             variant: IconButtonVariant.filled,
                             iconColor: c.onAccent,
                             backgroundColor: c.accent,
@@ -68,17 +78,17 @@ class TtsControls extends StatelessWidget {
                               }
                             },
                           ),
-                    const SizedBox(width: 4),
+                    const SizedBox(width: 8),
                     IconButtonRound(
                       icon: Icons.skip_next,
-                      size: 36,
+                      size: 40,
                       variant: IconButtonVariant.tonal,
                       onPressed:
                           provider.currentIndex < provider.totalSentences - 1
                           ? () => provider.nextSentence()
                           : null,
                     ),
-                    const SizedBox(width: 8),
+                    const SizedBox(width: 12),
                     Expanded(
                       child: Text(
                         '${provider.currentIndex + 1} / ${provider.totalSentences}',
@@ -87,7 +97,7 @@ class TtsControls extends StatelessWidget {
                     ),
                     IconButtonRound(
                       icon: Icons.tune,
-                      size: 36,
+                      size: 40,
                       variant: IconButtonVariant.tonal,
                       onPressed: () => TtsSettingsSheet.show(
                         context,

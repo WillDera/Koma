@@ -409,12 +409,12 @@ class ReadingSpans {
       );
     }
     if (ttsOn) {
-      final bg = style.backgroundColor ?? Colors.transparent;
+      // Deeper wash than the old 0.15; scroll mode still uses TextSpan
+      // backgrounds, but matching opacity keeps both modes feeling similar.
       style = style.copyWith(
-        backgroundColor: Color.lerp(
-          bg,
-          prov.accentColor.withValues(alpha: 0.15),
-          1.0,
+        backgroundColor: Color.alphaBlend(
+          prov.accentColor.withValues(alpha: 0.32),
+          style.backgroundColor ?? Colors.transparent,
         ),
       );
     }
