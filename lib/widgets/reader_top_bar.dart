@@ -7,6 +7,7 @@ import 'icon_button_round.dart';
 /// Auto-hiding top bar for the reader. Slides up/down with the parent.
 class ReaderTopBar extends StatelessWidget {
   final String bookTitle;
+  final String? bookAuthor;
   final String? chapterTitle;
   final double progress;
   final VoidCallback onBack;
@@ -19,6 +20,7 @@ class ReaderTopBar extends StatelessWidget {
   const ReaderTopBar({
     super.key,
     required this.bookTitle,
+    this.bookAuthor,
     required this.chapterTitle,
     required this.progress,
     required this.onBack,
@@ -32,6 +34,12 @@ class ReaderTopBar extends StatelessWidget {
   /// Height of the bar below [MediaQuery.viewPadding.top] (row + progress).
   /// Keep in sync with the Column below; page padding uses this.
   static const double bodyHeight = 50;
+
+  String get _titleLine {
+    final author = bookAuthor?.trim();
+    if (author == null || author.isEmpty) return bookTitle;
+    return '$bookTitle by $author';
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -68,7 +76,7 @@ class ReaderTopBar extends StatelessWidget {
                             mainAxisSize: MainAxisSize.min,
                             children: [
                               Text(
-                                bookTitle,
+                                _titleLine,
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
                                 style: TextStyle(

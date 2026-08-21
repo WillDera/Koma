@@ -38,6 +38,14 @@ class TtsProvider extends ChangeNotifier {
   bool get isActive =>
       _engine.isPlaying || _engine.isPaused || _engine.isBuffering;
   bool get isBuffering => _engine.isBuffering;
+
+  /// True after the user explicitly stopped TTS (close / toggle off).
+  /// Used so end-of-chapter auto-advance does not fire on a manual stop.
+  bool _userStopped = false;
+  bool get userStopped => _userStopped;
+
+  /// Latest spoken character offset within the loaded chapter text.
+  int get progressOffset => _progressOffset;
   int get currentIndex => _currentIndex;
   int get totalSentences => _sentences.length;
   int get currentSentenceOffset => _currentIndex < _sentenceOffsets.length
@@ -223,6 +231,7 @@ class TtsProvider extends ChangeNotifier {
     _configureEdge();
     _currentIndex = 0;
     _progressOffset = 0;
+    _userStopped = false;
     notifyListeners();
   }
 
@@ -271,6 +280,7 @@ class TtsProvider extends ChangeNotifier {
 
   /// Restart from the beginning of the loaded text.
   void play() {
+    _userStopped = false;
     if (_engine.isPaused) {
       _engine.resume();
       notifyListeners();
@@ -284,6 +294,7 @@ class TtsProvider extends ChangeNotifier {
 
   /// Resume if paused, otherwise speak from the current sentence index.
   void playFromCurrent() {
+    _userStopped = false;
     if (_engine.isPaused) {
       _engine.resume();
       notifyListeners();
@@ -300,8 +311,18 @@ class TtsProvider extends ChangeNotifier {
 
   void stop() {
     _engine.stop();
-    _currentIndex = 0;
-    _progressOffset = 0;
+    // Keep [_currentIndex] / [_progressOffset] so a later restart can resume
+    // near the last spoken sentence instead of jumping to the chapter start.
+    _userStopped = true;
+    notifyListeners();
+  }
+
+  /// Move the playhead to the sentence that contains [charOffset].
+  void seekToCharOffset(int charOffset) {
+    if (_sentences.isEmpty) return;
+    final idx = _sentenceIndexAtOffset(charOffset.clamp(0, 1 << 30));
+    _currentIndex = idx.clamp(0, _sentences.length - 1);
+    _progressOffset = _sentenceOffsets[_currentIndex];
     notifyListeners();
   }
 
@@ -351,6 +372,7 @@ class TtsProvider extends ChangeNotifier {
   }
 
   void _onProgress(int charOffset) {
+    _progressOffset = charOffset;
     final idx = _sentenceIndexAtOffset(charOffset);
     if (idx != _currentIndex && idx < _sentences.length) {
       _currentIndex = idx;
@@ -359,6 +381,7 @@ class TtsProvider extends ChangeNotifier {
   }
 
   void _onComplete() {
+    _userStopped = false;
     notifyListeners();
   }
 

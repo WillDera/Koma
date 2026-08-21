@@ -492,6 +492,14 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
 
   void _onTtsChanged() {
     if (!mounted) return;
+    final tts = _ttsProvider;
+    if (tts != null && (tts.isActive || tts.userStopped)) {
+      // Persist spoken position so ending TTS and restarting resumes here
+      // (paginated mode does not rely on scroll ratio).
+      if (tts.progressOffset > 0) {
+        _provider?.updateReadingOffset(tts.progressOffset);
+      }
+    }
     // Highlight rebuilds via ListenableBuilder around the text only —
     // avoid a full-screen setState on every sentence tick.
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -529,7 +537,8 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
     if (tts == null || tts.isPlaying || tts.isPaused || tts.isBuffering) {
       return;
     }
-    // ponytail: simple end-of-chapter detection
+    if (tts.userStopped) return;
+    // Natural end-of-chapter: advance when the last sentence finishes.
     if (tts.currentIndex >= tts.totalSentences - 1 && tts.totalSentences > 0) {
       final p = _provider;
       if (p != null && p.currentIndex < p.chapters.length - 1) {
@@ -1020,6 +1029,7 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
                   listenable: _ttsProvider!,
                   builder: (_, _) => ReaderTopBar(
                     bookTitle: book.title,
+                    bookAuthor: book.author,
                     chapterTitle: chapter.title,
                     progress: progress,
                     visible: showUI,
@@ -1039,25 +1049,52 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
               ),
             ),
 
+            // Bottom chrome: TTS panel above chapter bar when both are shown,
+            // so the chapter bar sits under the TTS controls at the screen edge.
             Positioned(
               left: 0,
               right: 0,
               bottom: 0,
-              child: ValueListenableBuilder<bool>(
-                valueListenable: _showUI,
-                builder: (_, showUI, _) => ReaderBottomBar(
-                  visible: showUI && !_toolbarVisible,
-                  onChapters: () =>
-                      _openChapters(context, ref.read(readerProvider.notifier)),
-                  onPrevious: () => _goAdjacentChapter(next: false),
-                  onNext: () => _goAdjacentChapter(next: true),
-                  canGoNext:
-                      provider.currentIndex < provider.chapters.length - 1,
-                  canGoPrevious: provider.currentIndex > 0,
-                  currentIndex: provider.currentIndex,
-                  totalChapters: provider.chapters.length,
-                  readingTimeRemaining: readingTime,
-                ),
+              child: ListenableBuilder(
+                listenable: _ttsProvider!,
+                builder: (_, _) {
+                  final ttsActive = _ttsProvider!.isActive;
+                  return ValueListenableBuilder<bool>(
+                    valueListenable: _showUI,
+                    builder: (_, showUI, _) {
+                      final showBar = showUI && !_toolbarVisible;
+                      return Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          if (ttsActive)
+                            TtsControls(
+                              provider: _ttsProvider!,
+                              // Bottom bar owns the home-indicator inset when
+                              // both are visible.
+                              padBottomSafeArea: !showBar,
+                            ),
+                          if (showBar)
+                            ReaderBottomBar(
+                              visible: true,
+                              onChapters: () => _openChapters(
+                                context,
+                                ref.read(readerProvider.notifier),
+                              ),
+                              onPrevious: () =>
+                                  _goAdjacentChapter(next: false),
+                              onNext: () => _goAdjacentChapter(next: true),
+                              canGoNext: provider.currentIndex <
+                                  provider.chapters.length - 1,
+                              canGoPrevious: provider.currentIndex > 0,
+                              currentIndex: provider.currentIndex,
+                              totalChapters: provider.chapters.length,
+                              readingTimeRemaining: readingTime,
+                            ),
+                        ],
+                      );
+                    },
+                  );
+                },
               ),
             ),
 
@@ -1126,23 +1163,6 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
                   ),
                 ),
               ),
-            // TTS controls overlay — must stay Positioned so an inactive
-            // SizedBox.shrink never becomes a non-positioned Stack child
-            // (that collapses the whole body to 0×0).
-            Positioned(
-              bottom: 0,
-              left: 0,
-              right: 0,
-              child: ListenableBuilder(
-                listenable: _ttsProvider!,
-                builder: (_, _) {
-                  if (!_ttsProvider!.isActive) {
-                    return const SizedBox.shrink();
-                  }
-                  return TtsControls(provider: _ttsProvider!);
-                },
-              ),
-            ),
           ],
         ),
       ),
@@ -1156,6 +1176,9 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
     if (!mounted) return;
 
     if (tts.isActive) {
+      if (tts.progressOffset > 0) {
+        _provider?.updateReadingOffset(tts.progressOffset);
+      }
       tts.stop();
       _ttsListening = false;
       return;
@@ -1180,7 +1203,11 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
     await tts.init(text, chapterId: chapterId);
     if (!mounted) return;
 
-    if (_scrollReady &&
+    // Prefer the reader's saved character offset (page + scroll modes).
+    final stored = _provider?.readingOffsetFor(_provider!.currentIndex);
+    if (stored != null && stored > 0 && tts.totalSentences > 0) {
+      tts.seekToCharOffset(stored);
+    } else if (_scrollReady &&
         tts.totalSentences > 0 &&
         _scrollController.position.maxScrollExtent > 0) {
       final ratio =

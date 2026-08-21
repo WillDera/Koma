@@ -1,3 +1,4 @@
+import 'dart:math' as math;
 import 'dart:ui' show Offset, Rect;
 
 /// Text lines allowed above, between, or below figures before the image
@@ -239,6 +240,35 @@ List<Rect> glyphRectsOverlapping(LayoutPage page, int start, int end) {
       if (g.charEnd <= start || g.charStart >= end) continue;
       out.add(Rect.fromLTWH(g.x, line.y, g.width, line.height));
     }
+  }
+  return out;
+}
+
+/// Continuous per-line bands covering `[start, end)` — merges glyph gaps so
+/// highlights (especially TTS) read as one rounded run instead of letter boxes.
+List<Rect> highlightBandsOverlapping(LayoutPage page, int start, int end) {
+  if (end <= start) return const [];
+  final out = <Rect>[];
+  for (final line in page.lines) {
+    if (line.isImage || line.glyphs.isEmpty) continue;
+    double? left;
+    double? right;
+    for (final g in line.glyphs) {
+      if (g.charEnd <= start || g.charStart >= end) continue;
+      left = left == null ? g.x : math.min(left, g.x);
+      right = right == null ? g.x + g.width : math.max(right, g.x + g.width);
+    }
+    if (left == null || right == null || right <= left) continue;
+    // Slight vertical inset keeps rounded pills from colliding across lines.
+    const vPad = 1.0;
+    out.add(
+      Rect.fromLTRB(
+        left,
+        line.y + vPad,
+        right,
+        line.y + line.height - vPad,
+      ),
+    );
   }
   return out;
 }

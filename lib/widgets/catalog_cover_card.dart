@@ -5,6 +5,7 @@ import '../theme/app_theme.dart';
 import '../theme/tokens/app_spacing.dart';
 import 'animated_press.dart';
 import 'library_book_card.dart';
+import 'progress_ring.dart';
 
 /// Generic cover card used outside the Book model — Discover / Global Search /
 /// Source Browse. Mirrors [LibraryBookCard] Grid / Compact / Overlay / List.
@@ -197,10 +198,10 @@ class CatalogCoverCard extends StatelessWidget {
                     left: 0,
                     right: 0,
                     bottom: 0,
-                    child: LinearProgressIndicator(
-                      value: downloadProgress,
-                      minHeight: 3,
-                      backgroundColor: c.surfaceMuted,
+                    child: ThinProgressBar(
+                      progress: downloadProgress ?? 0,
+                      height: 3,
+                      trackColor: c.surfaceMuted,
                     ),
                   ),
               ],
@@ -262,10 +263,10 @@ class CatalogCoverCard extends StatelessWidget {
                     left: 0,
                     right: 0,
                     bottom: 0,
-                    child: LinearProgressIndicator(
-                      value: downloadProgress,
-                      minHeight: 2,
-                      backgroundColor: c.surfaceMuted,
+                    child: ThinProgressBar(
+                      progress: downloadProgress ?? 0,
+                      height: 2,
+                      trackColor: c.surfaceMuted,
                     ),
                   ),
               ],
@@ -350,10 +351,10 @@ class CatalogCoverCard extends StatelessWidget {
                 left: 0,
                 right: 0,
                 bottom: 0,
-                child: LinearProgressIndicator(
-                  value: downloadProgress,
-                  minHeight: 3,
-                  backgroundColor: Colors.white24,
+                child: ThinProgressBar(
+                  progress: downloadProgress ?? 0,
+                  height: 3,
+                  trackColor: Colors.white24,
                 ),
               ),
           ],
@@ -424,10 +425,10 @@ class CatalogCoverCard extends StatelessWidget {
                   ],
                   if (_busy) ...[
                     const SizedBox(height: 8),
-                    LinearProgressIndicator(
-                      value: downloadProgress,
-                      minHeight: 3,
-                      backgroundColor: c.border,
+                    ThinProgressBar(
+                      progress: downloadProgress ?? 0,
+                      height: 3,
+                      trackColor: c.border,
                     ),
                   ],
                 ],
