@@ -83,7 +83,10 @@ android {
 
     packaging {
         jniLibs {
-            pickFirsts += listOf("**/libonnxruntime.so", "**/libc++_shared.so")
+            pickFirsts += listOf(
+                "**/libonnxruntime.so",
+                "**/libc++_shared.so",
+            )
         }
         resources {
             excludes += setOf(
@@ -122,10 +125,10 @@ dependencies {
     implementation("androidx.appcompat:appcompat:1.7.0")
     // FileProvider + MediaStore helpers for gallery export / share
     implementation("androidx.core:core-ktx:1.15.0")
+    // AppUpdateDownloadJob (Mihon-parity foreground APK download).
+    implementation("androidx.work:work-runtime-ktx:2.10.0")
     // Keiyoushi extensions expect Injekt (dependency injection) at runtime
     implementation("com.github.mihonapp:injekt:91edab2317")
-    // Piper TTS — packages libonnxruntime.so into the APK. koma_piper links
-    // against the same version unpacked by src/main/cpp/CMakeLists.txt; keep
-    // ONNXRUNTIME_VERSION there in sync with this coordinate.
-    implementation("com.microsoft.onnxruntime:onnxruntime-android:1.22.0")
+    // Keep ONNXRUNTIME_VERSION in src/main/cpp/CMakeLists.txt in sync (Piper).
+    implementation("com.microsoft.onnxruntime:onnxruntime-android:1.23.0")
 }

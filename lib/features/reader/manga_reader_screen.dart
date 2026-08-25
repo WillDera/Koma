@@ -9,7 +9,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:http/http.dart' as http;
 import 'package:path/path.dart' as p;
-import 'package:path_provider/path_provider.dart';
+import '../../core/services/app_storage.dart';
 import 'package:scrollable_positioned_list/scrollable_positioned_list.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
@@ -18,6 +18,8 @@ import '../../core/models/manga_chapter.dart';
 import '../../core/models/manga_page.dart';
 import '../../core/providers.dart';
 import '../../core/repositories/repositories.dart';
+import '../../core/services/chapter_auto_delete.dart';
+import '../../core/services/download_prefs.dart';
 import '../../core/services/extension_manager.dart';
 import '../../core/services/extension_source_resolve.dart';
 import '../../core/services/keiyoushi_service.dart';
@@ -383,7 +385,7 @@ class _MangaReaderScreenState extends ConsumerState<MangaReaderScreen>
     required String mangaUrl,
     required String chapterUrl,
   }) async {
-    final supportDir = await getApplicationSupportDirectory();
+    final supportDir = await AppStorage.support();
     final mangaKey =
         sha256.convert(utf8.encode(mangaUrl)).toString().substring(0, 16);
     final chKey =
@@ -810,6 +812,24 @@ class _MangaReaderScreenState extends ConsumerState<MangaReaderScreen>
           .length;
       if (chPages > 0 && chapterRelativeIndex >= chPages - 1) {
         await _repos!.manga.markMangaChapterRead(chapterId);
+        if (await DownloadPrefs.isDeleteAfterReadEnabled()) {
+          final manga = await _repos!.manga.getMangaById(ch.mangaId);
+          if (manga != null) {
+            unawaited(
+              ChapterAutoDelete(
+                repos: _repos!,
+                keiyoushi: _keiyoushi,
+                downloadManager: ref.read(downloadManagerProvider.notifier).manager,
+              ).deleteIfDownloaded(
+                mangaId: ch.mangaId,
+                chapterId: chapterId,
+                sourceId: manga.sourceId,
+                mangaUrl: manga.url,
+                chapterUrl: ch.url,
+              ),
+            );
+          }
+        }
       }
     }
 

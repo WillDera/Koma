@@ -4,6 +4,7 @@ import 'package:isar_community/isar.dart';
 
 import '../isar/collections/manga.dart' as i;
 import '../isar/collections/manga_chapter.dart' as i;
+import '../isar/collections/manga_extras.dart' as i;
 import '../models/manga.dart';
 import '../models/manga_chapter.dart';
 
@@ -24,12 +25,12 @@ class MangaRepository {
         .inLibraryEqualTo(true)
         .sortByUpdatedAtDesc()
         .findAll();
-    return rows.map(_toModel).toList(growable: false);
+    return _toModels(rows);
   }
 
   Future<List<Manga>> getAllMangas() async {
     final rows = await _isar.mangas.where().sortByUpdatedAtDesc().findAll();
-    return rows.map(_toModel).toList(growable: false);
+    return _toModels(rows);
   }
 
   Future<Manga?> getMangaByKey(String sourceId, String url) async {
@@ -38,20 +39,50 @@ class MangaRepository {
         .sourceIdEqualTo(sourceId)
         .urlEqualTo(url)
         .findFirst();
-    return row == null ? null : _toModel(row);
+    return row == null ? null : await _toModelWithExtras(row);
   }
 
   Future<Manga?> getMangaById(int id) async {
     final row = await _isar.mangas.get(id);
-    return row == null ? null : _toModel(row);
+    return row == null ? null : await _toModelWithExtras(row);
   }
 
   Future<int> insertManga(Manga manga) async {
-    return _isar.writeTxn(() => _isar.mangas.put(_fromModel(manga)));
+    final id = await _isar.writeTxn(() => _isar.mangas.put(_fromModel(manga)));
+    await _writeExtras(id, manga);
+    return id;
   }
 
   Future<void> updateManga(Manga manga) async {
     await _isar.writeTxn(() => _isar.mangas.put(_fromModel(manga)));
+    await _writeExtras(manga.id, manga);
+  }
+
+  /// Patch MangaExtras sidecar (categories, notes, custom cover, flags).
+  Future<void> updateMangaExtras(
+    int mangaId, {
+    List<int>? categoryIds,
+    String? notes,
+    String? customCoverPath,
+    int? viewerFlags,
+    int? chapterFlags,
+  }) async {
+    final existing = await getMangaById(mangaId);
+    if (existing == null) return;
+    await _writeExtras(
+      mangaId,
+      existing.copyWith(
+        categoryIds: categoryIds ?? existing.categoryIds,
+        notes: notes ?? existing.notes,
+        customCoverPath: customCoverPath ?? existing.customCoverPath,
+        viewerFlags: viewerFlags ?? existing.viewerFlags,
+        chapterFlags: chapterFlags ?? existing.chapterFlags,
+      ),
+    );
+  }
+
+  Future<void> setMangaNotes(int mangaId, String? notes) async {
+    await updateMangaExtras(mangaId, notes: notes);
   }
 
   Future<void> setMangaInLibrary(int mangaId, bool inLibrary) async {
@@ -68,6 +99,7 @@ class MangaRepository {
     await _isar.writeTxn(() async {
       // Cascade chapters (mirrors Drift FK ON DELETE CASCADE).
       await _isar.mangaChapters.where().mangaIdEqualTo(id).deleteAll();
+      await _isar.mangaExtras.where().mangaIdEqualTo(id).deleteAll();
       await _isar.mangas.delete(id);
     });
   }
@@ -154,7 +186,7 @@ class MangaRepository {
         .inLibraryEqualTo(true)
         .sortByUpdatedAtDesc()
         .watch(fireImmediately: fireImmediately)
-        .map((rows) => rows.map(_toModel).toList());
+        .asyncMap(_toModels);
   }
 
   Stream<Manga?> watchManga(int id, {bool fireImmediately = true}) {
@@ -162,6 +194,9 @@ class MangaRepository {
         .watchObject(id, fireImmediately: fireImmediately)
         .map((row) => row == null ? null : _toModel(row));
   }
+
+  // watchManga cannot easily join extras on every tick without a query;
+  // extras are hydrated on the Future APIs used by import/detail.
 
   // ── MangaChapters: Future API ──────────────────────────────────────
 
@@ -196,6 +231,12 @@ class MangaRepository {
     await _isar.writeTxn(
       () =>
           _isar.mangaChapters.putAll(chapters.map(_chapterFromModel).toList()),
+    );
+  }
+
+  Future<void> putMangaChapter(MangaChapter chapter) async {
+    await _isar.writeTxn(
+      () => _isar.mangaChapters.put(_chapterFromModel(chapter)),
     );
   }
 
@@ -253,6 +294,11 @@ class MangaRepository {
       row.readAt = DateTime.now();
       await _isar.mangaChapters.put(row);
     });
+  }
+
+  Future<MangaChapter?> getMangaChapterById(int chapterId) async {
+    final row = await _isar.mangaChapters.get(chapterId);
+    return row == null ? null : _chapterToModel(row);
   }
 
   Future<void> markMangaChapterOpened(int chapterId) async {
@@ -332,7 +378,63 @@ class MangaRepository {
 
   // ── Conversions ────────────────────────────────────────────────────
 
-  static Manga _toModel(i.Manga m) => Manga(
+  Future<List<Manga>> _toModels(List<i.Manga> rows) async {
+    if (rows.isEmpty) return const [];
+    final extras = await _isar.mangaExtras.where().findAll();
+    final byId = {for (final e in extras) e.mangaId: e};
+    return [
+      for (final row in rows) _toModel(row, extras: byId[row.id ?? 0]),
+    ];
+  }
+
+  Future<Manga> _toModelWithExtras(i.Manga row) async {
+    final extras = await _isar.mangaExtras
+        .where()
+        .mangaIdEqualTo(row.id ?? 0)
+        .findFirst();
+    return _toModel(row, extras: extras);
+  }
+
+  Future<void> _writeExtras(int mangaId, Manga manga) async {
+    final hasCats = manga.categoryIds.isNotEmpty;
+    final hasNotes = manga.notes != null && manga.notes!.isNotEmpty;
+    final hasCover =
+        manga.customCoverPath != null && manga.customCoverPath!.isNotEmpty;
+    final hasFlags = manga.viewerFlags != 0 || manga.chapterFlags != 0;
+    await _isar.writeTxn(() async {
+      final existing = await _isar.mangaExtras
+          .where()
+          .mangaIdEqualTo(mangaId)
+          .findFirst();
+      if (!hasCats && !hasNotes && !hasCover && !hasFlags) {
+        if (existing != null) {
+          await _isar.mangaExtras.delete(existing.id ?? 0);
+        }
+        return;
+      }
+      if (existing == null) {
+        await _isar.mangaExtras.put(
+          i.MangaExtras(
+            mangaId: mangaId,
+            categoryIds: manga.categoryIds,
+            notes: manga.notes,
+            customCoverPath: manga.customCoverPath,
+            viewerFlags: manga.viewerFlags,
+            chapterFlags: manga.chapterFlags,
+          ),
+        );
+      } else {
+        existing.categoryIds = manga.categoryIds;
+        existing.notes = manga.notes;
+        existing.customCoverPath = manga.customCoverPath;
+        existing.viewerFlags = manga.viewerFlags;
+        existing.chapterFlags = manga.chapterFlags;
+        await _isar.mangaExtras.put(existing);
+      }
+    });
+  }
+
+  static Manga _toModel(i.Manga m, {i.MangaExtras? extras}) => Manga(
     id: m.id ?? 0,
     name: m.name,
     url: m.url,
@@ -346,6 +448,11 @@ class MangaRepository {
     inLibrary: m.inLibrary,
     readingStatus: m.readingStatus,
     memo: m.memo,
+    categoryIds: extras?.categoryIds,
+    notes: extras?.notes,
+    customCoverPath: extras?.customCoverPath,
+    viewerFlags: extras?.viewerFlags ?? 0,
+    chapterFlags: extras?.chapterFlags ?? 0,
     createdAt: m.createdAt,
     updatedAt: m.updatedAt,
   );
@@ -384,6 +491,7 @@ class MangaRepository {
     isDownloaded: c.isDownloaded,
     isOpened: c.isOpened,
     readAt: c.readAt,
+    dateFetch: c.dateFetch,
     memo: c.memo,
   );
 
@@ -403,6 +511,7 @@ class MangaRepository {
     isDownloaded: c.isDownloaded,
     isOpened: c.isOpened,
     readAt: c.readAt,
+    dateFetch: c.dateFetch,
     memo: c.memo,
   );
 }

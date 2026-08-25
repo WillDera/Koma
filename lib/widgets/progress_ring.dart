@@ -57,7 +57,7 @@ class ProgressRing extends StatelessWidget {
   }
 }
 
-/// A thin linear progress bar with rounded caps (Material 3 LinearProgressIndicator).
+/// Thin continuous progress bar (track + fill, no Material 3 gap).
 class ThinProgressBar extends StatelessWidget {
   final double progress;
   final double height;
@@ -75,15 +75,27 @@ class ThinProgressBar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final c = context.colors;
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(height),
-      child: SizedBox(
-        height: height,
-        child: LinearProgressIndicator(
-          value: progress.clamp(0.0, 1.0),
-          minHeight: height,
-          color: color ?? c.accent,
-          backgroundColor: trackColor ?? c.border,
+    final p = progress.clamp(0.0, 1.0);
+    final radius = BorderRadius.circular(height);
+    return SizedBox(
+      height: height,
+      width: double.infinity,
+      child: ClipRRect(
+        borderRadius: radius,
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            ColoredBox(color: trackColor ?? c.border),
+            if (p > 0)
+              Align(
+                alignment: Alignment.centerLeft,
+                child: FractionallySizedBox(
+                  widthFactor: p,
+                  heightFactor: 1,
+                  child: ColoredBox(color: color ?? c.accent),
+                ),
+              ),
+          ],
         ),
       ),
     );

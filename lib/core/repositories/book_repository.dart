@@ -11,6 +11,7 @@ import '../models/book_metadata.dart';
 import '../models/chapter.dart';
 import '../models/highlight.dart';
 import '../services/ebook_media_store.dart';
+import '../services/koma_package_store.dart';
 
 /// Bookshelf repository: books + ebook chapters + highlights.
 ///
@@ -100,6 +101,7 @@ class BookRepository {
 
   Future<void> deleteBook(int id) async {
     await EbookMediaStore.deleteBookMedia(id);
+    await KomaPackageStore.deleteFor(id);
     await _isar.writeTxn(() async {
       // Cascade: delete the book's chapters + highlights first.
       // (Isar has no FK cascade; we do it manually, mirroring the
@@ -360,6 +362,11 @@ class BookRepository {
         .where()
         .chapterIdEqualTo(chapterId)
         .findAll();
+    return rows.map(_highlightToModel).toList(growable: false);
+  }
+
+  Future<List<Highlight>> getAllHighlights() async {
+    final rows = await _isar.highlights.where().findAll();
     return rows.map(_highlightToModel).toList(growable: false);
   }
 

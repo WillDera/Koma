@@ -62,6 +62,9 @@ class _AppUpdateGateState extends ConsumerState<AppUpdateGate> {
       if (result is NewAppUpdate) {
         notifier.offerUpdate(result.release);
         await NewUpdateSheet.show(context, result.release);
+      } else {
+        // Drop a leftover APK from an update that is already installed.
+        notifier.clear();
       }
     } catch (_) {
       // Network / GitHub failures are silent on launch (Mihon parity).

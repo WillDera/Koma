@@ -11,6 +11,9 @@ import '../../core/services/extension_icon_cache.dart';
 import '../../core/services/extension_manager.dart';
 import '../../core/utils/custom_extended_image_provider.dart';
 import '../../core/utils/language.dart';
+import 'package:go_router/go_router.dart';
+
+import '../../router/router.dart';
 import '../../theme/app_icons.dart';
 import '../../theme/app_theme.dart';
 import '../../theme/theme_provider.dart';
@@ -709,7 +712,11 @@ class _ExtensionsScreenState extends ConsumerState<ExtensionsScreen>
         iconTheme: IconThemeData(color: c.textPrimary),
         actions: [
           IconButton(
-            tooltip: 'Fetch all catalogues',
+            tooltip: 'Batch migrate library titles',
+            icon: Icon(Icons.swap_horiz, color: c.textPrimary),
+            onPressed: () => context.pushNamed(Routes.migrateBatch),
+          ),
+          IconButton(
             icon: Icon(Icons.cloud_download_outlined, color: c.textPrimary),
             onPressed: _fetchAllIndexes,
           ),

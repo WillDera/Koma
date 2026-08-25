@@ -3,6 +3,7 @@
 
 // ignore_for_file: unused_import, unused_element, unnecessary_import, duplicate_ignore, invalid_use_of_internal_member, annotate_overrides, non_constant_identifier_names, curly_braces_in_flow_control_structures, prefer_const_literals_to_create_immutables, unused_field
 
+import 'api/koma.dart';
 import 'api/metadata.dart';
 import 'dart:async';
 import 'dart:convert';
@@ -66,7 +67,7 @@ class RustLib extends BaseEntrypoint<RustLibApi, RustLibApiImpl, RustLibWire> {
   String get codegenVersion => '2.12.0';
 
   @override
-  int get rustContentHash => 2048841190;
+  int get rustContentHash => -1840077829;
 
   static const kDefaultExternalLibraryLoaderConfig =
       ExternalLibraryLoaderConfig(
@@ -78,11 +79,39 @@ class RustLib extends BaseEntrypoint<RustLibApi, RustLibApiImpl, RustLibWire> {
 }
 
 abstract class RustLibApi extends BaseApi {
+  Future<KirChapterDto> crateApiKomaChapterKirByIndex({
+    required String komaPath,
+    required int index,
+  });
+
+  Future<ChapterPayloadDto> crateApiKomaChapterPayloadByIndex({
+    required String komaPath,
+    required int index,
+  });
+
+  Future<Uint8List> crateApiKomaCompileEpub({required String path});
+
   Future<void> crateApiSimpleInitApp();
+
+  Future<LayoutResultDto> crateApiKomaLayoutChapterPages({
+    required String komaPath,
+    required int index,
+    required int width,
+    required int height,
+    required double fontSize,
+    required double lineHeight,
+    required double margin,
+    required double firstPageInset,
+    required String fontPath,
+  });
 
   Future<List<BookMetadataResult>> crateApiMetadataLookupBooks({
     required List<BookLookupQuery> queries,
     String? googleApiKey,
+  });
+
+  Future<List<KomaChapterInfo>> crateApiKomaPackageChapters({
+    required String komaPath,
   });
 }
 
@@ -95,6 +124,104 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   });
 
   @override
+  Future<KirChapterDto> crateApiKomaChapterKirByIndex({
+    required String komaPath,
+    required int index,
+  }) {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_String(komaPath, serializer);
+          sse_encode_u_32(index, serializer);
+          pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 1,
+            port: port_,
+          );
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_kir_chapter_dto,
+          decodeErrorData: sse_decode_String,
+        ),
+        constMeta: kCrateApiKomaChapterKirByIndexConstMeta,
+        argValues: [komaPath, index],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiKomaChapterKirByIndexConstMeta =>
+      const TaskConstMeta(
+        debugName: "chapter_kir_by_index",
+        argNames: ["komaPath", "index"],
+      );
+
+  @override
+  Future<ChapterPayloadDto> crateApiKomaChapterPayloadByIndex({
+    required String komaPath,
+    required int index,
+  }) {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_String(komaPath, serializer);
+          sse_encode_u_32(index, serializer);
+          pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 2,
+            port: port_,
+          );
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_chapter_payload_dto,
+          decodeErrorData: sse_decode_String,
+        ),
+        constMeta: kCrateApiKomaChapterPayloadByIndexConstMeta,
+        argValues: [komaPath, index],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiKomaChapterPayloadByIndexConstMeta =>
+      const TaskConstMeta(
+        debugName: "chapter_payload_by_index",
+        argNames: ["komaPath", "index"],
+      );
+
+  @override
+  Future<Uint8List> crateApiKomaCompileEpub({required String path}) {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_String(path, serializer);
+          pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 3,
+            port: port_,
+          );
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_list_prim_u_8_strict,
+          decodeErrorData: sse_decode_String,
+        ),
+        constMeta: kCrateApiKomaCompileEpubConstMeta,
+        argValues: [path],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiKomaCompileEpubConstMeta =>
+      const TaskConstMeta(debugName: "compile_epub", argNames: ["path"]);
+
+  @override
   Future<void> crateApiSimpleInitApp() {
     return handler.executeNormal(
       NormalTask(
@@ -103,7 +230,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 1,
+            funcId: 4,
             port: port_,
           );
         },
@@ -122,6 +249,75 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       const TaskConstMeta(debugName: "init_app", argNames: []);
 
   @override
+  Future<LayoutResultDto> crateApiKomaLayoutChapterPages({
+    required String komaPath,
+    required int index,
+    required int width,
+    required int height,
+    required double fontSize,
+    required double lineHeight,
+    required double margin,
+    required double firstPageInset,
+    required String fontPath,
+  }) {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_String(komaPath, serializer);
+          sse_encode_u_32(index, serializer);
+          sse_encode_u_32(width, serializer);
+          sse_encode_u_32(height, serializer);
+          sse_encode_f_64(fontSize, serializer);
+          sse_encode_f_64(lineHeight, serializer);
+          sse_encode_f_64(margin, serializer);
+          sse_encode_f_64(firstPageInset, serializer);
+          sse_encode_String(fontPath, serializer);
+          pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 5,
+            port: port_,
+          );
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_layout_result_dto,
+          decodeErrorData: sse_decode_String,
+        ),
+        constMeta: kCrateApiKomaLayoutChapterPagesConstMeta,
+        argValues: [
+          komaPath,
+          index,
+          width,
+          height,
+          fontSize,
+          lineHeight,
+          margin,
+          firstPageInset,
+          fontPath,
+        ],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiKomaLayoutChapterPagesConstMeta =>
+      const TaskConstMeta(
+        debugName: "layout_chapter_pages",
+        argNames: [
+          "komaPath",
+          "index",
+          "width",
+          "height",
+          "fontSize",
+          "lineHeight",
+          "margin",
+          "firstPageInset",
+          "fontPath",
+        ],
+      );
+
+  @override
   Future<List<BookMetadataResult>> crateApiMetadataLookupBooks({
     required List<BookLookupQuery> queries,
     String? googleApiKey,
@@ -135,7 +331,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 2,
+            funcId: 6,
             port: port_,
           );
         },
@@ -154,6 +350,39 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       const TaskConstMeta(
         debugName: "lookup_books",
         argNames: ["queries", "googleApiKey"],
+      );
+
+  @override
+  Future<List<KomaChapterInfo>> crateApiKomaPackageChapters({
+    required String komaPath,
+  }) {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_String(komaPath, serializer);
+          pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 7,
+            port: port_,
+          );
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_list_koma_chapter_info,
+          decodeErrorData: sse_decode_String,
+        ),
+        constMeta: kCrateApiKomaPackageChaptersConstMeta,
+        argValues: [komaPath],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiKomaPackageChaptersConstMeta =>
+      const TaskConstMeta(
+        debugName: "package_chapters",
+        argNames: ["komaPath"],
       );
 
   @protected
@@ -202,9 +431,145 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  SceneChromeDto dco_decode_box_autoadd_scene_chrome_dto(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return dco_decode_scene_chrome_dto(raw);
+  }
+
+  @protected
+  ChapterPayloadDto dco_decode_chapter_payload_dto(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    final arr = raw as List<dynamic>;
+    if (arr.length != 2)
+      throw Exception('unexpected arr length: expect 2 but see ${arr.length}');
+    return ChapterPayloadDto(
+      chapter: dco_decode_kir_chapter_dto(arr[0]),
+      scene: dco_decode_opt_box_autoadd_scene_chrome_dto(arr[1]),
+    );
+  }
+
+  @protected
+  double dco_decode_f_64(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return raw as double;
+  }
+
+  @protected
   PlatformInt64 dco_decode_i_64(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     return dcoDecodeI64(raw);
+  }
+
+  @protected
+  KirBlockDto dco_decode_kir_block_dto(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    final arr = raw as List<dynamic>;
+    if (arr.length != 6)
+      throw Exception('unexpected arr length: expect 6 but see ${arr.length}');
+    return KirBlockDto(
+      kind: dco_decode_String(arr[0]),
+      spans: dco_decode_list_kir_span_dto(arr[1]),
+      mediaId: dco_decode_opt_String(arr[2]),
+      alt: dco_decode_opt_String(arr[3]),
+      ordered: dco_decode_bool(arr[4]),
+      children: dco_decode_list_kir_block_dto(arr[5]),
+    );
+  }
+
+  @protected
+  KirChapterDto dco_decode_kir_chapter_dto(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    final arr = raw as List<dynamic>;
+    if (arr.length != 3)
+      throw Exception('unexpected arr length: expect 3 but see ${arr.length}');
+    return KirChapterDto(
+      id: dco_decode_String(arr[0]),
+      title: dco_decode_opt_String(arr[1]),
+      blocks: dco_decode_list_kir_block_dto(arr[2]),
+    );
+  }
+
+  @protected
+  KirSpanDto dco_decode_kir_span_dto(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    final arr = raw as List<dynamic>;
+    if (arr.length != 5)
+      throw Exception('unexpected arr length: expect 5 but see ${arr.length}');
+    return KirSpanDto(
+      text: dco_decode_String(arr[0]),
+      bold: dco_decode_bool(arr[1]),
+      italic: dco_decode_bool(arr[2]),
+      underline: dco_decode_bool(arr[3]),
+      color: dco_decode_opt_String(arr[4]),
+    );
+  }
+
+  @protected
+  KomaChapterInfo dco_decode_koma_chapter_info(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    final arr = raw as List<dynamic>;
+    if (arr.length != 2)
+      throw Exception('unexpected arr length: expect 2 but see ${arr.length}');
+    return KomaChapterInfo(
+      id: dco_decode_String(arr[0]),
+      title: dco_decode_opt_String(arr[1]),
+    );
+  }
+
+  @protected
+  LayoutGlyphDto dco_decode_layout_glyph_dto(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    final arr = raw as List<dynamic>;
+    if (arr.length != 6)
+      throw Exception('unexpected arr length: expect 6 but see ${arr.length}');
+    return LayoutGlyphDto(
+      x: dco_decode_f_64(arr[0]),
+      y: dco_decode_f_64(arr[1]),
+      width: dco_decode_f_64(arr[2]),
+      height: dco_decode_f_64(arr[3]),
+      charStart: dco_decode_u_32(arr[4]),
+      charEnd: dco_decode_u_32(arr[5]),
+    );
+  }
+
+  @protected
+  LayoutLineDto dco_decode_layout_line_dto(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    final arr = raw as List<dynamic>;
+    if (arr.length != 5)
+      throw Exception('unexpected arr length: expect 5 but see ${arr.length}');
+    return LayoutLineDto(
+      y: dco_decode_f_64(arr[0]),
+      height: dco_decode_f_64(arr[1]),
+      charStart: dco_decode_u_32(arr[2]),
+      charEnd: dco_decode_u_32(arr[3]),
+      glyphs: dco_decode_list_layout_glyph_dto(arr[4]),
+    );
+  }
+
+  @protected
+  LayoutPageDto dco_decode_layout_page_dto(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    final arr = raw as List<dynamic>;
+    if (arr.length != 3)
+      throw Exception('unexpected arr length: expect 3 but see ${arr.length}');
+    return LayoutPageDto(
+      charStart: dco_decode_u_32(arr[0]),
+      charEnd: dco_decode_u_32(arr[1]),
+      lines: dco_decode_list_layout_line_dto(arr[2]),
+    );
+  }
+
+  @protected
+  LayoutResultDto dco_decode_layout_result_dto(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    final arr = raw as List<dynamic>;
+    if (arr.length != 2)
+      throw Exception('unexpected arr length: expect 2 but see ${arr.length}');
+    return LayoutResultDto(
+      plainText: dco_decode_String(arr[0]),
+      pages: dco_decode_list_layout_page_dto(arr[1]),
+    );
   }
 
   @protected
@@ -226,6 +591,42 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  List<KirBlockDto> dco_decode_list_kir_block_dto(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return (raw as List<dynamic>).map(dco_decode_kir_block_dto).toList();
+  }
+
+  @protected
+  List<KirSpanDto> dco_decode_list_kir_span_dto(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return (raw as List<dynamic>).map(dco_decode_kir_span_dto).toList();
+  }
+
+  @protected
+  List<KomaChapterInfo> dco_decode_list_koma_chapter_info(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return (raw as List<dynamic>).map(dco_decode_koma_chapter_info).toList();
+  }
+
+  @protected
+  List<LayoutGlyphDto> dco_decode_list_layout_glyph_dto(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return (raw as List<dynamic>).map(dco_decode_layout_glyph_dto).toList();
+  }
+
+  @protected
+  List<LayoutLineDto> dco_decode_list_layout_line_dto(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return (raw as List<dynamic>).map(dco_decode_layout_line_dto).toList();
+  }
+
+  @protected
+  List<LayoutPageDto> dco_decode_list_layout_page_dto(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return (raw as List<dynamic>).map(dco_decode_layout_page_dto).toList();
+  }
+
+  @protected
   Uint8List dco_decode_list_prim_u_8_strict(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     return raw as Uint8List;
@@ -235,6 +636,34 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   String? dco_decode_opt_String(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     return raw == null ? null : dco_decode_String(raw);
+  }
+
+  @protected
+  SceneChromeDto? dco_decode_opt_box_autoadd_scene_chrome_dto(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return raw == null ? null : dco_decode_box_autoadd_scene_chrome_dto(raw);
+  }
+
+  @protected
+  SceneChromeDto dco_decode_scene_chrome_dto(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    final arr = raw as List<dynamic>;
+    if (arr.length != 6)
+      throw Exception('unexpected arr length: expect 6 but see ${arr.length}');
+    return SceneChromeDto(
+      environmentKind: dco_decode_String(arr[0]),
+      backgroundHex: dco_decode_String(arr[1]),
+      ambientHex: dco_decode_String(arr[2]),
+      ambientIntensity: dco_decode_f_64(arr[3]),
+      frost: dco_decode_f_64(arr[4]),
+      fadeSeconds: dco_decode_f_64(arr[5]),
+    );
+  }
+
+  @protected
+  int dco_decode_u_32(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return raw as int;
   }
 
   @protected
@@ -301,9 +730,143 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  SceneChromeDto sse_decode_box_autoadd_scene_chrome_dto(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    return (sse_decode_scene_chrome_dto(deserializer));
+  }
+
+  @protected
+  ChapterPayloadDto sse_decode_chapter_payload_dto(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var var_chapter = sse_decode_kir_chapter_dto(deserializer);
+    var var_scene = sse_decode_opt_box_autoadd_scene_chrome_dto(deserializer);
+    return ChapterPayloadDto(chapter: var_chapter, scene: var_scene);
+  }
+
+  @protected
+  double sse_decode_f_64(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    return deserializer.buffer.getFloat64();
+  }
+
+  @protected
   PlatformInt64 sse_decode_i_64(SseDeserializer deserializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     return deserializer.buffer.getPlatformInt64();
+  }
+
+  @protected
+  KirBlockDto sse_decode_kir_block_dto(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var var_kind = sse_decode_String(deserializer);
+    var var_spans = sse_decode_list_kir_span_dto(deserializer);
+    var var_mediaId = sse_decode_opt_String(deserializer);
+    var var_alt = sse_decode_opt_String(deserializer);
+    var var_ordered = sse_decode_bool(deserializer);
+    var var_children = sse_decode_list_kir_block_dto(deserializer);
+    return KirBlockDto(
+      kind: var_kind,
+      spans: var_spans,
+      mediaId: var_mediaId,
+      alt: var_alt,
+      ordered: var_ordered,
+      children: var_children,
+    );
+  }
+
+  @protected
+  KirChapterDto sse_decode_kir_chapter_dto(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var var_id = sse_decode_String(deserializer);
+    var var_title = sse_decode_opt_String(deserializer);
+    var var_blocks = sse_decode_list_kir_block_dto(deserializer);
+    return KirChapterDto(id: var_id, title: var_title, blocks: var_blocks);
+  }
+
+  @protected
+  KirSpanDto sse_decode_kir_span_dto(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var var_text = sse_decode_String(deserializer);
+    var var_bold = sse_decode_bool(deserializer);
+    var var_italic = sse_decode_bool(deserializer);
+    var var_underline = sse_decode_bool(deserializer);
+    var var_color = sse_decode_opt_String(deserializer);
+    return KirSpanDto(
+      text: var_text,
+      bold: var_bold,
+      italic: var_italic,
+      underline: var_underline,
+      color: var_color,
+    );
+  }
+
+  @protected
+  KomaChapterInfo sse_decode_koma_chapter_info(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var var_id = sse_decode_String(deserializer);
+    var var_title = sse_decode_opt_String(deserializer);
+    return KomaChapterInfo(id: var_id, title: var_title);
+  }
+
+  @protected
+  LayoutGlyphDto sse_decode_layout_glyph_dto(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var var_x = sse_decode_f_64(deserializer);
+    var var_y = sse_decode_f_64(deserializer);
+    var var_width = sse_decode_f_64(deserializer);
+    var var_height = sse_decode_f_64(deserializer);
+    var var_charStart = sse_decode_u_32(deserializer);
+    var var_charEnd = sse_decode_u_32(deserializer);
+    return LayoutGlyphDto(
+      x: var_x,
+      y: var_y,
+      width: var_width,
+      height: var_height,
+      charStart: var_charStart,
+      charEnd: var_charEnd,
+    );
+  }
+
+  @protected
+  LayoutLineDto sse_decode_layout_line_dto(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var var_y = sse_decode_f_64(deserializer);
+    var var_height = sse_decode_f_64(deserializer);
+    var var_charStart = sse_decode_u_32(deserializer);
+    var var_charEnd = sse_decode_u_32(deserializer);
+    var var_glyphs = sse_decode_list_layout_glyph_dto(deserializer);
+    return LayoutLineDto(
+      y: var_y,
+      height: var_height,
+      charStart: var_charStart,
+      charEnd: var_charEnd,
+      glyphs: var_glyphs,
+    );
+  }
+
+  @protected
+  LayoutPageDto sse_decode_layout_page_dto(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var var_charStart = sse_decode_u_32(deserializer);
+    var var_charEnd = sse_decode_u_32(deserializer);
+    var var_lines = sse_decode_list_layout_line_dto(deserializer);
+    return LayoutPageDto(
+      charStart: var_charStart,
+      charEnd: var_charEnd,
+      lines: var_lines,
+    );
+  }
+
+  @protected
+  LayoutResultDto sse_decode_layout_result_dto(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var var_plainText = sse_decode_String(deserializer);
+    var var_pages = sse_decode_list_layout_page_dto(deserializer);
+    return LayoutResultDto(plainText: var_plainText, pages: var_pages);
   }
 
   @protected
@@ -347,6 +910,88 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  List<KirBlockDto> sse_decode_list_kir_block_dto(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    var len_ = sse_decode_i_32(deserializer);
+    var ans_ = <KirBlockDto>[];
+    for (var idx_ = 0; idx_ < len_; ++idx_) {
+      ans_.add(sse_decode_kir_block_dto(deserializer));
+    }
+    return ans_;
+  }
+
+  @protected
+  List<KirSpanDto> sse_decode_list_kir_span_dto(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    var len_ = sse_decode_i_32(deserializer);
+    var ans_ = <KirSpanDto>[];
+    for (var idx_ = 0; idx_ < len_; ++idx_) {
+      ans_.add(sse_decode_kir_span_dto(deserializer));
+    }
+    return ans_;
+  }
+
+  @protected
+  List<KomaChapterInfo> sse_decode_list_koma_chapter_info(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    var len_ = sse_decode_i_32(deserializer);
+    var ans_ = <KomaChapterInfo>[];
+    for (var idx_ = 0; idx_ < len_; ++idx_) {
+      ans_.add(sse_decode_koma_chapter_info(deserializer));
+    }
+    return ans_;
+  }
+
+  @protected
+  List<LayoutGlyphDto> sse_decode_list_layout_glyph_dto(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    var len_ = sse_decode_i_32(deserializer);
+    var ans_ = <LayoutGlyphDto>[];
+    for (var idx_ = 0; idx_ < len_; ++idx_) {
+      ans_.add(sse_decode_layout_glyph_dto(deserializer));
+    }
+    return ans_;
+  }
+
+  @protected
+  List<LayoutLineDto> sse_decode_list_layout_line_dto(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    var len_ = sse_decode_i_32(deserializer);
+    var ans_ = <LayoutLineDto>[];
+    for (var idx_ = 0; idx_ < len_; ++idx_) {
+      ans_.add(sse_decode_layout_line_dto(deserializer));
+    }
+    return ans_;
+  }
+
+  @protected
+  List<LayoutPageDto> sse_decode_list_layout_page_dto(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    var len_ = sse_decode_i_32(deserializer);
+    var ans_ = <LayoutPageDto>[];
+    for (var idx_ = 0; idx_ < len_; ++idx_) {
+      ans_.add(sse_decode_layout_page_dto(deserializer));
+    }
+    return ans_;
+  }
+
+  @protected
   Uint8List sse_decode_list_prim_u_8_strict(SseDeserializer deserializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     var len_ = sse_decode_i_32(deserializer);
@@ -362,6 +1007,44 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     } else {
       return null;
     }
+  }
+
+  @protected
+  SceneChromeDto? sse_decode_opt_box_autoadd_scene_chrome_dto(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    if (sse_decode_bool(deserializer)) {
+      return (sse_decode_box_autoadd_scene_chrome_dto(deserializer));
+    } else {
+      return null;
+    }
+  }
+
+  @protected
+  SceneChromeDto sse_decode_scene_chrome_dto(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var var_environmentKind = sse_decode_String(deserializer);
+    var var_backgroundHex = sse_decode_String(deserializer);
+    var var_ambientHex = sse_decode_String(deserializer);
+    var var_ambientIntensity = sse_decode_f_64(deserializer);
+    var var_frost = sse_decode_f_64(deserializer);
+    var var_fadeSeconds = sse_decode_f_64(deserializer);
+    return SceneChromeDto(
+      environmentKind: var_environmentKind,
+      backgroundHex: var_backgroundHex,
+      ambientHex: var_ambientHex,
+      ambientIntensity: var_ambientIntensity,
+      frost: var_frost,
+      fadeSeconds: var_fadeSeconds,
+    );
+  }
+
+  @protected
+  int sse_decode_u_32(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    return deserializer.buffer.getUint32();
   }
 
   @protected
@@ -423,9 +1106,124 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  void sse_encode_box_autoadd_scene_chrome_dto(
+    SceneChromeDto self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_scene_chrome_dto(self, serializer);
+  }
+
+  @protected
+  void sse_encode_chapter_payload_dto(
+    ChapterPayloadDto self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_kir_chapter_dto(self.chapter, serializer);
+    sse_encode_opt_box_autoadd_scene_chrome_dto(self.scene, serializer);
+  }
+
+  @protected
+  void sse_encode_f_64(double self, SseSerializer serializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    serializer.buffer.putFloat64(self);
+  }
+
+  @protected
   void sse_encode_i_64(PlatformInt64 self, SseSerializer serializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     serializer.buffer.putPlatformInt64(self);
+  }
+
+  @protected
+  void sse_encode_kir_block_dto(KirBlockDto self, SseSerializer serializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_String(self.kind, serializer);
+    sse_encode_list_kir_span_dto(self.spans, serializer);
+    sse_encode_opt_String(self.mediaId, serializer);
+    sse_encode_opt_String(self.alt, serializer);
+    sse_encode_bool(self.ordered, serializer);
+    sse_encode_list_kir_block_dto(self.children, serializer);
+  }
+
+  @protected
+  void sse_encode_kir_chapter_dto(
+    KirChapterDto self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_String(self.id, serializer);
+    sse_encode_opt_String(self.title, serializer);
+    sse_encode_list_kir_block_dto(self.blocks, serializer);
+  }
+
+  @protected
+  void sse_encode_kir_span_dto(KirSpanDto self, SseSerializer serializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_String(self.text, serializer);
+    sse_encode_bool(self.bold, serializer);
+    sse_encode_bool(self.italic, serializer);
+    sse_encode_bool(self.underline, serializer);
+    sse_encode_opt_String(self.color, serializer);
+  }
+
+  @protected
+  void sse_encode_koma_chapter_info(
+    KomaChapterInfo self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_String(self.id, serializer);
+    sse_encode_opt_String(self.title, serializer);
+  }
+
+  @protected
+  void sse_encode_layout_glyph_dto(
+    LayoutGlyphDto self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_f_64(self.x, serializer);
+    sse_encode_f_64(self.y, serializer);
+    sse_encode_f_64(self.width, serializer);
+    sse_encode_f_64(self.height, serializer);
+    sse_encode_u_32(self.charStart, serializer);
+    sse_encode_u_32(self.charEnd, serializer);
+  }
+
+  @protected
+  void sse_encode_layout_line_dto(
+    LayoutLineDto self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_f_64(self.y, serializer);
+    sse_encode_f_64(self.height, serializer);
+    sse_encode_u_32(self.charStart, serializer);
+    sse_encode_u_32(self.charEnd, serializer);
+    sse_encode_list_layout_glyph_dto(self.glyphs, serializer);
+  }
+
+  @protected
+  void sse_encode_layout_page_dto(
+    LayoutPageDto self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_u_32(self.charStart, serializer);
+    sse_encode_u_32(self.charEnd, serializer);
+    sse_encode_list_layout_line_dto(self.lines, serializer);
+  }
+
+  @protected
+  void sse_encode_layout_result_dto(
+    LayoutResultDto self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_String(self.plainText, serializer);
+    sse_encode_list_layout_page_dto(self.pages, serializer);
   }
 
   @protected
@@ -462,6 +1260,78 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  void sse_encode_list_kir_block_dto(
+    List<KirBlockDto> self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_i_32(self.length, serializer);
+    for (final item in self) {
+      sse_encode_kir_block_dto(item, serializer);
+    }
+  }
+
+  @protected
+  void sse_encode_list_kir_span_dto(
+    List<KirSpanDto> self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_i_32(self.length, serializer);
+    for (final item in self) {
+      sse_encode_kir_span_dto(item, serializer);
+    }
+  }
+
+  @protected
+  void sse_encode_list_koma_chapter_info(
+    List<KomaChapterInfo> self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_i_32(self.length, serializer);
+    for (final item in self) {
+      sse_encode_koma_chapter_info(item, serializer);
+    }
+  }
+
+  @protected
+  void sse_encode_list_layout_glyph_dto(
+    List<LayoutGlyphDto> self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_i_32(self.length, serializer);
+    for (final item in self) {
+      sse_encode_layout_glyph_dto(item, serializer);
+    }
+  }
+
+  @protected
+  void sse_encode_list_layout_line_dto(
+    List<LayoutLineDto> self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_i_32(self.length, serializer);
+    for (final item in self) {
+      sse_encode_layout_line_dto(item, serializer);
+    }
+  }
+
+  @protected
+  void sse_encode_list_layout_page_dto(
+    List<LayoutPageDto> self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_i_32(self.length, serializer);
+    for (final item in self) {
+      sse_encode_layout_page_dto(item, serializer);
+    }
+  }
+
+  @protected
   void sse_encode_list_prim_u_8_strict(
     Uint8List self,
     SseSerializer serializer,
@@ -479,6 +1349,39 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     if (self != null) {
       sse_encode_String(self, serializer);
     }
+  }
+
+  @protected
+  void sse_encode_opt_box_autoadd_scene_chrome_dto(
+    SceneChromeDto? self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    sse_encode_bool(self != null, serializer);
+    if (self != null) {
+      sse_encode_box_autoadd_scene_chrome_dto(self, serializer);
+    }
+  }
+
+  @protected
+  void sse_encode_scene_chrome_dto(
+    SceneChromeDto self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_String(self.environmentKind, serializer);
+    sse_encode_String(self.backgroundHex, serializer);
+    sse_encode_String(self.ambientHex, serializer);
+    sse_encode_f_64(self.ambientIntensity, serializer);
+    sse_encode_f_64(self.frost, serializer);
+    sse_encode_f_64(self.fadeSeconds, serializer);
+  }
+
+  @protected
+  void sse_encode_u_32(int self, SseSerializer serializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    serializer.buffer.putUint32(self);
   }
 
   @protected

@@ -69,7 +69,7 @@ class JsExtensionService implements ExtensionService {
 
     // Same factory mangayomi uses for JS manga extensions.
     final runtime = getJavascriptRuntime();
-    await injectHttpBridge(runtime);
+    await injectHttpBridge(runtime, sourceId: source.sourceId);
     await injectDomBridge(runtime);
     await injectUtilsBridge(runtime);
     await injectCryptoBridge(runtime);

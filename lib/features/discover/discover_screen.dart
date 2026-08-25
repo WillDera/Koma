@@ -6,8 +6,9 @@ import 'package:go_router/go_router.dart';
 
 import '../../core/models/source.dart';
 import '../../core/providers.dart';
+import '../../core/services/discover_metadata_cache.dart';
+import '../../core/services/metadata_enrichment_service.dart';
 import '../../core/services/source_service.dart';
-import '../../core/utils/image_cache.dart';
 import '../../router/router.dart';
 import '../../theme/app_icons.dart';
 import '../../theme/app_theme.dart';
@@ -83,12 +84,6 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
     try {
       final repos = ref.read(repositoriesProvider);
       var sources = await repos.stats.getSources();
-      if (sources.isEmpty) {
-        for (final s in SourceService.defaultSources()) {
-          await repos.stats.insertSource(s);
-        }
-        sources = await repos.stats.getSources();
-      }
       if (!mounted) return;
       final enabled = sources.where((s) => s.enabled).toList();
       setState(() {
@@ -217,6 +212,7 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
       _results = [];
       // Keep the Books/Manga tab the user started the search from.
     });
+    ref.read(discoverMetadataProvider.notifier).clearQueue();
     // Manga: progressive Global Search (per-source Loading → Success/Error).
     // Do not await — UI watches [globalSearchProvider].
     ref.read(globalSearchProvider.notifier).search(q);
@@ -231,12 +227,15 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
       _results = books;
       _searching = false;
     });
+    // Fire-and-forget; no-ops when the Settings toggle is off.
+    unawaited(ref.read(discoverMetadataProvider.notifier).enqueue(books));
   }
 
   void _clearSearch() {
     _ctrl.clear();
     _unfocusSearch();
     ref.read(globalSearchProvider.notifier).search('');
+    ref.read(discoverMetadataProvider.notifier).clearQueue();
     setState(() {
       _results = [];
       _loaded = false;
@@ -328,11 +327,10 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
       return;
     }
 
-    final ext = result.extension ?? 'epub';
     if (result.tag == 'libgen') {
       await _pickMirrorAndDownload(context, result);
     } else {
-      await _downloadDirect(result.downloadUrl!, result.title, ext);
+      await _downloadDirect(result, result.downloadUrl!);
     }
   }
 
@@ -345,8 +343,7 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
     if (!mounted) return;
     if (links.isEmpty) {
       if (result.downloadUrl != null && result.downloadUrl!.isNotEmpty) {
-        final ext = result.extension ?? 'epub';
-        await _downloadDirect(result.downloadUrl!, result.title, ext);
+        await _downloadDirect(result, result.downloadUrl!);
       }
       return;
     }
@@ -413,22 +410,51 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
       ),
     );
     if (chosen == null || chosen.isEmpty) return;
-    await _downloadDirect(chosen, result.title, result.extension ?? 'epub');
+    final fallbacks = links.values.where((u) => u != chosen).toList();
+    await _downloadDirect(result, chosen, fallbackUrls: fallbacks);
   }
 
-  Future<void> _downloadDirect(String url, String title, String ext) async {
+  Future<void> _downloadDirect(
+    SourceSearchResult result,
+    String url, {
+    List<String> fallbackUrls = const [],
+  }) async {
+    final title = result.title;
+    final ext = result.extension ?? 'epub';
     setState(() => _downloading[title] = 0.0);
-    final ok = await _svc().downloadFromLink(
+    final bookId = await _svc().downloadFromLink(
       url,
       title,
       ext,
+      fallbackUrls: fallbackUrls,
       onProgress: (p) {
         if (mounted) setState(() => _downloading[title] = p);
       },
     );
     if (!mounted) return;
     setState(() => _downloading.remove(title));
-    if (ok) {
+    if (bookId != null) {
+      final hit = ref.read(discoverMetadataProvider)[
+        discoverMetadataCacheKey(result.title, result.author)
+      ];
+      // Same preference as the Discover card: enriched cover, else LibGen poster.
+      final poster = result.poster;
+      final enrichedCover = hit?.coverUrl;
+      final displayCover =
+          (enrichedCover != null && enrichedCover.isNotEmpty)
+          ? enrichedCover
+          : (poster != null && poster.isNotEmpty ? poster : null);
+      if ((hit != null && hit.found) ||
+          (displayCover != null && displayCover.isNotEmpty)) {
+        await MetadataEnrichmentService(
+          ref.read(repositoriesProvider).books,
+        ).applyDiscoverHit(
+          bookId,
+          hit ?? const DiscoverMetadataHit(found: false),
+          coverUrlOverride: displayCover,
+        );
+      }
+      if (!mounted) return;
       ref.read(libraryProvider.notifier).loadBooks();
       StashToast.show(
         context,
@@ -663,7 +689,7 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
 
 enum _DiscoverSection { books, manga }
 
-class _DiscoverBookResults extends StatelessWidget {
+class _DiscoverBookResults extends ConsumerWidget {
   final List<SourceSearchResult> results;
   final bool gridView;
   final LibraryCardVariant cardVariant;
@@ -684,7 +710,11 @@ class _DiscoverBookResults extends StatelessWidget {
   });
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final meta = ref.watch(discoverMetadataProvider);
+    final enrichOn =
+        ref.watch(discoverMetadataEnabledProvider).value ??
+        kDiscoverMetadataEnabledDefault;
     if (results.isEmpty) {
       return const SliverToBoxAdapter(
         child: SizedBox(
@@ -711,17 +741,11 @@ class _DiscoverBookResults extends StatelessWidget {
               final result = results[i];
               return StaggeredEntrance(
                 index: i + 1,
-                child: CatalogCoverCard(
-                  title: result.title,
-                  subtitle: result.author,
-                  imageProvider: result.poster != null
-                      ? cachedCover(result.poster!)
-                      : null,
-                  badge: result.sourceName,
-                  showBadge: showSourcePills,
+                child: _bookCard(
+                  result: result,
+                  meta: meta,
+                  enrichOn: enrichOn,
                   variant: variant,
-                  downloadProgress: downloading[result.title],
-                  onTap: () => onTap(result),
                 ),
               );
             },
@@ -740,17 +764,11 @@ class _DiscoverBookResults extends StatelessWidget {
             final result = results[i];
             return StaggeredEntrance(
               index: i + 1,
-              child: CatalogCoverCard(
-                title: result.title,
-                subtitle: result.author,
-                imageProvider: result.poster != null
-                    ? cachedCover(result.poster!)
-                    : null,
-                badge: result.sourceName,
-                showBadge: showSourcePills,
+              child: _bookCard(
+                result: result,
+                meta: meta,
+                enrichOn: enrichOn,
                 variant: LibraryCardVariant.list,
-                downloadProgress: downloading[result.title],
-                onTap: () => onTap(result),
               ),
             );
           },
@@ -758,5 +776,43 @@ class _DiscoverBookResults extends StatelessWidget {
         ),
       ),
     );
+  }
+
+  Widget _bookCard({
+    required SourceSearchResult result,
+    required Map<String, DiscoverMetadataHit> meta,
+    required bool enrichOn,
+    required LibraryCardVariant variant,
+  }) {
+    final hit = enrichOn
+        ? meta[discoverMetadataCacheKey(result.title, result.author)]
+        : null;
+    final coverUrl = hit?.coverUrl;
+    final hasEnriched = coverUrl != null && coverUrl.isNotEmpty;
+    final poster = result.poster;
+    // Prefer OL/Google when enrichment is on and ready; otherwise LibGen poster
+    // (fictionruscovers / fictioncovers on libgen.li).
+    final displayUrl = hasEnriched
+        ? coverUrl
+        : (poster != null && poster.isNotEmpty ? poster : null);
+    return CatalogCoverCard(
+      title: result.title,
+      subtitle: result.author,
+      imageUrl: displayUrl,
+      headers: displayUrl != null ? discoverCoverHeaders(displayUrl) : null,
+      badge: result.sourceName,
+      secondaryBadge: result.size,
+      formatBadge: _formatLabel(result.extension),
+      showBadge: showSourcePills,
+      variant: variant,
+      downloadProgress: downloading[result.title],
+      onTap: () => onTap(result),
+    );
+  }
+
+  static String? _formatLabel(String? extension) {
+    if (extension == null) return null;
+    final label = extension.trim().replaceAll('.', '').toUpperCase();
+    return label.isEmpty ? null : label;
   }
 }

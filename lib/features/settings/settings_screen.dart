@@ -1,4 +1,6 @@
+import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
@@ -6,18 +8,28 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../../core/app_version.dart';
 import '../../core/models/source.dart';
 import '../../core/providers.dart';
+import '../../core/services/app_storage.dart';
+import '../../core/services/android_storage_access.dart';
+import '../../core/services/storage_path_rewrite.dart';
+import '../../core/isar/isar.dart' show openIsar;
 import '../../core/services/app_update/app_update_checker.dart';
 import '../../core/services/app_update/app_update_manager.dart';
 import '../../core/services/app_update/get_application_release.dart';
 import '../../core/services/export_service.dart';
 import '../../core/services/extension_manager.dart';
 import '../../core/services/keiyoushi_service.dart';
+import '../../core/services/discover_metadata_cache.dart';
+import '../../core/services/download_prefs.dart';
+import '../../core/services/http/http_prefs.dart';
+import '../../core/services/http/m_client.dart';
 import '../../core/services/library_update_prefs.dart';
 import '../../core/services/metadata_enrichment_service.dart';
 import '../../core/services/source_service.dart';
 import '../../router/router.dart';
+import '../library/library_provider.dart';
 import 'custom_font_ui.dart';
 import 'open_source_licenses_sheet.dart';
 import '../../theme/app_theme.dart';
@@ -25,7 +37,6 @@ import '../../theme/theme_provider.dart';
 import '../../theme/tokens/app_colors.dart';
 import '../../theme/tokens/app_motion.dart';
 import '../../theme/tokens/app_spacing.dart';
-import '../../theme/tokens/app_type.dart';
 import '../../widgets/animated_press.dart';
 import '../../widgets/dialog_sheet.dart';
 import '../../widgets/library_book_card.dart';
@@ -155,7 +166,7 @@ class _SettingsHub extends StatelessWidget {
           icon: Icons.storage_outlined,
           iconColor: AppColors.figmaAmber,
           title: 'Data',
-          subtitle: 'Export and import your library data',
+          subtitle: 'Storage folder, export and import',
           onTap: () => _open(context, 'Data', const _DataAndStatsPage()),
         ),
         SettingsRow(
@@ -227,6 +238,8 @@ class _DataAndStatsPage extends StatelessWidget {
   Widget build(BuildContext context) {
     return const Column(
       children: [
+        _StorageSection(),
+        SizedBox(height: 20),
         _DataSection(),
         SizedBox(height: 20),
         _DownloadQueueSection(),
@@ -247,7 +260,7 @@ class _SourcesAndPluginsPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return const Column(
-      children: [_SourcesSection(), SizedBox(height: 20), _PluginsSection()],
+      children: [_SourcesSection(), SizedBox(height: 20), _PluginsSection(), SizedBox(height: 20), _HttpNetworkSection()],
     );
   }
 }
@@ -1357,6 +1370,9 @@ class _BookMetadataSectionState extends ConsumerState<_BookMetadataSection> {
   Widget build(BuildContext context) {
     final c = context.colors;
     final progress = ref.watch(metadataEnrichmentProvider);
+    final discoverEnrich =
+        ref.watch(discoverMetadataEnabledProvider).value ??
+        kDiscoverMetadataEnabledDefault;
     return SettingsSection(
       title: 'Book metadata',
       headerColor: AppColors.figmaAmber,
@@ -1364,6 +1380,19 @@ class _BookMetadataSectionState extends ConsumerState<_BookMetadataSection> {
       footer:
           'Looks up author, cover, genres, and release date via Open Library (primary) and Google Books (fallback). An API key improves Google Books rate limits but is optional.',
       children: [
+        SettingsRow(
+          icon: Icons.travel_explore_outlined,
+          title: 'Enrich Discover book covers',
+          subtitle: discoverEnrich
+              ? 'Open Library lookups run after each book search'
+              : 'Off — Discover shows source posters only (faster)',
+          trailing: Switch(
+            value: discoverEnrich,
+            activeThumbColor: c.accent,
+            onChanged: (v) =>
+                ref.read(discoverMetadataEnabledProvider.notifier).setEnabled(v),
+          ),
+        ),
         Padding(
           padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
           child: TextField(
@@ -1399,6 +1428,131 @@ class _BookMetadataSectionState extends ConsumerState<_BookMetadataSection> {
   }
 }
 
+// ─── Library update category filters ───────────────────────────────────
+class _LibraryCategoryFilterRow extends ConsumerStatefulWidget {
+  const _LibraryCategoryFilterRow();
+
+  @override
+  ConsumerState<_LibraryCategoryFilterRow> createState() =>
+      _LibraryCategoryFilterRowState();
+}
+
+class _LibraryCategoryFilterRowState
+    extends ConsumerState<_LibraryCategoryFilterRow> {
+  LibraryUpdateCategoryFilters? _filters;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    final f = await LibraryUpdatePrefs.loadCategoryFilters();
+    if (mounted) setState(() => _filters = f);
+  }
+
+  Future<void> _edit() async {
+    final cats = ref.read(libraryProvider).categories;
+    if (cats.isEmpty) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('No library categories yet')),
+      );
+      return;
+    }
+    final current = _filters ?? const LibraryUpdateCategoryFilters();
+    final include = Set<int>.from(current.includeCategoryIds);
+    final exclude = Set<int>.from(current.excludeCategoryIds);
+
+    final result = await showDialog<LibraryUpdateCategoryFilters>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDlg) => AlertDialog(
+          title: const Text('Update poll categories'),
+          content: SizedBox(
+            width: double.maxFinite,
+            child: SingleChildScrollView(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text('Include only (empty = all):'),
+                  ...cats.map(
+                    (c) => CheckboxListTile(
+                      contentPadding: EdgeInsets.zero,
+                      title: Text(c.name),
+                      value: include.contains(c.id),
+                      onChanged: (v) => setDlg(() {
+                        if (v == true) {
+                          include.add(c.id);
+                        } else {
+                          include.remove(c.id);
+                        }
+                      }),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  const Text('Exclude:'),
+                  ...cats.map(
+                    (c) => CheckboxListTile(
+                      contentPadding: EdgeInsets.zero,
+                      title: Text(c.name),
+                      value: exclude.contains(c.id),
+                      onChanged: (v) => setDlg(() {
+                        if (v == true) {
+                          exclude.add(c.id);
+                        } else {
+                          exclude.remove(c.id);
+                        }
+                      }),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(
+                ctx,
+                LibraryUpdateCategoryFilters(
+                  includeCategoryIds: include.toList(),
+                  excludeCategoryIds: exclude.toList(),
+                ),
+              ),
+              child: const Text('Save'),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (result == null) return;
+    await LibraryUpdatePrefs.saveCategoryFilters(result);
+    if (mounted) setState(() => _filters = result);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final f = _filters;
+    final subtitle = f == null
+        ? 'Loading…'
+        : (f.includeCategoryIds.isEmpty && f.excludeCategoryIds.isEmpty)
+        ? 'All categories (no filters)'
+        : 'Include ${f.includeCategoryIds.length} · exclude ${f.excludeCategoryIds.length}';
+    return SettingsRow(
+      icon: Icons.category_outlined,
+      title: 'Category filters',
+      subtitle: subtitle,
+      trailing: const Icon(Icons.chevron_right, size: 18),
+      onTap: _edit,
+    );
+  }
+}
+
 // ─── Download queue ────────────────────────────────────────────────────
 class _DownloadQueueSection extends ConsumerWidget {
   const _DownloadQueueSection();
@@ -1411,7 +1565,7 @@ class _DownloadQueueSection extends ConsumerWidget {
       headerColor: AppColors.figmaAmber,
       padding: const EdgeInsets.symmetric(horizontal: 16),
       footer:
-          'Chapter downloads run in a shared queue across titles. Pause, cancel, or retry from the queue screen.',
+          'Chapter downloads run in a shared queue across titles. Wi‑Fi and charging gates apply to the download queue (not manual library checks).',
       children: [
         SettingsRow(
           icon: Icons.download_outlined,
@@ -1421,6 +1575,30 @@ class _DownloadQueueSection extends ConsumerWidget {
               : 'Pause, cancel, or retry chapter downloads',
           trailing: const Icon(Icons.chevron_right, size: 18),
           onTap: () => context.pushNamed(Routes.downloadQueue),
+        ),
+        _PrefSwitchRow(
+          key: const Key('download_wifi_only'),
+          icon: Icons.wifi,
+          title: 'Download over Wi‑Fi only',
+          subtitle: 'Queue waits for an unmetered network',
+          prefKey: DownloadPrefs.keyWifiOnly,
+          defaultValue: DownloadPrefs.defaultWifiOnly,
+        ),
+        _PrefSwitchRow(
+          key: const Key('download_charging_only'),
+          icon: Icons.battery_charging_full,
+          title: 'Download only while charging',
+          subtitle: 'Queue waits until the device is charging',
+          prefKey: DownloadPrefs.keyChargingOnly,
+          defaultValue: DownloadPrefs.defaultChargingOnly,
+        ),
+        _PrefSwitchRow(
+          key: const Key('download_delete_after_read'),
+          icon: Icons.auto_delete_outlined,
+          title: 'Delete downloads after read',
+          subtitle: 'Remove local chapter files when marked read',
+          prefKey: DownloadPrefs.keyDeleteAfterRead,
+          defaultValue: DownloadPrefs.defaultDeleteAfterRead,
         ),
       ],
     );
@@ -1545,6 +1723,7 @@ class _LibraryUpdateSection extends ConsumerWidget {
           prefKey: LibraryUpdatePrefs.keyDownloadNew,
           defaultValue: LibraryUpdatePrefs.defaultDownloadNew,
         ),
+        _LibraryCategoryFilterRow(),
         SettingsRow(
           icon: Icons.refresh,
           title: 'Check now',
@@ -1680,6 +1859,224 @@ class _TintedActionChip extends StatelessWidget {
   }
 }
 
+// ─── Storage ─────────────────────────────────────────────────────────────
+class _StorageSection extends ConsumerStatefulWidget {
+  const _StorageSection();
+
+  @override
+  ConsumerState<_StorageSection> createState() => _StorageSectionState();
+}
+
+class _StorageSectionState extends ConsumerState<_StorageSection> {
+  bool _picking = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final amber = AppColors.figmaAmber;
+    final path = AppStorage.rootPath;
+    return SettingsSection(
+      title: 'Storage',
+      headerColor: amber,
+      padding: const EdgeInsets.symmetric(horizontal: 16),
+      footer:
+          'Downloaded ebooks, manga chapters, covers, fonts, Piper voices, '
+          'and the library database are stored here. Changing the folder '
+          'moves Koma’s library files. On Android 11+, shared folders '
+          '(like /storage/emulated/0/koma) need All files access.',
+      children: [
+        SettingsRow(
+          icon: Icons.folder_outlined,
+          iconColor: amber,
+          title: 'Data folder',
+          subtitle: path ?? 'App default (internal storage)',
+          trailing: _picking
+              ? const SizedBox(
+                  width: 18,
+                  height: 18,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              : const Icon(Icons.chevron_right),
+          onTap: _picking ? null : _pickFolder,
+        ),
+        if (path != null)
+          SettingsRow(
+            icon: Icons.restart_alt,
+            iconColor: amber,
+            title: 'Use app default',
+            subtitle: 'Move data back to internal storage',
+            onTap: _clearFolder,
+          ),
+      ],
+    );
+  }
+
+  Future<void> _pickFolder() async {
+    setState(() => _picking = true);
+    try {
+      if (!await _ensureSharedStorageAccess()) return;
+      final picked = await FilePicker.getDirectoryPath(
+        dialogTitle: 'Choose Koma data folder',
+      );
+      if (picked == null || !mounted) return;
+      if (AndroidStorageAccess.needsAllFilesAccess(picked) &&
+          !await AndroidStorageAccess.hasAllFilesAccess()) {
+        if (mounted) {
+          StashToast.show(
+            context,
+            message:
+                'Android blocked this folder. Grant All files access, then try again.',
+            icon: Icons.error_outline,
+          );
+        }
+        return;
+      }
+      await _relocateTo(picked);
+    } catch (e) {
+      if (mounted) {
+        StashToast.show(
+          context,
+          message: _folderError(e),
+          icon: Icons.error_outline,
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _picking = false);
+    }
+  }
+
+  Future<bool> _ensureSharedStorageAccess() async {
+    if (!AndroidStorageAccess.needsAllFilesAccess('/storage/emulated/0')) {
+      return true;
+    }
+    if (await AndroidStorageAccess.hasAllFilesAccess()) return true;
+    if (!mounted) return false;
+    final go = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('All files access'),
+        content: const Text(
+          'Android does not let apps write the library database into a '
+          'shared folder (for example /storage/emulated/0/koma) unless you '
+          'grant All files access. This is a system restriction, not a '
+          'Koma bug.\n\n'
+          'Open the next screen, enable access for Koma, then come back '
+          'and choose the folder again.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Grant access'),
+          ),
+        ],
+      ),
+    );
+    if (go != true) return false;
+    await AndroidStorageAccess.requestAllFilesAccess();
+    return false;
+  }
+
+  String _folderError(Object e) {
+    final text = e.toString();
+    if (text.contains('Operation not permitted') ||
+        text.contains('PathAccessException') ||
+        text.contains('errno = 1')) {
+      return 'Android blocked writing to that folder. Grant All files '
+          'access in system settings, then try again.';
+    }
+    return 'Could not set folder: $e';
+  }
+
+  Future<void> _clearFolder() async {
+    try {
+      await _relocateTo(null);
+    } catch (e) {
+      if (mounted) {
+        StashToast.show(
+          context,
+          message: 'Could not restore default folder: $e',
+          icon: Icons.error_outline,
+        );
+      }
+    }
+  }
+
+  Future<void> _relocateTo(String? path) async {
+    if (!mounted) return;
+    showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => const AlertDialog(
+        title: Text('Moving data'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            CircularProgressIndicator(),
+            SizedBox(height: 16),
+            Text(
+              'Koma is moving your library to the new folder. '
+              'Keep the app open until this finishes.',
+            ),
+          ],
+        ),
+      ),
+    );
+    try {
+      try {
+        await ref.read(downloadManagerProvider.notifier).manager.pauseDownloads();
+      } catch (_) {}
+      try {
+        await ref.read(isarProvider).close();
+      } catch (_) {}
+      final moved = await AppStorage.migrateAndSetRoot(path);
+      if (moved != null) {
+        try {
+          final isar = await openIsar();
+          try {
+            await StoragePathRewrite.afterMigrate(
+              isar: isar,
+              oldDocuments: moved.oldDocuments,
+              oldSupport: moved.oldSupport,
+              newDocuments: moved.newDocuments,
+              newSupport: moved.newSupport,
+            );
+          } finally {
+            await isar.close();
+          }
+        } catch (_) {}
+      }
+    } finally {
+      if (mounted) Navigator.of(context, rootNavigator: true).pop();
+    }
+    if (!mounted) return;
+    setState(() {});
+    await _promptRestart();
+  }
+
+  Future<void> _promptRestart() async {
+    if (!mounted) return;
+    await showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Restart required'),
+        content: const Text(
+          'Your files are in the new folder. Close and reopen Koma so it '
+          'can open the library from there.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('OK'),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 // ─── Data ────────────────────────────────────────────────────────────────
 class _DataSection extends ConsumerStatefulWidget {
   const _DataSection();
@@ -1701,13 +2098,13 @@ class _DataSectionState extends ConsumerState<_DataSection> {
       headerColor: amber,
       padding: const EdgeInsets.symmetric(horizontal: 16),
       footer:
-          'All your data lives on this device. Backups are plain JSON you can keep anywhere.',
+          'Koma backups are JSON. You can also restore Mihon .tachibk and Mangayomi .backup files. Downloads and extension APKs are not inside those backups.',
       children: [
         SettingsRow(
           icon: Icons.file_upload_outlined,
           iconColor: amber,
           title: 'Export',
-          subtitle: 'Save books & snippets as JSON',
+          subtitle: 'Save books, manga, and snippets as JSON',
           trailing: _exporting
               ? const SizedBox(
                   width: 18,
@@ -1725,7 +2122,7 @@ class _DataSectionState extends ConsumerState<_DataSection> {
           icon: Icons.file_download_outlined,
           iconColor: violet,
           title: 'Import',
-          subtitle: 'Restore from a backup file',
+          subtitle: 'Koma JSON, Mihon .tachibk, or Mangayomi .backup',
           trailing: _importing
               ? const SizedBox(
                   width: 18,
@@ -1746,15 +2143,41 @@ class _DataSectionState extends ConsumerState<_DataSection> {
   Future<void> _export() async {
     setState(() => _exporting = true);
     try {
-      final repos = ref.watch(repositoriesProvider);
+      final repos = ref.read(repositoriesProvider);
       final svc = ExportService(repos);
-      final message = await svc.exportToJson();
-      if (mounted) {
-        StashToast.show(
-          context,
-          message: message,
-          icon: message.startsWith('Backup') ? Icons.check : Icons.info_outline,
+      final jsonStr = await svc.exportToJson();
+      final stamp = DateTime.now()
+          .toIso8601String()
+          .replaceAll(':', '-')
+          .split('.')
+          .first;
+      final fileName = 'koma_$stamp.json';
+      if (AppStorage.usesCustomRoot) {
+        final dir = Directory('${(await AppStorage.documents()).path}/exports');
+        if (!await dir.exists()) await dir.create(recursive: true);
+        await File('${dir.path}/$fileName').writeAsString(jsonStr);
+        if (mounted) {
+          StashToast.show(
+            context,
+            message: 'Backup saved to exports/$fileName',
+            icon: Icons.check,
+          );
+        }
+      } else {
+        final saved = await FilePicker.saveFile(
+          dialogTitle: 'Save Koma backup',
+          fileName: fileName,
+          type: FileType.custom,
+          allowedExtensions: const ['json'],
+          bytes: Uint8List.fromList(utf8.encode(jsonStr)),
         );
+        if (mounted && saved != null) {
+          StashToast.show(
+            context,
+            message: 'Backup saved',
+            icon: Icons.check,
+          );
+        }
       }
     } catch (e) {
       if (mounted) {
@@ -1772,27 +2195,30 @@ class _DataSectionState extends ConsumerState<_DataSection> {
   Future<void> _import() async {
     setState(() => _importing = true);
     try {
-      final repos = ref.watch(repositoriesProvider);
+      final repos = ref.read(repositoriesProvider);
       final svc = ExportService(repos);
-      String? jsonStr;
-      try {
-        final result = await FilePicker.pickFiles(
-          type: FileType.custom,
-          allowedExtensions: ['json'],
-        );
-        if (result == null || result.files.isEmpty) {
-          if (mounted) setState(() => _importing = false);
-          return;
-        }
-        jsonStr = File(result.files.single.path!).readAsStringSync();
-      } catch (_) {
+      final result = await FilePicker.pickFiles(
+        type: FileType.custom,
+        allowedExtensions: const ['json', 'tachibk', 'backup'],
+      );
+      if (result == null || result.files.isEmpty) {
         if (mounted) setState(() => _importing = false);
         return;
       }
-      final result = await svc.importFromJson(jsonStr);
+      final file = result.files.single;
+      final bytes = file.bytes ??
+          (file.path != null ? File(file.path!).readAsBytesSync() : null);
+      if (bytes == null) {
+        throw const FormatException('Could not read backup file');
+      }
+      final imported = await svc.importBytes(bytes, filename: file.name);
       if (mounted) {
         ref.read(libraryProvider.notifier).loadBooks();
-        StashToast.show(context, message: result.toString(), icon: Icons.check);
+        StashToast.show(
+          context,
+          message: imported.toString(),
+          icon: Icons.check,
+        );
       }
     } catch (e) {
       if (mounted) {
@@ -1831,14 +2257,16 @@ class _SourcesSectionState extends ConsumerState<_SourcesSection> {
       final repos = ref.read(repositoriesProvider);
       final sources = await repos.stats.getSources();
       if (sources.isEmpty) {
-        for (final s in SourceService.defaultSources()) {
-          await repos.stats.insertSource(s);
-        }
+        if (!mounted) return;
+        setState(() {
+          _sources = const [];
+          _loading = false;
+        });
+        return;
       }
-      final updated = await repos.stats.getSources();
       if (!mounted) return;
       setState(() {
-        _sources = updated;
+        _sources = sources;
         _loading = false;
       });
     } catch (e) {
@@ -1874,7 +2302,7 @@ class _SourcesSectionState extends ConsumerState<_SourcesSection> {
       headerColor: AppColors.figmaCyan,
       padding: const EdgeInsets.symmetric(horizontal: 16),
       footer:
-          'Discover tab searches all enabled sources. Add sources with the correct tag for the scraper to use.',
+          'Discover tab searches all enabled sources. Add sources in Settings → Ebook sources (e.g. Library Genesis with tag `libgen`).',
       children: [
         ..._sources.map(
           (s) => _SourceRow(
@@ -1929,6 +2357,9 @@ Future<Source?> _sourceDialog(BuildContext context, Source? existing) async {
   final nameCtrl = TextEditingController(text: existing?.name ?? '');
   final urlCtrl = TextEditingController(text: existing?.baseUrl ?? '');
   final langCtrl = TextEditingController(text: existing?.language ?? '');
+  final extCtrl = TextEditingController(
+    text: existing?.fileExtensions.join(', ') ?? 'epub',
+  );
   String tag = existing?.tag ?? 'libgen';
   final c = context.colors;
 
@@ -1941,14 +2372,15 @@ Future<Source?> _sourceDialog(BuildContext context, Source? existing) async {
           borderRadius: BorderRadius.circular(18),
           side: BorderSide(color: c.border, width: 0.5),
         ),
-        content: SizedBox(
-          width: double.maxFinite,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                existing == null ? 'Add source' : 'Edit source',
+        content: SingleChildScrollView(
+          child: SizedBox(
+            width: double.maxFinite,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  existing == null ? 'Add source' : 'Edit source',
                 style: TextStyle(
                   color: c.textPrimary,
                   fontSize: 16,
@@ -1984,7 +2416,7 @@ Future<Source?> _sourceDialog(BuildContext context, Source? existing) async {
               TextField(
                 controller: urlCtrl,
                 decoration: const InputDecoration(
-                  hintText: 'Base URL (e.g. https://libgen.gs/index.php)',
+                  hintText: 'Base URL (e.g. https://libgen.li/index.php)',
                 ),
               ),
               const SizedBox(height: 12),
@@ -1994,7 +2426,16 @@ Future<Source?> _sourceDialog(BuildContext context, Source? existing) async {
                   hintText: 'Language filter (e.g. English, French)',
                 ),
               ),
-            ],
+              const SizedBox(height: 12),
+                TextField(
+                  controller: extCtrl,
+                  decoration: const InputDecoration(
+                    hintText:
+                        'File types (comma-separated, e.g. epub, pdf, mobi)',
+                  ),
+                ),
+              ],
+            ),
           ),
         ),
         actions: [
@@ -2007,6 +2448,11 @@ Future<Source?> _sourceDialog(BuildContext context, Source? existing) async {
               if (nameCtrl.text.trim().isEmpty || urlCtrl.text.trim().isEmpty) {
                 return;
               }
+              final exts = extCtrl.text
+                  .split(',')
+                  .map((e) => e.trim().toLowerCase().replaceAll('.', ''))
+                  .where((e) => e.isNotEmpty)
+                  .toList();
               Navigator.of(ctx).pop(
                 Source(
                   id: existing?.id ?? 0,
@@ -2017,6 +2463,7 @@ Future<Source?> _sourceDialog(BuildContext context, Source? existing) async {
                   language: langCtrl.text.trim().isEmpty
                       ? null
                       : langCtrl.text.trim(),
+                  fileExtensions: exts,
                 ),
               );
             },
@@ -2573,8 +3020,141 @@ class _PluginsSection extends ConsumerWidget {
   }
 }
 
+// ─── HTTP / network (extension requests) ────────────────────────────────
+class _HttpNetworkSection extends StatefulWidget {
+  const _HttpNetworkSection();
+
+  @override
+  State<_HttpNetworkSection> createState() => _HttpNetworkSectionState();
+}
+
+class _HttpNetworkSectionState extends State<_HttpNetworkSection> {
+  bool _loading = true;
+  bool _dohEnabled = false;
+  late final TextEditingController _dohCtrl;
+  late final TextEditingController _cfCtrl;
+
+  @override
+  void initState() {
+    super.initState();
+    _dohCtrl = TextEditingController();
+    _cfCtrl = TextEditingController();
+    _load();
+  }
+
+  Future<void> _load() async {
+    final dohOn = await HttpPrefs.dohEnabled();
+    final dohUrl = await HttpPrefs.dohUrl();
+    final cfUrl = await HttpPrefs.cfProxyUrl();
+    if (!mounted) return;
+    setState(() {
+      _dohEnabled = dohOn;
+      _dohCtrl.text = dohUrl;
+      _cfCtrl.text = cfUrl;
+      _loading = false;
+    });
+  }
+
+  Future<void> _applyNetworkPrefs() async {
+    await HttpPrefs.setDohEnabled(_dohEnabled);
+    await HttpPrefs.setDohUrl(_dohCtrl.text);
+    await HttpPrefs.setCfProxyUrl(_cfCtrl.text);
+    await MClient.refreshTransport();
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Network settings saved')),
+    );
+  }
+
+  @override
+  void dispose() {
+    _dohCtrl.dispose();
+    _cfCtrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.colors;
+    if (_loading) {
+      return const SizedBox(
+        height: 48,
+        child: Center(child: CircularProgressIndicator(strokeWidth: 2)),
+      );
+    }
+    return SettingsSection(
+      title: 'HTTP',
+      headerColor: AppColors.figmaViolet,
+      padding: const EdgeInsets.symmetric(horizontal: 16),
+      footer:
+          'DoH resolves hostnames via DNS-over-HTTPS. CF proxy URL is tried before the in-app WebView solver (FlareSolverr / Byparr: http://host:8191). Per-source User-Agent overrides apply to all extension HTTP.',
+      children: [
+        SettingsRow(
+          icon: Icons.dns_outlined,
+          iconColor: AppColors.figmaViolet,
+          title: 'DNS-over-HTTPS',
+          subtitle: 'Resolve hostnames via DoH instead of system DNS',
+          trailing: Switch.adaptive(
+            value: _dohEnabled,
+            onChanged: (v) => setState(() => _dohEnabled = v),
+          ),
+        ),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+          child: TextField(
+            controller: _dohCtrl,
+            enabled: _dohEnabled,
+            style: TextStyle(color: c.textPrimary, fontSize: 14),
+            decoration: InputDecoration(
+              labelText: 'DoH endpoint',
+              hintText: HttpPrefs.defaultDohUrl,
+              labelStyle: TextStyle(color: c.textSecondary),
+              hintStyle: TextStyle(color: c.textTertiary),
+              enabledBorder: OutlineInputBorder(
+                borderSide: BorderSide(color: c.border),
+              ),
+              focusedBorder: OutlineInputBorder(
+                borderSide: BorderSide(color: c.accent),
+              ),
+            ),
+          ),
+        ),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+          child: TextField(
+            controller: _cfCtrl,
+            style: TextStyle(color: c.textPrimary, fontSize: 14),
+            decoration: InputDecoration(
+              labelText: 'Cloudflare proxy base URL',
+              hintText: 'http://127.0.0.1:8191',
+              labelStyle: TextStyle(color: c.textSecondary),
+              hintStyle: TextStyle(color: c.textTertiary),
+              enabledBorder: OutlineInputBorder(
+                borderSide: BorderSide(color: c.border),
+              ),
+              focusedBorder: OutlineInputBorder(
+                borderSide: BorderSide(color: c.accent),
+              ),
+            ),
+          ),
+        ),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+          child: SizedBox(
+            width: double.infinity,
+            child: FilledButton(
+              onPressed: _applyNetworkPrefs,
+              child: const Text('Save network settings'),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
 // ─── About ──────────────────────────────────────────────────────────────
-class _AboutSection extends StatelessWidget {
+class _AboutSection extends ConsumerWidget {
   const _AboutSection();
 
   static const _muted = Color(0xFF8888A0);
@@ -2590,10 +3170,6 @@ class _AboutSection extends StatelessWidget {
       final notifier = ProviderScope.containerOf(context)
           .read(appUpdateProvider.notifier);
       final update = ProviderScope.containerOf(context).read(appUpdateProvider);
-      if (update.stage == AppUpdateStage.downloaded && update.release != null) {
-        await NewUpdateSheet.show(context, update.release!);
-        return;
-      }
       if (update.stage == AppUpdateStage.downloading &&
           update.release != null) {
         await NewUpdateSheet.show(context, update.release!);
@@ -2606,6 +3182,7 @@ class _AboutSection extends StatelessWidget {
           notifier.offerUpdate(release);
           await NewUpdateSheet.show(context, release);
         case NoNewAppUpdate():
+          notifier.clear();
           StashToast.show(
             context,
             message: 'You\'re on the latest version',
@@ -2623,9 +3200,14 @@ class _AboutSection extends StatelessWidget {
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final c = context.colors;
     final isDark = Theme.of(context).brightness == Brightness.dark;
+    final versionLabel = ref.watch(packageInfoProvider).when(
+          data: appVersionLabel,
+          loading: () => 'Version …',
+          error: (_, _) => 'Version',
+        );
     const features = <(IconData, String, Color)>[
       (Icons.menu_book_outlined, 'EPUB reading', AppColors.figmaViolet),
       (Icons.extension_outlined, 'Manga plugins', AppColors.figmaAmber),
@@ -2691,7 +3273,7 @@ class _AboutSection extends StatelessWidget {
                 ),
                 const SizedBox(height: 4),
                 Text(
-                  'Version 2.37.37 · build 2.37.37+304',
+                  versionLabel,
                   style: TextStyle(color: c.textSecondary, fontSize: 13),
                 ),
                 const SizedBox(height: 10),
@@ -2796,7 +3378,7 @@ class _AboutSection extends StatelessWidget {
               icon: Icons.info_outline,
               iconColor: _muted,
               title: 'Koma',
-              subtitle: 'Version 2.37.37 · build 2.37.37+304',
+              subtitle: versionLabel,
             ),
             if (AppUpdateChecker.updaterEnabled)
               SettingsRow(

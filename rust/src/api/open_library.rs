@@ -1,8 +1,7 @@
 use serde::Deserialize;
 
 use super::author::match_score;
-
-const USER_AGENT: &str = "KomaMetadataEngine/0.1 (ebook reader; metadata lookup)";
+use super::http_util;
 
 #[derive(Debug, Clone, Default)]
 pub struct OlHit {
@@ -49,16 +48,7 @@ pub async fn lookup(
         url.push_str(&format!("&author={}", urlencoding::encode(a)));
     }
 
-    let resp = client
-        .get(&url)
-        .header("User-Agent", USER_AGENT)
-        .send()
-        .await
-        .map_err(|e| e.to_string())?
-        .error_for_status()
-        .map_err(|e| e.to_string())?;
-
-    let body: SearchResponse = resp.json().await.map_err(|e| e.to_string())?;
+    let body: SearchResponse = http_util::get_json(client, &url).await?;
     let docs = body.docs.unwrap_or_default();
 
     let mut best: Option<(i32, SearchDoc)> = None;
@@ -90,7 +80,7 @@ pub async fn lookup(
     let mut release_date = doc.first_publish_year.map(|y| format!("{y:04}-01-01"));
     let mut cover_url = doc
         .cover_i
-        .map(|id| format!("https://covers.openlibrary.org/b/id/{id}-L.jpg"));
+        .map(|id| format!("https://covers.openlibrary.org/b/id/{id}-M.jpg"));
 
     // Enrich from the work endpoint when we have a key.
     if let Some(ref key) = work_key {
@@ -104,7 +94,7 @@ pub async fn lookup(
             if cover_url.is_none() {
                 if let Some(id) = work.covers.and_then(|c| c.into_iter().next()) {
                     cover_url =
-                        Some(format!("https://covers.openlibrary.org/b/id/{id}-L.jpg"));
+                        Some(format!("https://covers.openlibrary.org/b/id/{id}-M.jpg"));
                 }
             }
         }
@@ -131,15 +121,7 @@ async fn fetch_work(client: &reqwest::Client, key: &str) -> Result<WorkResponse,
         format!("/{key}")
     };
     let url = format!("https://openlibrary.org{path}.json");
-    let resp = client
-        .get(&url)
-        .header("User-Agent", USER_AGENT)
-        .send()
-        .await
-        .map_err(|e| e.to_string())?
-        .error_for_status()
-        .map_err(|e| e.to_string())?;
-    resp.json().await.map_err(|e| e.to_string())
+    http_util::get_json(client, &url).await
 }
 
 fn normalize_date(raw: Option<String>) -> Option<String> {

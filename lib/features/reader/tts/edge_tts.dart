@@ -1,22 +1,20 @@
 import 'dart:async';
-import 'dart:convert';
-import 'dart:io';
-import 'dart:math';
-import 'package:crypto/crypto.dart';
+
 import 'package:flutter/foundation.dart';
+import 'package:flutter_edge_tts/flutter_edge_tts.dart';
 import 'package:just_audio/just_audio.dart';
+
 import 'tts_engine.dart';
 
 class _PrefetchedChapter {
-  final List<Uint8List> audioChunks;
-  final List<WordTimestamp> timestamps;
+  /// One synth turn per paragraph/chunk, in speak order.
+  final List<_SynthTurn> turns;
   final String voiceName;
   final double rate;
   final double pitch;
 
   const _PrefetchedChapter({
-    required this.audioChunks,
-    required this.timestamps,
+    required this.turns,
     required this.voiceName,
     required this.rate,
     required this.pitch,
@@ -29,8 +27,11 @@ class _SynthTurn {
   const _SynthTurn(this.audio, this.timestamps);
 }
 
+/// Edge online TTS. Synthesis goes through [FlutterEdgeTts]; playback,
+/// pipelined chunk prefetch, and word→char progress stay in-engine.
 class EdgeTtsEngine implements TtsEngine {
   final AudioPlayer _player = AudioPlayer();
+  FlutterEdgeTts? _client;
 
   String _voiceName = 'en-US-AndrewMultilingualNeural';
   double _rate = 0.88;
@@ -49,15 +50,17 @@ class EdgeTtsEngine implements TtsEngine {
   void Function(int)? _onProgress;
 
   List<WordTimestamp> _allTimestamps = [];
-  String _lastProgressWord = '';
+  int _lastProgressOffset = -1;
+
+  /// Fallback when Edge returns no word boundaries: map position → chars.
+  int _progressBaseOffset = 0;
+  int _progressTextLength = 0;
+  Duration _progressAudioDuration = Duration.zero;
 
   static final Map<String, _PrefetchedChapter> _prefetchCache = {};
   static final Set<String> _prefetchInFlight = {};
 
-  static const _trustedClientToken = '6A5AA1D4EAFF4E9FB37E23D68491D6F4';
-  static const _chromiumMajor = '143';
-  static const _chromiumFull = '143.0.3650.96';
-  // Edge outputFormat: audio-24khz-48kbitrate-mono-mp3
+  // Matches audio-24khz-48kbitrate-mono-mp3.
   static const _mp3BytesPerSecond = 6000.0;
 
   @override
@@ -99,16 +102,53 @@ class EdgeTtsEngine implements TtsEngine {
     return '${p >= 0 ? "+" : ""}${p.round()}%';
   }
 
+  EdgeTtsProsody get _prosody => EdgeTtsProsody(
+    rate: _ratePercent,
+    pitch: _pitchPercent,
+  );
+
   static Duration _estimateMp3Duration(Uint8List bytes) {
     if (bytes.isEmpty) return Duration.zero;
     final ms = (bytes.length / _mp3BytesPerSecond * 1000).round();
     return Duration(milliseconds: ms.clamp(1, 3600000));
   }
 
-  @override
-  Future<void> init() async {}
+  FlutterEdgeTts _ensureClient() {
+    final locale =
+        selectedVoice?.locale ?? _localeFromVoiceId(_voiceName) ?? 'en-US';
+    final config = EdgeTtsConfig(
+      voice: _voiceName,
+      voiceLocale: locale,
+      outputFormat: EdgeTtsOutputFormat.audio24Khz48KbitrateMonoMp3,
+      enableWordBoundary: true,
+    );
+    final existing = _client;
+    if (existing == null) {
+      final created = FlutterEdgeTts(
+        voice: config.voice,
+        voiceLocale: config.voiceLocale,
+        outputFormat: config.outputFormat,
+        enableWordBoundary: true,
+      );
+      _client = created;
+      return created;
+    }
+    existing.updateConfig(config);
+    return existing;
+  }
 
-  /// Background-synthesize a chapter for optimistic playback.
+  static String? _localeFromVoiceId(String id) {
+    final parts = id.split('-');
+    if (parts.length < 2) return null;
+    return '${parts[0]}-${parts[1]}';
+  }
+
+  @override
+  Future<void> init() async {
+    _ensureClient();
+  }
+
+  /// Background-synthesize a chapter for optimistic / cache hits.
   Future<void> prefetchChapter(String chapterId, String text) async {
     if (!_optimistic || text.trim().isEmpty) return;
     final key = _cacheKey(chapterId);
@@ -119,29 +159,21 @@ class EdgeTtsEngine implements TtsEngine {
     try {
       final chunks = _splitChunks(text, 0);
       if (chunks.isEmpty) return;
-      final turns = await _synthesizeTurns(chunks.map((c) => c.text).toList());
-      final timestamps = <WordTimestamp>[];
-      final audioChunks = <Uint8List>[];
-      var cumulative = Duration.zero;
-      for (var i = 0; i < turns.length && i < chunks.length; i++) {
-        final turn = turns[i];
+      final turns = <_SynthTurn>[];
+      for (final chunk in chunks) {
+        final turn = await _synthesizeOneTurn(chunk.text);
         if (turn.audio.isEmpty) continue;
-        final shifted = turn.timestamps
-            .map((t) => WordTimestamp(t.word, t.time + cumulative, 0))
-            .toList();
-        timestamps.addAll(shifted);
-        audioChunks.add(turn.audio);
-        cumulative += _estimateMp3Duration(turn.audio);
+        final stamped = List<WordTimestamp>.of(turn.timestamps);
+        _resolveCharOffsetsOnto(stamped, chunk.text, chunk.baseOffset);
+        turns.add(_SynthTurn(turn.audio, stamped));
       }
-      _resolveCharOffsetsOnto(timestamps, text, 0);
+      if (turns.isEmpty) return;
       _prefetchCache[key] = _PrefetchedChapter(
-        audioChunks: audioChunks,
-        timestamps: timestamps,
+        turns: turns,
         voiceName: _voiceName,
         rate: _rate,
         pitch: _pitch,
       );
-      // Bound cache size: keep at most 2 chapters.
       while (_prefetchCache.length > 2) {
         _prefetchCache.remove(_prefetchCache.keys.first);
       }
@@ -163,7 +195,7 @@ class EdgeTtsEngine implements TtsEngine {
     _onProgress = onProgress;
     _onComplete = onComplete;
     _allTimestamps = [];
-    _lastProgressWord = '';
+    _lastProgressOffset = -1;
 
     final adjusted = text.substring(startOffset);
     if (adjusted.isEmpty) {
@@ -186,11 +218,9 @@ class EdgeTtsEngine implements TtsEngine {
         return;
       }
 
-      if (_optimistic) {
-        await _speakOptimistic(text, startOffset, adjusted, chunks, gen);
-      } else {
-        await _speakChunkByChunk(chunks, gen);
-      }
+      // Prefer pipelined paragraph playback so the next chunk is synthesizing
+      // while the current one plays (avoids multi-second gaps).
+      await _speakPipelined(chunks, gen);
     } catch (e) {
       debugPrint('edge-tts speak error: $e');
       if (gen == _speakGeneration) {
@@ -202,74 +232,63 @@ class EdgeTtsEngine implements TtsEngine {
     }
   }
 
-  Future<void> _speakOptimistic(
-    String fullText,
-    int startOffset,
-    String adjusted,
-    List<_Chunk> chunks,
-    int gen,
-  ) async {
-    // Try prefetch cache for current chapter when starting from offset 0.
+  /// Play chunks one-by-one, always synthesizing chunk i+1 while i plays.
+  Future<void> _speakPipelined(List<_Chunk> chunks, int gen) async {
+    // Warm start from full-chapter prefetch when available (offset 0 only).
+    List<_SynthTurn?>? cachedTurns;
     final chapterId = _chapterId;
-    if (chapterId != null && startOffset == 0) {
+    if (chapterId != null &&
+        chunks.isNotEmpty &&
+        chunks.first.baseOffset == 0) {
       final key = _cacheKey(chapterId);
-      final cached = _prefetchCache.remove(key);
+      final cached = _prefetchCache[key];
       if (cached != null &&
           cached.voiceName == _voiceName &&
           cached.rate == _rate &&
           cached.pitch == _pitch &&
-          cached.audioChunks.isNotEmpty) {
-        if (gen != _speakGeneration) return;
-        _allTimestamps = List.of(cached.timestamps);
-        await _playAudioChunks(cached.audioChunks, gen);
-        return;
+          cached.turns.isNotEmpty) {
+        cachedTurns = List<_SynthTurn?>.of(cached.turns);
       }
     }
 
-    final turns = await _synthesizeTurns(chunks.map((c) => c.text).toList());
-    if (gen != _speakGeneration) return;
-
-    final audioChunks = <Uint8List>[];
-    final timestamps = <WordTimestamp>[];
-    var cumulative = Duration.zero;
-    for (final turn in turns) {
-      if (turn.audio.isEmpty) continue;
-      for (final t in turn.timestamps) {
-        timestamps.add(WordTimestamp(t.word, t.time + cumulative, 0));
+    Future<_SynthTurn?> synthAt(int index) async {
+      if (index < 0 || index >= chunks.length) return null;
+      if (cachedTurns != null && index < cachedTurns.length) {
+        final hit = cachedTurns[index];
+        if (hit != null && hit.audio.isNotEmpty) return hit;
       }
-      audioChunks.add(turn.audio);
-      cumulative += _estimateMp3Duration(turn.audio);
+      final chunk = chunks[index];
+      final turn = await _synthesizeOneTurn(chunk.text);
+      if (turn.audio.isEmpty) return null;
+      final stamped = List<WordTimestamp>.of(turn.timestamps);
+      _resolveCharOffsetsOnto(stamped, chunk.text, chunk.baseOffset);
+      return _SynthTurn(turn.audio, stamped);
     }
 
-    if (audioChunks.isEmpty) {
-      _isBuffering = false;
-      _isPlaying = false;
-      _emitState();
-      _onComplete?.call();
-      return;
-    }
+    // Kick off first (and second) synthesis immediately.
+    var pending = synthAt(0);
+    Future<_SynthTurn?>? lookahead =
+        chunks.length > 1 ? synthAt(1) : null;
 
-    _allTimestamps = timestamps;
-    _resolveCharOffsets(adjusted, startOffset);
-    await _playAudioChunks(audioChunks, gen);
-  }
-
-  Future<void> _speakChunkByChunk(List<_Chunk> chunks, int gen) async {
     for (var i = 0; i < chunks.length; i++) {
       if (gen != _speakGeneration) return;
-      final chunk = chunks[i];
-      _allTimestamps = [];
-      _lastProgressWord = '';
-      _isBuffering = true;
 
-      final turns = await _synthesizeTurns([chunk.text]);
+      _isBuffering = true;
+      _emitState();
+      final turn = await pending;
       if (gen != _speakGeneration) return;
 
-      final turn = turns.isNotEmpty ? turns.first : null;
+      // Start synthesizing the chunk after next while we play this one.
+      pending = lookahead ?? Future<_SynthTurn?>.value(null);
+      lookahead = (i + 2 < chunks.length) ? synthAt(i + 2) : null;
+
       if (turn == null || turn.audio.isEmpty) continue;
 
       _allTimestamps = List.of(turn.timestamps);
-      _resolveCharOffsets(chunk.text, chunk.baseOffset);
+      _lastProgressOffset = -1;
+      _progressBaseOffset = chunks[i].baseOffset;
+      _progressTextLength = chunks[i].text.length;
+      _progressAudioDuration = _estimateMp3Duration(turn.audio);
 
       final completed = Completer<void>();
       await _playAudioChunks(
@@ -317,6 +336,12 @@ class EdgeTtsEngine implements TtsEngine {
     );
     if (gen != _speakGeneration) return;
 
+    // Prefer real duration for position→char fallback when available.
+    final known = _player.duration;
+    if (known != null && known > Duration.zero) {
+      _progressAudioDuration = known;
+    }
+
     _stateSub?.cancel();
     _stateSub = _player.processingStateStream.listen((state) {
       if (state == ProcessingState.completed) {
@@ -339,294 +364,130 @@ class EdgeTtsEngine implements TtsEngine {
     await _player.play();
   }
 
-  Future<WebSocket> _connect() async {
-    final wsUrl = _buildWsUrl();
-    final uri = Uri.parse(wsUrl).replace(scheme: 'https');
-    final client = HttpClient();
-    final request = await client.getUrl(uri);
-    request.headers.set('Upgrade', 'websocket');
-    request.headers.set('Connection', 'Upgrade');
-    request.headers.set('Sec-WebSocket-Version', '13');
-    request.headers.set(
-      'Sec-WebSocket-Key',
-      base64Encode(List.generate(16, (_) => Random.secure().nextInt(256))),
-    );
-    request.headers.set(
-      'User-Agent',
-      'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-          ' (KHTML, like Gecko) Chrome/$_chromiumMajor.0.0.0 Safari/537.36'
-          ' Edg/$_chromiumMajor.0.0.0',
-    );
-    request.headers.set(
-      'Origin',
-      'chrome-extension://jdiccldimpdaibmpdkjnbmckianbfold',
-    );
-    final response = await request.close();
-    if (response.statusCode != HttpStatus.switchingProtocols) {
-      final body = await response.transform(utf8.decoder).join();
-      throw WebSocketException(
-        "Connection to '$wsUrl' was not upgraded to websocket, "
-        'HTTP status code: ${response.statusCode} ($body)',
-      );
+  Future<_SynthTurn> _synthesizeOneTurn(String text) async {
+    if (text.trim().isEmpty) {
+      return _SynthTurn(Uint8List(0), const []);
     }
-    final socket = await response.detachSocket();
-    return WebSocket.fromUpgradedSocket(
-      socket,
-      serverSide: false,
-      protocol: null,
+    final client = _ensureClient();
+    final result = await client.synthesize(text, prosody: _prosody);
+    return _SynthTurn(
+      result.audioBytes,
+      _timestampsFromMetadata(result.metadata),
     );
   }
 
-  String _buildWsUrl() {
-    final connectId = _connectId();
-    final secMsGec = _generateSecMsGec();
-    return 'wss://speech.platform.bing.com/consumer/speech/synthesize/readaloud/edge/v1'
-        '?TrustedClientToken=$_trustedClientToken'
-        '&Sec-MS-GEC=$secMsGec'
-        '&Sec-MS-GEC-Version=1-$_chromiumFull'
-        '&ConnectionId=$connectId';
-  }
-
-  Future<List<_SynthTurn>> _synthesizeTurns(List<String> texts) async {
-    if (texts.isEmpty) return [];
-    if (texts.length == 1) {
-      return [await _synthesizeOneTurn(texts.first)];
-    }
-
-    final ws = await _connect();
-    ws.add(_buildConfigMessage());
-
-    final results = <_SynthTurn>[];
-    final turnAudio = <int>[];
-    var turnTimestamps = <WordTimestamp>[];
-    Completer<void>? turnDone;
-
-    final sub = ws.listen(
-      (message) {
-        if (message is String) {
-          if (message.contains('\r\nPath:turn.end') && turnDone != null) {
-            if (!turnDone!.isCompleted) turnDone!.complete();
-            turnDone = null;
-          }
-          _collectWordBoundaries(message, turnTimestamps);
-        } else if (message is List<int>) {
-          final audio = _extractAudio(message);
-          if (audio != null) turnAudio.addAll(audio);
-        }
-      },
-      onError: (e) {
-        debugPrint('edge-tts stream error: $e');
-        if (turnDone != null && !turnDone!.isCompleted) turnDone!.complete();
-      },
-    );
-
-    for (final text in texts) {
-      turnAudio.clear();
-      turnTimestamps = <WordTimestamp>[];
-      turnDone = Completer<void>();
-      ws.add(_buildSsmlMessage(text));
-      await turnDone!.future.timeout(const Duration(seconds: 30));
-      results.add(
-        _SynthTurn(
-          Uint8List.fromList(List.from(turnAudio)),
-          List.of(turnTimestamps),
+  static List<WordTimestamp> _timestampsFromMetadata(
+    List<EdgeTtsMetadataItem> metadata,
+  ) {
+    final out = <WordTimestamp>[];
+    for (final item in metadata) {
+      final type = item.type.toLowerCase();
+      if (type != 'wordboundary' && !type.contains('word')) continue;
+      final word = item.data.text?.text ?? '';
+      if (word.isEmpty) continue;
+      // Edge offsets are in 100-nanosecond units.
+      out.add(
+        WordTimestamp(
+          word,
+          Duration(microseconds: (item.data.offset / 10).round()),
+          0,
         ),
       );
     }
-
-    await sub.cancel();
-    await ws.close();
-    return results;
-  }
-
-  Future<_SynthTurn> _synthesizeOneTurn(String text) async {
-    final ws = await _connect();
-    final allAudio = <int>[];
-    final timestamps = <WordTimestamp>[];
-    final completer = Completer<_SynthTurn>();
-
-    ws.listen(
-      (message) {
-        if (message is String) {
-          if (message.contains('\r\nPath:turn.end') &&
-              !completer.isCompleted) {
-            completer.complete(
-              _SynthTurn(Uint8List.fromList(List.from(allAudio)), timestamps),
-            );
-            ws.close();
-            return;
-          }
-          _collectWordBoundaries(message, timestamps);
-        } else if (message is List<int>) {
-          final audio = _extractAudio(message);
-          if (audio != null) allAudio.addAll(audio);
-        }
-      },
-      onError: (e) {
-        debugPrint('edge-tts stream error: $e');
-        if (!completer.isCompleted) {
-          completer.complete(
-            _SynthTurn(Uint8List.fromList(List.from(allAudio)), timestamps),
-          );
-        }
-      },
-      onDone: () {
-        if (!completer.isCompleted) {
-          completer.complete(
-            _SynthTurn(Uint8List.fromList(List.from(allAudio)), timestamps),
-          );
-        }
-      },
-    );
-
-    ws.add(_buildConfigMessage());
-    ws.add(_buildSsmlMessage(text));
-
-    Timer(const Duration(seconds: 30), () {
-      if (!completer.isCompleted) {
-        ws.close();
-        completer.complete(
-          _SynthTurn(Uint8List.fromList(List.from(allAudio)), timestamps),
-        );
-      }
-    });
-
-    return completer.future;
-  }
-
-  String _buildConfigMessage() {
-    return 'X-Timestamp:${_dateToString()}\r\n'
-        'Content-Type:application/json; charset=utf-8\r\n'
-        'Path:speech.config\r\n\r\n'
-        '{"context":{"synthesis":{"audio":{"metadataoptions":{'
-        '"sentenceBoundaryEnabled":"false","wordBoundaryEnabled":"true"'
-        '},"outputFormat":"audio-24khz-48kbitrate-mono-mp3"}}}}';
-  }
-
-  String _buildSsmlMessage(String text) {
-    final requestId = _connectId();
-    final ssml = _buildSsml(text);
-    return 'X-RequestId:$requestId\r\n'
-        'Content-Type:application/ssml+xml\r\n'
-        'X-Timestamp:${_dateToString()}Z\r\n'
-        'Path:ssml\r\n\r\n'
-        '$ssml';
-  }
-
-  void _collectWordBoundaries(String msg, List<WordTimestamp> into) {
-    final headerEnd = msg.indexOf('\r\n\r\n');
-    if (headerEnd < 0) return;
-    final headerBlock = msg.substring(0, headerEnd);
-    final body = msg.substring(headerEnd + 4);
-
-    if (headerBlock.contains('Path:turn.end')) return;
-
-    if (headerBlock.contains('Path:WordBoundary') ||
-        headerBlock.contains('Path:SentenceBoundary')) {
-      try {
-        final data = jsonDecode(body) as Map<String, dynamic>;
-        final metadata = data['Metadata'] as List<dynamic>? ?? [];
-        for (final m in metadata) {
-          final mData = m['Data'] as Map<String, dynamic>? ?? {};
-          final textObj = mData['text'] as Map<String, dynamic>? ?? {};
-          final word = textObj['Text'] as String? ?? '';
-          final offset = (mData['Offset'] as num?)?.toInt() ?? 0;
-          if (word.isNotEmpty) {
-            into.add(
-              WordTimestamp(
-                word,
-                Duration(microseconds: (offset / 10).round()),
-                0,
-              ),
-            );
-          }
-        }
-      } catch (_) {}
-    }
-  }
-
-  Uint8List? _extractAudio(List<int> data) {
-    final start = _indexOf(data, _pathAudioNeedle);
-    if (start < 0) return null;
-    return Uint8List.fromList(data.sublist(start + _pathAudioNeedle.length));
-  }
-
-  static const _pathAudioNeedle = <int>[
-    80,
-    97,
-    116,
-    104,
-    58,
-    97,
-    117,
-    100,
-    105,
-    111,
-    13,
-    10,
-  ]; // "Path:audio\r\n"
-
-  static int _indexOf(List<int> haystack, List<int> needle) {
-    for (int i = 0; i <= haystack.length - needle.length; i++) {
-      var match = true;
-      for (int j = 0; j < needle.length; j++) {
-        if (haystack[i + j] != needle[j]) {
-          match = false;
-          break;
-        }
-      }
-      if (match) return i;
-    }
-    return -1;
+    return out;
   }
 
   void _onPosition(Duration position) {
-    WordTimestamp? best;
-    for (final ts in _allTimestamps) {
-      if (ts.time <= position) best = ts;
+    if (_allTimestamps.isNotEmpty) {
+      WordTimestamp? best;
+      for (final ts in _allTimestamps) {
+        if (ts.time <= position) best = ts;
+      }
+      if (best != null && best.charOffset != _lastProgressOffset) {
+        _lastProgressOffset = best.charOffset;
+        _onProgress?.call(best.charOffset);
+      }
+      return;
     }
-    if (best != null &&
-        best.word != _lastProgressWord &&
-        best.charOffset >= 0) {
-      _lastProgressWord = best.word;
-      _onProgress?.call(best.charOffset);
+
+    // No word boundaries — approximate from audio position.
+    if (_progressAudioDuration <= Duration.zero || _progressTextLength <= 0) {
+      return;
+    }
+    final t = (position.inMilliseconds / _progressAudioDuration.inMilliseconds)
+        .clamp(0.0, 1.0);
+    final offset =
+        _progressBaseOffset + (t * _progressTextLength).floor();
+    if (offset != _lastProgressOffset) {
+      _lastProgressOffset = offset;
+      _onProgress?.call(offset);
     }
   }
 
-  void _resolveCharOffsets(String text, int baseOffset) {
-    _resolveCharOffsetsOnto(_allTimestamps, text, baseOffset);
-  }
-
+  /// Map Edge word timestamps onto character offsets in [text].
+  ///
+  /// Uses punctuation-stripped sequential matching so "Hello," in the chapter
+  /// still aligns with Edge's "Hello" boundary events.
   static void _resolveCharOffsetsOnto(
     List<WordTimestamp> timestamps,
     String text,
     int baseOffset,
   ) {
-    final words = text.split(RegExp(r'\s+'));
-    int charsConsumed = 0;
-    int tsIndex = 0;
-    for (int i = 0; i < words.length && tsIndex < timestamps.length; i++) {
-      if (words[i] == timestamps[tsIndex].word) {
-        timestamps[tsIndex] = WordTimestamp(
-          timestamps[tsIndex].word,
-          timestamps[tsIndex].time,
-          baseOffset + charsConsumed,
+    if (timestamps.isEmpty) return;
+
+    final tokens = <({int start, String norm})>[];
+    for (final m in RegExp(r'\S+').allMatches(text)) {
+      final raw = m.group(0)!;
+      final norm = _normalizeWord(raw);
+      if (norm.isEmpty) continue;
+      tokens.add((start: m.start, norm: norm));
+    }
+    if (tokens.isEmpty) {
+      for (var i = 0; i < timestamps.length; i++) {
+        timestamps[i] = WordTimestamp(
+          timestamps[i].word,
+          timestamps[i].time,
+          baseOffset,
         );
-        tsIndex++;
       }
-      charsConsumed += words[i].length + 1;
+      return;
+    }
+
+    var tokenIndex = 0;
+    for (var wi = 0; wi < timestamps.length; wi++) {
+      final want = _normalizeWord(timestamps[wi].word);
+      var found = -1;
+      if (want.isNotEmpty) {
+        for (var j = tokenIndex; j < tokens.length; j++) {
+          final have = tokens[j].norm;
+          if (have == want ||
+              have.startsWith(want) ||
+              want.startsWith(have)) {
+            found = j;
+            break;
+          }
+        }
+      }
+      if (found < 0) {
+        // Keep monotonic progress even when a boundary word is missing.
+        final approx = (wi * tokens.length / timestamps.length)
+            .floor()
+            .clamp(0, tokens.length - 1);
+        found = approx < tokenIndex ? tokenIndex.clamp(0, tokens.length - 1) : approx;
+      }
+      timestamps[wi] = WordTimestamp(
+        timestamps[wi].word,
+        timestamps[wi].time,
+        baseOffset + tokens[found].start,
+      );
+      tokenIndex = (found + 1).clamp(0, tokens.length);
     }
   }
 
-  String _buildSsml(String text) {
-    final escaped = _escapeXml(text);
-    return "<speak version='1.0' xmlns='http://www.w3.org/2001/10/synthesis' xml:lang='en-US'>"
-        "<voice name='$_voiceName'>"
-        "<prosody pitch='$_pitchPercent' rate='$_ratePercent'>"
-        "$escaped"
-        "</prosody>"
-        "</voice>"
-        "</speak>";
+  static String _normalizeWord(String word) {
+    return word
+        .toLowerCase()
+        .replaceAll(RegExp(r"[^\p{L}\p{N}']+", unicode: true), '');
   }
 
   void _onTtsComplete() {
@@ -674,6 +535,7 @@ class EdgeTtsEngine implements TtsEngine {
   @override
   Future<void> setVoice(TtsVoice voice) async {
     _voiceName = voice.id;
+    _ensureClient();
   }
 
   @override
@@ -690,97 +552,61 @@ class EdgeTtsEngine implements TtsEngine {
   void dispose() {
     _cleanup();
     _player.dispose();
+    final client = _client;
+    _client = null;
+    if (client != null) {
+      unawaited(client.close());
+    }
   }
 
   List<_Chunk> _splitChunks(String text, int baseOffset) {
     final chunks = <_Chunk>[];
-    final paragraphs = text.split(RegExp(r'\n\n+'));
-    int offset = baseOffset;
+    // Non-empty paragraphs with offsets preserved in [text].
+    for (final match in RegExp(r'(?:[^\n]|\n(?!\n))+').allMatches(text)) {
+      final p = match.group(0)!;
+      if (p.trim().isEmpty) continue;
+      final paraStart = baseOffset + match.start;
 
-    for (final p in paragraphs) {
-      if (p.trim().isEmpty) {
-        offset += p.length;
-        // Account for the split delimiter roughly — paragraphs from split
-        // lose separators; keep absolute offsets best-effort via running total.
+      if (p.length <= 1500) {
+        chunks.add(_Chunk(p, paraStart));
         continue;
       }
-      if (p.length <= 1500) {
-        chunks.add(_Chunk(p, offset));
-        offset += p.length;
-      } else {
-        final sentences = p.split(RegExp(r'(?<=[.!?])\s+'));
-        final buf = StringBuffer();
-        var chunkStart = offset;
-        for (final s in sentences) {
-          if (s.isEmpty) continue;
-          if (buf.length + s.length > 1500 && buf.isNotEmpty) {
-            chunks.add(_Chunk(buf.toString(), chunkStart));
-            chunkStart += buf.length;
-            buf.clear();
-          }
-          if (buf.isNotEmpty) buf.write(' ');
-          buf.write(s);
+
+      // Long paragraph: pack sentences into ≤1500-char chunks.
+      final buf = StringBuffer();
+      var chunkStart = paraStart;
+      var from = 0;
+      while (from < p.length) {
+        final end = _nextSentenceEnd(p, from);
+        final sentence = p.substring(from, end).trim();
+        if (sentence.isEmpty) {
+          from = end;
+          continue;
         }
-        if (buf.isNotEmpty) {
+        if (buf.isNotEmpty && buf.length + 1 + sentence.length > 1500) {
           chunks.add(_Chunk(buf.toString(), chunkStart));
+          buf.clear();
         }
-        offset += p.length;
+        if (buf.isEmpty) {
+          chunkStart = paraStart + from;
+        } else {
+          buf.write(' ');
+        }
+        buf.write(sentence);
+        from = end;
+      }
+      if (buf.isNotEmpty) {
+        chunks.add(_Chunk(buf.toString(), chunkStart));
       }
     }
     return chunks;
   }
 
-  static String _generateSecMsGec() {
-    final ticks =
-        (DateTime.now().toUtc().millisecondsSinceEpoch ~/ 1000) + 11644473600;
-    final rounded = ticks - (ticks % 300);
-    final windowsTicks = rounded * 10000000;
-    final toHash = '$windowsTicks$_trustedClientToken';
-    final bytes = utf8.encode(toHash);
-    final digest = sha256.convert(bytes);
-    return digest.toString().toUpperCase();
-  }
-
-  static String _connectId() {
-    final rand = Random.secure();
-    final b = List.generate(16, (_) => rand.nextInt(256));
-    b[6] = (b[6] & 0x0F) | 0x40;
-    b[8] = (b[8] & 0x3F) | 0x80;
-    final hex = b.map((v) => v.toRadixString(16).padLeft(2, '0')).join();
-    return '${hex.substring(0, 8)}-${hex.substring(8, 12)}'
-        '-${hex.substring(12, 16)}-${hex.substring(16, 20)}-${hex.substring(20)}';
-  }
-
-  static String _dateToString() {
-    final now = DateTime.now().toUtc();
-    const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-    const months = [
-      'Jan',
-      'Feb',
-      'Mar',
-      'Apr',
-      'May',
-      'Jun',
-      'Jul',
-      'Aug',
-      'Sep',
-      'Oct',
-      'Nov',
-      'Dec',
-    ];
-    return '${days[now.weekday % 7]} ${months[now.month - 1]} '
-        '${now.day.toString().padLeft(2, '0')} ${now.year} '
-        '${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}:${now.second.toString().padLeft(2, '0')} '
-        'GMT+0000 (Coordinated Universal Time)';
-  }
-
-  static String _escapeXml(String text) {
-    return text
-        .replaceAll('&', '&amp;')
-        .replaceAll('<', '&lt;')
-        .replaceAll('>', '&gt;')
-        .replaceAll('"', '&quot;')
-        .replaceAll("'", '&apos;');
+  /// Index after the next sentence ending at/after [from], or [text.length].
+  static int _nextSentenceEnd(String text, int from) {
+    final found = RegExp(r'[.!?]+(?:\s+|$)').firstMatch(text.substring(from));
+    if (found == null) return text.length;
+    return from + found.end;
   }
 
   static final List<TtsVoice> _curatedVoices = [

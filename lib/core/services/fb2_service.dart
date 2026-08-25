@@ -2,7 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'package:html/parser.dart' as html_parser;
 import 'package:html/dom.dart';
-import 'package:path_provider/path_provider.dart';
+import 'app_storage.dart';
 import '../models/book.dart';
 import '../models/chapter.dart';
 import 'ebook_media_store.dart';
@@ -230,7 +230,7 @@ class Fb2Service {
     if (match == null) return null;
     try {
       final bytes = base64Decode(match.group(1)!.trim());
-      final appDir = await getApplicationDocumentsDirectory();
+      final appDir = await AppStorage.documents();
       final coverDir = Directory('${appDir.path}/covers');
       if (!await coverDir.exists()) await coverDir.create(recursive: true);
       final outFile = File(

@@ -1,11 +1,11 @@
 import 'dart:io';
 import 'package:flutter/foundation.dart';
-import 'package:kindle_unpack/kindle_unpack.dart';
-import 'package:path_provider/path_provider.dart';
+import 'app_storage.dart';
 import '../models/book.dart';
 import '../models/chapter.dart';
 import 'ebook_media_store.dart';
 import 'epub_service.dart';
+import 'kindle_book_adapter.dart';
 
 class _RawPart {
   final Uint8List bytes;
@@ -31,11 +31,11 @@ class _MobiRaw {
 }
 
 Future<_MobiRaw> _parseMobiIsolate(Uint8List bytes) async {
-  final book = KindleBook.fromBytes(bytes);
+  final book = KindleBookAdapter.fromBytes(bytes);
 
   String? author;
   try {
-    final exth = book.exth;
+    final exth = book.section.exth;
     if (exth != null && exth.authors.isNotEmpty) {
       author = exth.authors.join(', ');
     }
@@ -95,7 +95,7 @@ class MobiService {
       String? coverPath;
       if (raw.coverBytes != null && raw.coverExtension != null) {
         try {
-          final appDir = await getApplicationDocumentsDirectory();
+          final appDir = await AppStorage.documents();
           final coverDir = Directory('${appDir.path}/covers');
           if (!await coverDir.exists()) await coverDir.create(recursive: true);
           final outFile = File(

@@ -18,6 +18,9 @@ class MangaChapter {
   final bool isOpened;
   final DateTime? readAt;
 
+  /// Epoch millis when first fetched into the library (Mihon `dateFetch`).
+  final int dateFetch;
+
   /// Raw JSON of the source-side `SChapter.memo` — round-tripped back to the
   /// Dalvik server so `getPageList` can resolve image URLs for sources that
   /// derive them from memo (e.g. allanime).
@@ -42,6 +45,7 @@ class MangaChapter {
     this.isDownloaded = false,
     this.isOpened = false,
     this.readAt,
+    this.dateFetch = 0,
     this.memo,
   });
 
@@ -63,6 +67,7 @@ class MangaChapter {
     bool isDownloaded = false,
     bool isOpened = false,
     DateTime? readAt,
+    int dateFetch = 0,
     String? memo,
   }) {
     return MangaChapter(
@@ -85,6 +90,7 @@ class MangaChapter {
       isDownloaded: isDownloaded,
       isOpened: isOpened,
       readAt: readAt,
+      dateFetch: dateFetch,
       memo: memo,
     );
   }
@@ -105,6 +111,7 @@ class MangaChapter {
     bool? isDownloaded,
     bool? isOpened,
     DateTime? readAt,
+    int? dateFetch,
     String? memo,
   }) {
     return MangaChapter(
@@ -123,6 +130,7 @@ class MangaChapter {
       isDownloaded: isDownloaded ?? this.isDownloaded,
       isOpened: isOpened ?? this.isOpened,
       readAt: readAt ?? this.readAt,
+      dateFetch: dateFetch ?? this.dateFetch,
       memo: memo ?? this.memo,
     );
   }
@@ -143,6 +151,7 @@ class MangaChapter {
     'is_downloaded': isDownloaded ? 1 : 0,
     'is_opened': isOpened ? 1 : 0,
     'read_at': readAt?.toIso8601String(),
+    'date_fetch': dateFetch,
     'memo': memo,
   };
 
@@ -164,6 +173,7 @@ class MangaChapter {
     readAt: json['read_at'] != null
         ? DateTime.parse(json['read_at'] as String)
         : null,
+    dateFetch: asIntOr(json['date_fetch']),
     memo: json['memo'] as String?,
   );
 }

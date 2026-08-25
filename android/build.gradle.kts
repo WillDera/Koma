@@ -4,6 +4,13 @@ allprojects {
         mavenCentral()
         maven { url = uri("https://jitpack.io") }
     }
+    // Piper CMake and :app both pin 1.23.0. Keep Gradle from resolving a
+    // different onnxruntime-android (versioned OrtGetApiBase ELF symbols).
+    configurations.configureEach {
+        resolutionStrategy {
+            force("com.microsoft.onnxruntime:onnxruntime-android:1.23.0")
+        }
+    }
 }
 
 // AGP 8.11 rejects `package=""` in plugin AndroidManifest.xml. Pub-cache on CI

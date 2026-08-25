@@ -183,6 +183,10 @@ class _DetailBody extends ConsumerWidget {
                     context,
                     bookId: book.id,
                     chapterId: chapterId,
+                    fileExtension: book.fileExtension,
+                    initialPage: book.fileExtension.toLowerCase() == 'pdf'
+                        ? book.currentChapterIndex
+                        : null,
                   ),
                 ),
                 const SizedBox(height: AppSpacing.xxl),
@@ -297,6 +301,7 @@ class _DetailBody extends ConsumerWidget {
                       context,
                       bookId: book.id,
                       chapterId: chapter.id,
+                      fileExtension: book.fileExtension,
                     ),
                   ),
                 );

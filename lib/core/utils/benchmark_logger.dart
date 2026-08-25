@@ -2,7 +2,7 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
-import 'package:path_provider/path_provider.dart';
+import '../services/app_storage.dart';
 
 class BenchmarkLogger {
   static bool enabled = kDebugMode || kProfileMode;
@@ -11,7 +11,7 @@ class BenchmarkLogger {
 
   static Future<File> _ensureFile() async {
     if (_file != null) return _file!;
-    final docs = await getApplicationDocumentsDirectory();
+    final docs = await AppStorage.documents();
     final dir = Directory('${docs.path}/benchmark');
     await dir.create(recursive: true);
     _file = File('${dir.path}/results.txt');

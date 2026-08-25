@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:workmanager/workmanager.dart';
 
@@ -22,6 +24,13 @@ class LibraryUpdatePrefs {
 
   // ── Auto-download (Mihon `download_new`) ─────────────────────────────
   static const keyDownloadNew = 'download_new';
+
+  // ── Category filters (Mihon library update categories) ─────────────
+  /// When non-empty, only manga in at least one of these category ids are polled.
+  static const keyIncludeCategoryIds = 'library_update_include_category_ids';
+
+  /// Manga in any of these category ids are skipped.
+  static const keyExcludeCategoryIds = 'library_update_exclude_category_ids';
 
   /// Mihon defaults: Wi‑Fi only on; charging off.
   static const defaultWifiOnly = true;
@@ -57,6 +66,38 @@ class LibraryUpdatePrefs {
   static Future<bool> isDownloadNewEnabled() async {
     final prefs = await SharedPreferences.getInstance();
     return prefs.getBool(keyDownloadNew) ?? defaultDownloadNew;
+  }
+
+  static Future<LibraryUpdateCategoryFilters> loadCategoryFilters() async {
+    final prefs = await SharedPreferences.getInstance();
+    return LibraryUpdateCategoryFilters(
+      includeCategoryIds: _readIdList(prefs, keyIncludeCategoryIds),
+      excludeCategoryIds: _readIdList(prefs, keyExcludeCategoryIds),
+    );
+  }
+
+  static Future<void> saveCategoryFilters(LibraryUpdateCategoryFilters f) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(
+      keyIncludeCategoryIds,
+      jsonEncode(f.includeCategoryIds),
+    );
+    await prefs.setString(
+      keyExcludeCategoryIds,
+      jsonEncode(f.excludeCategoryIds),
+    );
+  }
+
+  static List<int> _readIdList(SharedPreferences prefs, String key) {
+    final raw = prefs.getString(key);
+    if (raw == null || raw.isEmpty) return const [];
+    try {
+      final decoded = jsonDecode(raw);
+      if (decoded is! List) return const [];
+      return decoded.map((e) => (e as num).toInt()).toList(growable: false);
+    } catch (_) {
+      return const [];
+    }
   }
 
   /// Builds WorkManager [Constraints] for the periodic library poll.
@@ -96,4 +137,31 @@ class LibraryUpdateMangaRestrictions {
     skipWithUnread: false,
     skipNotStarted: false,
   );
+}
+
+class LibraryUpdateCategoryFilters {
+  const LibraryUpdateCategoryFilters({
+    this.includeCategoryIds = const [],
+    this.excludeCategoryIds = const [],
+  });
+
+  final List<int> includeCategoryIds;
+  final List<int> excludeCategoryIds;
+
+  /// Returns true when [mangaCategoryIds] should be skipped for polling.
+  bool shouldSkipManga(List<int> mangaCategoryIds) {
+    if (excludeCategoryIds.isNotEmpty) {
+      for (final id in mangaCategoryIds) {
+        if (excludeCategoryIds.contains(id)) return true;
+      }
+    }
+    if (includeCategoryIds.isNotEmpty) {
+      if (mangaCategoryIds.isEmpty) return true;
+      for (final id in mangaCategoryIds) {
+        if (includeCategoryIds.contains(id)) return false;
+      }
+      return true;
+    }
+    return false;
+  }
 }

@@ -12,6 +12,7 @@ import '../../theme/tokens/app_spacing.dart';
 import '../../widgets/catalog_card_layout.dart';
 import '../../widgets/catalog_cover_card.dart';
 import '../../widgets/library_book_card.dart';
+import '../../widgets/progress_ring.dart';
 import 'global_search_provider.dart';
 import 'source_browse_screen.dart';
 
@@ -60,11 +61,11 @@ class GlobalSearchFilterBar extends ConsumerWidget {
           ),
         ),
         if (state.searching && state.total > 0)
-          LinearProgressIndicator(
-            value: state.progress / state.total,
-            minHeight: 2,
-            backgroundColor: c.surfaceMuted,
+          ThinProgressBar(
+            progress: state.progress / state.total,
+            height: 2,
             color: c.accent,
+            trackColor: c.surfaceMuted,
           ),
       ],
     );

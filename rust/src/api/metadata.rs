@@ -1,8 +1,10 @@
 use futures::future::BoxFuture;
 use futures::stream::{FuturesUnordered, StreamExt};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
 use super::author::{needs_fallback, resolve_author};
+use super::http_util;
 use super::{google_books, open_library};
 
 /// One book to look up. [id] is the Isar book id and is echoed in the result.
@@ -30,7 +32,7 @@ pub struct BookMetadataResult {
 }
 
 /// Look up metadata for many books. Open Library is primary; Google Books is
-/// used when OL misses or returns an empty author+cover+genres set.
+/// used when a key is configured and OL misses or returns a thin hit.
 pub async fn lookup_books(
     queries: Vec<BookLookupQuery>,
     google_api_key: Option<String>,
@@ -40,7 +42,10 @@ pub async fn lookup_books(
     }
 
     let client = match reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(20))
+        .timeout(std::time::Duration::from_secs(25))
+        .connect_timeout(std::time::Duration::from_secs(12))
+        .pool_max_idle_per_host(0)
+        .user_agent(http_util::USER_AGENT)
         .build()
     {
         Ok(c) => Arc::new(c),
@@ -64,6 +69,7 @@ pub async fn lookup_books(
     };
 
     let key = google_api_key;
+    let skip_google = Arc::new(AtomicBool::new(false));
     let mut results = Vec::with_capacity(queries.len());
     // Preserve order by collecting into a map keyed by id, then emit in input order.
     let order: Vec<i64> = queries.iter().map(|q| q.id).collect();
@@ -71,7 +77,8 @@ pub async fn lookup_books(
 
     let mut in_flight: FuturesUnordered<BoxFuture<'static, BookMetadataResult>> =
         FuturesUnordered::new();
-    const MAX_CONCURRENCY: usize = 3;
+    // Keep concurrency low — OL + Google both rate-limit aggressive clients.
+    const MAX_CONCURRENCY: usize = 2;
 
     let mut iter = queries.into_iter();
 
@@ -79,7 +86,8 @@ pub async fn lookup_books(
         if let Some(q) = iter.next() {
             let c = Arc::clone(&client);
             let k = key.clone();
-            in_flight.push(Box::pin(async move { lookup_one(c, q, k).await }));
+            let skip = Arc::clone(&skip_google);
+            in_flight.push(Box::pin(async move { lookup_one(c, q, k, skip).await }));
         }
     }
 
@@ -88,7 +96,8 @@ pub async fn lookup_books(
         if let Some(q) = iter.next() {
             let c = Arc::clone(&client);
             let k = key.clone();
-            in_flight.push(Box::pin(async move { lookup_one(c, q, k).await }));
+            let skip = Arc::clone(&skip_google);
+            in_flight.push(Box::pin(async move { lookup_one(c, q, k, skip).await }));
         }
     }
 
@@ -104,6 +113,7 @@ async fn lookup_one(
     client: Arc<reqwest::Client>,
     query: BookLookupQuery,
     google_api_key: Option<String>,
+    skip_google: Arc<AtomicBool>,
 ) -> BookMetadataResult {
     let input_author = query.author.clone();
     let title = query.title.trim().to_string();
@@ -123,6 +133,7 @@ async fn lookup_one(
     }
 
     let author_ref = input_author.as_deref();
+    let gb_key = google_api_key.as_deref();
 
     match open_library::lookup(&client, &title, author_ref).await {
         Ok(Some(hit)) => {
@@ -133,23 +144,32 @@ async fn lookup_one(
             let remote_id = hit.remote_id;
             let result_title = hit.title;
 
-            if needs_fallback(&author, &cover_url, &genres) {
-                if let Ok(Some(gb)) =
-                    google_books::lookup(&client, &title, author_ref, google_api_key.as_deref())
-                        .await
-                {
-                    return BookMetadataResult {
-                        id: query.id,
-                        title: gb.title,
-                        author: resolve_author(author_ref, gb.author.as_deref()),
-                        cover_url: gb.cover_url.or(cover_url),
-                        genres: if gb.genres.is_empty() { genres } else { gb.genres },
-                        release_date: gb.release_date.or(release_date),
-                        source: "google_books".into(),
-                        remote_id: gb.remote_id.or(remote_id),
-                        found: true,
-                        error: None,
-                    };
+            if needs_fallback(&author, &cover_url, &genres)
+                && !skip_google.load(Ordering::Relaxed)
+            {
+                match google_books::lookup(&client, &title, author_ref, gb_key).await {
+                    Ok(Some(gb)) => {
+                        return BookMetadataResult {
+                            id: query.id,
+                            title: gb.title,
+                            author: resolve_author(author_ref, gb.author.as_deref()),
+                            cover_url: gb.cover_url.or(cover_url),
+                            genres: if gb.genres.is_empty() {
+                                genres
+                            } else {
+                                gb.genres
+                            },
+                            release_date: gb.release_date.or(release_date),
+                            source: "google_books".into(),
+                            remote_id: gb.remote_id.or(remote_id),
+                            found: true,
+                            error: None,
+                        };
+                    }
+                    Err(ge) if http_util::is_rate_limited(&ge) => {
+                        skip_google.store(true, Ordering::Relaxed);
+                    }
+                    _ => {}
                 }
             }
 
@@ -170,10 +190,21 @@ async fn lookup_one(
             // Fall through to Google Books.
         }
         Err(e) => {
-            // Try Google Books even if OL errored; keep OL error if GB also fails.
-            match google_books::lookup(&client, &title, author_ref, google_api_key.as_deref())
-                .await
-            {
+            if skip_google.load(Ordering::Relaxed) {
+                return BookMetadataResult {
+                    id: query.id,
+                    title: query.title,
+                    author: input_author,
+                    cover_url: None,
+                    genres: vec![],
+                    release_date: None,
+                    source: String::new(),
+                    remote_id: None,
+                    found: false,
+                    error: Some(format!("open_library: {e}")),
+                };
+            }
+            match google_books::lookup(&client, &title, author_ref, gb_key).await {
                 Ok(Some(gb)) => {
                     return BookMetadataResult {
                         id: query.id,
@@ -203,6 +234,9 @@ async fn lookup_one(
                     };
                 }
                 Err(ge) => {
+                    if http_util::is_rate_limited(&ge) {
+                        skip_google.store(true, Ordering::Relaxed);
+                    }
                     return BookMetadataResult {
                         id: query.id,
                         title: query.title,
@@ -220,8 +254,23 @@ async fn lookup_one(
         }
     }
 
-    // OL miss → Google Books
-    match google_books::lookup(&client, &title, author_ref, google_api_key.as_deref()).await {
+    // OL miss → Google Books (if key present and not circuit-broken)
+    if skip_google.load(Ordering::Relaxed) {
+        return BookMetadataResult {
+            id: query.id,
+            title: query.title,
+            author: input_author,
+            cover_url: None,
+            genres: vec![],
+            release_date: None,
+            source: String::new(),
+            remote_id: None,
+            found: false,
+            error: None,
+        };
+    }
+
+    match google_books::lookup(&client, &title, author_ref, gb_key).await {
         Ok(Some(gb)) => BookMetadataResult {
             id: query.id,
             title: gb.title,
@@ -246,17 +295,22 @@ async fn lookup_one(
             found: false,
             error: None,
         },
-        Err(e) => BookMetadataResult {
-            id: query.id,
-            title: query.title,
-            author: input_author,
-            cover_url: None,
-            genres: vec![],
-            release_date: None,
-            source: String::new(),
-            remote_id: None,
-            found: false,
-            error: Some(e),
-        },
+        Err(e) => {
+            if http_util::is_rate_limited(&e) {
+                skip_google.store(true, Ordering::Relaxed);
+            }
+            BookMetadataResult {
+                id: query.id,
+                title: query.title,
+                author: input_author,
+                cover_url: None,
+                genres: vec![],
+                release_date: None,
+                source: String::new(),
+                remote_id: None,
+                found: false,
+                error: Some(e),
+            }
+        }
     }
 }

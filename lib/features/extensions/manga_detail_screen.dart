@@ -7,7 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:http/http.dart' as http;
 import 'package:intl/intl.dart';
-import 'package:path_provider/path_provider.dart';
+import '../../core/services/app_storage.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../core/models/manga.dart';
@@ -98,6 +98,9 @@ class _MangaDetailScreenState extends ConsumerState<MangaDetailScreen> {
   int? _mangaId;
   String? _localThumbnail;
   bool _inLibrary = false;
+  bool _chapterSelectMode = false;
+  final Set<String> _selectedChapterUrls = {};
+  String? _notes;
 
   /// Bumped on every [_init] so in-flight network/Isar work from a previous
   /// open (or a superseded refresh) cannot mutate the current screen.
@@ -373,6 +376,7 @@ class _MangaDetailScreenState extends ConsumerState<MangaDetailScreen> {
     if (m == null || !mounted || !_isCurrentBinding) return;
     if (m.sourceId != widget.sourceId || m.url != widget.url) return;
     _mangaId = m.id;
+    _notes = m.notes;
     _inLibrary = m.inLibrary;
     final notifier = ref.read(mangaDetailProvider.notifier);
     notifier
@@ -478,7 +482,7 @@ class _MangaDetailScreenState extends ConsumerState<MangaDetailScreen> {
     Map<String, String>? headers,
   }) async {
     try {
-      final appDir = await getApplicationDocumentsDirectory();
+      final appDir = await AppStorage.documents();
       final hash = sha256.convert(utf8.encode(url)).toString();
       final thumbDir = Directory('${appDir.path}/thumbnails');
       if (!await thumbDir.exists()) await thumbDir.create(recursive: true);
@@ -1290,6 +1294,91 @@ class _MangaDetailScreenState extends ConsumerState<MangaDetailScreen> {
     }
   }
 
+  Future<void> _editNotes() async {
+    final mangaId = _mangaId;
+    if (mangaId == null) return;
+    final ctrl = TextEditingController(text: _notes ?? '');
+    final saved = await showDialog<String?>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Notes'),
+        content: TextField(
+          controller: ctrl,
+          maxLines: 6,
+          decoration: const InputDecoration(hintText: 'Personal notes…'),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, ctrl.text.trim()),
+            child: const Text('Save'),
+          ),
+        ],
+      ),
+    );
+    ctrl.dispose();
+    if (saved == null || !mounted) return;
+    final repos = ref.read(repositoriesProvider);
+    await repos.manga.setMangaNotes(mangaId, saved.isEmpty ? null : saved);
+    setState(() => _notes = saved.isEmpty ? null : saved);
+  }
+
+  List<Map<String, dynamic>> _selectedChapters() {
+    final detail = ref.read(mangaDetailProvider);
+    return detail.chapters
+        .where((ch) => _selectedChapterUrls.contains(ch['url'] as String? ?? ''))
+        .toList();
+  }
+
+  Future<void> _bulkMarkSelectedRead() async {
+    final detail = ref.read(mangaDetailProvider);
+    final mangaId = detail.mangaId;
+    if (mangaId == null) return;
+    final repos = ref.read(repositoriesProvider);
+    for (final ch in _selectedChapters()) {
+      final url = ch['url'] as String? ?? '';
+      if (url.isEmpty) continue;
+      final row = await repos.manga.getMangaChapterByUrl(mangaId, url);
+      if (row != null) await repos.manga.markMangaChapterRead(row.id);
+    }
+    setState(() {
+      _selectedChapterUrls.clear();
+      _chapterSelectMode = false;
+    });
+  }
+
+  Future<void> _bulkDownloadSelected() async {
+    final detail = ref.read(mangaDetailProvider);
+    final selected = _selectedChapters();
+    if (selected.isEmpty) return;
+    final mgr = ref.read(downloadManagerProvider.notifier);
+    await mgr.downloadChapters(
+      sourceId: widget.sourceId,
+      mangaUrl: widget.url,
+      mangaTitle: _preferTitle(detail.details?['title'] as String?, widget.title),
+      chapters: selected,
+      mangaId: detail.mangaId,
+      mangaMemo: detail.details?['memo'] as String?,
+    );
+    setState(() {
+      _selectedChapterUrls.clear();
+      _chapterSelectMode = false;
+    });
+  }
+
+  Future<void> _bulkDeleteSelectedDownloads() async {
+    final urls = _selectedChapterUrls.toList();
+    if (urls.isEmpty) return;
+    await _deleteDownloadedChapterUrls(
+      urls,
+      successMessage: 'Deleted ${urls.length} download(s)',
+    );
+    setState(() {
+      _selectedChapterUrls.clear();
+      _chapterSelectMode = false;
+    });
+  }
+
   Future<void> _downloadSingleChapter(Map<String, dynamic> ch) async {
     final url = ch['url'] as String? ?? '';
     final notifier = ref.read(downloadManagerProvider.notifier);
@@ -1673,12 +1762,52 @@ class _MangaDetailScreenState extends ConsumerState<MangaDetailScreen> {
     return Scaffold(
       extendBodyBehindAppBar: true,
       backgroundColor: c.bg,
+      bottomNavigationBar: _chapterSelectMode && _selectedChapterUrls.isNotEmpty
+          ? SafeArea(
+              child: Material(
+                color: c.surface,
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                    children: [
+                      TextButton(
+                        onPressed: _bulkMarkSelectedRead,
+                        child: const Text('Mark read'),
+                      ),
+                      TextButton(
+                        onPressed: detail.offlineMode ? null : _bulkDownloadSelected,
+                        child: const Text('Download'),
+                      ),
+                      TextButton(
+                        onPressed: _bulkDeleteSelectedDownloads,
+                        child: const Text('Delete DL'),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            )
+          : null,
       appBar: AppBar(
         backgroundColor: Colors.transparent,
         elevation: 0,
         title: const Text(''),
         centerTitle: false,
         actions: [
+          IconButton(
+            icon: Icon(
+              _chapterSelectMode ? Icons.close : Icons.checklist,
+              color: c.textPrimary,
+            ),
+            tooltip: _chapterSelectMode ? 'Cancel selection' : 'Select chapters',
+            onPressed: () {
+              setState(() {
+                _chapterSelectMode = !_chapterSelectMode;
+                if (!_chapterSelectMode) _selectedChapterUrls.clear();
+              });
+            },
+          ),
           IconButton(
             icon: Icon(Icons.filter_list_rounded, color: c.textPrimary),
             tooltip: 'Filter chapters',
@@ -1713,6 +1842,8 @@ class _MangaDetailScreenState extends ConsumerState<MangaDetailScreen> {
                     SnackBar(content: Text('WebView failed: $e')),
                   );
                 }
+              } else if (value == 'notes') {
+                await _editNotes();
               } else if (value == 'migrate') {
                 final mangaId = _mangaId;
                 if (mangaId == null) return;
@@ -1748,6 +1879,11 @@ class _MangaDetailScreenState extends ConsumerState<MangaDetailScreen> {
                 value: 'webview',
                 child: Text('Open in WebView'),
               ),
+              if (_inLibrary && _mangaId != null)
+                const PopupMenuItem(
+                  value: 'notes',
+                  child: Text('Notes'),
+                ),
               if (_inLibrary && _mangaId != null)
                 const PopupMenuItem(
                   value: 'migrate',
@@ -1950,10 +2086,26 @@ class _MangaDetailScreenState extends ConsumerState<MangaDetailScreen> {
                               c: c,
                               downloadProgress: detail.downloadProgress,
                               offlineMode: detail.offlineMode,
+                              selectMode: _chapterSelectMode,
+                              selected: _selectedChapterUrls.contains(
+                                ch['url'] as String? ?? '',
+                              ),
                               onChapterTap: (ch) async {
                                 final url = ch['url'] as String? ?? '';
+                                if (_chapterSelectMode) {
+                                  setState(() {
+                                    if (url.isEmpty) return;
+                                    if (_selectedChapterUrls.contains(url)) {
+                                      _selectedChapterUrls.remove(url);
+                                    } else {
+                                      _selectedChapterUrls.add(url);
+                                    }
+                                  });
+                                  return;
+                                }
+                                final url2 = url;
                                 if (detail.mangaId != null &&
-                                    url.isNotEmpty &&
+                                    url2.isNotEmpty &&
                                     mounted) {
                                   final repos = ref.read(repositoriesProvider);
                                   final existing = await repos.manga
@@ -2067,6 +2219,8 @@ class _MangaDetailScreenState extends ConsumerState<MangaDetailScreen> {
     required void Function(Map<String, dynamic> ch) onChapterTap,
     required void Function(Map<String, dynamic> ch)? onDownloadTap,
     required void Function(Map<String, dynamic> ch)? onDeleteTap,
+    bool selectMode = false,
+    bool selected = false,
   }) {
     final url = ch['url'] as String? ?? '';
     final isRead = ch['is_read'] as bool? ?? false;
@@ -2095,6 +2249,15 @@ class _MangaDetailScreenState extends ConsumerState<MangaDetailScreen> {
         ),
         child: Row(
           children: [
+            if (selectMode)
+              Padding(
+                padding: const EdgeInsets.only(right: 8),
+                child: Icon(
+                  selected ? Icons.check_circle : Icons.circle_outlined,
+                  color: selected ? c.accent : c.textTertiary,
+                  size: 22,
+                ),
+              ),
             Container(
               width: 2,
               height: 40,

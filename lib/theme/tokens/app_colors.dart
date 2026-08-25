@@ -85,21 +85,38 @@ class AppColors {
   static const Color warningMuted = Color(0xFFF7ECDA);
 
   // ─── Highlight palette (used in text selection & snippet colors) ──────
-  // Each is a (light, dark, sepia) triple for the four highlight hues.
-  static const Color highlightYellowLight = Color(0xFFFFE8A8);
-  static const Color highlightBlueLight = Color(0xFFC8D8FF);
-  static const Color highlightPinkLight = Color(0xFFFFD4DC);
-  static const Color highlightGreenLight = Color(0xFFC8E6C9);
+  // Marker ink: saturated enough to read as a highlighter, not a tint.
+  static const Color highlightYellowLight = Color(0xFFFFD54F);
+  static const Color highlightBlueLight = Color(0xFF64B5F6);
+  static const Color highlightPinkLight = Color(0xFFFF80AB);
+  static const Color highlightGreenLight = Color(0xFF81C784);
 
-  static const Color highlightYellowDark = Color(0xFF5C4A1E);
-  static const Color highlightBlueDark = Color(0xFF1F2A55);
-  static const Color highlightPinkDark = Color(0xFF552033);
-  static const Color highlightGreenDark = Color(0xFF1F3D24);
+  static const Color highlightYellowDark = Color(0xFFFFC107);
+  static const Color highlightBlueDark = Color(0xFF448AFF);
+  static const Color highlightPinkDark = Color(0xFFFF4081);
+  static const Color highlightGreenDark = Color(0xFF66BB6A);
 
-  static const Color highlightYellowSepia = Color(0xFFE8D08A);
-  static const Color highlightBlueSepia = Color(0xFFB8C4D8);
-  static const Color highlightPinkSepia = Color(0xFFE8B8B8);
-  static const Color highlightGreenSepia = Color(0xFFB8C8A8);
+  static const Color highlightYellowSepia = Color(0xFFFFC14D);
+  static const Color highlightBlueSepia = Color(0xFF7EABD4);
+  static const Color highlightPinkSepia = Color(0xFFE8899A);
+  static const Color highlightGreenSepia = Color(0xFF8FBF6A);
+
+  /// Background wash over reading text. Higher than the old 0.35 so the
+  /// marker actually shows; still translucent enough to keep glyphs readable.
+  static const double highlightWashAlpha = 0.5;
+
+  /// [highlight] at [highlightWashAlpha] for TextStyle / canvas fills.
+  static Color highlightWash(
+    String key,
+    Brightness brightness, {
+    bool isSepia = false,
+  }) {
+    return highlight(
+      key,
+      brightness,
+      isSepia: isSepia,
+    ).withValues(alpha: highlightWashAlpha);
+  }
 
   // ─── Glass surface tints (used by sheets with blur) ───────────────────
   static const Color glassLight = Color(0xCCFFFFFF);

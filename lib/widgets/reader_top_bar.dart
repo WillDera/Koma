@@ -7,6 +7,7 @@ import 'icon_button_round.dart';
 /// Auto-hiding top bar for the reader. Slides up/down with the parent.
 class ReaderTopBar extends StatelessWidget {
   final String bookTitle;
+  final String? bookAuthor;
   final String? chapterTitle;
   final double progress;
   final VoidCallback onBack;
@@ -19,6 +20,7 @@ class ReaderTopBar extends StatelessWidget {
   const ReaderTopBar({
     super.key,
     required this.bookTitle,
+    this.bookAuthor,
     required this.chapterTitle,
     required this.progress,
     required this.onBack,
@@ -29,15 +31,24 @@ class ReaderTopBar extends StatelessWidget {
     this.background,
   });
 
+  /// Height of the bar below [MediaQuery.viewPadding.top] (row + progress).
+  /// Keep in sync with the Column below; page padding uses this.
+  /// Sized for title + optional author + optional chapter + progress strip.
+  static const double bodyHeight = 62;
+
   @override
   Widget build(BuildContext context) {
     final c = context.colors;
     final bg = background ?? c.bg;
+    final author = bookAuthor?.trim();
+    final hasAuthor = author != null && author.isNotEmpty;
     return AnimatedSlide(
       duration: AppMotion.base,
       curve: AppMotion.standard,
       offset: visible ? Offset.zero : const Offset(0, -1),
-      child: GlassBlur.layer(
+      child: IgnorePointer(
+        ignoring: !visible,
+        child: GlassBlur.layer(
         child: Container(
           color: bg.withValues(alpha: 0.78),
           child: SafeArea(
@@ -71,13 +82,23 @@ class ReaderTopBar extends StatelessWidget {
                                   fontWeight: FontWeight.w600,
                                 ),
                               ),
+                              if (hasAuthor)
+                                Text(
+                                  author,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: TextStyle(
+                                    color: c.textSecondary,
+                                    fontSize: 12,
+                                  ),
+                                ),
                               if (chapterTitle != null)
                                 Text(
                                   chapterTitle!,
                                   maxLines: 1,
                                   overflow: TextOverflow.ellipsis,
                                   style: TextStyle(
-                                    color: c.textSecondary,
+                                    color: c.textTertiary,
                                     fontSize: 12,
                                   ),
                                 ),
@@ -114,7 +135,6 @@ class ReaderTopBar extends StatelessWidget {
                       ],
                     ),
                   ),
-                  // Thin progress line at the very top
                   SizedBox(
                     height: 2,
                     child: LayoutBuilder(
@@ -136,7 +156,8 @@ class ReaderTopBar extends StatelessWidget {
             ),
           ),
         ),
-      );
+      ),
+    );
   }
 }
 

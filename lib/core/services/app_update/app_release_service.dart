@@ -39,7 +39,7 @@ class AppReleaseService {
     final assets = json['assets'];
     if (version.isEmpty || assets is! List) return null;
 
-    final downloadLink = _pickApkUrl(assets);
+    final downloadLink = pickApkUrl(assets);
     if (downloadLink == null) return null;
 
     final info = infoRaw
@@ -58,17 +58,25 @@ class AppReleaseService {
     );
   }
 
-  /// Prefer `app-release.apk` (CI artifact), else the first `.apk` asset.
-  static String? _pickApkUrl(List<dynamic> assets) {
+  /// Prefer a versioned `koma-*.apk`, then `app-release.apk`, else any `.apk`.
+  static String? pickApkUrl(List<dynamic> assets) {
+    String? versioned;
+    String? releaseNamed;
     String? fallback;
     for (final raw in assets) {
       if (raw is! Map) continue;
       final name = raw['name'] as String? ?? '';
       final url = raw['browser_download_url'] as String? ?? '';
       if (!name.toLowerCase().endsWith('.apk') || url.isEmpty) continue;
-      if (name == 'app-release.apk') return url;
-      fallback ??= url;
+      final lower = name.toLowerCase();
+      if (lower.startsWith('koma-')) {
+        versioned ??= url;
+      } else if (lower == 'app-release.apk') {
+        releaseNamed ??= url;
+      } else {
+        fallback ??= url;
+      }
     }
-    return fallback;
+    return versioned ?? releaseNamed ?? fallback;
   }
 }

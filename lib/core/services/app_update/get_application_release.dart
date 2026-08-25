@@ -1,5 +1,3 @@
-import 'package:flutter/foundation.dart';
-
 import '../../utils/language.dart';
 import 'app_release.dart';
 import 'app_release_service.dart';
@@ -27,7 +25,6 @@ class GetApplicationRelease {
   /// Compares semver segments via [compareVersions], then build numbers when
   /// semver matches. Tags like `v2.37.33+300` must not be digit-stripped
   /// (that incorrectly yields `2.37.33300`).
-  @visibleForTesting
   static bool isNewVersion({
     required String versionName,
     required String versionTag,

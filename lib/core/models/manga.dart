@@ -19,6 +19,21 @@ class Manga {
   /// Round-tripped on detail fetch / library reopen (Mihon parity).
   final String? memo;
 
+  /// [LibraryCategory] ids. Stored in the MangaExtras sidecar.
+  final List<int> categoryIds;
+
+  /// Mihon user notes. Stored in the MangaExtras sidecar.
+  final String? notes;
+
+  /// Local custom cover path. Stored in the MangaExtras sidecar.
+  final String? customCoverPath;
+
+  /// Mihon reader viewer flags. Stored in MangaExtras (opaque to Koma UI).
+  final int viewerFlags;
+
+  /// Mihon chapter-list flags. Stored in MangaExtras (opaque to Koma UI).
+  final int chapterFlags;
+
   final DateTime createdAt;
   final DateTime updatedAt;
 
@@ -36,9 +51,15 @@ class Manga {
     this.inLibrary = false,
     this.readingStatus = 0,
     this.memo,
+    List<int>? categoryIds,
+    this.notes,
+    this.customCoverPath,
+    this.viewerFlags = 0,
+    this.chapterFlags = 0,
     DateTime? createdAt,
     DateTime? updatedAt,
   }) : genres = List.unmodifiable(genres ?? const []),
+       categoryIds = List.unmodifiable(categoryIds ?? const []),
        createdAt = createdAt ?? DateTime.now(),
        updatedAt = updatedAt ?? DateTime.now();
 
@@ -56,6 +77,11 @@ class Manga {
     bool? inLibrary,
     int? readingStatus,
     String? memo,
+    List<int>? categoryIds,
+    String? notes,
+    String? customCoverPath,
+    int? viewerFlags,
+    int? chapterFlags,
     DateTime? createdAt,
     DateTime? updatedAt,
   }) {
@@ -73,6 +99,11 @@ class Manga {
       inLibrary: inLibrary ?? this.inLibrary,
       readingStatus: readingStatus ?? this.readingStatus,
       memo: memo ?? this.memo,
+      categoryIds: categoryIds ?? this.categoryIds,
+      notes: notes ?? this.notes,
+      customCoverPath: customCoverPath ?? this.customCoverPath,
+      viewerFlags: viewerFlags ?? this.viewerFlags,
+      chapterFlags: chapterFlags ?? this.chapterFlags,
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
     );
@@ -92,6 +123,11 @@ class Manga {
     'in_library': inLibrary ? 1 : 0,
     'reading_status': readingStatus,
     'memo': memo,
+    'category_ids': categoryIds,
+    'notes': notes,
+    'custom_cover_path': customCoverPath,
+    'viewer_flags': viewerFlags,
+    'chapter_flags': chapterFlags,
     'created_at': createdAt.toIso8601String(),
     'updated_at': updatedAt.toIso8601String(),
   };
@@ -110,6 +146,13 @@ class Manga {
     inLibrary: (json['in_library'] as int? ?? 0) == 1,
     readingStatus: json['reading_status'] as int? ?? 0,
     memo: coerceMemoJson(json['memo']),
+    categoryIds: (json['category_ids'] as List<dynamic>?)
+        ?.map((e) => (e as num).toInt())
+        .toList(),
+    notes: json['notes'] as String?,
+    customCoverPath: json['custom_cover_path'] as String?,
+    viewerFlags: (json['viewer_flags'] as num?)?.toInt() ?? 0,
+    chapterFlags: (json['chapter_flags'] as num?)?.toInt() ?? 0,
     createdAt: json['created_at'] != null
         ? DateTime.parse(json['created_at'] as String)
         : DateTime.now(),

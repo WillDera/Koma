@@ -8,11 +8,13 @@ import '../features/downloads/download_queue_screen.dart';
 import '../features/extensions/extensions_screen.dart';
 import '../features/extensions/global_search_screen.dart';
 import '../features/extensions/manga_detail_screen.dart';
+import '../features/extensions/migrate_batch_screen.dart';
 import '../features/extensions/sources_screen.dart';
 import '../features/history/history_screen.dart';
 import '../features/library/book_detail_screen.dart';
 import '../features/library/library_screen.dart';
 import '../features/reader/manga_reader_screen.dart';
+import '../features/reader/pdf_reader_screen.dart';
 import '../features/reader/reader_screen.dart';
 import '../features/search/search_screen.dart';
 import '../features/settings/settings_screen.dart';
@@ -39,6 +41,8 @@ abstract final class Routes {
   static const sources = 'sources';
   static const downloadQueue = 'downloadQueue';
   static const globalSearch = 'globalSearch';
+  static const pdfReader = 'pdfReader';
+  static const migrateBatch = 'migrateBatch';
 }
 
 // ── Typed argument records for detail routes ─────────────────────────
@@ -82,6 +86,8 @@ typedef MangaDetailArgs = ({
   Manga? manga,
   String? memo,
 });
+
+typedef PdfReaderArgs = ({int bookId, int? initialPage});
 
 final GlobalKey<NavigatorState> rootNavigatorKey = GlobalKey<NavigatorState>(
   debugLabel: 'root',
@@ -258,9 +264,29 @@ final GoRouter appRouter = GoRouter(
       name: Routes.globalSearch,
       parentNavigatorKey: rootNavigatorKey,
       builder: (context, state) {
-        final q = state.extra is String ? state.extra as String : null;
-        return GlobalSearchScreen(initialQuery: q);
+        final fromExtra = state.extra is String ? state.extra as String : null;
+        final fromQuery = state.uri.queryParameters['q'];
+        return GlobalSearchScreen(initialQuery: fromExtra ?? fromQuery);
       },
+    ),
+    GoRoute(
+      path: '/pdf-reader',
+      name: Routes.pdfReader,
+      parentNavigatorKey: rootNavigatorKey,
+      builder: (context, state) {
+        final args = state.extra as PdfReaderArgs?;
+        final bookId = args?.bookId ?? 0;
+        return PdfReaderScreen(
+          bookId: bookId,
+          initialPage: args?.initialPage,
+        );
+      },
+    ),
+    GoRoute(
+      path: '/migrate-batch',
+      name: Routes.migrateBatch,
+      parentNavigatorKey: rootNavigatorKey,
+      builder: (context, state) => const MigrateBatchScreen(),
     ),
     GoRoute(
       path: '/download-queue',

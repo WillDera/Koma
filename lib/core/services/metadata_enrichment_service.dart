@@ -4,12 +4,15 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:http/http.dart' as http;
 import 'package:path/path.dart' as p;
-import 'package:path_provider/path_provider.dart';
+import 'app_storage.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/book.dart';
 import '../providers.dart';
 import '../repositories/book_repository.dart';
+import 'cover_enhance_service.dart';
+import 'discover_metadata_cache.dart';
+import 'http/m_client.dart';
 import '../../src/rust/api/metadata.dart' as rust;
 
 const kGoogleBooksApiKeyPref = 'google_books_api_key';
@@ -116,43 +119,119 @@ class MetadataEnrichmentService {
     return results;
   }
 
+  /// Apply a Discover-session [DiscoverMetadataHit] after the book is imported.
+  /// Skips another Open Library / Google lookup.
+  ///
+  /// [coverUrlOverride] is the URL actually shown on the Discover card
+  /// (enriched cover or LibGen poster). When set, that image is downloaded,
+  /// enhanced, and stored as the library cover.
+  Future<void> applyDiscoverHit(
+    int bookId,
+    DiscoverMetadataHit hit, {
+    String? coverUrlOverride,
+  }) async {
+    if (!hit.found &&
+        (coverUrlOverride == null || coverUrlOverride.isEmpty)) {
+      return;
+    }
+    String? localCover;
+    final coverUrl = (coverUrlOverride != null && coverUrlOverride.isNotEmpty)
+        ? coverUrlOverride
+        : hit.coverUrl;
+    if (coverUrl != null && coverUrl.isNotEmpty) {
+      localCover = await downloadAndEnhanceCover(bookId, coverUrl);
+    }
+    if (!hit.found) {
+      if (localCover != null) {
+        await _books.applyEnrichment(
+          bookId: bookId,
+          author: null,
+          localCoverPath: localCover,
+          genres: const [],
+          releaseDate: null,
+          source: 'discover',
+          remoteId: null,
+          coverUrl: coverUrl,
+          rawTitle: null,
+        );
+      }
+      return;
+    }
+    DateTime? releaseDate;
+    if (hit.releaseDate != null && hit.releaseDate!.isNotEmpty) {
+      releaseDate = DateTime.tryParse(hit.releaseDate!);
+    }
+    await _books.applyEnrichment(
+      bookId: bookId,
+      author: hit.author,
+      localCoverPath: localCover,
+      genres: hit.genres,
+      releaseDate: releaseDate,
+      source: hit.source,
+      remoteId: hit.remoteId,
+      coverUrl: hit.coverUrl ?? coverUrl,
+      rawTitle: null,
+    );
+  }
+
+  /// Download [url], enhance for library display, write under `covers/`.
+  Future<String?> downloadAndEnhanceCover(int bookId, String url) =>
+      _downloadCover(bookId, url);
+
   Future<String?> _downloadCover(int bookId, String url) async {
     try {
-      final resp = await http.get(Uri.parse(url)).timeout(
-            const Duration(seconds: 20),
-          );
-      if (resp.statusCode < 200 || resp.statusCode >= 300) return null;
-      if (resp.bodyBytes.isEmpty) return null;
-
-      final appDir = await getApplicationDocumentsDirectory();
-      final coverDir = Directory(p.join(appDir.path, 'covers'));
-      if (!await coverDir.exists()) {
-        await coverDir.create(recursive: true);
+      var resolved = preferMediumCoverUrl(url);
+      if (resolved.startsWith('http://')) {
+        resolved = resolved.replaceFirst('http://', 'https://');
       }
-      final ext = _guessExt(url, resp.headers['content-type']);
-      final file = File(
-        p.join(
-          coverDir.path,
-          '${bookId}_${DateTime.now().millisecondsSinceEpoch}$ext',
-        ),
-      );
-      await file.writeAsBytes(resp.bodyBytes, flush: true);
-      return file.path;
+      final uri = Uri.parse(resolved);
+      final client = http.Client();
+      try {
+        final request = http.Request('GET', uri);
+        request.headers['User-Agent'] = kBrowserUserAgent;
+        request.headers['Accept'] = 'image/avif,image/webp,image/*,*/*;q=0.8';
+        if (uri.host.contains('openlibrary.org')) {
+          request.headers['Referer'] = 'https://openlibrary.org/';
+        } else if (uri.host.contains('googleapis.com') ||
+            uri.host.contains('googleusercontent.com')) {
+          request.headers['Referer'] = 'https://books.google.com/';
+        } else if (uri.host.contains('libgen')) {
+          request.headers['Referer'] = 'https://libgen.li/';
+        }
+        final streamed = await client
+            .send(request)
+            .timeout(const Duration(seconds: 45));
+        if (streamed.statusCode < 200 || streamed.statusCode >= 300) {
+          return null;
+        }
+        final body = await streamed.stream.toBytes().timeout(
+          const Duration(seconds: 45),
+        );
+        if (body.isEmpty) return null;
+
+        final enhanced = await CoverEnhanceService.enhance(body);
+
+        final appDir = await AppStorage.documents();
+        final coverDir = Directory(p.join(appDir.path, 'covers'));
+        if (!await coverDir.exists()) {
+          await coverDir.create(recursive: true);
+        }
+        // Enhanced output is always JPEG.
+        final file = File(
+          p.join(
+            coverDir.path,
+            '${bookId}_${DateTime.now().millisecondsSinceEpoch}.jpg',
+          ),
+        );
+        await file.writeAsBytes(enhanced, flush: true);
+        return file.path;
+      } finally {
+        client.close();
+      }
     } catch (e, st) {
       debugPrint('cover download failed: $e\n$st');
       return null;
     }
-  }
-
-  String _guessExt(String url, String? contentType) {
-    final lower = url.toLowerCase();
-    if (lower.contains('.png')) return '.png';
-    if (lower.contains('.webp')) return '.webp';
-    if (contentType != null) {
-      if (contentType.contains('png')) return '.png';
-      if (contentType.contains('webp')) return '.webp';
-    }
-    return '.jpg';
   }
 }
 

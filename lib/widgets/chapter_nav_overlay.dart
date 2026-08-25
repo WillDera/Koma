@@ -10,7 +10,7 @@ import '../theme/tokens/app_type.dart';
 /// Shows a slide-up panel with a large chapter scrubber, current chapter
 /// title, and prev/next buttons. Designed for the Aethelgard neo-noir
 /// aesthetic (glassmorphism surface, accent tint, rounded pill slider).
-class ChapterNavOverlay extends StatelessWidget {
+class ChapterNavOverlay extends StatefulWidget {
   final List<Chapter> chapters;
   final int currentIndex;
   final ValueChanged<int> onSelect;
@@ -52,12 +52,44 @@ class ChapterNavOverlay extends StatelessWidget {
   }
 
   @override
+  State<ChapterNavOverlay> createState() => _ChapterNavOverlayState();
+}
+
+class _ChapterNavOverlayState extends State<ChapterNavOverlay> {
+  late int _index;
+
+  @override
+  void initState() {
+    super.initState();
+    _index = widget.currentIndex.clamp(0, widget.chapters.length - 1);
+  }
+
+  void _goTo(int index) {
+    if (index < 0 || index >= widget.chapters.length || index == _index) {
+      return;
+    }
+    setState(() => _index = index);
+    widget.onSelect(index);
+  }
+
+  void _previous() {
+    if (_index <= 0) return;
+    setState(() => _index -= 1);
+    widget.onPrevious();
+  }
+
+  void _next() {
+    if (_index >= widget.chapters.length - 1) return;
+    setState(() => _index += 1);
+    widget.onNext();
+  }
+
+  @override
   Widget build(BuildContext context) {
     final c = context.colors;
-    final ch = chapters[currentIndex];
-    final progress = chapters.length > 1
-        ? currentIndex / (chapters.length - 1)
-        : 0.0;
+    final ch = widget.chapters[_index];
+    final last = widget.chapters.length - 1;
+    final progress = last > 0 ? _index / last : 0.0;
 
     return Container(
       margin: const EdgeInsets.fromLTRB(16, 8, 16, 24),
@@ -88,7 +120,7 @@ class ChapterNavOverlay extends StatelessWidget {
 
           // Chapter title + meta
           Text(
-            'Chapter ${currentIndex + 1} of ${chapters.length}',
+            'Chapter ${_index + 1} of ${widget.chapters.length}',
             style: AppType.labelCaps(fontSize: 12, color: c.textTertiary),
           ),
           const SizedBox(height: 6),
@@ -119,9 +151,9 @@ class ChapterNavOverlay extends StatelessWidget {
                 IconButton(
                   icon: Icon(
                     Icons.skip_previous_rounded,
-                    color: c.textSecondary,
+                    color: _index > 0 ? c.textSecondary : c.textTertiary,
                   ),
-                  onPressed: onPrevious,
+                  onPressed: _index > 0 ? _previous : null,
                 ),
                 Expanded(
                   child: SliderTheme(
@@ -144,19 +176,19 @@ class ChapterNavOverlay extends StatelessWidget {
                       value: progress.clamp(0.0, 1.0),
                       min: 0.0,
                       max: 1.0,
-                      divisions: chapters.length > 1
-                          ? chapters.length - 1
+                      divisions: last > 0 ? last : null,
+                      onChanged: last > 0
+                          ? (v) => _goTo((v * last).round())
                           : null,
-                      onChanged: (v) {
-                        final idx = (v * (chapters.length - 1)).round();
-                        onSelect(idx);
-                      },
                     ),
                   ),
                 ),
                 IconButton(
-                  icon: Icon(Icons.skip_next_rounded, color: c.textSecondary),
-                  onPressed: onNext,
+                  icon: Icon(
+                    Icons.skip_next_rounded,
+                    color: _index < last ? c.textSecondary : c.textTertiary,
+                  ),
+                  onPressed: _index < last ? _next : null,
                 ),
               ],
             ),

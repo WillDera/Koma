@@ -1,6 +1,8 @@
 import 'dart:collection';
 
 import 'package:koma/features/reader/html/html_to_document.dart';
+import 'package:koma/features/reader/html/kir_model.dart';
+import 'package:koma/features/reader/html/kir_to_document.dart';
 import 'package:koma/features/reader/html/reading_document.dart';
 
 /// Chapter HTML → plain text (and rich [ReadingDocument]) with an LRU cache.
@@ -17,7 +19,21 @@ class TextExtractor {
       LinkedHashMap<int, ReadingDocument>();
 
   /// Memoised [ReadingDocument] per chapter id.
-  static ReadingDocument documentCached(int chapterId, String html) {
+  ///
+  /// When [kir] is set (Level 1 `.koma` path), KIR is mapped every call and
+  /// not mixed into the HTML LRU — a chapter must not switch coordinate
+  /// spaces mid-session.
+  static ReadingDocument documentCached(
+    int chapterId,
+    String html, {
+    KirChapter? kir,
+  }) {
+    if (kir != null) {
+      return KirToDocument.parse(
+        kir,
+        imagePaths: KirToDocument.imagePathsFromHtml(html),
+      );
+    }
     final hit = _docs.remove(chapterId);
     if (hit != null) {
       _docs[chapterId] = hit;
@@ -32,8 +48,8 @@ class TextExtractor {
   }
 
   /// [ReadingDocument.plainText] memoised per chapter.
-  static String extractCached(int chapterId, String html) {
-    return documentCached(chapterId, html).plainText;
+  static String extractCached(int chapterId, String html, {KirChapter? kir}) {
+    return documentCached(chapterId, html, kir: kir).plainText;
   }
 
   /// Drops cached documents. Pass a [chapterId] to evict one entry, or omit it

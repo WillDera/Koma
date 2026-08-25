@@ -2,6 +2,9 @@ import 'dart:convert';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:koma/core/models/book.dart';
 import 'package:koma/core/models/chapter.dart';
+import 'package:koma/core/models/library_category.dart';
+import 'package:koma/core/models/manga.dart';
+import 'package:koma/core/models/manga_chapter.dart';
 import 'package:koma/core/models/snippet.dart';
 import 'package:koma/core/repositories/repositories.dart';
 import 'package:koma/core/services/export_service.dart';
@@ -142,7 +145,6 @@ void main() {
       );
 
       final jsonStr = await svc.exportToJson();
-      final parsed = jsonDecode(jsonStr) as Map<String, dynamic>;
 
       // Wipe and import into a fresh repos.
       repos.isar.close();
@@ -174,6 +176,58 @@ void main() {
       expect(snippets.first.text, 'SUDDEN TURN OF EVENTS');
       expect(snippets.first.sourceTitle, 'Lord of Mysteries Volume 1: Clown');
       expect(snippets.first.tags, ['highlight']);
+    });
+
+    test('v4 export then import restores manga and chapters', () async {
+      final mangaId = await repos.manga.insertManga(
+        Manga(
+          id: 0,
+          name: 'One Piece',
+          url: '/manga/op',
+          author: 'Oda',
+          sourceId: '12345',
+          inLibrary: true,
+          notes: 'Great',
+        ),
+      );
+      await repos.manga.putMangaChapter(
+        MangaChapter(
+          id: 0,
+          mangaId: mangaId,
+          name: 'Chapter 1',
+          url: '/ch/1',
+          index: 0,
+          isRead: true,
+          lastPageRead: 12,
+        ),
+      );
+      await repos.categories.upsertByName(
+        LibraryCategory(id: 0, name: 'Shonen', order: 1),
+      );
+
+      final jsonStr = await svc.exportToJson();
+      final parsed = jsonDecode(jsonStr) as Map<String, dynamic>;
+      expect(parsed['version'], 4);
+      expect(parsed['manga'], isNotEmpty);
+
+      repos.isar.close();
+      repos = await createTestRepositories();
+      svc = ExportService(repos);
+
+      final result = await svc.importFromJson(jsonStr);
+      expect(result.mangaImported, 1);
+      expect(result.mangaChaptersImported, 1);
+
+      final mangas = await repos.manga.getAllMangas();
+      expect(mangas.length, 1);
+      expect(mangas.first.name, 'One Piece');
+      expect(mangas.first.inLibrary, isTrue);
+      expect(mangas.first.notes, 'Great');
+
+      final ch = await repos.manga.getMangaChapters(mangas.first.id);
+      expect(ch.length, 1);
+      expect(ch.first.isRead, isTrue);
+      expect(ch.first.lastPageRead, 12);
     });
 
     test('import skips duplicate books by title+author', () async {

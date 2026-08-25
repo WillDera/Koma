@@ -3,7 +3,7 @@ import 'dart:io';
 
 import 'package:flutter/services.dart';
 import 'package:path/path.dart' as p;
-import 'package:path_provider/path_provider.dart';
+import 'app_storage.dart';
 import 'package:uuid/uuid.dart';
 
 import '../models/custom_font.dart';
@@ -20,7 +20,7 @@ class CustomFontService {
   final Set<String> _loadedFamilies = {};
 
   Future<Directory> _fontsRoot() async {
-    final docs = await getApplicationDocumentsDirectory();
+    final docs = await AppStorage.documents();
     final dir = Directory(p.join(docs.path, 'fonts'));
     if (!dir.existsSync()) {
       await dir.create(recursive: true);
@@ -123,6 +123,22 @@ class CustomFontService {
     await _writeManifest(catalog);
     await ensureLoaded(font);
     return font;
+  }
+
+  /// Absolute path of a face file, preferring [weight] (400 = regular).
+  Future<String?> facePath(CustomFont font, {int weight = 400}) async {
+    final root = await _fontsRoot();
+    CustomFontFace? face;
+    for (final f in font.faces) {
+      if (f.weight == weight) {
+        face = f;
+        break;
+      }
+    }
+    face ??= font.faces.isEmpty ? null : font.faces.first;
+    if (face == null) return null;
+    final file = File(p.join(root.path, font.id, face.relativePath));
+    return file.existsSync() ? file.path : null;
   }
 
   Future<void> deleteFont(String id) async {

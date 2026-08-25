@@ -6,7 +6,7 @@ import 'dart:isolate';
 import 'package:collection/collection.dart';
 import 'package:http/http.dart' as http;
 import 'package:path/path.dart' as p;
-import 'package:path_provider/path_provider.dart';
+import 'app_storage.dart';
 
 import '../models/extension_repo.dart';
 import '../models/extension_source.dart';
@@ -1247,7 +1247,7 @@ class ExtensionManager {
   }
 
   Future<Directory> _extensionsDir() async {
-    final base = await getApplicationSupportDirectory();
+    final base = await AppStorage.support();
     final dir = Directory(p.join(base.path, 'extensions'));
     if (!dir.existsSync()) {
       dir.createSync(recursive: true);

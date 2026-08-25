@@ -7,16 +7,19 @@ import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-import 'package:path_provider/path_provider.dart';
+import '../../core/services/app_storage.dart';
 
 import '../../app.dart' show routeObserver;
 import '../../core/models/book.dart';
 import '../../core/models/chapter.dart';
+import '../../core/models/library_category.dart';
+import '../../core/models/library_group.dart';
 import '../../core/models/manga.dart';
 import '../../core/providers.dart';
 import '../../core/services/cache_service.dart';
 import '../../core/services/ebook_media_store.dart';
 import '../../core/services/ebook_service.dart';
+import '../../core/services/koma_package_store.dart';
 import '../../core/services/metadata_enrichment_service.dart';
 import '../../core/services/web_scraper_service.dart';
 import '../../core/utils/benchmark_logger.dart';
@@ -35,6 +38,7 @@ import '../../widgets/empty_state.dart';
 import '../../widgets/icon_button_round.dart';
 import '../../widgets/import_sheet.dart';
 import '../../widgets/library_book_card.dart';
+import '../../widgets/library_group_stack_card.dart';
 import '../../widgets/library_header.dart';
 import '../../widgets/loading_skeleton.dart';
 import '../../widgets/one_hand_spacer.dart';
@@ -43,6 +47,7 @@ import '../../widgets/screen_chrome.dart';
 import '../../widgets/horizontal_tab_swipe.dart';
 import '../../widgets/segmented_control.dart';
 import '../../widgets/toast.dart';
+import 'library_group_modal.dart';
 import 'library_provider.dart';
 
 class LibraryScreen extends ConsumerStatefulWidget {
@@ -62,6 +67,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> with RouteAware {
   final Map<_LibraryFilter, _FilterMode> _filters = {
     for (final filter in _LibraryFilter.values) filter: _FilterMode.none,
   };
+  int? _selectedCategoryId;
   final Map<int, String?> _mangaThumbnails = {};
 
   @override
@@ -91,7 +97,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> with RouteAware {
 
   Future<void> _loadThumbnails() async {
     try {
-      final appDir = await getApplicationDocumentsDirectory();
+      final appDir = await AppStorage.documents();
       final thumbDir = Directory('${appDir.path}/thumbnails');
       if (!await thumbDir.exists()) return;
       final provider = ref.read(libraryProvider);
@@ -334,12 +340,15 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> with RouteAware {
             if (_section == _LibrarySection.books)
               _BookShelf(
                 key: const ValueKey('books-shelf'),
-                books: _visibleBooks(provider.books),
+                books: _visibleBooks(provider),
+                groups: _visibleBookGroups(provider),
                 provider: provider,
                 notifier: ref.read(libraryProvider.notifier),
+                mangaThumbnails: _mangaThumbnails,
                 showSourcePills: provider.showSourcePills,
                 onOpen: (id) => openBookFromCollection(context, id),
                 onBookLongPress: _showBookActions,
+                onOpenGroup: (g) => _openGroup(context, g),
               )
             else ...[
               if (_mangaSearchCtrl.text.trim().isNotEmpty)
@@ -373,7 +382,8 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> with RouteAware {
                 ),
               _MangaShelf(
                 key: const ValueKey('manga-shelf'),
-                mangas: _visibleMangas(provider.mangas),
+                mangas: _visibleMangas(provider),
+                groups: _visibleMangaGroups(provider),
                 gridView: provider.isGridView,
                 provider: provider,
                 notifier: ref.read(libraryProvider.notifier),
@@ -381,6 +391,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> with RouteAware {
                 mangaThumbnails: _mangaThumbnails,
                 showSourcePills: provider.showSourcePills,
                 onOpen: (manga) => _openManga(context, manga),
+                onOpenGroup: (g) => _openGroup(context, g),
               ),
             ],
             const SliverToBoxAdapter(child: SizedBox(height: 100)),
@@ -398,6 +409,17 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> with RouteAware {
       return LibraryHeader(
         title: '${provider.selectedIds.length} selected',
         actions: [
+          if (provider.selectedIds.length >= 2) ...[
+            IconButtonRound(
+              icon: Icons.layers_outlined,
+              size: 38,
+              variant: IconButtonVariant.tonal,
+              iconColor: c.accent,
+              tooltip: 'Create group',
+              onPressed: () => _createGroupFromSelection(context),
+            ),
+            const SizedBox(width: 8),
+          ],
           IconButtonRound(
             icon: Icons.select_all_rounded,
             size: 38,
@@ -449,6 +471,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> with RouteAware {
               onPressed: _showFilterSheet,
             ),
             if (_filters.values.any((mode) => mode != _FilterMode.none) ||
+                _selectedCategoryId != null ||
                 _bookSearchCtrl.text.trim().isNotEmpty ||
                 _mangaSearchCtrl.text.trim().isNotEmpty)
               Positioned(
@@ -485,6 +508,8 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> with RouteAware {
     final filters = Map<_LibraryFilter, _FilterMode>.from(_filters);
     var selectedSort = _sort;
     var showSourcePills = ref.read(libraryProvider).showSourcePills;
+    var selectedCategoryId = _selectedCategoryId;
+    final categories = ref.read(libraryProvider).categories;
     final queryCtrl = _section == _LibrarySection.books
         ? _bookSearchCtrl
         : _mangaSearchCtrl;
@@ -502,6 +527,12 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> with RouteAware {
           queryHint: _section == _LibrarySection.books
               ? 'Filter books'
               : 'Filter manga',
+          categories: _section == _LibrarySection.manga ? categories : const [],
+          selectedCategoryId: selectedCategoryId,
+          onCategoryChanged: (id) {
+            setSheetState(() => selectedCategoryId = id);
+            setState(() => _selectedCategoryId = id);
+          },
           onQueryChanged: (_) => setState(() {}),
           onFilterChanged: (filter) {
             final next = switch (filters[filter] ?? _FilterMode.none) {
@@ -525,7 +556,11 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> with RouteAware {
     );
   }
 
-  List<Book> _visibleBooks(List<Book> books) {
+  List<Book> _visibleBooks(LibraryState provider) {
+    final grouped = provider.groupedMemberKeys;
+    final books = provider.books
+        .where((b) => !grouped.contains('b:${b.id}'))
+        .toList();
     final query = _bookSearchCtrl.text.trim().toLowerCase();
     final searched = query.isEmpty
         ? books.toList()
@@ -560,7 +595,11 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> with RouteAware {
     return filtered;
   }
 
-  List<Manga> _visibleMangas(List<Manga> mangas) {
+  List<Manga> _visibleMangas(LibraryState provider) {
+    final grouped = provider.groupedMemberKeys;
+    final mangas = provider.mangas
+        .where((m) => !grouped.contains('m:${m.id}'))
+        .toList();
     final query = _mangaSearchCtrl.text.trim().toLowerCase();
     final searched = query.isEmpty
         ? mangas.toList()
@@ -574,7 +613,12 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> with RouteAware {
             ].join(' ').toLowerCase();
             return haystack.contains(query);
           }).toList();
-    final filtered = searched
+    final inCategory = _selectedCategoryId == null
+        ? searched
+        : searched
+            .where((m) => m.categoryIds.contains(_selectedCategoryId))
+            .toList();
+    final filtered = inCategory
         .where(
           (manga) => _filters.entries.every(
             (entry) =>
@@ -595,6 +639,85 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> with RouteAware {
       },
     );
     return filtered;
+  }
+
+  List<LibraryGroupInfo> _visibleBookGroups(LibraryState provider) {
+    final q = _bookSearchCtrl.text.trim().toLowerCase();
+    return provider.groups.where((g) {
+      if (!g.hasBooks) return false;
+      if (q.isEmpty) return true;
+      return g.name.toLowerCase().contains(q);
+    }).toList();
+  }
+
+  List<LibraryGroupInfo> _visibleMangaGroups(LibraryState provider) {
+    final q = _mangaSearchCtrl.text.trim().toLowerCase();
+    return provider.groups.where((g) {
+      if (!g.hasManga) return false;
+      if (q.isEmpty) return true;
+      return g.name.toLowerCase().contains(q);
+    }).toList();
+  }
+
+  Future<void> _createGroupFromSelection(BuildContext context) async {
+    final c = context.colors;
+    final ctrl = TextEditingController();
+    final name = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: c.surface,
+        title: Text('New group', style: TextStyle(color: c.textPrimary)),
+        content: TextField(
+          controller: ctrl,
+          autofocus: true,
+          decoration: InputDecoration(
+            labelText: 'Group name',
+            labelStyle: TextStyle(color: c.textSecondary),
+            border: const OutlineInputBorder(),
+          ),
+          onSubmitted: (v) => Navigator.pop(ctx, v.trim()),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: Text('Cancel', style: TextStyle(color: c.textTertiary)),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, ctrl.text.trim()),
+            child: Text('Create', style: TextStyle(color: c.accent)),
+          ),
+        ],
+      ),
+    );
+    ctrl.dispose();
+    if (name == null || name.isEmpty || !context.mounted) return;
+    try {
+      await ref.read(libraryProvider.notifier).createGroupFromSelection(name);
+      if (!context.mounted) return;
+      StashToast.show(
+        context,
+        message: 'Group “$name” created',
+        icon: Icons.layers_outlined,
+      );
+    } catch (e) {
+      if (!context.mounted) return;
+      StashToast.show(
+        context,
+        message: '$e',
+        icon: Icons.error_outline,
+      );
+    }
+  }
+
+  void _openGroup(BuildContext context, LibraryGroupInfo group) {
+    showLibraryGroupModal(
+      context: context,
+      ref: ref,
+      group: group,
+      mangaThumbnails: _mangaThumbnails,
+      onOpenBook: (book) => openBookFromCollection(context, book.id),
+      onOpenManga: (manga) => _openManga(context, manga),
+    );
   }
 
   bool _bookMatches(Book book, _LibraryFilter filter) => switch (filter) {
@@ -654,7 +777,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> with RouteAware {
         ImportOption(
           icon: Icons.file_present_outlined,
           title: 'Import file',
-          subtitle: 'EPUB, TXT, or Markdown',
+          subtitle: 'EPUB, PDF, TXT, or Markdown',
           onTap: () => _importFile(context),
         ),
         ImportOption(
@@ -686,6 +809,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> with RouteAware {
         type: FileType.custom,
         allowedExtensions: [
           'epub',
+          'pdf',
           'fb2',
           'txt',
           'mobi',
@@ -733,6 +857,12 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> with RouteAware {
       );
       for (final ch in chapters) {
         await repos.books.insertChapter(ch);
+      }
+      if (filePath.toLowerCase().endsWith('.epub')) {
+        await KomaPackageStore.compileEpub(
+          bookId: bookId,
+          epubPath: filePath,
+        );
       }
       if (context.mounted) {
         StashToast.show(
@@ -861,11 +991,10 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> with RouteAware {
       backgroundColor: Colors.transparent,
       builder: (ctx) {
         final c = ctx.colors;
-        return Container(
-          decoration: BoxDecoration(
-            color: c.surface,
-            borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
-          ),
+        return Material(
+          color: c.surface,
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+          clipBehavior: Clip.antiAlias,
           child: SafeArea(
             child: Column(
               mainAxisSize: MainAxisSize.min,
@@ -1042,6 +1171,9 @@ class _LibraryFilterSheet extends StatelessWidget {
   final bool showSourcePills;
   final TextEditingController queryController;
   final String queryHint;
+  final List<LibraryCategory> categories;
+  final int? selectedCategoryId;
+  final ValueChanged<int?> onCategoryChanged;
   final ValueChanged<String> onQueryChanged;
   final ValueChanged<_LibraryFilter> onFilterChanged;
   final ValueChanged<_LibrarySort> onSortChanged;
@@ -1053,6 +1185,9 @@ class _LibraryFilterSheet extends StatelessWidget {
     required this.showSourcePills,
     required this.queryController,
     required this.queryHint,
+    this.categories = const [],
+    this.selectedCategoryId,
+    required this.onCategoryChanged,
     required this.onQueryChanged,
     required this.onFilterChanged,
     required this.onSortChanged,
@@ -1115,6 +1250,40 @@ class _LibraryFilterSheet extends StatelessWidget {
               mode: filters[_LibraryFilter.newlyAdded] ?? _FilterMode.none,
               onTap: () => onFilterChanged(_LibraryFilter.newlyAdded),
             ),
+            if (categories.isNotEmpty) ...[
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 14),
+                child: Divider(color: c.border, height: 1),
+              ),
+              Text(
+                'Categories',
+                style: TextStyle(
+                  color: c.textTertiary,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  ChoiceChip(
+                    label: const Text('All'),
+                    selected: selectedCategoryId == null,
+                    onSelected: (_) => onCategoryChanged(null),
+                  ),
+                  for (final cat in categories)
+                    ChoiceChip(
+                      label: Text(cat.name),
+                      selected: selectedCategoryId == cat.id,
+                      onSelected: (_) => onCategoryChanged(
+                        selectedCategoryId == cat.id ? null : cat.id,
+                      ),
+                    ),
+                ],
+              ),
+            ],
             Padding(
               padding: const EdgeInsets.symmetric(vertical: 14),
               child: Divider(color: c.border, height: 1),
@@ -1322,25 +1491,33 @@ class _TriStateGlyph extends StatelessWidget {
 
 class _BookShelf extends StatelessWidget {
   final List<Book> books;
+  final List<LibraryGroupInfo> groups;
   final LibraryState provider;
   final LibraryNotifier notifier;
+  final Map<int, String?> mangaThumbnails;
   final ValueChanged<int> onOpen;
   final ValueChanged<Book> onBookLongPress;
+  final ValueChanged<LibraryGroupInfo> onOpenGroup;
   final bool showSourcePills;
 
   const _BookShelf({
     super.key,
     required this.books,
+    required this.groups,
     required this.provider,
     required this.notifier,
+    required this.mangaThumbnails,
     required this.onOpen,
     required this.onBookLongPress,
+    required this.onOpenGroup,
     this.showSourcePills = true,
   });
 
+  int get _total => groups.length + books.length;
+
   @override
   Widget build(BuildContext context) {
-    if (books.isEmpty) {
+    if (_total == 0) {
       return const SliverToBoxAdapter(
         child: SizedBox(
           height: 260,
@@ -1355,7 +1532,6 @@ class _BookShelf extends StatelessWidget {
     final sw = Stopwatch()..start();
     late final Widget result;
     if (provider.isGridView) {
-      // List card-style in a grid context falls back to comfortable grid.
       final variant = CatalogCardLayout.gridVariant(provider.cardVariant);
       result = SliverPadding(
         padding: CatalogCardLayout.paddingFor(variant),
@@ -1367,27 +1543,15 @@ class _BookShelf extends StatelessWidget {
           delegate: SliverChildBuilderDelegate(
             (ctx, i) => StaggeredEntrance(
               index: i + 1,
-              child: LibraryBookCard(
-                book: books[i],
-                variant: variant,
-                selected: provider.selectedIds.contains('b:${books[i].id}'),
-                selectionMode: provider.selectionMode,
-                showSourcePills: provider.showSourcePills,
-                onTap: () => provider.selectionMode
-                    ? notifier.toggleSelection('b:${books[i].id}')
-                    : onOpen(books[i].id),
-                onLongPress: () => provider.selectionMode
-                    ? notifier.toggleSelection('b:${books[i].id}')
-                    : onBookLongPress(books[i]),
-              ),
+              child: _tile(ctx, i, variant),
             ),
-            childCount: books.length,
+            childCount: _total,
           ),
         ),
       );
       BenchmarkLogger.log(
         'book_shelf_build',
-        'variant=${variant.name} count=${books.length} elapsed=${sw.elapsedMicroseconds}us',
+        'variant=${variant.name} count=$_total elapsed=${sw.elapsedMicroseconds}us',
       );
       return result;
     }
@@ -1399,37 +1563,99 @@ class _BookShelf extends StatelessWidget {
           final i = index ~/ 2;
           return StaggeredEntrance(
             index: i + 1,
-            child: LibraryBookCard(
-              book: books[i],
-              variant: LibraryCardVariant.list,
-              selected: provider.selectedIds.contains('b:${books[i].id}'),
-              selectionMode: provider.selectionMode,
-              showSourcePills: provider.showSourcePills,
-              onTap: () => provider.selectionMode
-                  ? notifier.toggleSelection('b:${books[i].id}')
-                  : onOpen(books[i].id),
-              onLongPress: () => provider.selectionMode
-                  ? notifier.toggleSelection('b:${books[i].id}')
-                  : onBookLongPress(books[i]),
-            ),
+            child: _tile(ctx, i, LibraryCardVariant.list),
           );
-        }, childCount: books.length * 2 - 1),
+        }, childCount: _total * 2 - 1),
       ),
     );
     BenchmarkLogger.log(
       'book_shelf_build',
-      'variant=list count=${books.length} elapsed=${sw.elapsedMicroseconds}us',
+      'variant=list count=$_total elapsed=${sw.elapsedMicroseconds}us',
     );
     return result;
+  }
+
+  Widget _tile(BuildContext context, int i, LibraryCardVariant variant) {
+    if (i < groups.length) {
+      final group = groups[i];
+      return LibraryGroupStackCard(
+        groupId: group.id,
+        name: group.name,
+        memberCount: group.members.length,
+        covers: _groupCovers(context, group),
+        onTap: () => onOpenGroup(group),
+      );
+    }
+    final book = books[i - groups.length];
+    return LibraryBookCard(
+      book: book,
+      variant: variant,
+      selected: provider.selectedIds.contains('b:${book.id}'),
+      selectionMode: provider.selectionMode,
+      showSourcePills: provider.showSourcePills,
+      onTap: () => provider.selectionMode
+          ? notifier.toggleSelection('b:${book.id}')
+          : onOpen(book.id),
+      onLongPress: () => provider.selectionMode
+          ? notifier.toggleSelection('b:${book.id}')
+          : onBookLongPress(book),
+    );
+  }
+
+  List<GroupCoverSlot> _groupCovers(
+    BuildContext context,
+    LibraryGroupInfo group,
+  ) {
+    final booksById = {for (final b in provider.books) b.id: b};
+    final mangasById = {for (final m in provider.mangas) m.id: m};
+    final slots = <GroupCoverSlot>[];
+    for (final m in group.orderedMembers) {
+      if (m.isBook) {
+        final book = booksById[m.itemId];
+        if (book == null) continue;
+        final path = book.coverPath;
+        slots.add(
+          GroupCoverSlot(
+            title: book.title,
+            memberKey: m.memberKey,
+            readingOrder: m.readingOrder,
+            image: path != null && path.isNotEmpty && File(path).existsSync()
+                ? FileImage(File(path))
+                : null,
+          ),
+        );
+      } else {
+        final manga = mangasById[m.itemId];
+        if (manga == null) continue;
+        final local = mangaThumbnails[manga.id];
+        ImageProvider? image;
+        if (local != null && local.isNotEmpty && File(local).existsSync()) {
+          image = FileImage(File(local));
+        } else if (manga.imageUrl != null && manga.imageUrl!.isNotEmpty) {
+          image = cachedCover(manga.imageUrl!);
+        }
+        slots.add(
+          GroupCoverSlot(
+            title: manga.name,
+            memberKey: m.memberKey,
+            readingOrder: m.readingOrder,
+            image: image,
+          ),
+        );
+      }
+    }
+    return slots;
   }
 }
 
 class _MangaShelf extends StatelessWidget {
   final List<Manga> mangas;
+  final List<LibraryGroupInfo> groups;
   final bool gridView;
   final LibraryState provider;
   final LibraryNotifier notifier;
   final ValueChanged<Manga> onOpen;
+  final ValueChanged<LibraryGroupInfo> onOpenGroup;
   final Map<int, String?> mangaThumbnails;
   final Map<String, String> extensionNames;
   final bool showSourcePills;
@@ -1437,18 +1663,22 @@ class _MangaShelf extends StatelessWidget {
   const _MangaShelf({
     super.key,
     required this.mangas,
+    required this.groups,
     required this.gridView,
     required this.provider,
     required this.notifier,
     required this.onOpen,
+    required this.onOpenGroup,
     this.mangaThumbnails = const {},
     this.extensionNames = const {},
     this.showSourcePills = true,
   });
 
+  int get _total => groups.length + mangas.length;
+
   @override
   Widget build(BuildContext context) {
-    if (mangas.isEmpty) {
+    if (_total == 0) {
       return const SliverToBoxAdapter(
         child: SizedBox(
           height: 260,
@@ -1472,30 +1702,16 @@ class _MangaShelf extends StatelessWidget {
             variant: variant,
           ),
           delegate: SliverChildBuilderDelegate((ctx, i) {
-            final manga = mangas[i];
             return StaggeredEntrance(
               index: i + 1,
-              child: _MangaLibraryCard(
-                manga: manga,
-                newChapterCount: provider.newChapters[manga.id] ?? 0,
-                localImagePath: mangaThumbnails[manga.id],
-                selected: provider.selectedIds.contains('m:${manga.id}'),
-                selectionMode: provider.selectionMode,
-                extensionName: extensionNames[manga.sourceId] ?? manga.sourceId,
-                showSourcePills: showSourcePills,
-                variant: variant,
-                onTap: () => provider.selectionMode
-                    ? notifier.toggleSelection('m:${manga.id}')
-                    : onOpen(manga),
-                onLongPress: () => notifier.toggleSelection('m:${manga.id}'),
-              ),
+              child: _tile(ctx, i, variant),
             );
-          }, childCount: mangas.length),
+          }, childCount: _total),
         ),
       );
       BenchmarkLogger.log(
         'manga_shelf_build',
-        'variant=grid count=${mangas.length} elapsed=${sw.elapsedMicroseconds}us',
+        'variant=grid count=$_total elapsed=${sw.elapsedMicroseconds}us',
       );
       return result;
     }
@@ -1505,31 +1721,103 @@ class _MangaShelf extends StatelessWidget {
         delegate: SliverChildBuilderDelegate((ctx, index) {
           if (index.isOdd) return const SizedBox(height: 8);
           final i = index ~/ 2;
-          final manga = mangas[i];
           return StaggeredEntrance(
             index: i + 1,
-            child: _MangaLibraryRow(
-              manga: manga,
-              newChapterCount: provider.newChapters[manga.id] ?? 0,
-              localImagePath: mangaThumbnails[manga.id],
-              selected: provider.selectedIds.contains('m:${manga.id}'),
-              selectionMode: provider.selectionMode,
-              extensionName: extensionNames[manga.sourceId] ?? manga.sourceId,
-              showSourcePills: showSourcePills,
-              onTap: () => provider.selectionMode
-                  ? notifier.toggleSelection('m:${manga.id}')
-                  : onOpen(manga),
-              onLongPress: () => notifier.toggleSelection('m:${manga.id}'),
-            ),
+            child: _tile(ctx, i, LibraryCardVariant.list),
           );
-        }, childCount: mangas.length * 2 - 1),
+        }, childCount: _total * 2 - 1),
       ),
     );
     BenchmarkLogger.log(
       'manga_shelf_build',
-      'variant=list count=${mangas.length} elapsed=${sw.elapsedMicroseconds}us',
+      'variant=list count=$_total elapsed=${sw.elapsedMicroseconds}us',
     );
     return result;
+  }
+
+  Widget _tile(BuildContext context, int i, LibraryCardVariant variant) {
+    if (i < groups.length) {
+      final group = groups[i];
+      return LibraryGroupStackCard(
+        groupId: group.id,
+        name: group.name,
+        memberCount: group.members.length,
+        covers: _groupCovers(group),
+        onTap: () => onOpenGroup(group),
+      );
+    }
+    final manga = mangas[i - groups.length];
+    if (variant == LibraryCardVariant.list) {
+      return _MangaLibraryRow(
+        manga: manga,
+        newChapterCount: provider.newChapters[manga.id] ?? 0,
+        localImagePath: mangaThumbnails[manga.id],
+        selected: provider.selectedIds.contains('m:${manga.id}'),
+        selectionMode: provider.selectionMode,
+        extensionName: extensionNames[manga.sourceId] ?? manga.sourceId,
+        showSourcePills: showSourcePills,
+        onTap: () => provider.selectionMode
+            ? notifier.toggleSelection('m:${manga.id}')
+            : onOpen(manga),
+        onLongPress: () => notifier.toggleSelection('m:${manga.id}'),
+      );
+    }
+    return _MangaLibraryCard(
+      manga: manga,
+      newChapterCount: provider.newChapters[manga.id] ?? 0,
+      localImagePath: mangaThumbnails[manga.id],
+      selected: provider.selectedIds.contains('m:${manga.id}'),
+      selectionMode: provider.selectionMode,
+      extensionName: extensionNames[manga.sourceId] ?? manga.sourceId,
+      showSourcePills: showSourcePills,
+      variant: variant,
+      onTap: () => provider.selectionMode
+          ? notifier.toggleSelection('m:${manga.id}')
+          : onOpen(manga),
+      onLongPress: () => notifier.toggleSelection('m:${manga.id}'),
+    );
+  }
+
+  List<GroupCoverSlot> _groupCovers(LibraryGroupInfo group) {
+    final booksById = {for (final b in provider.books) b.id: b};
+    final mangasById = {for (final m in provider.mangas) m.id: m};
+    final slots = <GroupCoverSlot>[];
+    for (final m in group.orderedMembers) {
+      if (m.isBook) {
+        final book = booksById[m.itemId];
+        if (book == null) continue;
+        final path = book.coverPath;
+        slots.add(
+          GroupCoverSlot(
+            title: book.title,
+            memberKey: m.memberKey,
+            readingOrder: m.readingOrder,
+            image: path != null && path.isNotEmpty && File(path).existsSync()
+                ? FileImage(File(path))
+                : null,
+          ),
+        );
+      } else {
+        final manga = mangasById[m.itemId];
+        if (manga == null) continue;
+        final local = mangaThumbnails[manga.id];
+        ImageProvider? image;
+        if (local != null && local.isNotEmpty && File(local).existsSync()) {
+          image = FileImage(File(local));
+        } else if (manga.imageUrl != null && manga.imageUrl!.isNotEmpty) {
+          image = cachedCover(manga.imageUrl!);
+        }
+        slots.add(
+          GroupCoverSlot(
+            title: manga.name,
+            memberKey: m.memberKey,
+            readingOrder: m.readingOrder,
+            image: image,
+          ),
+        );
+      }
+    }
+    return slots;
   }
 }
 

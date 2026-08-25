@@ -163,6 +163,14 @@ class SnippetRepository {
     return _isar.writeTxn(() => _isar.snippetCollections.put(row));
   }
 
+  Future<int> insertCollection(SnippetCollection collection) async {
+    return _isar.writeTxn(
+      () => _isar.snippetCollections.put(
+        _collFromModel(collection.copyWith(id: 0)),
+      ),
+    );
+  }
+
   Future<void> updateCollection(SnippetCollection collection) async {
     await _isar.writeTxn(
       () => _isar.snippetCollections.put(_collFromModel(collection)),

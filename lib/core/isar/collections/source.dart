@@ -20,6 +20,10 @@ class Source {
   String baseUrl;
   bool enabled;
   String? language;
+
+  /// File extensions of interest for search results (e.g. epub, pdf). Empty = all.
+  List<String>? fileExtensions;
+
   DateTime? createdAt;
 
   Source({
@@ -29,6 +33,7 @@ class Source {
     required this.baseUrl,
     this.enabled = true,
     this.language,
+    this.fileExtensions,
     this.createdAt,
   });
 
@@ -41,6 +46,8 @@ class Source {
     'base_url': baseUrl,
     'enabled': enabled ? 1 : 0,
     if (language != null) 'language': language,
+    if (fileExtensions != null && fileExtensions!.isNotEmpty)
+      'file_extensions': fileExtensions,
   };
 
   factory Source.fromJson(Map<String, dynamic> json) => Source(
@@ -50,5 +57,8 @@ class Source {
     baseUrl: json['base_url'] as String? ?? json['search_url'] as String? ?? '',
     enabled: (json['enabled'] as int? ?? 1) == 1,
     language: json['language'] as String?,
+    fileExtensions: (json['file_extensions'] as List<dynamic>?)
+        ?.map((e) => e.toString().toLowerCase())
+        .toList(),
   );
 }

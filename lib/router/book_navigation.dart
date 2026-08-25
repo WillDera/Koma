@@ -19,7 +19,16 @@ void openBookReader(
   BuildContext context, {
   required int bookId,
   int? chapterId,
+  String? fileExtension,
+  int? initialPage,
 }) {
+  if (fileExtension?.toLowerCase() == 'pdf') {
+    context.pushNamed(
+      Routes.pdfReader,
+      extra: (bookId: bookId, initialPage: initialPage),
+    );
+    return;
+  }
   context.pushNamed(
     Routes.reader,
     extra:
