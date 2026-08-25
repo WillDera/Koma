@@ -4,6 +4,13 @@ on:
   push:
     tags: [ 'v*' ]
 
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Release tag to build (e.g. v1.2.3+4)'
+        required: true
+        type: string
+
 permissions:
   contents: write
 
@@ -31,24 +38,36 @@ jobs:
       - name: Require tag to match pubspec.yaml
         run: |
           set -euo pipefail
-          TAG="${GITHUB_REF_NAME#v}"
+
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            TAG="${{ inputs.tag }}"
+            TAG="${TAG#v}"
+          else
+            TAG="${GITHUB_REF_NAME#v}"
+          fi
+
           PUBSPEC=$(awk '/^version:/{print $2; exit}' pubspec.yaml)
+
           if [ -z "$TAG" ] || [ -z "$PUBSPEC" ]; then
             echo "Could not read tag or pubspec version."
             exit 1
           fi
+
           if [ "$TAG" != "$PUBSPEC" ]; then
             echo "::error::Git tag v${TAG} does not match pubspec.yaml version ${PUBSPEC}."
             echo "The APK is stamped from pubspec. Tagging an old commit publishes the old version under a new name."
             echo "Move the tag to the commit that actually contains ${TAG}."
             exit 1
           fi
+
           BUILD_NAME="${TAG%%+*}"
           BUILD_NUMBER="${TAG##*+}"
+
           if [ "$BUILD_NAME" = "$BUILD_NUMBER" ] || [ -z "$BUILD_NUMBER" ]; then
             echo "::error::Tag must be vMAJOR.MINOR.PATCH+BUILD (got v${TAG})."
             exit 1
           fi
+
           echo "BUILD_NAME=${BUILD_NAME}" >> "$GITHUB_ENV"
           echo "BUILD_NUMBER=${BUILD_NUMBER}" >> "$GITHUB_ENV"
           echo "Stamping APK as ${BUILD_NAME}+${BUILD_NUMBER}"
@@ -91,10 +110,12 @@ jobs:
           set -euo pipefail
           APK="build/app/outputs/flutter-apk/app-release.apk"
           AAPT=$(find "${ANDROID_SDK_ROOT:-${ANDROID_HOME:-}}" -name aapt -type f 2>/dev/null | head -1 || true)
+
           if [ -z "$AAPT" ]; then
             echo "aapt not found; relying on --build-name/--build-number"
             exit 0
           fi
+
           BADGING=$("$AAPT" dump badging "$APK")
           echo "$BADGING" | head -n 3
           echo "$BADGING" | grep -F "versionName='${BUILD_NAME}'"
@@ -112,6 +133,7 @@ jobs:
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
           files: |
             build/app/outputs/flutter-apk/app-release.apk
             build/app/outputs/flutter-apk/koma-${{ env.BUILD_NAME }}+${{ env.BUILD_NUMBER }}.apk
