@@ -47,6 +47,21 @@ class ChapterSheet extends StatefulWidget {
 
 class _ChapterSheetState extends State<ChapterSheet> {
   String _filter = '';
+  late final ScrollController _scrollCtrl;
+
+  @override
+  void initState() {
+    super.initState();
+    // Rough row height (~56) so the current chapter opens in view.
+    final offset = (widget.currentIndex * 56.0).clamp(0.0, double.infinity);
+    _scrollCtrl = ScrollController(initialScrollOffset: offset);
+  }
+
+  @override
+  void dispose() {
+    _scrollCtrl.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -72,6 +87,7 @@ class _ChapterSheetState extends State<ChapterSheet> {
         ),
         Expanded(
           child: ListView.separated(
+            controller: _scrollCtrl,
             padding: const EdgeInsets.fromLTRB(8, 0, 8, 24),
             itemCount: filtered.length,
             separatorBuilder: (_, _) => const SizedBox(height: 2),
@@ -79,6 +95,12 @@ class _ChapterSheetState extends State<ChapterSheet> {
               final ch = filtered[i];
               final originalIndex = widget.chapters.indexOf(ch);
               final isCurrent = originalIndex == widget.currentIndex;
+              final isRead = ch.readAt != null;
+              final titleColor = isCurrent
+                  ? c.textPrimary
+                  : isRead
+                  ? c.textTertiary
+                  : c.textPrimary;
               return AnimatedPress(
                 onTap: () {
                   Navigator.pop(ctx);
@@ -110,7 +132,7 @@ class _ChapterSheetState extends State<ChapterSheet> {
                           maxLines: 2,
                           overflow: TextOverflow.ellipsis,
                           style: TextStyle(
-                            color: c.textPrimary,
+                            color: titleColor,
                             fontSize: 15,
                             fontWeight: isCurrent
                                 ? FontWeight.w600
@@ -120,7 +142,7 @@ class _ChapterSheetState extends State<ChapterSheet> {
                       ),
                       if (isCurrent)
                         Icon(Icons.bookmark, size: 16, color: c.accent)
-                      else if (ch.readAt != null)
+                      else if (isRead)
                         Icon(Icons.check, size: 16, color: c.textTertiary),
                     ],
                   ),

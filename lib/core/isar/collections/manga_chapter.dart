@@ -44,6 +44,10 @@ class MangaChapter {
   /// First-open marker (mangayomi parity — drives the "new" badge).
   bool isOpened;
 
+  /// Epoch millis when the chapter was first fetched into the library
+  /// (Mihon `dateFetch`). Used for "new" chapter age + migrate transfer.
+  int dateFetch;
+
   DateTime? readAt;
 
   /// Raw JSON of the source-side `SChapter.memo` (e.g. allanime
@@ -67,6 +71,7 @@ class MangaChapter {
     this.isBookmarked = false,
     this.isDownloaded = false,
     this.isOpened = false,
+    this.dateFetch = 0,
     this.readAt,
     this.memo,
   });
@@ -86,6 +91,7 @@ class MangaChapter {
     'is_bookmarked': isBookmarked ? 1 : 0,
     'is_downloaded': isDownloaded ? 1 : 0,
     'is_opened': isOpened ? 1 : 0,
+    'date_fetch': dateFetch,
     'read_at': readAt?.toIso8601String(),
     'memo': memo,
   };
@@ -105,6 +111,7 @@ class MangaChapter {
     isBookmarked: asIntOr(json['is_bookmarked']) == 1,
     isDownloaded: asIntOr(json['is_downloaded']) == 1,
     isOpened: asIntOr(json['is_opened']) == 1,
+    dateFetch: asIntOr(json['date_fetch']),
     readAt: json['read_at'] != null
         ? DateTime.parse(json['read_at'] as String)
         : null,

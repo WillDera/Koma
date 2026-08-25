@@ -110,6 +110,7 @@ ForeignLibraryBackup _decodeBackup(ProtoReader r) {
           chapterNumber: ch.chapterNumber,
           isBookmarked: ch.bookmark,
           readAt: history,
+          dateFetch: ch.dateFetch,
           memo: ch.memo,
         ),
       );
@@ -138,6 +139,8 @@ ForeignLibraryBackup _decodeBackup(ProtoReader r) {
           memo: raw.memo,
           categoryIds: catIds,
           notes: raw.notes,
+          viewerFlags: raw.resolvedViewerFlags,
+          chapterFlags: raw.chapterFlags,
           createdAt: raw.dateAdded > 0
               ? DateTime.fromMillisecondsSinceEpoch(raw.dateAdded)
               : DateTime.now(),
@@ -166,6 +169,9 @@ class _RawManga {
   int status = 0;
   String? thumbnailUrl;
   int dateAdded = 0;
+  int viewer = 0;
+  int? viewerFlags;
+  int chapterFlags = 0;
   final chapters = <_RawChapter>[];
   final categoryOrders = <int>[];
   bool favorite = true;
@@ -173,6 +179,8 @@ class _RawManga {
   final history = <String, DateTime>{};
   String? notes;
   String? memo;
+
+  int get resolvedViewerFlags => viewerFlags ?? viewer;
 }
 
 class _RawChapter {
@@ -182,6 +190,7 @@ class _RawChapter {
   bool read = false;
   bool bookmark = false;
   int lastPageRead = 0;
+  int dateFetch = 0;
   int dateUpload = 0;
   double chapterNumber = -1;
   int sourceOrder = 0;
@@ -213,6 +222,8 @@ _RawManga _decodeManga(ProtoReader r) {
         m.thumbnailUrl = r.readString();
       case 13:
         m.dateAdded = r.readVarint();
+      case 14:
+        m.viewer = r.readVarint();
       case 16:
         m.chapters.add(_decodeChapter(ProtoReader(r.readBytes())));
       case 17:
@@ -220,6 +231,10 @@ _RawManga _decodeManga(ProtoReader r) {
       case 100:
         m.favoritePresent = true;
         m.favorite = r.readVarint() != 0;
+      case 101:
+        m.chapterFlags = r.readVarint();
+      case 103:
+        m.viewerFlags = r.readVarint();
       case 104:
         final h = _decodeHistory(ProtoReader(r.readBytes()));
         if (h != null) m.history[h.$1] = h.$2;
@@ -253,6 +268,8 @@ _RawChapter _decodeChapter(ProtoReader r) {
         c.bookmark = r.readVarint() != 0;
       case 6:
         c.lastPageRead = r.readVarint();
+      case 7:
+        c.dateFetch = r.readVarint();
       case 8:
         c.dateUpload = r.readVarint();
       case 9:
@@ -373,6 +390,12 @@ List<int> _encodeManga(ForeignManga fm) {
   w.writeInt(8, fm.manga.status);
   if (fm.manga.imageUrl != null) w.writeString(9, fm.manga.imageUrl!);
   w.writeInt(13, fm.manga.createdAt.millisecondsSinceEpoch);
+  if (fm.manga.viewerFlags != 0) {
+    w.writeInt(103, fm.manga.viewerFlags);
+  }
+  if (fm.manga.chapterFlags != 0) {
+    w.writeInt(101, fm.manga.chapterFlags);
+  }
   for (final ch in fm.chapters) {
     w.writeMessage(16, _encodeChapter(ch));
   }
@@ -396,6 +419,7 @@ List<int> _encodeChapter(MangaChapter ch) {
   w.writeBool(4, ch.isRead);
   w.writeBool(5, ch.isBookmarked);
   w.writeInt(6, ch.lastPageRead);
+  if (ch.dateFetch != 0) w.writeInt(7, ch.dateFetch);
   w.writeInt(8, ch.dateUpload);
   w.writeFloat(9, ch.chapterNumber);
   w.writeInt(10, ch.index);

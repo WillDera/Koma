@@ -22,13 +22,23 @@ const MangaExtrasSchema = CollectionSchema(
       name: r'categoryIds',
       type: IsarType.longList,
     ),
-    r'customCoverPath': PropertySchema(
+    r'chapterFlags': PropertySchema(
       id: 1,
+      name: r'chapterFlags',
+      type: IsarType.long,
+    ),
+    r'customCoverPath': PropertySchema(
+      id: 2,
       name: r'customCoverPath',
       type: IsarType.string,
     ),
-    r'mangaId': PropertySchema(id: 2, name: r'mangaId', type: IsarType.long),
-    r'notes': PropertySchema(id: 3, name: r'notes', type: IsarType.string),
+    r'mangaId': PropertySchema(id: 3, name: r'mangaId', type: IsarType.long),
+    r'notes': PropertySchema(id: 4, name: r'notes', type: IsarType.string),
+    r'viewerFlags': PropertySchema(
+      id: 5,
+      name: r'viewerFlags',
+      type: IsarType.long,
+    ),
   },
 
   estimateSize: _mangaExtrasEstimateSize,
@@ -94,9 +104,11 @@ void _mangaExtrasSerialize(
   Map<Type, List<int>> allOffsets,
 ) {
   writer.writeLongList(offsets[0], object.categoryIds);
-  writer.writeString(offsets[1], object.customCoverPath);
-  writer.writeLong(offsets[2], object.mangaId);
-  writer.writeString(offsets[3], object.notes);
+  writer.writeLong(offsets[1], object.chapterFlags);
+  writer.writeString(offsets[2], object.customCoverPath);
+  writer.writeLong(offsets[3], object.mangaId);
+  writer.writeString(offsets[4], object.notes);
+  writer.writeLong(offsets[5], object.viewerFlags);
 }
 
 MangaExtras _mangaExtrasDeserialize(
@@ -107,10 +119,12 @@ MangaExtras _mangaExtrasDeserialize(
 ) {
   final object = MangaExtras(
     categoryIds: reader.readLongList(offsets[0]),
-    customCoverPath: reader.readStringOrNull(offsets[1]),
+    chapterFlags: reader.readLongOrNull(offsets[1]) ?? 0,
+    customCoverPath: reader.readStringOrNull(offsets[2]),
     id: id,
-    mangaId: reader.readLong(offsets[2]),
-    notes: reader.readStringOrNull(offsets[3]),
+    mangaId: reader.readLong(offsets[3]),
+    notes: reader.readStringOrNull(offsets[4]),
+    viewerFlags: reader.readLongOrNull(offsets[5]) ?? 0,
   );
   return object;
 }
@@ -125,11 +139,15 @@ P _mangaExtrasDeserializeProp<P>(
     case 0:
       return (reader.readLongList(offset)) as P;
     case 1:
-      return (reader.readStringOrNull(offset)) as P;
+      return (reader.readLongOrNull(offset) ?? 0) as P;
     case 2:
-      return (reader.readLong(offset)) as P;
-    case 3:
       return (reader.readStringOrNull(offset)) as P;
+    case 3:
+      return (reader.readLong(offset)) as P;
+    case 4:
+      return (reader.readStringOrNull(offset)) as P;
+    case 5:
+      return (reader.readLongOrNull(offset) ?? 0) as P;
     default:
       throw IsarError('Unknown property with id $propertyId');
   }
@@ -527,6 +545,61 @@ extension MangaExtrasQueryFilter
         includeLower,
         upper,
         includeUpper,
+      );
+    });
+  }
+
+  QueryBuilder<MangaExtras, MangaExtras, QAfterFilterCondition>
+  chapterFlagsEqualTo(int value) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.equalTo(property: r'chapterFlags', value: value),
+      );
+    });
+  }
+
+  QueryBuilder<MangaExtras, MangaExtras, QAfterFilterCondition>
+  chapterFlagsGreaterThan(int value, {bool include = false}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.greaterThan(
+          include: include,
+          property: r'chapterFlags',
+          value: value,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<MangaExtras, MangaExtras, QAfterFilterCondition>
+  chapterFlagsLessThan(int value, {bool include = false}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.lessThan(
+          include: include,
+          property: r'chapterFlags',
+          value: value,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<MangaExtras, MangaExtras, QAfterFilterCondition>
+  chapterFlagsBetween(
+    int lower,
+    int upper, {
+    bool includeLower = true,
+    bool includeUpper = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.between(
+          property: r'chapterFlags',
+          lower: lower,
+          includeLower: includeLower,
+          upper: upper,
+          includeUpper: includeUpper,
+        ),
       );
     });
   }
@@ -986,6 +1059,61 @@ extension MangaExtrasQueryFilter
       );
     });
   }
+
+  QueryBuilder<MangaExtras, MangaExtras, QAfterFilterCondition>
+  viewerFlagsEqualTo(int value) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.equalTo(property: r'viewerFlags', value: value),
+      );
+    });
+  }
+
+  QueryBuilder<MangaExtras, MangaExtras, QAfterFilterCondition>
+  viewerFlagsGreaterThan(int value, {bool include = false}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.greaterThan(
+          include: include,
+          property: r'viewerFlags',
+          value: value,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<MangaExtras, MangaExtras, QAfterFilterCondition>
+  viewerFlagsLessThan(int value, {bool include = false}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.lessThan(
+          include: include,
+          property: r'viewerFlags',
+          value: value,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<MangaExtras, MangaExtras, QAfterFilterCondition>
+  viewerFlagsBetween(
+    int lower,
+    int upper, {
+    bool includeLower = true,
+    bool includeUpper = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.between(
+          property: r'viewerFlags',
+          lower: lower,
+          includeLower: includeLower,
+          upper: upper,
+          includeUpper: includeUpper,
+        ),
+      );
+    });
+  }
 }
 
 extension MangaExtrasQueryObject
@@ -996,6 +1124,19 @@ extension MangaExtrasQueryLinks
 
 extension MangaExtrasQuerySortBy
     on QueryBuilder<MangaExtras, MangaExtras, QSortBy> {
+  QueryBuilder<MangaExtras, MangaExtras, QAfterSortBy> sortByChapterFlags() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'chapterFlags', Sort.asc);
+    });
+  }
+
+  QueryBuilder<MangaExtras, MangaExtras, QAfterSortBy>
+  sortByChapterFlagsDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'chapterFlags', Sort.desc);
+    });
+  }
+
   QueryBuilder<MangaExtras, MangaExtras, QAfterSortBy> sortByCustomCoverPath() {
     return QueryBuilder.apply(this, (query) {
       return query.addSortBy(r'customCoverPath', Sort.asc);
@@ -1032,10 +1173,35 @@ extension MangaExtrasQuerySortBy
       return query.addSortBy(r'notes', Sort.desc);
     });
   }
+
+  QueryBuilder<MangaExtras, MangaExtras, QAfterSortBy> sortByViewerFlags() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'viewerFlags', Sort.asc);
+    });
+  }
+
+  QueryBuilder<MangaExtras, MangaExtras, QAfterSortBy> sortByViewerFlagsDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'viewerFlags', Sort.desc);
+    });
+  }
 }
 
 extension MangaExtrasQuerySortThenBy
     on QueryBuilder<MangaExtras, MangaExtras, QSortThenBy> {
+  QueryBuilder<MangaExtras, MangaExtras, QAfterSortBy> thenByChapterFlags() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'chapterFlags', Sort.asc);
+    });
+  }
+
+  QueryBuilder<MangaExtras, MangaExtras, QAfterSortBy>
+  thenByChapterFlagsDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'chapterFlags', Sort.desc);
+    });
+  }
+
   QueryBuilder<MangaExtras, MangaExtras, QAfterSortBy> thenByCustomCoverPath() {
     return QueryBuilder.apply(this, (query) {
       return query.addSortBy(r'customCoverPath', Sort.asc);
@@ -1084,6 +1250,18 @@ extension MangaExtrasQuerySortThenBy
       return query.addSortBy(r'notes', Sort.desc);
     });
   }
+
+  QueryBuilder<MangaExtras, MangaExtras, QAfterSortBy> thenByViewerFlags() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'viewerFlags', Sort.asc);
+    });
+  }
+
+  QueryBuilder<MangaExtras, MangaExtras, QAfterSortBy> thenByViewerFlagsDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'viewerFlags', Sort.desc);
+    });
+  }
 }
 
 extension MangaExtrasQueryWhereDistinct
@@ -1091,6 +1269,12 @@ extension MangaExtrasQueryWhereDistinct
   QueryBuilder<MangaExtras, MangaExtras, QDistinct> distinctByCategoryIds() {
     return QueryBuilder.apply(this, (query) {
       return query.addDistinctBy(r'categoryIds');
+    });
+  }
+
+  QueryBuilder<MangaExtras, MangaExtras, QDistinct> distinctByChapterFlags() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addDistinctBy(r'chapterFlags');
     });
   }
 
@@ -1118,6 +1302,12 @@ extension MangaExtrasQueryWhereDistinct
       return query.addDistinctBy(r'notes', caseSensitive: caseSensitive);
     });
   }
+
+  QueryBuilder<MangaExtras, MangaExtras, QDistinct> distinctByViewerFlags() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addDistinctBy(r'viewerFlags');
+    });
+  }
 }
 
 extension MangaExtrasQueryProperty
@@ -1132,6 +1322,12 @@ extension MangaExtrasQueryProperty
   categoryIdsProperty() {
     return QueryBuilder.apply(this, (query) {
       return query.addPropertyName(r'categoryIds');
+    });
+  }
+
+  QueryBuilder<MangaExtras, int, QQueryOperations> chapterFlagsProperty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addPropertyName(r'chapterFlags');
     });
   }
 
@@ -1151,6 +1347,12 @@ extension MangaExtrasQueryProperty
   QueryBuilder<MangaExtras, String?, QQueryOperations> notesProperty() {
     return QueryBuilder.apply(this, (query) {
       return query.addPropertyName(r'notes');
+    });
+  }
+
+  QueryBuilder<MangaExtras, int, QQueryOperations> viewerFlagsProperty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addPropertyName(r'viewerFlags');
     });
   }
 }

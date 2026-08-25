@@ -16,7 +16,7 @@ import '../../theme/tokens/app_colors.dart';
 import '../../theme/tokens/app_motion.dart';
 import '../../theme/tokens/app_spacing.dart';
 import '../../theme/tokens/app_type.dart';
-import '../../widgets/chapter_nav_overlay.dart';
+import '../../widgets/chapter_sheet.dart';
 import '../../widgets/empty_state.dart';
 import '../../widgets/reader_bottom_bar.dart';
 import '../../widgets/reader_settings_sheet.dart';
@@ -1594,8 +1594,10 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
 
   void _openChapters(BuildContext context, ReaderNotifier provider) {
     if (provider.chapters.length <= 1) return;
-    ChapterNavOverlay.show(
+    final book = provider.book;
+    ChapterSheet.show(
       context,
+      bookTitle: book?.title ?? 'Chapters',
       chapters: provider.chapters,
       currentIndex: provider.currentIndex,
       onSelect: (i) {
@@ -1605,8 +1607,6 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
           _showUI.value = true;
         });
       },
-      onPrevious: () => _goAdjacentChapter(next: false),
-      onNext: () => _goAdjacentChapter(next: true),
     );
   }
 }

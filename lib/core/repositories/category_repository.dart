@@ -67,9 +67,16 @@ class CategoryRepository {
           .where()
           .mangaIdEqualTo(mangaId)
           .findFirst();
-      if (!hasCats && !hasNotes && existing == null) return;
-      if (!hasCats && !hasNotes && existing != null) {
-        await _isar.mangaExtras.delete(existing.id ?? 0);
+      final hasFlags =
+          existing != null &&
+          (existing.viewerFlags != 0 || existing.chapterFlags != 0);
+      final hasCover =
+          existing?.customCoverPath != null &&
+          existing!.customCoverPath!.isNotEmpty;
+      if (!hasCats && !hasNotes && !hasFlags && !hasCover) {
+        if (existing != null) {
+          await _isar.mangaExtras.delete(existing.id ?? 0);
+        }
         return;
       }
       if (existing == null) {
