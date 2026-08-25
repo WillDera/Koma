@@ -159,6 +159,7 @@ class MigrateMangaUseCase {
             dateUpload: ch.dateUpload,
             index: i,
             chapterNumber: recognized,
+            dateFetch: DateTime.now().millisecondsSinceEpoch,
             memo: ch.memo,
           ),
         );
@@ -184,10 +185,29 @@ class MigrateMangaUseCase {
       await _removeDownloads(current);
     }
 
+    // Mihon: always copy viewer/chapter flags; dateAdded follows replace.
+    final now = DateTime.now();
+    final targetDateAdded = replace ? current.createdAt : now;
+    await _manga.updateManga(
+      (await _manga.getMangaById(target.id))!.copyWith(
+        inLibrary: true,
+        viewerFlags: current.viewerFlags,
+        chapterFlags: current.chapterFlags,
+        createdAt: targetDateAdded,
+        updatedAt: now,
+      ),
+    );
+
     if (replace) {
-      await _manga.setMangaInLibrary(current.id, false);
+      await _manga.updateManga(
+        current.copyWith(
+          inLibrary: false,
+          // Mihon zeroes dateAdded when the old entry leaves the library.
+          createdAt: DateTime.fromMillisecondsSinceEpoch(0),
+          updatedAt: now,
+        ),
+      );
     }
-    await _manga.setMangaInLibrary(target.id, true);
 
     final refreshed = await _manga.getMangaById(target.id);
     return refreshed ?? target.copyWith(inLibrary: true);
@@ -289,6 +309,7 @@ class MigrateMangaUseCase {
 
       if (prevChapter != null) {
         mangaChapter = mangaChapter.copyWith(
+          dateFetch: prevChapter.dateFetch,
           isBookmarked: prevChapter.isBookmarked,
           lastPageRead: prevChapter.lastPageRead,
           scrollPosition: prevChapter.scrollPosition,

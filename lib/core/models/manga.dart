@@ -28,6 +28,12 @@ class Manga {
   /// Local custom cover path. Stored in the MangaExtras sidecar.
   final String? customCoverPath;
 
+  /// Mihon reader viewer flags. Stored in MangaExtras (opaque to Koma UI).
+  final int viewerFlags;
+
+  /// Mihon chapter-list flags. Stored in MangaExtras (opaque to Koma UI).
+  final int chapterFlags;
+
   final DateTime createdAt;
   final DateTime updatedAt;
 
@@ -48,6 +54,8 @@ class Manga {
     List<int>? categoryIds,
     this.notes,
     this.customCoverPath,
+    this.viewerFlags = 0,
+    this.chapterFlags = 0,
     DateTime? createdAt,
     DateTime? updatedAt,
   }) : genres = List.unmodifiable(genres ?? const []),
@@ -72,6 +80,8 @@ class Manga {
     List<int>? categoryIds,
     String? notes,
     String? customCoverPath,
+    int? viewerFlags,
+    int? chapterFlags,
     DateTime? createdAt,
     DateTime? updatedAt,
   }) {
@@ -92,6 +102,8 @@ class Manga {
       categoryIds: categoryIds ?? this.categoryIds,
       notes: notes ?? this.notes,
       customCoverPath: customCoverPath ?? this.customCoverPath,
+      viewerFlags: viewerFlags ?? this.viewerFlags,
+      chapterFlags: chapterFlags ?? this.chapterFlags,
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
     );
@@ -114,6 +126,8 @@ class Manga {
     'category_ids': categoryIds,
     'notes': notes,
     'custom_cover_path': customCoverPath,
+    'viewer_flags': viewerFlags,
+    'chapter_flags': chapterFlags,
     'created_at': createdAt.toIso8601String(),
     'updated_at': updatedAt.toIso8601String(),
   };
@@ -137,6 +151,8 @@ class Manga {
         .toList(),
     notes: json['notes'] as String?,
     customCoverPath: json['custom_cover_path'] as String?,
+    viewerFlags: (json['viewer_flags'] as num?)?.toInt() ?? 0,
+    chapterFlags: (json['chapter_flags'] as num?)?.toInt() ?? 0,
     createdAt: json['created_at'] != null
         ? DateTime.parse(json['created_at'] as String)
         : DateTime.now(),

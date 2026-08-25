@@ -358,29 +358,10 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> with RouteAware {
             cover: SizedBox(
               width: 56,
               height: 80,
-              child: Stack(
-                fit: StackFit.expand,
-                children: [
-                  BookCover(
-                    book: book,
-                    expand: true,
-                    borderRadius: AppSpacing.brMd,
-                  ),
-                  Positioned(
-                    left: 0,
-                    right: 0,
-                    bottom: 0,
-                    child: SizedBox(
-                      height: 3,
-                      child: ThinProgressBar(
-                        progress: book.progress,
-                        height: 3,
-                        color: c.accent,
-                        trackColor: Colors.black.withValues(alpha: 0.4),
-                      ),
-                    ),
-                  ),
-                ],
+              child: BookCover(
+                book: book,
+                expand: true,
+                borderRadius: AppSpacing.brMd,
               ),
             ),
             typeLabel: 'Book',
@@ -460,48 +441,29 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> with RouteAware {
               child: SizedBox(
                 width: 56,
                 height: 80,
-                child: Stack(
-                  fit: StackFit.expand,
-                  children: [
-                    coverProvider != null
-                        ? Image(
-                            image: coverProvider,
-                            width: 56,
-                            height: 80,
-                            fit: BoxFit.cover,
-                            errorBuilder: (_, _, _) => Container(
-                              color: c.surfaceMuted,
-                              child: Icon(
-                                Icons.broken_image,
-                                size: 24,
-                                color: c.textTertiary,
-                              ),
-                            ),
-                          )
-                        : Container(
-                            color: c.surfaceMuted,
-                            child: Icon(
-                              Icons.auto_stories,
-                              size: 24,
-                              color: c.textTertiary,
-                            ),
+                child: coverProvider != null
+                    ? Image(
+                        image: coverProvider,
+                        width: 56,
+                        height: 80,
+                        fit: BoxFit.cover,
+                        errorBuilder: (_, _, _) => Container(
+                          color: c.surfaceMuted,
+                          child: Icon(
+                            Icons.broken_image,
+                            size: 24,
+                            color: c.textTertiary,
                           ),
-                    Positioned(
-                      left: 0,
-                      right: 0,
-                      bottom: 0,
-                      child: SizedBox(
-                        height: 3,
-                        child: ThinProgressBar(
-                          progress: progress,
-                          height: 3,
-                          color: c.accent,
-                          trackColor: Colors.black.withValues(alpha: 0.4),
+                        ),
+                      )
+                    : Container(
+                        color: c.surfaceMuted,
+                        child: Icon(
+                          Icons.auto_stories,
+                          size: 24,
+                          color: c.textTertiary,
                         ),
                       ),
-                    ),
-                  ],
-                ),
               ),
             ),
             typeLabel: 'Manga',

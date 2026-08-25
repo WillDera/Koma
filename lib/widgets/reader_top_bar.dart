@@ -33,18 +33,15 @@ class ReaderTopBar extends StatelessWidget {
 
   /// Height of the bar below [MediaQuery.viewPadding.top] (row + progress).
   /// Keep in sync with the Column below; page padding uses this.
-  static const double bodyHeight = 50;
-
-  String get _titleLine {
-    final author = bookAuthor?.trim();
-    if (author == null || author.isEmpty) return bookTitle;
-    return '$bookTitle by $author';
-  }
+  /// Sized for title + optional author + optional chapter + progress strip.
+  static const double bodyHeight = 62;
 
   @override
   Widget build(BuildContext context) {
     final c = context.colors;
     final bg = background ?? c.bg;
+    final author = bookAuthor?.trim();
+    final hasAuthor = author != null && author.isNotEmpty;
     return AnimatedSlide(
       duration: AppMotion.base,
       curve: AppMotion.standard,
@@ -76,7 +73,7 @@ class ReaderTopBar extends StatelessWidget {
                             mainAxisSize: MainAxisSize.min,
                             children: [
                               Text(
-                                _titleLine,
+                                bookTitle,
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
                                 style: TextStyle(
@@ -85,13 +82,23 @@ class ReaderTopBar extends StatelessWidget {
                                   fontWeight: FontWeight.w600,
                                 ),
                               ),
+                              if (hasAuthor)
+                                Text(
+                                  author,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: TextStyle(
+                                    color: c.textSecondary,
+                                    fontSize: 12,
+                                  ),
+                                ),
                               if (chapterTitle != null)
                                 Text(
                                   chapterTitle!,
                                   maxLines: 1,
                                   overflow: TextOverflow.ellipsis,
                                   style: TextStyle(
-                                    color: c.textSecondary,
+                                    color: c.textTertiary,
                                     fontSize: 12,
                                   ),
                                 ),

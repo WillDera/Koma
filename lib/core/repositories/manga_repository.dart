@@ -58,12 +58,14 @@ class MangaRepository {
     await _writeExtras(manga.id, manga);
   }
 
-  /// Patch MangaExtras sidecar (categories, notes, custom cover).
+  /// Patch MangaExtras sidecar (categories, notes, custom cover, flags).
   Future<void> updateMangaExtras(
     int mangaId, {
     List<int>? categoryIds,
     String? notes,
     String? customCoverPath,
+    int? viewerFlags,
+    int? chapterFlags,
   }) async {
     final existing = await getMangaById(mangaId);
     if (existing == null) return;
@@ -73,6 +75,8 @@ class MangaRepository {
         categoryIds: categoryIds ?? existing.categoryIds,
         notes: notes ?? existing.notes,
         customCoverPath: customCoverPath ?? existing.customCoverPath,
+        viewerFlags: viewerFlags ?? existing.viewerFlags,
+        chapterFlags: chapterFlags ?? existing.chapterFlags,
       ),
     );
   }
@@ -396,12 +400,13 @@ class MangaRepository {
     final hasNotes = manga.notes != null && manga.notes!.isNotEmpty;
     final hasCover =
         manga.customCoverPath != null && manga.customCoverPath!.isNotEmpty;
+    final hasFlags = manga.viewerFlags != 0 || manga.chapterFlags != 0;
     await _isar.writeTxn(() async {
       final existing = await _isar.mangaExtras
           .where()
           .mangaIdEqualTo(mangaId)
           .findFirst();
-      if (!hasCats && !hasNotes && !hasCover) {
+      if (!hasCats && !hasNotes && !hasCover && !hasFlags) {
         if (existing != null) {
           await _isar.mangaExtras.delete(existing.id ?? 0);
         }
@@ -414,12 +419,16 @@ class MangaRepository {
             categoryIds: manga.categoryIds,
             notes: manga.notes,
             customCoverPath: manga.customCoverPath,
+            viewerFlags: manga.viewerFlags,
+            chapterFlags: manga.chapterFlags,
           ),
         );
       } else {
         existing.categoryIds = manga.categoryIds;
         existing.notes = manga.notes;
         existing.customCoverPath = manga.customCoverPath;
+        existing.viewerFlags = manga.viewerFlags;
+        existing.chapterFlags = manga.chapterFlags;
         await _isar.mangaExtras.put(existing);
       }
     });
@@ -442,6 +451,8 @@ class MangaRepository {
     categoryIds: extras?.categoryIds,
     notes: extras?.notes,
     customCoverPath: extras?.customCoverPath,
+    viewerFlags: extras?.viewerFlags ?? 0,
+    chapterFlags: extras?.chapterFlags ?? 0,
     createdAt: m.createdAt,
     updatedAt: m.updatedAt,
   );
@@ -480,6 +491,7 @@ class MangaRepository {
     isDownloaded: c.isDownloaded,
     isOpened: c.isOpened,
     readAt: c.readAt,
+    dateFetch: c.dateFetch,
     memo: c.memo,
   );
 
@@ -499,6 +511,7 @@ class MangaRepository {
     isDownloaded: c.isDownloaded,
     isOpened: c.isOpened,
     readAt: c.readAt,
+    dateFetch: c.dateFetch,
     memo: c.memo,
   );
 }
