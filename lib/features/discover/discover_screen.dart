@@ -318,7 +318,10 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
       ),
     );
     if (confirmed != 'download') return;
-    if (result.downloadUrl == null || result.downloadUrl!.isEmpty) {
+    final hasDownload =
+        (result.downloadUrl != null && result.downloadUrl!.isNotEmpty) ||
+        (result.md5 != null && result.md5!.length == 32);
+    if (!hasDownload) {
       StashToast.show(
         context,
         message: 'No download link available for this result',
@@ -327,7 +330,7 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
       return;
     }
 
-    if (result.tag == 'libgen') {
+    if (result.tag == 'libgen' || result.tag == 'annas-archive') {
       await _pickMirrorAndDownload(context, result);
     } else {
       await _downloadDirect(result, result.downloadUrl!);
@@ -342,6 +345,15 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
     final links = await _svc().showDownloadOptions(result);
     if (!mounted) return;
     if (links.isEmpty) {
+      if (result.tag == 'annas-archive') {
+        StashToast.show(
+          context,
+          message:
+              'No download mirrors found. Add a RapidAPI or Anna\'s Archive secret key in Settings, or try another result.',
+          icon: Icons.info_outline,
+        );
+        return;
+      }
       if (result.downloadUrl != null && result.downloadUrl!.isNotEmpty) {
         await _downloadDirect(result, result.downloadUrl!);
       }

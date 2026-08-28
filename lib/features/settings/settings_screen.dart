@@ -26,6 +26,7 @@ import '../../core/services/download_prefs.dart';
 import '../../core/services/http/http_prefs.dart';
 import '../../core/services/http/m_client.dart';
 import '../../core/services/library_update_prefs.dart';
+import '../../core/services/annas_archive_prefs.dart';
 import '../../core/services/metadata_enrichment_service.dart';
 import '../../core/services/source_service.dart';
 import '../../router/router.dart';
@@ -260,7 +261,15 @@ class _SourcesAndPluginsPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return const Column(
-      children: [_SourcesSection(), SizedBox(height: 20), _PluginsSection(), SizedBox(height: 20), _HttpNetworkSection()],
+      children: [
+        _AnnasArchiveKeysSection(),
+        SizedBox(height: 20),
+        _SourcesSection(),
+        SizedBox(height: 20),
+        _PluginsSection(),
+        SizedBox(height: 20),
+        _HttpNetworkSection(),
+      ],
     );
   }
 }
@@ -2234,6 +2243,97 @@ class _DataSectionState extends ConsumerState<_DataSection> {
   }
 }
 
+// ─── Anna's Archive API keys ───────────────────────────────────────────
+class _AnnasArchiveKeysSection extends StatefulWidget {
+  const _AnnasArchiveKeysSection();
+
+  @override
+  State<_AnnasArchiveKeysSection> createState() =>
+      _AnnasArchiveKeysSectionState();
+}
+
+class _AnnasArchiveKeysSectionState extends State<_AnnasArchiveKeysSection> {
+  late final TextEditingController _rapidApiCtrl;
+  late final TextEditingController _secretKeyCtrl;
+  bool _loaded = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _rapidApiCtrl = TextEditingController();
+    _secretKeyCtrl = TextEditingController();
+    SharedPreferences.getInstance().then((prefs) {
+      if (!mounted) return;
+      _rapidApiCtrl.text = prefs.getString(kAnnasArchiveRapidApiKeyPref) ?? '';
+      _secretKeyCtrl.text = prefs.getString(kAnnasArchiveSecretKeyPref) ?? '';
+      setState(() => _loaded = true);
+    });
+  }
+
+  @override
+  void dispose() {
+    _rapidApiCtrl.dispose();
+    _secretKeyCtrl.dispose();
+    super.dispose();
+  }
+
+  Future<void> _savePref(String key, String value) async {
+    final prefs = await SharedPreferences.getInstance();
+    final trimmed = value.trim();
+    if (trimmed.isEmpty) {
+      await prefs.remove(key);
+    } else {
+      await prefs.setString(key, trimmed);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.colors;
+    return SettingsSection(
+      title: "Anna's Archive",
+      headerColor: AppColors.figmaCyan,
+      padding: const EdgeInsets.symmetric(horizontal: 16),
+      footer:
+          "Optional RapidAPI key enables hosted search and mirror lookup (100 free requests/month). "
+          "Without it, Discover uses on-device HTML search via annas_archive_api. "
+          "An Anna's Archive membership secret key unlocks fast downloads; Libgen, Z-Library, and IPFS mirrors work without it.",
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+          child: TextField(
+            controller: _rapidApiCtrl,
+            enabled: _loaded,
+            obscureText: true,
+            decoration: InputDecoration(
+              labelText: 'RapidAPI key (optional)',
+              labelStyle: TextStyle(color: c.textSecondary),
+              border: const OutlineInputBorder(),
+              isDense: true,
+            ),
+            onChanged: (v) => _savePref(kAnnasArchiveRapidApiKeyPref, v),
+          ),
+        ),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+          child: TextField(
+            controller: _secretKeyCtrl,
+            enabled: _loaded,
+            obscureText: true,
+            decoration: InputDecoration(
+              labelText: "Anna's Archive secret key (optional)",
+              labelStyle: TextStyle(color: c.textSecondary),
+              border: const OutlineInputBorder(),
+              isDense: true,
+            ),
+            onChanged: (v) => _savePref(kAnnasArchiveSecretKeyPref, v),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
 // ─── Sources ─────────────────────────────────────────────────────────
 class _SourcesSection extends ConsumerStatefulWidget {
   const _SourcesSection();
@@ -2302,7 +2402,7 @@ class _SourcesSectionState extends ConsumerState<_SourcesSection> {
       headerColor: AppColors.figmaCyan,
       padding: const EdgeInsets.symmetric(horizontal: 16),
       footer:
-          'Discover tab searches all enabled sources. Add sources in Settings → Ebook sources (e.g. Library Genesis with tag `libgen`).',
+          'Discover searches all enabled sources. You can add multiple entries with the same tag (e.g. several LibGen mirrors or Anna\'s Archive rows with different language filters).',
       children: [
         ..._sources.map(
           (s) => _SourceRow(
@@ -2402,6 +2502,10 @@ Future<Source?> _sourceDialog(BuildContext context, Source? existing) async {
                     value: 'libgen',
                     child: Text('Library Genesis'),
                   ),
+                  DropdownMenuItem(
+                    value: 'annas-archive',
+                    child: Text("Anna's Archive"),
+                  ),
                 ],
                 onChanged: (v) {
                   if (v != null) setDlgState(() => tag = v);
@@ -2415,8 +2519,10 @@ Future<Source?> _sourceDialog(BuildContext context, Source? existing) async {
               const SizedBox(height: 12),
               TextField(
                 controller: urlCtrl,
-                decoration: const InputDecoration(
-                  hintText: 'Base URL (e.g. https://libgen.li/index.php)',
+                decoration: InputDecoration(
+                  hintText: tag == 'annas-archive'
+                      ? 'Base URL (e.g. https://annas-archive.gl)'
+                      : 'Base URL (e.g. https://libgen.li/index.php)',
                 ),
               ),
               const SizedBox(height: 12),

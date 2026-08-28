@@ -48,8 +48,8 @@ const SourceSchema = CollectionSchema(
     r'tag': IndexSchema(
       id: -8827799455852696894,
       name: r'tag',
-      unique: true,
-      replace: true,
+      unique: false,
+      replace: false,
       properties: [
         IndexPropertySchema(
           name: r'tag',
@@ -172,60 +172,6 @@ List<IsarLinkBase<dynamic>> _sourceGetLinks(Source object) {
 
 void _sourceAttach(IsarCollection<dynamic> col, Id id, Source object) {
   object.id = id;
-}
-
-extension SourceByIndex on IsarCollection<Source> {
-  Future<Source?> getByTag(String tag) {
-    return getByIndex(r'tag', [tag]);
-  }
-
-  Source? getByTagSync(String tag) {
-    return getByIndexSync(r'tag', [tag]);
-  }
-
-  Future<bool> deleteByTag(String tag) {
-    return deleteByIndex(r'tag', [tag]);
-  }
-
-  bool deleteByTagSync(String tag) {
-    return deleteByIndexSync(r'tag', [tag]);
-  }
-
-  Future<List<Source?>> getAllByTag(List<String> tagValues) {
-    final values = tagValues.map((e) => [e]).toList();
-    return getAllByIndex(r'tag', values);
-  }
-
-  List<Source?> getAllByTagSync(List<String> tagValues) {
-    final values = tagValues.map((e) => [e]).toList();
-    return getAllByIndexSync(r'tag', values);
-  }
-
-  Future<int> deleteAllByTag(List<String> tagValues) {
-    final values = tagValues.map((e) => [e]).toList();
-    return deleteAllByIndex(r'tag', values);
-  }
-
-  int deleteAllByTagSync(List<String> tagValues) {
-    final values = tagValues.map((e) => [e]).toList();
-    return deleteAllByIndexSync(r'tag', values);
-  }
-
-  Future<Id> putByTag(Source object) {
-    return putByIndex(r'tag', object);
-  }
-
-  Id putByTagSync(Source object, {bool saveLinks = true}) {
-    return putByIndexSync(r'tag', object, saveLinks: saveLinks);
-  }
-
-  Future<List<Id>> putAllByTag(List<Source> objects) {
-    return putAllByIndex(r'tag', objects);
-  }
-
-  List<Id> putAllByTagSync(List<Source> objects, {bool saveLinks = true}) {
-    return putAllByIndexSync(r'tag', objects, saveLinks: saveLinks);
-  }
 }
 
 extension SourceQueryWhereSort on QueryBuilder<Source, Source, QWhere> {
