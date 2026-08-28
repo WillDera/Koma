@@ -5,6 +5,7 @@ import 'package:http/http.dart' as http;
 import 'package:http/io_client.dart' as http_io;
 import 'package:html/parser.dart' as html_parser;
 
+import 'annas_archive_service.dart';
 import 'app_storage.dart';
 import '../models/source.dart';
 import '../repositories/repositories.dart';
@@ -168,6 +169,8 @@ class SourceSearchResult {
   final String? poster;
   final String? pages;
   final String? downloadUrl;
+  /// Anna's Archive file hash (32-char md5) when [tag] is `annas-archive`.
+  final String? md5;
   final String sourceName;
   final String tag;
 
@@ -181,6 +184,7 @@ class SourceSearchResult {
     this.poster,
     this.pages,
     this.downloadUrl,
+    this.md5,
     required this.sourceName,
     this.tag = '',
   });
@@ -189,8 +193,10 @@ class SourceSearchResult {
 class SourceService {
   final Repositories _repos;
   final EbookService _ebook;
+  final AnnasArchiveService _annas;
 
-  SourceService(this._repos, this._ebook);
+  SourceService(this._repos, this._ebook, [AnnasArchiveService? annas])
+      : _annas = annas ?? AnnasArchiveService();
 
   http_io.IOClient _client() {
     return http_io.IOClient(HttpClient());
@@ -239,9 +245,43 @@ class SourceService {
     switch (source.tag) {
       case 'libgen':
         return _searchLibGen(source, query);
+      case 'annas-archive':
+        return _searchAnnasArchive(source, query);
       default:
         return [];
     }
+  }
+
+  Future<List<SourceSearchResult>> _searchAnnasArchive(
+    Source source,
+    String query,
+  ) async {
+    final hits = await _annas.search(source, query);
+    var results = hits
+        .map(
+          (h) => SourceSearchResult(
+            title: h.title,
+            author: h.author,
+            year: h.year,
+            size: h.size,
+            extension: h.format,
+            poster: h.poster,
+            downloadUrl: h.detailPageUrl,
+            md5: h.md5,
+            sourceName: source.name,
+            tag: 'annas-archive',
+          ),
+        )
+        .toList(growable: false);
+
+    if (source.fileExtensions.isNotEmpty) {
+      final allowed = source.fileExtensions.map((e) => e.toLowerCase()).toSet();
+      results = results.where((r) {
+        final ext = (r.extension ?? '').toLowerCase().replaceAll('.', '');
+        return ext.isNotEmpty && allowed.contains(ext);
+      }).toList();
+    }
+    return results;
   }
 
   Future<List<SourceSearchResult>> _searchLibGen(
@@ -458,8 +498,43 @@ class SourceService {
   Future<Map<String, String>> showDownloadOptions(
     SourceSearchResult result,
   ) async {
+    if (result.tag == 'annas-archive') {
+      final md5 =
+          result.md5 ?? _md5FromUrl(result.downloadUrl ?? '');
+      if (md5 == null || md5.length != 32) return {};
+      final options = await _annas.downloadOptions(md5);
+      return _expandLibgenMirrorOptions(options);
+    }
     if (result.downloadUrl == null || result.downloadUrl!.isEmpty) return {};
     return getDownloadLinks(result.downloadUrl!);
+  }
+
+  Future<Map<String, String>> _expandLibgenMirrorOptions(
+    Map<String, String> options,
+  ) async {
+    if (options.isEmpty) return options;
+
+    final expanded = <String, String>{};
+    for (final entry in options.entries) {
+      if (_looksLikeLibgenAdsPage(entry.value)) {
+        final mirrors = await getDownloadLinks(entry.value);
+        if (mirrors.isNotEmpty) {
+          for (final mirror in mirrors.entries) {
+            expanded['${entry.key} · ${mirror.key}'] = mirror.value;
+          }
+          continue;
+        }
+      }
+      expanded[entry.key] = entry.value;
+    }
+    return expanded;
+  }
+
+  bool _looksLikeLibgenAdsPage(String url) {
+    final lower = url.toLowerCase();
+    return lower.contains('ads.php') ||
+        lower.contains('/main/') ||
+        lower.contains('/fiction/');
   }
 
   /// Downloads [url] (then [fallbackUrls]), imports the ebook, and returns

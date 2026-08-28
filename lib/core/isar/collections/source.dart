@@ -13,8 +13,9 @@ class Source {
 
   String name;
 
-  /// Short slug used in URLs (e.g. `annas-archive`, `gutenberg`).
-  @Index(unique: true, replace: true)
+  /// Source type / scraper id (e.g. `libgen`, `annas-archive`). Not unique —
+  /// users may add several mirrors of the same type (different base URLs).
+  @Index()
   String tag;
 
   String baseUrl;
