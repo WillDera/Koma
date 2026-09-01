@@ -369,49 +369,56 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
           borderRadius: BorderRadius.circular(18),
           side: BorderSide(color: c.border, width: 0.5),
         ),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'Choose mirror',
-              style: TextStyle(
-                color: c.textPrimary,
-                fontSize: 16,
-                fontWeight: FontWeight.w600,
-              ),
+        content: SizedBox(
+          width: double.maxFinite,
+          child: ConstrainedBox(
+            constraints: BoxConstraints(
+              maxHeight: MediaQuery.sizeOf(ctx).height * 0.55,
             ),
-            const SizedBox(height: 12),
-            ...links.entries.map(
-              (e) => Padding(
-                padding: const EdgeInsets.only(bottom: 8),
-                child: SizedBox(
-                  width: double.infinity,
-                  child: AnimatedPress(
-                    onTap: () => Navigator.of(ctx).pop(e.value),
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 16,
-                        vertical: 12,
-                      ),
-                      decoration: BoxDecoration(
-                        color: c.surface,
-                        borderRadius: AppSpacing.brLg,
-                        border: Border.all(color: c.border, width: 0.5),
-                      ),
-                      child: Text(
-                        e.key,
-                        style: TextStyle(
-                          color: c.textPrimary,
-                          fontWeight: FontWeight.w500,
+            child: ListView(
+              shrinkWrap: true,
+              children: [
+                Text(
+                  'Choose mirror',
+                  style: TextStyle(
+                    color: c.textPrimary,
+                    fontSize: 16,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                ...links.entries.map(
+                  (e) => Padding(
+                    padding: const EdgeInsets.only(bottom: 8),
+                    child: SizedBox(
+                      width: double.infinity,
+                      child: AnimatedPress(
+                        onTap: () => Navigator.of(ctx).pop(e.value),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 16,
+                            vertical: 12,
+                          ),
+                          decoration: BoxDecoration(
+                            color: c.surface,
+                            borderRadius: AppSpacing.brLg,
+                            border: Border.all(color: c.border, width: 0.5),
+                          ),
+                          child: Text(
+                            e.key,
+                            style: TextStyle(
+                              color: c.textPrimary,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
                         ),
                       ),
                     ),
                   ),
                 ),
-              ),
+              ],
             ),
-          ],
+          ),
         ),
         actions: [
           TextButton(
