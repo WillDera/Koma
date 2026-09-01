@@ -69,6 +69,14 @@ const _kMirrorOrder = [
   _kPinata,
 ];
 
+/// Reliable IPFS gateways (cloudflare-ipfs.com is defunct).
+const _kIpfsGatewayOrigins = <(String label, String origin)>[
+  (_kCloudflare, 'https://cf-ipfs.com'),
+  (_kIpfsIo, 'https://ipfs.io'),
+  ('Dweb.link', 'https://dweb.link'),
+  (_kPinata, 'https://gateway.pinata.cloud'),
+];
+
 final _ipfsCidRe = RegExp(r'/ipfs/([a-zA-Z0-9]+)', caseSensitive: false);
 final _md5Re = RegExp(r'[a-fA-F0-9]{32}');
 
@@ -96,12 +104,33 @@ bool _isNonFileLibgenMirror(Uri uri) {
     return true;
   }
   if (host.contains('randombook')) return true;
+  if (host.contains('z-library') ||
+      host.contains('z-lib') ||
+      host.contains('singlelogin') ||
+      host.contains('1lib')) {
+    return true;
+  }
   if (host.contains('libgen.pw') || host.contains('libgen.me')) return true;
   if (host.contains('bookfi') || host.contains('b-ok') || host.contains('3lib')) {
     return true;
   }
   if (path.contains('ads.php')) return true;
+  // Z-Library / catalog detail pages, not direct file endpoints.
+  if (path.contains('/md5/') && !path.contains('get.php')) return true;
   return false;
+}
+
+bool _isSkippableDownloadUrl(String url) {
+  final uri = Uri.tryParse(url);
+  if (uri == null) return true;
+  if (uri.scheme != 'http' && uri.scheme != 'https') return true;
+  return _isNonFileLibgenMirror(uri);
+}
+
+bool _isIpfsDownloadUrl(String url) {
+  final uri = Uri.tryParse(url);
+  if (uri == null) return false;
+  return _ipfsCidFromUri(uri) != null || uri.path.contains('/ipfs/');
 }
 
 String? _ipfsCidFromUri(Uri uri) {
@@ -470,14 +499,14 @@ class SourceService {
       found.putIfAbsent(
         _kCloudflare,
         () => _ipfsGatewayUrl(
-          'https://cloudflare-ipfs.com',
+          'https://cf-ipfs.com',
           resolvedCid,
           filename,
         ),
       );
       found.putIfAbsent(
         _kIpfsIo,
-        () => _ipfsGatewayUrl('https://gateway.ipfs.io', resolvedCid, filename),
+        () => _ipfsGatewayUrl('https://ipfs.io', resolvedCid, filename),
       );
       found.putIfAbsent(
         _kInfura,
@@ -503,31 +532,91 @@ class SourceService {
           result.md5 ?? _md5FromUrl(result.downloadUrl ?? '');
       if (md5 == null || md5.length != 32) return {};
       final options = await _annas.downloadOptions(md5);
-      return _expandLibgenMirrorOptions(options);
+      final curated = _curateAnnasDownloadOptions(options);
+      return _expandLibgenMirrorOptions(curated, singleLibgenExpand: true);
     }
     if (result.downloadUrl == null || result.downloadUrl!.isEmpty) return {};
     return getDownloadLinks(result.downloadUrl!);
   }
 
+  /// Drops catalog/HTML mirrors and collapses dozens of IPFS gateways to a
+  /// small curated set per content id.
+  Map<String, String> _curateAnnasDownloadOptions(Map<String, String> raw) {
+    final kept = <String, String>{};
+    final cids = <String>{};
+    String? filename;
+
+    for (final entry in raw.entries) {
+      final url = entry.value.trim();
+      if (url.isEmpty || _isSkippableDownloadUrl(url)) continue;
+
+      final uri = Uri.tryParse(url);
+      if (uri == null) continue;
+
+      final cid = _ipfsCidFromUri(uri);
+      if (cid != null) {
+        cids.add(cid);
+        filename ??= uri.queryParameters['filename'];
+        continue;
+      }
+
+      if (_isIpfsDownloadUrl(url)) continue;
+      kept.putIfAbsent(entry.key, () => url);
+    }
+
+    for (final cid in cids) {
+      for (final (label, origin) in _kIpfsGatewayOrigins) {
+        kept.putIfAbsent(
+          label,
+          () => _ipfsGatewayUrl(origin, cid, filename),
+        );
+      }
+    }
+
+    return _orderMirrorMap(kept);
+  }
+
+  Map<String, String> _orderMirrorMap(Map<String, String> found) {
+    final ordered = <String, String>{};
+    for (final entry in found.entries) {
+      if (entry.key.contains("Anna's Archive")) {
+        ordered[entry.key] = entry.value;
+      }
+    }
+    for (final key in _kMirrorOrder) {
+      final url = found[key];
+      if (url != null) ordered[key] = url;
+    }
+    for (final entry in found.entries) {
+      ordered.putIfAbsent(entry.key, () => entry.value);
+    }
+    return ordered;
+  }
+
   Future<Map<String, String>> _expandLibgenMirrorOptions(
-    Map<String, String> options,
-  ) async {
+    Map<String, String> options, {
+    bool singleLibgenExpand = false,
+  }) async {
     if (options.isEmpty) return options;
 
     final expanded = <String, String>{};
+    var libgenExpanded = false;
+
     for (final entry in options.entries) {
       if (_looksLikeLibgenAdsPage(entry.value)) {
+        if (singleLibgenExpand && libgenExpanded) continue;
         final mirrors = await getDownloadLinks(entry.value);
         if (mirrors.isNotEmpty) {
           for (final mirror in mirrors.entries) {
             expanded['${entry.key} · ${mirror.key}'] = mirror.value;
           }
+          libgenExpanded = true;
           continue;
         }
       }
       expanded[entry.key] = entry.value;
     }
-    return expanded;
+    return singleLibgenExpand ? _orderMirrorMap(expanded) : expanded;
   }
 
   bool _looksLikeLibgenAdsPage(String url) {

@@ -429,8 +429,8 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
       ),
     );
     if (chosen == null || chosen.isEmpty) return;
-    final fallbacks = links.values.where((u) => u != chosen).toList();
-    await _downloadDirect(result, chosen, fallbackUrls: fallbacks);
+    // User picked one mirror — do not cycle through every other option.
+    await _downloadDirect(result, chosen);
   }
 
   Future<void> _downloadDirect(
