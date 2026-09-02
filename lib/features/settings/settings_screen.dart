@@ -28,7 +28,6 @@ import '../../core/services/http/m_client.dart';
 import '../../core/services/library_update_prefs.dart';
 import '../../core/services/annas_archive_prefs.dart';
 import '../../core/services/metadata_enrichment_service.dart';
-import '../../core/services/source_service.dart';
 import '../../router/router.dart';
 import '../library/library_provider.dart';
 import 'custom_font_ui.dart';
@@ -2356,17 +2355,9 @@ class _SourcesSectionState extends ConsumerState<_SourcesSection> {
     try {
       final repos = ref.read(repositoriesProvider);
       final sources = await repos.stats.getSources();
-      if (sources.isEmpty) {
-        if (!mounted) return;
-        setState(() {
-          _sources = const [];
-          _loading = false;
-        });
-        return;
-      }
       if (!mounted) return;
       setState(() {
-        _sources = sources;
+        _sources = List<Source>.from(sources);
         _loading = false;
       });
     } catch (e) {
@@ -2429,8 +2420,9 @@ class _SourcesSectionState extends ConsumerState<_SourcesSection> {
   Future<void> _delete(int id) async {
     final repos = ref.read(repositoriesProvider);
     await repos.stats.deleteSource(id);
-    _sources.removeWhere((s) => s.id == id);
-    setState(() {});
+    setState(() {
+      _sources = _sources.where((s) => s.id != id).toList(growable: true);
+    });
   }
 
   Future<void> _add() async {
@@ -2438,8 +2430,9 @@ class _SourcesSectionState extends ConsumerState<_SourcesSection> {
     if (result == null) return;
     final repos = ref.read(repositoriesProvider);
     final id = await repos.stats.insertSource(result);
-    _sources.add(result.copyWith(id: id));
-    setState(() {});
+    setState(() {
+      _sources = [..._sources, result.copyWith(id: id)];
+    });
   }
 
   Future<void> _edit(Source source) async {
