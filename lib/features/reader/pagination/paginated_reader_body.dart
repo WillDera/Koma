@@ -13,6 +13,7 @@ import '../html/kir_model.dart';
 import '../layout/kre_layout.dart';
 import '../layout/kre_page_view.dart';
 import '../layout/reading_font_file.dart';
+import '../sheet/curl_page_turner.dart';
 import '../sheet/sheet_switcher.dart';
 import 'book_page_cursor.dart';
 import 'chapter_paginator.dart';
@@ -21,7 +22,8 @@ import 'reading_spans.dart';
 import 'resume_resolver.dart';
 
 /// The paginated reader body: measures each chapter into screen-sized sheets
-/// and turns between them with [SheetSwitcher].
+/// and turns between them with [SheetSwitcher] or, in curl mode,
+/// [CurlPageTurner] (single-page peel in both directions).
 ///
 /// ## Why the sheet index is not a book-wide page number
 ///
@@ -67,6 +69,7 @@ class PaginatedReaderBody extends StatefulWidget {
     this.bookId,
     this.sheetColor,
     this.disableAnimations = false,
+    this.pageStyle = PageStyle.page,
   });
 
   final List<Chapter> chapters;
@@ -136,6 +139,9 @@ class PaginatedReaderBody extends StatefulWidget {
 
   /// Instant sheet swap (reduce-motion / tests).
   final bool disableAnimations;
+
+  /// [PageStyle.page] uses a flat slide; [PageStyle.curl] uses [CurlPageTurner].
+  final PageStyle pageStyle;
 
   @override
   State<PaginatedReaderBody> createState() => _PaginatedReaderBodyState();
@@ -231,6 +237,43 @@ class _PaginatedReaderBodyState extends State<PaginatedReaderBody> {
   void dispose() {
     _settleTimer?.cancel();
     super.dispose();
+  }
+
+  bool get _useCurlTurn =>
+      widget.pageStyle == PageStyle.curl && !widget.disableAnimations;
+
+  void _onCurlPageChanged(BookPageCursor cursor, int pageIndex) {
+    if (pageIndex == _position.pageIndex &&
+        _position.chapterIndex == widget.chapterIndex) {
+      return;
+    }
+    final previous = _position;
+    final step = BookPosition(_position.chapterIndex, pageIndex);
+    setState(() {
+      _position = step;
+      _sheetIndex += pageIndex > previous.pageIndex ? 1 : -1;
+      _sheetDirection = pageIndex > previous.pageIndex
+          ? SheetTurnDirection.forward
+          : SheetTurnDirection.back;
+      _imageZoomed = false;
+    });
+    widget.onPositionChanged?.call(
+      step,
+      cursor.offsetAt(step),
+      exact: true,
+      pageEnd: cursor.pageAt(step).end,
+    );
+  }
+
+  void _handlePointerTurn(BookPageCursor cursor, {
+    required double dx,
+    required double vx,
+  }) {
+    if (vx < -500 || dx < -80) {
+      _turnSheet(forward: true);
+    } else if (vx > 500 || dx > 80) {
+      _turnSheet(forward: false);
+    }
   }
 
   PaginationKey _keyFor(Size viewport, {ThemeState? prov}) =>
@@ -549,7 +592,10 @@ class _PaginatedReaderBodyState extends State<PaginatedReaderBody> {
       if (step == null) return null;
       pos = step;
     }
+    return _buildPageWidget(cursor, pos);
+  }
 
+  Widget? _buildPageWidget(BookPageCursor cursor, BookPosition pos) {
     final isCurrentChapter = pos.chapterIndex == widget.chapterIndex;
 
     if (widget.bookId != null && !_kreFailed.contains(pos.chapterIndex)) {
@@ -718,6 +764,52 @@ class _PaginatedReaderBodyState extends State<PaginatedReaderBody> {
         final page = _pageAt(cursor, 0);
         if (page == null) return const SizedBox.shrink();
 
+        final sheetFill = widget.sheetColor ?? widget.themeProv.bgColor;
+        final reduceMotion = MediaQuery.disableAnimationsOf(context);
+
+        Widget sheetChild;
+        if (_useCurlTurn && !reduceMotion) {
+          final measured = cursor.pageCountOf(_position.chapterIndex);
+          if (measured <= 0) return const SizedBox.shrink();
+          final pageSize = Size(
+            viewport.width.clamp(1.0, 4000.0),
+            viewport.height.clamp(1.0, 4000.0),
+          );
+          sheetChild = CurlPageTurner(
+            pageCount: measured,
+            pageIndex: _position.pageIndex,
+            pageSize: pageSize,
+            sheetColor: sheetFill,
+            captureKey: Object.hash(
+              _position.chapterIndex,
+              key,
+              measured,
+              sheetFill.toARGB32(),
+            ),
+            onPageChanged: (i) => _onCurlPageChanged(cursor, i),
+            onChapterEdge: ({required forward}) => _turnSheet(forward: forward),
+            pageBuilder: (context, pageIndex) {
+              final pos = BookPosition(_position.chapterIndex, pageIndex);
+              final content = _buildPageWidget(cursor, pos);
+              return ColoredBox(
+                color: sheetFill,
+                child: content ?? const SizedBox.shrink(),
+              );
+            },
+          );
+        } else {
+          sheetChild = SheetSwitcher(
+            index: _sheetIndex,
+            direction: _sheetDirection,
+            sheetColor: sheetFill,
+            disableAnimations: widget.disableAnimations || reduceMotion,
+            child: KeyedSubtree(
+              key: ValueKey(_sheetIndex),
+              child: page,
+            ),
+          );
+        }
+
         return Listener(
           onPointerDown: (event) {
             _pointerDowns++;
@@ -749,26 +841,12 @@ class _PaginatedReaderBodyState extends State<PaginatedReaderBody> {
             final dx = event.position.dx - start.dx;
             final dy = event.position.dy - start.dy;
             if (dx.abs() < 64 || dx.abs() < dy.abs()) return;
+            if (_useCurlTurn) return;
             final dtMs = (event.timeStamp - startedAt).inMilliseconds;
-            final vx = dtMs > 0 ? dx / dtMs * 1000 : 0;
-            if (vx < -500 || dx < -80) {
-              _turnSheet(forward: true);
-            } else if (vx > 500 || dx > 80) {
-              _turnSheet(forward: false);
-            }
+            final vx = dtMs > 0 ? dx / dtMs * 1000 : 0.0;
+            _handlePointerTurn(cursor, dx: dx, vx: vx);
           },
-          child: SheetSwitcher(
-            index: _sheetIndex,
-            direction: _sheetDirection,
-            sheetColor: widget.sheetColor ?? widget.themeProv.bgColor,
-            disableAnimations:
-                widget.disableAnimations ||
-                MediaQuery.disableAnimationsOf(context),
-            child: KeyedSubtree(
-              key: ValueKey(_sheetIndex),
-              child: page,
-            ),
-          ),
+          child: sheetChild,
         );
       },
     );

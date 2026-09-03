@@ -1,5 +1,7 @@
 import 'dart:io';
+
 import 'package:epub_pro/epub_pro.dart';
+import 'package:flutter/foundation.dart' show debugPrint, kDebugMode;
 import 'package:image/image.dart' as img;
 import 'app_storage.dart';
 import '../models/book.dart';
@@ -135,7 +137,15 @@ class EpubService {
       if (imagePaths.isNotEmpty) {
         content = EbookMediaStore.rewriteImgSrcs(content, (src) {
           final key = EbookMediaStore.matchContentKey(src, imagePaths.keys);
-          return key == null ? null : imagePaths[key];
+          if (key == null) {
+            if (kDebugMode &&
+                !src.startsWith('http://') &&
+                !src.startsWith('https://')) {
+              debugPrint('EpubService: unresolved image src: $src');
+            }
+            return null;
+          }
+          return imagePaths[key];
         });
       }
       output.add(

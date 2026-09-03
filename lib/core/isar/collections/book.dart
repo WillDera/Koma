@@ -25,6 +25,7 @@ class Book {
 
   String genre;
   String fileExtension;
+  String description;
 
   /// Publication / first-release date from metadata enrichment (nullable).
   DateTime? releaseDate;
@@ -46,6 +47,7 @@ class Book {
     this.scrollPosition = 0.0,
     this.genre = '',
     this.fileExtension = '',
+    this.description = '',
     this.releaseDate,
     this.createdAt,
     this.updatedAt,
@@ -67,6 +69,7 @@ class Book {
         'updated_at': updatedAt?.toIso8601String(),
         'genre': genre,
         'file_extension': fileExtension,
+        'description': description,
         'release_date': releaseDate?.toIso8601String(),
       };
 
@@ -90,6 +93,7 @@ class Book {
             : null,
         genre: json['genre'] as String? ?? '',
         fileExtension: json['file_extension'] as String? ?? '',
+        description: json['description'] as String? ?? '',
         releaseDate: json['release_date'] != null
             ? DateTime.tryParse(json['release_date'] as String)
             : null,

@@ -63,6 +63,7 @@ TASKS.md
 # Folders
 mihon/
 mangayomi/
+lnreader/
 android/piper/piper1-gpl/
 android/piper/onnxruntime/
 .commandcode/
@@ -71,3 +72,4 @@ android/piper/onnxruntime/
 !README.md
 !THIRD-PARTY-NOTICES.md
 docs/
+*.sh

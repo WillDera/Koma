@@ -203,6 +203,10 @@ class EbookMediaStore {
   }
 
   /// Resolve a relative EPUB image href against content image map keys.
+  ///
+  /// Matching is exact first, then basename / suffix, then the same passes
+  /// case-insensitively (Android's file system is case-sensitive; Apple Books
+  /// is not, so EPUBs often mix casing between manifest keys and HTML `src`).
   static String? matchContentKey(String src, Iterable<String> keys) {
     var cleaned = src.trim();
     if (cleaned.startsWith('file:')) return null;
@@ -214,21 +218,40 @@ class EbookMediaStore {
     while (cleaned.startsWith('./')) {
       cleaned = cleaned.substring(2);
     }
-    // Try exact, basename, and suffix match.
-    for (final key in keys) {
-      if (key == cleaned) return key;
-    }
-    final base = cleaned.split('/').last;
-    for (final key in keys) {
-      if (key == base || key.endsWith('/$base') || key.endsWith(base)) {
-        return key;
-      }
-    }
+    final resolved = _matchContentKeyNormalized(cleaned, keys, caseSensitive: true);
+    if (resolved != null) return resolved;
+    final resolvedCi = _matchContentKeyNormalized(
+      cleaned,
+      keys,
+      caseSensitive: false,
+    );
+    if (resolvedCi != null) return resolvedCi;
     // Percent-decode once.
     try {
       final decoded = Uri.decodeComponent(cleaned);
       if (decoded != cleaned) return matchContentKey(decoded, keys);
     } catch (_) {}
+    return null;
+  }
+
+  static String? _matchContentKeyNormalized(
+    String cleaned,
+    Iterable<String> keys, {
+    required bool caseSensitive,
+  }) {
+    String norm(String s) => caseSensitive ? s : s.toLowerCase();
+    final want = norm(cleaned);
+    for (final key in keys) {
+      if (norm(key) == want) return key;
+    }
+    final base = cleaned.split('/').last;
+    final wantBase = norm(base);
+    for (final key in keys) {
+      final k = norm(key);
+      if (k == wantBase || k.endsWith('/$wantBase') || k.endsWith(wantBase)) {
+        return key;
+      }
+    }
     return null;
   }
 }

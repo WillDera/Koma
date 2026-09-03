@@ -181,7 +181,7 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
       themeProvider.select((state) => state.pageStyle),
       (prev, next) {
         if (!_sessionReady || prev == next) return;
-        if (next == PageStyle.page) {
+        if (next == PageStyle.page || next == PageStyle.curl) {
           _syncCharOffsetFromScroll();
           return;
         }
@@ -793,6 +793,7 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
                 : 0,
             sheetColor: sheetColor,
             disableAnimations: MediaQuery.disableAnimationsOf(context),
+            pageStyle: themeProv.pageStyle,
             onSelected: (start, end) {
               final text = TextExtractor.extractCached(
                 chapter.id,
@@ -884,7 +885,8 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
                 onPointerMove: _onReaderPointerMove,
                 onPointerUp: _onReaderPointerUp,
                 onPointerCancel: _onReaderPointerCancel,
-                child: themeProv.pageStyle == PageStyle.page
+                child: themeProv.pageStyle == PageStyle.page ||
+                        themeProv.pageStyle == PageStyle.curl
                     ? _buildPageBody(
                         themeProv,
                         provider,
