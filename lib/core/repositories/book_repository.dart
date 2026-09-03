@@ -71,6 +71,25 @@ class BookRepository {
     await _isar.writeTxn(() => _isar.books.put(_fromModel(book)));
   }
 
+  Future<void> updateBookInfo({
+    required int id,
+    required String title,
+    String? author,
+    required String genre,
+    required String description,
+  }) async {
+    await _isar.writeTxn(() async {
+      final row = await _isar.books.get(id);
+      if (row == null) return;
+      row.title = title;
+      row.author = author;
+      row.genre = genre;
+      row.description = description;
+      row.updatedAt = DateTime.now();
+      await _isar.books.put(row);
+    });
+  }
+
   Future<void> updateProgress(
     int bookId,
     double progress, {
@@ -399,6 +418,7 @@ class BookRepository {
         updatedAt: b.updatedAt,
         genre: b.genre,
         fileExtension: b.fileExtension,
+        description: b.description,
         releaseDate: b.releaseDate,
       );
 
@@ -416,6 +436,7 @@ class BookRepository {
         scrollPosition: b.scrollPosition,
         genre: b.genre,
         fileExtension: b.fileExtension,
+        description: b.description,
         releaseDate: b.releaseDate,
         createdAt: b.createdAt,
         updatedAt: b.updatedAt,

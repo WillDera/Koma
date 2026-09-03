@@ -1,10 +1,14 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 import 'package:path/path.dart' as p;
+import 'package:share_plus/share_plus.dart';
 
 import '../../core/models/book.dart';
 import '../../core/models/chapter.dart';
+import '../../core/providers.dart';
 import '../../router/book_navigation.dart';
 import '../../theme/app_theme.dart';
 import '../../theme/theme_provider.dart';
@@ -12,10 +16,13 @@ import '../../theme/tokens/app_spacing.dart';
 import '../../theme/tokens/app_type.dart';
 import '../../widgets/animated_press.dart';
 import '../../widgets/book_cover.dart';
+import '../../widgets/dialog_sheet.dart';
 import '../../widgets/premium_button.dart';
 import '../../widgets/progress_ring.dart';
 import '../../widgets/screen_chrome.dart';
+import '../../widgets/toast.dart';
 import 'book_detail_providers.dart';
+import 'ebook_export_flow.dart';
 
 class BookDetailScreen extends ConsumerWidget {
   const BookDetailScreen({super.key, required this.bookId});
@@ -34,6 +41,33 @@ class BookDetailScreen extends ConsumerWidget {
         backgroundColor: c.bg.withValues(alpha: 0.92),
         surfaceTintColor: Colors.transparent,
         title: const Text('Book details'),
+        actions: book.maybeWhen(
+          data: (value) {
+            if (value == null) return const <Widget>[];
+            return [
+              IconButton(
+                tooltip: 'Edit book info',
+                icon: const Icon(Icons.edit_outlined),
+                onPressed: () => editBookInfo(context, ref, value),
+              ),
+              IconButton(
+                tooltip: 'Share book',
+                icon: const Icon(Icons.share_outlined),
+                onPressed: value.filePath?.trim().isNotEmpty == true
+                    ? () => shareBookFile(context, value)
+                    : null,
+              ),
+              IconButton(
+                tooltip: 'Export to folder',
+                icon: const Icon(Icons.folder_copy_outlined),
+                onPressed: value.filePath?.trim().isNotEmpty == true
+                    ? () => exportEbooksToPickedFolder(context, books: [value])
+                    : null,
+              ),
+            ];
+          },
+          orElse: () => const <Widget>[],
+        ),
       ),
       body: ScreenBackdrop(
         child: book.when(
@@ -189,6 +223,47 @@ class _DetailBody extends ConsumerWidget {
                         : null,
                   ),
                 ),
+                const SizedBox(height: AppSpacing.md),
+                Row(
+                  children: [
+                    Expanded(
+                      child: PremiumButton(
+                        label: 'Edit info',
+                        leading: const Icon(Icons.edit_outlined),
+                        variant: PremiumButtonVariant.secondary,
+                        onPressed: () => editBookInfo(context, ref, book),
+                      ),
+                    ),
+                    const SizedBox(width: AppSpacing.sm),
+                    Expanded(
+                      child: PremiumButton(
+                        label: 'Share',
+                        leading: const Icon(Icons.ios_share_outlined),
+                        variant: PremiumButtonVariant.secondary,
+                        onPressed: book.filePath?.trim().isNotEmpty == true
+                            ? () => shareBookFile(context, book)
+                            : null,
+                      ),
+                    ),
+                  ],
+                ),
+                if (book.description.trim().isNotEmpty) ...[
+                  const SizedBox(height: AppSpacing.xxl),
+                  Text(
+                    'Description',
+                    style: Theme.of(
+                      context,
+                    ).textTheme.titleMedium?.copyWith(color: c.textPrimary),
+                  ),
+                  const SizedBox(height: AppSpacing.sm),
+                  Text(
+                    book.description.trim(),
+                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                      color: c.textSecondary,
+                      height: 1.45,
+                    ),
+                  ),
+                ],
                 const SizedBox(height: AppSpacing.xxl),
                 _MetadataPanel(book: book),
                 const SizedBox(height: AppSpacing.xxxl),
@@ -309,6 +384,161 @@ class _DetailBody extends ConsumerWidget {
             ),
           ),
         const SliverToBoxAdapter(child: SizedBox(height: AppSpacing.xxxxl)),
+      ],
+    );
+  }
+}
+
+Future<void> shareBookFile(BuildContext context, Book book) async {
+  final path = book.filePath?.trim();
+  if (path == null || path.isEmpty) {
+    StashToast.show(context, message: 'No ebook file to share');
+    return;
+  }
+  final file = File(path);
+  if (!await file.exists()) {
+    if (context.mounted) {
+      StashToast.show(context, message: 'Ebook file is missing from disk');
+    }
+    return;
+  }
+  final ext = book.fileExtension.replaceFirst('.', '').toLowerCase();
+  final mime = switch (ext) {
+    'epub' => 'application/epub+zip',
+    'pdf' => 'application/pdf',
+    'txt' => 'text/plain',
+    'fb2' => 'application/xml',
+    'mobi' || 'azw' || 'azw3' || 'kf8' => 'application/x-mobipocket-ebook',
+    _ => 'application/octet-stream',
+  };
+  await SharePlus.instance.share(
+    ShareParams(
+      files: [XFile(path, mimeType: mime, name: p.basename(path))],
+      subject: book.title,
+    ),
+  );
+}
+
+Future<void> editBookInfo(BuildContext context, WidgetRef ref, Book book) {
+  return StashSheet.show<void>(
+    context,
+    title: 'Edit book info',
+    initialChildSize: 0.72,
+    child: _EditBookInfoForm(book: book),
+  );
+}
+
+class _EditBookInfoForm extends ConsumerStatefulWidget {
+  const _EditBookInfoForm({required this.book});
+
+  final Book book;
+
+  @override
+  ConsumerState<_EditBookInfoForm> createState() => _EditBookInfoFormState();
+}
+
+class _EditBookInfoFormState extends ConsumerState<_EditBookInfoForm> {
+  late final TextEditingController _title;
+  late final TextEditingController _author;
+  late final TextEditingController _genres;
+  late final TextEditingController _description;
+  bool _saving = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _title = TextEditingController(text: widget.book.title);
+    _author = TextEditingController(text: widget.book.author ?? '');
+    _genres = TextEditingController(text: widget.book.genre);
+    _description = TextEditingController(text: widget.book.description);
+  }
+
+  @override
+  void dispose() {
+    _title.dispose();
+    _author.dispose();
+    _genres.dispose();
+    _description.dispose();
+    super.dispose();
+  }
+
+  Future<void> _save() async {
+    final title = _title.text.trim();
+    if (title.isEmpty) {
+      StashToast.show(context, message: 'Title can’t be empty');
+      return;
+    }
+    setState(() => _saving = true);
+    try {
+      final author = _author.text.trim();
+      await ref.read(repositoriesProvider).books.updateBookInfo(
+        id: widget.book.id,
+        title: title,
+        author: author.isEmpty ? null : author,
+        genre: _genres.text.trim(),
+        description: _description.text.trim(),
+      );
+      if (mounted) Navigator.pop(context);
+    } catch (e) {
+      if (mounted) {
+        StashToast.show(context, message: 'Couldn’t save: $e');
+      }
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.colors;
+    InputDecoration deco(String label) => InputDecoration(
+      labelText: label,
+      labelStyle: TextStyle(color: c.textSecondary),
+      border: const OutlineInputBorder(),
+      isDense: true,
+    );
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(
+        AppSpacing.xl,
+        AppSpacing.sm,
+        AppSpacing.xl,
+        AppSpacing.xxxxl,
+      ),
+      children: [
+        TextField(
+          controller: _title,
+          textCapitalization: TextCapitalization.words,
+          decoration: deco('Title'),
+        ),
+        const SizedBox(height: AppSpacing.lg),
+        TextField(
+          controller: _author,
+          textCapitalization: TextCapitalization.words,
+          decoration: deco('Author'),
+        ),
+        const SizedBox(height: AppSpacing.lg),
+        TextField(
+          controller: _genres,
+          textCapitalization: TextCapitalization.words,
+          decoration: deco('Genres').copyWith(
+            hintText: 'Comma-separated',
+          ),
+        ),
+        const SizedBox(height: AppSpacing.lg),
+        TextField(
+          controller: _description,
+          minLines: 4,
+          maxLines: 8,
+          textCapitalization: TextCapitalization.sentences,
+          decoration: deco('Description'),
+        ),
+        const SizedBox(height: AppSpacing.xxl),
+        PremiumButton(
+          label: 'Save',
+          expand: true,
+          loading: _saving,
+          onPressed: _saving ? null : _save,
+        ),
       ],
     );
   }

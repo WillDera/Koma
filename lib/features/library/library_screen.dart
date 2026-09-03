@@ -47,6 +47,7 @@ import '../../widgets/screen_chrome.dart';
 import '../../widgets/horizontal_tab_swipe.dart';
 import '../../widgets/segmented_control.dart';
 import '../../widgets/toast.dart';
+import 'ebook_export_flow.dart';
 import 'library_group_modal.dart';
 import 'library_provider.dart';
 
@@ -429,6 +430,15 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> with RouteAware {
           ),
           const SizedBox(width: 8),
           IconButtonRound(
+            icon: Icons.folder_copy_outlined,
+            size: 38,
+            variant: IconButtonVariant.tonal,
+            iconColor: c.accent,
+            tooltip: 'Export ebooks',
+            onPressed: () => _exportSelectedEbooks(context, provider),
+          ),
+          const SizedBox(width: 8),
+          IconButtonRound(
             icon: Icons.delete_outline,
             size: 38,
             variant: IconButtonVariant.tonal,
@@ -741,6 +751,28 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> with RouteAware {
   };
 
   // ── Dialogs / import ────────────────────────────────────────────────
+
+  Future<void> _exportSelectedEbooks(
+    BuildContext context,
+    LibraryState provider,
+  ) async {
+    final books = <Book>[];
+    for (final key in provider.selectedIds) {
+      if (!key.startsWith('b:')) continue;
+      final id = int.tryParse(key.substring(2));
+      if (id == null) continue;
+      for (final book in provider.books) {
+        if (book.id == id) {
+          books.add(book);
+          break;
+        }
+      }
+    }
+    final result = await exportEbooksToPickedFolder(context, books: books);
+    if (result != null && result.exported > 0 && context.mounted) {
+      ref.read(libraryProvider.notifier).clearSelection();
+    }
+  }
 
   void _confirmDelete(BuildContext context, LibraryState provider) async {
     final confirmed = await StashDialog.show<bool>(
