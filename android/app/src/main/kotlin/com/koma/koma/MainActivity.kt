@@ -18,7 +18,6 @@ import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
 import androidx.core.content.FileProvider
 import androidx.core.content.pm.PackageInfoCompat
-import com.koma.koma.piper.PiperMethodChannel
 import eu.kanade.tachiyomi.extension.DalvikRuntimeManager
 import eu.kanade.tachiyomi.extension.DalvikServer
 import io.flutter.embedding.android.FlutterActivity
@@ -30,7 +29,6 @@ import java.security.MessageDigest
 
 class MainActivity : FlutterActivity() {
 
-    private var piperChannel: PiperMethodChannel? = null
     private var searchChannel: MethodChannel? = null
     private var initialSearchQuery: String? = null
 
@@ -59,14 +57,6 @@ class MainActivity : FlutterActivity() {
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
         DalvikRuntimeManager.initialize(applicationContext)
-        val piper = PiperMethodChannel(applicationContext)
-        piper.register(
-            MethodChannel(
-                flutterEngine.dartExecutor.binaryMessenger,
-                "com.koma.koma/piper",
-            ),
-        )
-        piperChannel = piper
         StorageAccessChannel(this).register(
             MethodChannel(
                 flutterEngine.dartExecutor.binaryMessenger,

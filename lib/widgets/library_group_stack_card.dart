@@ -22,6 +22,9 @@ class GroupCoverSlot {
 }
 
 /// Fanned stack of covers used as a single library card for a group.
+///
+/// Set [listLayout] inside vertical lists (unbounded height). Grid cells keep
+/// the default so the fan can [Expanded] into the tile.
 class LibraryGroupStackCard extends StatelessWidget {
   const LibraryGroupStackCard({
     super.key,
@@ -33,6 +36,7 @@ class LibraryGroupStackCard extends StatelessWidget {
     this.memberCount = 0,
     this.maxVisible = 4,
     this.enableHero = true,
+    this.listLayout = false,
   });
 
   final int groupId;
@@ -43,6 +47,7 @@ class LibraryGroupStackCard extends StatelessWidget {
   final int memberCount;
   final int maxVisible;
   final bool enableHero;
+  final bool listLayout;
 
   static String coverHeroTag(int groupId, String memberKey) =>
       'library-group-$groupId-$memberKey';
@@ -53,7 +58,67 @@ class LibraryGroupStackCard extends StatelessWidget {
     final visible = covers.take(maxVisible).toList();
     final count = memberCount > 0 ? memberCount : covers.length;
 
-    final card = AnimatedPress(
+    if (listLayout) {
+      // Compact row for library list shelves — no grey chrome; same fan as grid.
+      return AnimatedPress(
+        onTap: onTap,
+        onLongPress: onLongPress,
+        scaleDown: 0.99,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 6),
+          child: Row(
+            children: [
+              SizedBox(
+                width: 88,
+                height: 110,
+                child: _FanStack(
+                  groupId: groupId,
+                  covers: visible,
+                  colors: c,
+                  width: 88,
+                  height: 110,
+                  enableHero: enableHero,
+                ),
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      name,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: c.textPrimary,
+                        fontSize: 14,
+                        fontWeight: FontWeight.w600,
+                        height: 1.3,
+                        decoration: TextDecoration.none,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      '$count titles',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: c.textSecondary,
+                        fontSize: 12,
+                        decoration: TextDecoration.none,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    return AnimatedPress(
       onTap: onTap,
       onLongPress: onLongPress,
       scaleDown: 0.97,
@@ -85,6 +150,7 @@ class LibraryGroupStackCard extends StatelessWidget {
               fontWeight: FontWeight.w600,
               height: 1.2,
               letterSpacing: -0.1,
+              decoration: TextDecoration.none,
             ),
           ),
           const SizedBox(height: 2),
@@ -92,13 +158,15 @@ class LibraryGroupStackCard extends StatelessWidget {
             '$count titles',
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
-            style: TextStyle(color: c.textSecondary, fontSize: 11),
+            style: TextStyle(
+              color: c.textSecondary,
+              fontSize: 11,
+              decoration: TextDecoration.none,
+            ),
           ),
         ],
       ),
     );
-
-    return card;
   }
 }
 
@@ -282,6 +350,7 @@ class _FanCover extends StatelessWidget {
             color: colors.textSecondary,
             fontSize: 22,
             fontWeight: FontWeight.w600,
+            decoration: TextDecoration.none,
           ),
         ),
       ),
@@ -314,6 +383,7 @@ class ReadingOrderPill extends StatelessWidget {
           fontSize: 11,
           fontWeight: FontWeight.w700,
           height: 1.1,
+          decoration: TextDecoration.none,
         ),
       ),
     );

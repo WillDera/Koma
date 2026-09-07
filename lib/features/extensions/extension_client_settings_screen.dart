@@ -7,6 +7,7 @@ import '../../core/services/extension_client_settings.dart';
 import '../../core/services/source_webview_bridge.dart';
 import '../../core/utils/language.dart';
 import '../../theme/app_theme.dart';
+import '../../widgets/page_transitions.dart';
 import 'extension_code_editor_screen.dart';
 
 /// App-owned extension client settings (URL, UA, language, cover, code, web).
@@ -118,9 +119,7 @@ class _ExtensionClientSettingsScreenState
     }
     final updated = await Navigator.push<ExtensionSource>(
       context,
-      MaterialPageRoute(
-        builder: (_) => ExtensionCodeEditorScreen(source: _source),
-      ),
+      scaleFadeRoute(ExtensionCodeEditorScreen(source: _source)),
     );
     if (updated != null && mounted) {
       setState(() => _source = updated);

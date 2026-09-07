@@ -110,10 +110,10 @@ class LibraryBookCard extends StatelessWidget {
             maxLines: 2,
             overflow: TextOverflow.ellipsis,
             style: TextStyle(
-              color: c.textPrimary,
+              color: c.textSecondary,
               fontSize: 12,
-              fontWeight: FontWeight.w600,
-              height: 1.3,
+              fontWeight: FontWeight.w500,
+              height: 16 / 12,
             ),
           ),
           if (book.author != null && book.author!.isNotEmpty)

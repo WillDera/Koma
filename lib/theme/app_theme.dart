@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 
+import '../widgets/page_transitions.dart';
 import 'tokens/app_colors.dart';
 import 'tokens/app_spacing.dart';
 import 'tokens/app_type.dart';
@@ -240,6 +241,12 @@ class AppTheme {
       fontFamily: themeFontFamily,
       textTheme: textTheme,
       primaryTextTheme: textTheme,
+      pageTransitionsTheme: PageTransitionsTheme(
+        builders: {
+          for (final platform in TargetPlatform.values)
+            platform: const ScaleFadeTransition(),
+        },
+      ),
       splashFactory: InkSparkle.splashFactory,
       hoverColor: accent.withValues(alpha: 0.06),
       focusColor: accent.withValues(alpha: 0.12),

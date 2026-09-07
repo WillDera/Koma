@@ -12,27 +12,34 @@ import '../features/extensions/migrate_batch_screen.dart';
 import '../features/extensions/sources_screen.dart';
 import '../features/history/history_screen.dart';
 import '../features/library/book_detail_screen.dart';
+import '../features/library/collections_screen.dart';
 import '../features/library/library_screen.dart';
+import '../features/onboarding/onboarding_screen.dart';
 import '../features/reader/manga_reader_screen.dart';
 import '../features/reader/pdf_reader_screen.dart';
 import '../features/reader/reader_screen.dart';
 import '../features/search/search_screen.dart';
 import '../features/settings/settings_screen.dart';
 import '../features/snippets/snippets_screen.dart';
+import '../features/updates/updates_screen.dart';
+import '../core/services/user_profile.dart';
 import 'shell.dart';
 
 /// Route name constants — use these with `context.pushNamed` / `context.goNamed`
 /// so call sites don't hardcode path strings.
 abstract final class Routes {
-  // Shell tabs
+  // Shell tabs (Kenji order: Library, Updates, History, Explore, You)
   static const library = 'library';
+  static const updates = 'updates';
   static const history = 'history';
-  static const snippets = 'snippets';
   static const discover = 'discover';
-  static const search = 'search';
   static const settings = 'settings';
+  static const onboarding = 'onboarding';
 
   // Detail (pushed above the shell)
+  static const snippets = 'snippets';
+  static const collections = 'collections';
+  static const search = 'search';
   static const reader = 'reader';
   static const bookDetail = 'bookDetail';
   static const mangaReader = 'mangaReader';
@@ -93,6 +100,13 @@ final GlobalKey<NavigatorState> rootNavigatorKey = GlobalKey<NavigatorState>(
   debugLabel: 'root',
 );
 
+/// Sync gate for [appRouter] redirect — kept in sync by [UserProfileNotifier].
+bool _onboardingGateCompleted() {
+  // Prefer the live Riverpod state when available via listenable bumps;
+  // SharedPreferences may not be re-read every redirect.
+  return UserProfileNotifier.peekOnboardingCompleted;
+}
+
 /// The app's GoRouter. Bottom-nav tabs live in a
 /// [StatefulShellRoute.indexedStack] so each tab keeps its own Navigator
 /// and widget state across switches — the go_router equivalent of the
@@ -103,7 +117,21 @@ final GoRouter appRouter = GoRouter(
   navigatorKey: rootNavigatorKey,
   observers: [routeObserver],
   initialLocation: '/library',
+  refreshListenable: userProfileListenable,
+  redirect: (context, state) {
+    final onOnboarding = state.matchedLocation == '/onboarding';
+    final done = _onboardingGateCompleted();
+    if (!done && !onOnboarding) return '/onboarding';
+    if (done && onOnboarding) return '/library';
+    return null;
+  },
   routes: [
+    GoRoute(
+      path: '/onboarding',
+      name: Routes.onboarding,
+      parentNavigatorKey: rootNavigatorKey,
+      builder: (context, state) => const OnboardingScreen(),
+    ),
     StatefulShellRoute.indexedStack(
       builder: (context, state, navigationShell) =>
           MainShell(navigationShell: navigationShell),
@@ -120,18 +148,18 @@ final GoRouter appRouter = GoRouter(
         StatefulShellBranch(
           routes: [
             GoRoute(
-              path: '/history',
-              name: Routes.history,
-              builder: (context, state) => const HistoryScreen(),
+              path: '/updates',
+              name: Routes.updates,
+              builder: (context, state) => const UpdatesScreen(),
             ),
           ],
         ),
         StatefulShellBranch(
           routes: [
             GoRoute(
-              path: '/snippets',
-              name: Routes.snippets,
-              builder: (context, state) => const SnippetsScreen(),
+              path: '/history',
+              name: Routes.history,
+              builder: (context, state) => const HistoryScreen(),
             ),
           ],
         ),
@@ -157,6 +185,18 @@ final GoRouter appRouter = GoRouter(
     ),
 
     // ── Detail routes (above the shell) ──────────────────────────────
+    GoRoute(
+      path: '/snippets',
+      name: Routes.snippets,
+      parentNavigatorKey: rootNavigatorKey,
+      builder: (context, state) => const SnippetsScreen(),
+    ),
+    GoRoute(
+      path: '/collections',
+      name: Routes.collections,
+      parentNavigatorKey: rootNavigatorKey,
+      builder: (context, state) => const CollectionsScreen(),
+    ),
     // Library-wide search is pushed from the Library header (not a tab).
     GoRoute(
       path: '/search',

@@ -4,12 +4,12 @@ import '../core/models/chapter.dart';
 import '../theme/app_theme.dart';
 import '../theme/tokens/app_spacing.dart';
 import '../theme/tokens/app_type.dart';
+import 'dialog_sheet.dart';
 
 /// Cinematic chapter navigation overlay with a slider.
 ///
-/// Shows a slide-up panel with a large chapter scrubber, current chapter
-/// title, and prev/next buttons. Designed for the Aethelgard neo-noir
-/// aesthetic (glassmorphism surface, accent tint, rounded pill slider).
+/// Shows a Kenji [StashSheet] with a large chapter scrubber, current chapter
+/// title, and prev/next buttons.
 class ChapterNavOverlay extends StatefulWidget {
   final List<Chapter> chapters;
   final int currentIndex;
@@ -34,14 +34,11 @@ class ChapterNavOverlay extends StatefulWidget {
     required VoidCallback onPrevious,
     required VoidCallback onNext,
   }) {
-    return showModalBottomSheet<void>(
-      context: context,
-      isScrollControlled: true,
-      isDismissible: true,
-      useSafeArea: true,
-      backgroundColor: Colors.transparent,
-      barrierColor: Colors.black.withValues(alpha: 0.45),
-      builder: (ctx) => ChapterNavOverlay(
+    return StashSheet.show<void>(
+      context,
+      initialChildSize: 0.32,
+      maxChildSize: 0.45,
+      child: ChapterNavOverlay(
         chapters: chapters,
         currentIndex: currentIndex,
         onSelect: onSelect,
@@ -87,45 +84,26 @@ class _ChapterNavOverlayState extends State<ChapterNavOverlay> {
   @override
   Widget build(BuildContext context) {
     final c = context.colors;
-    final ch = widget.chapters[_index];
     final last = widget.chapters.length - 1;
     final progress = last > 0 ? _index / last : 0.0;
 
-    return Container(
-      margin: const EdgeInsets.fromLTRB(16, 8, 16, 24),
+    return Padding(
       padding: EdgeInsets.fromLTRB(
         AppSpacing.lg,
-        AppSpacing.lg,
+        AppSpacing.md,
         AppSpacing.lg,
         MediaQuery.of(context).padding.bottom + AppSpacing.lg,
-      ),
-      decoration: BoxDecoration(
-        color: c.bgElevated,
-        borderRadius: AppSpacing.brXxl,
-        boxShadow: AppSpacing.shadow4(isDark: c.bg.computeLuminance() < 0.5),
       ),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          // Handle
-          Container(
-            width: 40,
-            height: 4,
-            margin: const EdgeInsets.only(bottom: 16),
-            decoration: BoxDecoration(
-              color: c.borderStrong,
-              borderRadius: BorderRadius.circular(2),
-            ),
-          ),
-
-          // Chapter title + meta
           Text(
             'Chapter ${_index + 1} of ${widget.chapters.length}',
             style: AppType.labelCaps(fontSize: 12, color: c.textTertiary),
           ),
           const SizedBox(height: 6),
           Text(
-            ch.title,
+            widget.chapters[_index].title,
             textAlign: TextAlign.center,
             maxLines: 2,
             overflow: TextOverflow.ellipsis,
@@ -137,8 +115,6 @@ class _ChapterNavOverlayState extends State<ChapterNavOverlay> {
             ),
           ),
           const SizedBox(height: 20),
-
-          // Slider
           Container(
             height: 56,
             padding: const EdgeInsets.symmetric(horizontal: 8),

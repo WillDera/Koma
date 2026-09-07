@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
 
 import '../../theme/app_theme.dart';
+import '../../theme/tokens/app_spacing.dart';
+import '../../widgets/segmented_control.dart';
+import '../../widgets/settings_section.dart';
 
 enum ReadingMode {
   defaultL2R,
@@ -209,22 +212,14 @@ class ReaderSettingsSheet extends StatefulWidget {
   State<ReaderSettingsSheet> createState() => _ReaderSettingsSheetState();
 }
 
-class _ReaderSettingsSheetState extends State<ReaderSettingsSheet>
-    with SingleTickerProviderStateMixin {
-  late final TabController _tabs;
+class _ReaderSettingsSheetState extends State<ReaderSettingsSheet> {
   late ReaderSettings _s;
+  int _tab = 0;
 
   @override
   void initState() {
     super.initState();
-    _tabs = TabController(length: 2, vsync: this);
     _s = widget.settings;
-  }
-
-  @override
-  void dispose() {
-    _tabs.dispose();
-    super.dispose();
   }
 
   void _update(ReaderSettings v) {
@@ -237,37 +232,24 @@ class _ReaderSettingsSheetState extends State<ReaderSettingsSheet>
   @override
   Widget build(BuildContext context) {
     final c = context.colors;
-    return SizedBox(
-      height: MediaQuery.of(context).size.height * 0.65,
+    return ColoredBox(
+      color: c.bgElevated,
       child: Column(
         children: [
-          Container(
-            decoration: BoxDecoration(
-              color: c.surface,
-              borderRadius: const BorderRadius.vertical(
-                top: Radius.circular(16),
-              ),
-            ),
-            child: TabBar(
-              controller: _tabs,
-              indicatorColor: Theme.of(context).colorScheme.primary,
-              labelColor: Theme.of(context).colorScheme.onSurface,
-              unselectedLabelColor: Theme.of(
-                context,
-              ).colorScheme.onSurfaceVariant,
-              tabs: const [
-                Tab(text: 'Reading'),
-                Tab(text: 'Display'),
-              ],
+          Padding(
+            padding: const EdgeInsets.fromLTRB(20, 4, 20, 12),
+            child: SegmentedControl<int>(
+              segments: const {0: 'Reading', 1: 'Display'},
+              value: _tab,
+              onChanged: (v) => setState(() => _tab = v),
             ),
           ),
           Expanded(
-            child: TabBarView(
-              controller: _tabs,
-              children: [
-                _ReadingTab(settings: _s, onChanged: _update),
-                _DisplayTab(settings: _s, onChanged: _update),
-              ],
+            child: ColoredBox(
+              color: c.bg,
+              child: _tab == 0
+                  ? _ReadingTab(settings: _s, onChanged: _update)
+                  : _DisplayTab(settings: _s, onChanged: _update),
             ),
           ),
         ],
@@ -282,188 +264,87 @@ class _ReadingTab extends StatelessWidget {
 
   const _ReadingTab({required this.settings, required this.onChanged});
 
-  @override
-  Widget build(BuildContext context) {
-    return SingleChildScrollView(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          _section(context, 'Reading Direction', [
-            SegmentedButton<ReadingMode>(
-              segments: const [
-                ButtonSegment(
-                  value: ReadingMode.defaultL2R,
-                  label: Text('L→R'),
-                ),
-                ButtonSegment(
-                  value: ReadingMode.rightToLeft,
-                  label: Text('R→L'),
-                ),
-                ButtonSegment(
-                  value: ReadingMode.webtoon,
-                  label: Text('Webtoon'),
-                ),
-              ],
-              selected: {settings.readingMode},
-              onSelectionChanged: (v) {
-                final mode = v.firstOrNull ?? ReadingMode.defaultL2R;
-                onChanged(
-                  ReaderSettings(
-                    readingMode: mode,
-                    rotationMode: settings.rotationMode,
-                    tapZones: settings.tapZones,
-                    sidePadding: settings.sidePadding,
-                    cropBorders: settings.cropBorders,
-                    bookMode: settings.bookMode,
-                    disableDoubleTap: settings.disableDoubleTap,
-                    disableZoomOut: settings.disableZoomOut,
-                    showPageNumber: settings.showPageNumber,
-                    showPageNavigator: settings.showPageNavigator,
-                    fullscreen: settings.fullscreen,
-                    keepScreenOn: settings.keepScreenOn,
-                    showActionsOnLongTap: settings.showActionsOnLongTap,
-                    animatePageTransition: settings.animatePageTransition,
-                    progressBarPlacement: settings.progressBarPlacement,
-                    brightness: settings.brightness,
-                    contrast: settings.contrast,
-                    saturation: settings.saturation,
-                    tintColor: settings.tintColor,
-                    tintOpacity: settings.tintOpacity,
-                  ),
-                );
-              },
-            ),
-          ]),
-          const SizedBox(height: 16),
-          _section(context, 'Tap Zones', [
-            SegmentedButton<TapZoneMode>(
-              segments: const [
-                ButtonSegment(
-                  value: TapZoneMode.leftRight,
-                  label: Text('L/R'),
-                ),
-                ButtonSegment(
-                  value: TapZoneMode.leftMiddleRight,
-                  label: Text('L/M/R'),
-                ),
-              ],
-              selected: {
-                settings.tapZones == TapZoneMode.leftTopRightBottom
-                    ? TapZoneMode.leftRight
-                    : settings.tapZones,
-              },
-              onSelectionChanged: (v) {
-                final mode = v.firstOrNull ?? TapZoneMode.leftRight;
-                onChanged(
-                  ReaderSettings(
-                    readingMode: settings.readingMode,
-                    rotationMode: settings.rotationMode,
-                    tapZones: mode,
-                    sidePadding: settings.sidePadding,
-                    cropBorders: settings.cropBorders,
-                    bookMode: settings.bookMode,
-                    disableDoubleTap: settings.disableDoubleTap,
-                    disableZoomOut: settings.disableZoomOut,
-                    showPageNumber: settings.showPageNumber,
-                    showPageNavigator: settings.showPageNavigator,
-                    fullscreen: settings.fullscreen,
-                    keepScreenOn: settings.keepScreenOn,
-                    showActionsOnLongTap: settings.showActionsOnLongTap,
-                    animatePageTransition: settings.animatePageTransition,
-                    progressBarPlacement: settings.progressBarPlacement,
-                    brightness: settings.brightness,
-                    contrast: settings.contrast,
-                    saturation: settings.saturation,
-                    tintColor: settings.tintColor,
-                    tintOpacity: settings.tintOpacity,
-                  ),
-                );
-              },
-            ),
-          ]),
-          const SizedBox(height: 16),
-          _section(context, 'Options', [
-            SwitchListTile(
-              title: const Text('Book Mode'),
-              subtitle: const Text('Two pages per spread (locks landscape)'),
-              value: settings.bookMode,
-              onChanged: (v) => onChanged(
-                ReaderSettings(
-                  readingMode: settings.readingMode,
-                  rotationMode: settings.rotationMode,
-                  tapZones: settings.tapZones,
-                  sidePadding: settings.sidePadding,
-                  cropBorders: settings.cropBorders,
-                  bookMode: v,
-                  disableDoubleTap: settings.disableDoubleTap,
-                  disableZoomOut: settings.disableZoomOut,
-                  showPageNumber: settings.showPageNumber,
-                  showPageNavigator: settings.showPageNavigator,
-                  fullscreen: settings.fullscreen,
-                  keepScreenOn: settings.keepScreenOn,
-                  showActionsOnLongTap: settings.showActionsOnLongTap,
-                  animatePageTransition: settings.animatePageTransition,
-                  progressBarPlacement: settings.progressBarPlacement,
-                  brightness: settings.brightness,
-                  contrast: settings.contrast,
-                  saturation: settings.saturation,
-                  tintColor: settings.tintColor,
-                  tintOpacity: settings.tintOpacity,
-                ),
-              ),
-              contentPadding: EdgeInsets.zero,
-            ),
-            SwitchListTile(
-              title: const Text('Crop Borders'),
-              subtitle: const Text('Trim whitespace from images'),
-              value: settings.cropBorders,
-              onChanged: (v) => onChanged(
-                ReaderSettings(
-                  readingMode: settings.readingMode,
-                  rotationMode: settings.rotationMode,
-                  tapZones: settings.tapZones,
-                  sidePadding: settings.sidePadding,
-                  cropBorders: v,
-                  bookMode: settings.bookMode,
-                  disableDoubleTap: settings.disableDoubleTap,
-                  disableZoomOut: settings.disableZoomOut,
-                  showPageNumber: settings.showPageNumber,
-                  showPageNavigator: settings.showPageNavigator,
-                  fullscreen: settings.fullscreen,
-                  keepScreenOn: settings.keepScreenOn,
-                  showActionsOnLongTap: settings.showActionsOnLongTap,
-                  animatePageTransition: settings.animatePageTransition,
-                  progressBarPlacement: settings.progressBarPlacement,
-                  brightness: settings.brightness,
-                  contrast: settings.contrast,
-                  saturation: settings.saturation,
-                  tintColor: settings.tintColor,
-                  tintOpacity: settings.tintOpacity,
-                ),
-              ),
-              contentPadding: EdgeInsets.zero,
-            ),
-          ]),
-        ],
-      ),
-    );
+  ReadingMode get _effectiveMode {
+    final m = settings.readingMode;
+    if (m == ReadingMode.longStrip || m == ReadingMode.longStripWithGaps) {
+      return ReadingMode.webtoon;
+    }
+    return m;
   }
 
-  Widget _section(BuildContext context, String title, List<Widget> children) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
+  TapZoneMode get _effectiveZones =>
+      settings.tapZones == TapZoneMode.leftTopRightBottom
+      ? TapZoneMode.leftRight
+      : settings.tapZones;
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.colors;
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(20, 12, 20, 32),
       children: [
-        Text(
-          title,
-          style: TextStyle(
-            fontSize: 13,
-            color: Theme.of(context).colorScheme.onSurfaceVariant,
-            fontWeight: FontWeight.w600,
+        _SectionLabel('Reading direction'),
+        const SizedBox(height: 8),
+        SegmentedControl<ReadingMode>(
+          segments: const {
+            ReadingMode.defaultL2R: 'L→R',
+            ReadingMode.rightToLeft: 'R→L',
+            ReadingMode.webtoon: 'Webtoon',
+          },
+          value: _effectiveMode,
+          onChanged: (mode) => onChanged(settings.copyWith(readingMode: mode)),
+        ),
+        const SizedBox(height: 24),
+        _SectionLabel('Tap zones'),
+        const SizedBox(height: 8),
+        SegmentedControl<TapZoneMode>(
+          segments: const {
+            TapZoneMode.leftRight: 'L/R',
+            TapZoneMode.leftMiddleRight: 'L/M/R',
+          },
+          value: _effectiveZones,
+          onChanged: (mode) => onChanged(settings.copyWith(tapZones: mode)),
+        ),
+        const SizedBox(height: 24),
+        _SectionLabel('Options'),
+        const SizedBox(height: 8),
+        Container(
+          decoration: BoxDecoration(
+            color: c.surface,
+            borderRadius: AppSpacing.brLg,
+            border: Border.all(color: c.border, width: 0.5),
+          ),
+          child: Column(
+            children: [
+              SettingsRow(
+                icon: Icons.menu_book_outlined,
+                title: 'Book mode',
+                subtitle: 'Two pages per spread (locks landscape)',
+                trailing: Switch(
+                  value: settings.bookMode,
+                  activeThumbColor: c.accent,
+                  onChanged: (v) =>
+                      onChanged(settings.copyWith(bookMode: v)),
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                child: Divider(height: 1, thickness: 0.5, color: c.border),
+              ),
+              SettingsRow(
+                icon: Icons.crop_outlined,
+                title: 'Crop borders',
+                subtitle: 'Trim whitespace from images',
+                trailing: Switch(
+                  value: settings.cropBorders,
+                  activeThumbColor: c.accent,
+                  onChanged: (v) =>
+                      onChanged(settings.copyWith(cropBorders: v)),
+                ),
+              ),
+            ],
           ),
         ),
-        const SizedBox(height: 8),
-        ...children,
       ],
     );
   }
@@ -477,117 +358,109 @@ class _DisplayTab extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return SingleChildScrollView(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          _section(context, 'Rotation', [
-            SegmentedButton<RotationMode>(
-              segments: const [
-                ButtonSegment(
-                  value: RotationMode.portrait,
-                  label: Text('Portrait'),
-                ),
-                ButtonSegment(value: RotationMode.free, label: Text('Free')),
-                ButtonSegment(
-                  value: RotationMode.landscape,
-                  label: Text('Landscape'),
-                ),
-              ],
-              selected: {settings.rotationMode},
-              onSelectionChanged: (v) {
-                final mode = v.firstOrNull ?? RotationMode.free;
-                onChanged(
-                  ReaderSettings(
-                    readingMode: settings.readingMode,
-                    rotationMode: mode,
-                    tapZones: settings.tapZones,
-                    sidePadding: settings.sidePadding,
-                    cropBorders: settings.cropBorders,
-                    bookMode: settings.bookMode,
-                    disableDoubleTap: settings.disableDoubleTap,
-                    disableZoomOut: settings.disableZoomOut,
-                    showPageNumber: settings.showPageNumber,
-                    showPageNavigator: settings.showPageNavigator,
-                    fullscreen: settings.fullscreen,
-                    keepScreenOn: settings.keepScreenOn,
-                    showActionsOnLongTap: settings.showActionsOnLongTap,
-                    animatePageTransition: settings.animatePageTransition,
-                    progressBarPlacement: settings.progressBarPlacement,
-                    brightness: settings.brightness,
-                    contrast: settings.contrast,
-                    saturation: settings.saturation,
-                    tintColor: settings.tintColor,
-                    tintOpacity: settings.tintOpacity,
-                  ),
-                );
-              },
-            ),
-          ]),
-          const SizedBox(height: 16),
-          _section(context, 'UI Options', [
-            SwitchListTile(
-              title: const Text('Fullscreen'),
-              subtitle: const Text('Hide system bars'),
-              value: settings.fullscreen,
-              onChanged: (v) => onChanged(_copy(fullscreen: v)),
-              contentPadding: EdgeInsets.zero,
-            ),
-            SwitchListTile(
-              title: const Text('Keep Screen On'),
-              subtitle: const Text('Prevent display sleep'),
-              value: settings.keepScreenOn,
-              onChanged: (v) => onChanged(_copy(keepScreenOn: v)),
-              contentPadding: EdgeInsets.zero,
-            ),
-            SwitchListTile(
-              title: const Text('Show Page Number'),
-              value: settings.showPageNumber,
-              onChanged: (v) => onChanged(_copy(showPageNumber: v)),
-              contentPadding: EdgeInsets.zero,
-            ),
-            SwitchListTile(
-              title: const Text('Animated Page Transition'),
-              value: settings.animatePageTransition,
-              onChanged: (v) => onChanged(_copy(animatePageTransition: v)),
-              contentPadding: EdgeInsets.zero,
-            ),
-          ]),
-        ],
-      ),
-    );
-  }
-
-  Widget _section(BuildContext context, String title, List<Widget> children) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
+    final c = context.colors;
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(20, 12, 20, 32),
       children: [
-        Text(
-          title,
-          style: TextStyle(
-            fontSize: 13,
-            color: Theme.of(context).colorScheme.onSurfaceVariant,
-            fontWeight: FontWeight.w600,
+        _SectionLabel('Rotation'),
+        const SizedBox(height: 8),
+        SegmentedControl<RotationMode>(
+          segments: const {
+            RotationMode.portrait: 'Portrait',
+            RotationMode.free: 'Free',
+            RotationMode.landscape: 'Landscape',
+          },
+          value: settings.rotationMode,
+          onChanged: (mode) =>
+              onChanged(settings.copyWith(rotationMode: mode)),
+        ),
+        const SizedBox(height: 24),
+        _SectionLabel('UI options'),
+        const SizedBox(height: 8),
+        Container(
+          decoration: BoxDecoration(
+            color: c.surface,
+            borderRadius: AppSpacing.brLg,
+            border: Border.all(color: c.border, width: 0.5),
+          ),
+          child: Column(
+            children: [
+              SettingsRow(
+                icon: Icons.fullscreen,
+                title: 'Fullscreen',
+                subtitle: 'Hide system bars',
+                trailing: Switch(
+                  value: settings.fullscreen,
+                  activeThumbColor: c.accent,
+                  onChanged: (v) =>
+                      onChanged(settings.copyWith(fullscreen: v)),
+                ),
+              ),
+              _rowDivider(c),
+              SettingsRow(
+                icon: Icons.wb_sunny_outlined,
+                title: 'Keep screen on',
+                subtitle: 'Prevent display sleep',
+                trailing: Switch(
+                  value: settings.keepScreenOn,
+                  activeThumbColor: c.accent,
+                  onChanged: (v) =>
+                      onChanged(settings.copyWith(keepScreenOn: v)),
+                ),
+              ),
+              _rowDivider(c),
+              SettingsRow(
+                icon: Icons.pin_outlined,
+                title: 'Show page number',
+                trailing: Switch(
+                  value: settings.showPageNumber,
+                  activeThumbColor: c.accent,
+                  onChanged: (v) =>
+                      onChanged(settings.copyWith(showPageNumber: v)),
+                ),
+              ),
+              _rowDivider(c),
+              SettingsRow(
+                icon: Icons.animation_outlined,
+                title: 'Animated page transition',
+                trailing: Switch(
+                  value: settings.animatePageTransition,
+                  activeThumbColor: c.accent,
+                  onChanged: (v) => onChanged(
+                    settings.copyWith(animatePageTransition: v),
+                  ),
+                ),
+              ),
+            ],
           ),
         ),
-        const SizedBox(height: 8),
-        ...children,
       ],
     );
   }
 
-  ReaderSettings _copy({
-    bool? fullscreen,
-    bool? keepScreenOn,
-    bool? showPageNumber,
-    bool? animatePageTransition,
-  }) {
-    return settings.copyWith(
-      fullscreen: fullscreen,
-      keepScreenOn: keepScreenOn,
-      showPageNumber: showPageNumber,
-      animatePageTransition: animatePageTransition,
+  Widget _rowDivider(KomaColors c) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16),
+      child: Divider(height: 1, thickness: 0.5, color: c.border),
+    );
+  }
+}
+
+class _SectionLabel extends StatelessWidget {
+  final String label;
+  const _SectionLabel(this.label);
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.colors;
+    return Text(
+      label.toUpperCase(),
+      style: TextStyle(
+        color: c.textTertiary,
+        fontSize: 11,
+        fontWeight: FontWeight.w600,
+        letterSpacing: 0.8,
+      ),
     );
   }
 }

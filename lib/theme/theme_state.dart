@@ -165,6 +165,7 @@ class ThemeState {
 
   Color get bgColor {
     if (sepiaMode) return AppColors.sepiaBg;
+    if (isDarkMode && amoledMode) return AppColors.amoledBg;
     return isDarkMode ? AppColors.darkBg : AppColors.lightBg;
   }
 
@@ -259,7 +260,7 @@ enum HandMode { left, right }
 ///
 /// [scroll] is continuous vertical scrolling; chapter changes use sheet turns.
 /// [page] paginates into screen-sized sheets with a flat slide animation.
-/// [curl] paginates like [page] but turns sheets with a single-page curl.
+/// [curl] paginates like [page] but turns sheets with a physics-based page fold.
 ///
 /// Stored pref index 1 used to mean `curl`; it now maps to [page]. [curl] is
 /// index 2.

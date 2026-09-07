@@ -52,15 +52,25 @@ class _PdfReaderScreenState extends ConsumerState<PdfReaderScreen> {
     final c = context.colors;
     final bookAsync = ref.watch(_pdfBookProvider(widget.bookId));
 
+    const appBarBg = Color(0xFF0F0F0F);
+    AppBar pdfAppBar({Widget? title}) => AppBar(
+          backgroundColor: appBarBg,
+          surfaceTintColor: Colors.transparent,
+          elevation: 0,
+          foregroundColor: c.textPrimary,
+          iconTheme: IconThemeData(color: c.textPrimary),
+          title: title,
+        );
+
     return bookAsync.when(
       loading: () => Scaffold(
         backgroundColor: c.bg,
-        appBar: AppBar(backgroundColor: c.bg),
+        appBar: pdfAppBar(),
         body: const Center(child: CircularProgressIndicator()),
       ),
       error: (e, _) => Scaffold(
         backgroundColor: c.bg,
-        appBar: AppBar(backgroundColor: c.bg),
+        appBar: pdfAppBar(),
         body: Center(
           child: Text('Could not open PDF: $e', style: TextStyle(color: c.textSecondary)),
         ),
@@ -70,7 +80,7 @@ class _PdfReaderScreenState extends ConsumerState<PdfReaderScreen> {
         if (path == null || path.isEmpty) {
           return Scaffold(
             backgroundColor: c.bg,
-            appBar: AppBar(backgroundColor: c.bg),
+            appBar: pdfAppBar(),
             body: Center(
               child: Text(
                 'PDF file path missing',
@@ -89,9 +99,7 @@ class _PdfReaderScreenState extends ConsumerState<PdfReaderScreen> {
         return Scaffold(
           backgroundColor: c.bg,
           resizeToAvoidBottomInset: false,
-          appBar: AppBar(
-            backgroundColor: c.bg,
-            iconTheme: IconThemeData(color: c.textPrimary),
+          appBar: pdfAppBar(
             title: Text(
               book.title,
               style: TextStyle(color: c.textPrimary),

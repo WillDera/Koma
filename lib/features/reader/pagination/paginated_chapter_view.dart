@@ -39,6 +39,11 @@ class PaginatedChapterView extends StatelessWidget {
   final double titleGap;
 
   final ThemeState themeProv;
+
+  /// Page fill. Defaults to the active theme [KomaColors.bg] so light / dark /
+  /// sepia / AMOLED sheets match the reader chrome. Pass [backgroundColor] to
+  /// override (e.g. scene chrome).
+  final Color? backgroundColor;
   final List<Highlight> highlights;
 
   final bool ttsActive;
@@ -66,6 +71,7 @@ class PaginatedChapterView extends StatelessWidget {
     required this.page,
     required this.chapterTitle,
     required this.themeProv,
+    this.backgroundColor,
     this.showTitle = false,
     this.titleGap = 28,
     this.highlights = const [],
@@ -187,7 +193,7 @@ class PaginatedChapterView extends StatelessWidget {
     );
 
     return ColoredBox(
-      color: themeProv.bgColor,
+      color: backgroundColor ?? context.colors.bg,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [

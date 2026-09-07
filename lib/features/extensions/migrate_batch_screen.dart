@@ -4,6 +4,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/models/manga.dart';
 import '../../core/providers.dart';
 import '../../theme/app_theme.dart';
+import '../../widgets/page_transitions.dart';
+import '../../widgets/screen_chrome.dart';
 import 'migrate_search_screen.dart';
 
 /// Batch migration entry: library manga list with per-title migrate action.
@@ -36,8 +38,8 @@ class _MigrateBatchScreenState extends ConsumerState<MigrateBatchScreen> {
 
   Future<void> _migrate(Manga manga) async {
     final target = await Navigator.of(context).push<Manga>(
-      MaterialPageRoute(
-        builder: (_) => MigrateSearchScreen(
+      scaleFadeRoute(
+        MigrateSearchScreen(
           currentMangaId: manga.id,
           currentTitle: manga.name,
           excludeSourceId: manga.sourceId,
@@ -50,39 +52,46 @@ class _MigrateBatchScreenState extends ConsumerState<MigrateBatchScreen> {
   @override
   Widget build(BuildContext context) {
     final c = context.colors;
-    return Scaffold(
-      backgroundColor: c.bg,
-      appBar: AppBar(
-        title: const Text('Batch migrate'),
-        backgroundColor: c.bg,
-      ),
-      body: _loading
-          ? const Center(child: CircularProgressIndicator())
-          : _library.isEmpty
-          ? Center(
-              child: Text(
-                'No library manga to migrate',
-                style: TextStyle(color: c.textTertiary),
+    return ScreenBackdrop(
+      child: Scaffold(
+        backgroundColor: Colors.transparent,
+        appBar: AppBar(
+          title: const Text('Batch migrate'),
+          backgroundColor: const Color(0xFF0F0F0F),
+          surfaceTintColor: Colors.transparent,
+          elevation: 0,
+          foregroundColor: c.textPrimary,
+        ),
+        body: _loading
+            ? const Center(child: CircularProgressIndicator())
+            : _library.isEmpty
+            ? Center(
+                child: Text(
+                  'No library manga to migrate',
+                  style: TextStyle(color: c.textTertiary),
+                ),
+              )
+            : ListView.separated(
+                itemCount: _library.length,
+                separatorBuilder: (_, _) =>
+                    Divider(color: c.border, height: 1),
+                itemBuilder: (context, i) {
+                  final m = _library[i];
+                  return ListTile(
+                    title:
+                        Text(m.name, style: TextStyle(color: c.textPrimary)),
+                    subtitle: Text(
+                      m.sourceId,
+                      style: TextStyle(color: c.textTertiary, fontSize: 12),
+                    ),
+                    trailing: TextButton(
+                      onPressed: () => _migrate(m),
+                      child: const Text('Migrate'),
+                    ),
+                  );
+                },
               ),
-            )
-          : ListView.separated(
-              itemCount: _library.length,
-              separatorBuilder: (_, __) => Divider(color: c.border, height: 1),
-              itemBuilder: (context, i) {
-                final m = _library[i];
-                return ListTile(
-                  title: Text(m.name, style: TextStyle(color: c.textPrimary)),
-                  subtitle: Text(
-                    m.sourceId,
-                    style: TextStyle(color: c.textTertiary, fontSize: 12),
-                  ),
-                  trailing: TextButton(
-                    onPressed: () => _migrate(m),
-                    child: const Text('Migrate'),
-                  ),
-                );
-              },
-            ),
+      ),
     );
   }
 }

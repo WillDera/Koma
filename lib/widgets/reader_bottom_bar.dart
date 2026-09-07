@@ -1,9 +1,8 @@
 import 'package:flutter/material.dart';
 import '../theme/app_theme.dart';
 import '../theme/tokens/app_motion.dart';
-import '../theme/tokens/glass_blur.dart';
-import 'icon_button_round.dart';
 
+/// Kenji-style ebook bottom chrome: circular prev/next + chapter pill.
 class ReaderBottomBar extends StatelessWidget {
   final VoidCallback onChapters;
   final VoidCallback onPrevious;
@@ -30,80 +29,117 @@ class ReaderBottomBar extends StatelessWidget {
     this.background,
   });
 
-  /// Height of the bar above [MediaQuery.viewPadding.bottom] (padding + buttons).
-  /// Keep in sync with the Row below; page padding uses this.
-  static const double bodyHeight = 56;
+  /// Height of the bar above [MediaQuery.viewPadding.bottom].
+  static const double bodyHeight = 72;
 
   @override
   Widget build(BuildContext context) {
     final c = context.colors;
-    final bg = background ?? c.bg;
     return AnimatedSlide(
       duration: AppMotion.base,
       curve: AppMotion.standard,
       offset: visible ? Offset.zero : const Offset(0, 1),
       child: IgnorePointer(
         ignoring: !visible,
-        child: GlassBlur.layer(
-        child: Container(
-            color: bg.withValues(alpha: 0.78),
-            child: SafeArea(
-              top: false,
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(20, 8, 20, 8),
-                child: Row(
-                  children: [
-                    IconButtonRound(
-                      icon: Icons.menu,
-                      size: 40,
-                      variant: IconButtonVariant.tonal,
-                      onPressed: onChapters,
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Text(
-                            'Chapter ${currentIndex + 1} of $totalChapters',
-                            style: TextStyle(
-                              color: c.textPrimary,
-                              fontSize: 13,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                          if (readingTimeRemaining != null)
+        child: SafeArea(
+          top: false,
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
+            child: Row(
+              children: [
+                _CircleNav(
+                  icon: Icons.chevron_left,
+                  enabled: canGoPrevious,
+                  onTap: onPrevious,
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Material(
+                    color: const Color(0xFF1A1A1A),
+                    borderRadius: BorderRadius.circular(28),
+                    child: InkWell(
+                      onTap: onChapters,
+                      borderRadius: BorderRadius.circular(28),
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 18,
+                          vertical: 14,
+                        ),
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
                             Text(
-                              readingTimeRemaining!,
+                              totalChapters > 0
+                                  ? 'Chapter ${currentIndex + 1} of $totalChapters'
+                                  : 'Chapters',
                               style: TextStyle(
-                                color: c.textTertiary,
-                                fontSize: 11,
+                                color: c.textPrimary,
+                                fontSize: 13,
+                                fontWeight: FontWeight.w600,
                               ),
                             ),
-                        ],
+                            if (readingTimeRemaining != null) ...[
+                              const SizedBox(height: 2),
+                              Text(
+                                readingTimeRemaining!,
+                                style: TextStyle(
+                                  color: c.textTertiary,
+                                  fontSize: 11,
+                                ),
+                              ),
+                            ],
+                          ],
+                        ),
                       ),
                     ),
-                    IconButtonRound(
-                      icon: Icons.chevron_left,
-                      size: 40,
-                      variant: IconButtonVariant.tonal,
-                      onPressed: canGoPrevious ? onPrevious : null,
-                    ),
-                    const SizedBox(width: 8),
-                    IconButtonRound(
-                      icon: Icons.chevron_right,
-                      size: 40,
-                      variant: IconButtonVariant.filled,
-                      iconColor: c.onAccent,
-                      backgroundColor: c.accent,
-                      onPressed: canGoNext ? onNext : null,
-                    ),
-                  ],
+                  ),
                 ),
-              ),
+                const SizedBox(width: 12),
+                _CircleNav(
+                  icon: Icons.chevron_right,
+                  enabled: canGoNext,
+                  onTap: onNext,
+                  filled: true,
+                ),
+              ],
             ),
           ),
+        ),
+      ),
+    );
+  }
+}
+
+class _CircleNav extends StatelessWidget {
+  const _CircleNav({
+    required this.icon,
+    required this.enabled,
+    required this.onTap,
+    this.filled = false,
+  });
+
+  final IconData icon;
+  final bool enabled;
+  final VoidCallback onTap;
+  final bool filled;
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.colors;
+    final bg = filled && enabled ? c.accent : const Color(0xFF1A1A1A);
+    final fg = filled && enabled
+        ? c.onAccent
+        : (enabled ? c.textPrimary : c.textTertiary.withValues(alpha: 0.45));
+    return Material(
+      color: bg,
+      shape: const CircleBorder(),
+      child: InkWell(
+        customBorder: const CircleBorder(),
+        onTap: enabled ? onTap : null,
+        child: SizedBox(
+          width: 48,
+          height: 48,
+          child: Icon(icon, color: fg, size: 26),
         ),
       ),
     );

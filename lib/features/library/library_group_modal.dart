@@ -163,157 +163,168 @@ class _LibraryGroupModalState extends ConsumerState<_LibraryGroupModal> {
     final mangasById = {for (final m in provider.mangas) m.id: m};
     return HeroMode(
       enabled: !widget.reducedMotion,
-      child: AnimatedBuilder(
-        animation: widget.routeAnimation,
-        builder: (context, _) {
-          final t = widget.routeAnimation.value;
-          final chromeOpacity = widget.reducedMotion
-              ? 1.0
-              : const Interval(
-                  0.35,
-                  1.0,
-                  curve: AppMotion.decelerate,
-                ).transform(t);
+      child: Material(
+        type: MaterialType.transparency,
+        child: AnimatedBuilder(
+          animation: widget.routeAnimation,
+          builder: (context, _) {
+            final t = widget.routeAnimation.value;
+            final chromeOpacity = widget.reducedMotion
+                ? 1.0
+                : const Interval(
+                    0.35,
+                    1.0,
+                    curve: AppMotion.decelerate,
+                  ).transform(t);
 
-          return GestureDetector(
-            behavior: HitTestBehavior.opaque,
-            onTap: () => Navigator.of(context).maybePop(),
-            child: Stack(
-              fit: StackFit.expand,
-              children: [
-                // Visual blur only — dismiss is handled by the outer detector.
-                IgnorePointer(
-                  child: BackdropFilter(
-                    filter: ImageFilter.blur(
-                      sigmaX: widget.reducedMotion ? 0 : 22,
-                      sigmaY: widget.reducedMotion ? 0 : 22,
+            return GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: () => Navigator.of(context).maybePop(),
+              child: Stack(
+                fit: StackFit.expand,
+                children: [
+                  // Visual blur only — dismiss is handled by the outer detector.
+                  IgnorePointer(
+                    child: BackdropFilter(
+                      filter: ImageFilter.blur(
+                        sigmaX: widget.reducedMotion ? 0 : 22,
+                        sigmaY: widget.reducedMotion ? 0 : 22,
+                      ),
+                      child: const ColoredBox(color: Colors.transparent),
                     ),
-                    child: const ColoredBox(color: Colors.transparent),
                   ),
-                ),
-                SafeArea(
-                  child: Padding(
-                    padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        // Absorb taps so header controls don't also dismiss.
-                        GestureDetector(
-                          onTap: () {},
-                          child: Opacity(
-                            opacity: chromeOpacity.clamp(0.0, 1.0),
-                            child: _HeaderBar(
-                              nameCtrl: _nameCtrl,
-                              editingName: _editingName,
-                              reorderMode: _reorderMode,
-                              groupName: openGroup.name,
-                              colors: c,
-                              onToggleEdit: () =>
-                                  setState(() => _editingName = !_editingName),
-                              onCommitName: _commitName,
-                              onToggleReorder: () =>
-                                  setState(() => _reorderMode = !_reorderMode),
-                              onDissolve: () async {
-                                final nav = Navigator.of(context);
-                                await ref
-                                    .read(libraryProvider.notifier)
-                                    .dissolveGroup(widget.groupId);
-                                if (context.mounted) nav.maybePop();
-                              },
-                              onClose: () =>
-                                  Navigator.of(context).maybePop(),
-                            ),
-                          ),
-                        ),
-                        const SizedBox(height: 4),
-                        Opacity(
-                          opacity: chromeOpacity.clamp(0.0, 1.0),
-                          child: Padding(
-                            padding: const EdgeInsets.fromLTRB(8, 0, 8, 8),
-                            child: Text(
-                              _reorderMode
-                                  ? 'Drag to set reading order'
-                                  : 'Long-press a cover to set reading order',
-                              style: TextStyle(
-                                color: c.textSecondary.withValues(alpha: 0.9),
-                                fontSize: 12,
+                  SafeArea(
+                    child: Padding(
+                      padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          // Absorb taps so header controls don't also dismiss.
+                          GestureDetector(
+                            onTap: () {},
+                            child: Opacity(
+                              opacity: chromeOpacity.clamp(0.0, 1.0),
+                              child: _HeaderBar(
+                                nameCtrl: _nameCtrl,
+                                editingName: _editingName,
+                                reorderMode: _reorderMode,
+                                groupName: openGroup.name,
+                                colors: c,
+                                onToggleEdit: () => setState(
+                                  () => _editingName = !_editingName,
+                                ),
+                                onCommitName: _commitName,
+                                onToggleReorder: () => setState(
+                                  () => _reorderMode = !_reorderMode,
+                                ),
+                                onDissolve: () async {
+                                  final nav = Navigator.of(context);
+                                  await ref
+                                      .read(libraryProvider.notifier)
+                                      .dissolveGroup(widget.groupId);
+                                  if (context.mounted) nav.maybePop();
+                                },
+                                onClose: () =>
+                                    Navigator.of(context).maybePop(),
                               ),
                             ),
                           ),
-                        ),
-                        Expanded(
-                          child: _reorderMode
-                              ? GestureDetector(
-                                  onTap: () {},
-                                  child: _ReorderList(
-                                    ordered: ordered,
-                                    booksById: booksById,
-                                    mangasById: mangasById,
-                                    colors: c,
-                                    onReorder: (keys) => ref
-                                        .read(libraryProvider.notifier)
-                                        .reorderGroupMembers(
-                                          widget.groupId,
-                                          keys,
-                                        ),
+                          const SizedBox(height: 4),
+                          Opacity(
+                            opacity: chromeOpacity.clamp(0.0, 1.0),
+                            child: Padding(
+                              padding: const EdgeInsets.fromLTRB(8, 0, 8, 8),
+                              child: Text(
+                                _reorderMode
+                                    ? 'Drag to set reading order'
+                                    : 'Long-press a cover to set reading order',
+                                style: TextStyle(
+                                  color: c.textSecondary.withValues(
+                                    alpha: 0.9,
                                   ),
-                                )
-                              : GridView.builder(
-                                  padding: const EdgeInsets.fromLTRB(
-                                    8,
-                                    0,
-                                    8,
-                                    24,
-                                  ),
-                                  gridDelegate:
-                                      CatalogCardLayout.gridDelegate(
-                                    columns: 3,
-                                    variant: LibraryCardVariant.grid,
-                                  ),
-                                  itemCount: ordered.length,
-                                  itemBuilder: (ctx, i) {
-                                    final member = ordered[i];
-                                    return _MemberTile(
-                                      groupId: widget.groupId,
-                                      member: member,
-                                      enableHero: !widget.reducedMotion,
-                                      book: member.isBook
-                                          ? booksById[member.itemId]
-                                          : null,
-                                      manga: member.isManga
-                                          ? mangasById[member.itemId]
-                                          : null,
-                                      localThumb: member.isManga
-                                          ? widget.mangaThumbnails[member.itemId]
-                                          : null,
-                                      onOpen: () {
-                                        if (member.isBook) {
-                                          final b = booksById[member.itemId];
-                                          if (b != null) {
-                                            Navigator.of(context).maybePop();
-                                            widget.onOpenBook(b);
-                                          }
-                                        } else {
-                                          final m = mangasById[member.itemId];
-                                          if (m != null) {
-                                            Navigator.of(context).maybePop();
-                                            widget.onOpenManga(m);
-                                          }
-                                        }
-                                      },
-                                      onLongPress: () => _setOrder(member),
-                                    );
-                                  },
+                                  fontSize: 12,
+                                  decoration: TextDecoration.none,
                                 ),
-                        ),
-                      ],
+                              ),
+                            ),
+                          ),
+                          Expanded(
+                            child: _reorderMode
+                                ? GestureDetector(
+                                    onTap: () {},
+                                    child: _ReorderList(
+                                      ordered: ordered,
+                                      booksById: booksById,
+                                      mangasById: mangasById,
+                                      colors: c,
+                                      onReorder: (keys) => ref
+                                          .read(libraryProvider.notifier)
+                                          .reorderGroupMembers(
+                                            widget.groupId,
+                                            keys,
+                                          ),
+                                    ),
+                                  )
+                                : GridView.builder(
+                                    padding: const EdgeInsets.fromLTRB(
+                                      8,
+                                      0,
+                                      8,
+                                      24,
+                                    ),
+                                    gridDelegate:
+                                        CatalogCardLayout.gridDelegate(
+                                      columns: 3,
+                                      variant: LibraryCardVariant.grid,
+                                    ),
+                                    itemCount: ordered.length,
+                                    itemBuilder: (ctx, i) {
+                                      final member = ordered[i];
+                                      return _MemberTile(
+                                        groupId: widget.groupId,
+                                        member: member,
+                                        enableHero: !widget.reducedMotion,
+                                        book: member.isBook
+                                            ? booksById[member.itemId]
+                                            : null,
+                                        manga: member.isManga
+                                            ? mangasById[member.itemId]
+                                            : null,
+                                        localThumb: member.isManga
+                                            ? widget.mangaThumbnails[
+                                                member.itemId]
+                                            : null,
+                                        onOpen: () {
+                                          if (member.isBook) {
+                                            final b =
+                                                booksById[member.itemId];
+                                            if (b != null) {
+                                              Navigator.of(context).maybePop();
+                                              widget.onOpenBook(b);
+                                            }
+                                          } else {
+                                            final m =
+                                                mangasById[member.itemId];
+                                            if (m != null) {
+                                              Navigator.of(context).maybePop();
+                                              widget.onOpenManga(m);
+                                            }
+                                          }
+                                        },
+                                        onLongPress: () => _setOrder(member),
+                                      );
+                                    },
+                                  ),
+                          ),
+                        ],
+                      ),
                     ),
                   ),
-                ),
-              ],
-            ),
-          );
-        },
+                ],
+              ),
+            );
+          },
+        ),
       ),
     );
   }
@@ -427,6 +438,7 @@ class _HeaderBar extends StatelessWidget {
                         color: colors.textPrimary,
                         fontSize: 18,
                         fontWeight: FontWeight.w600,
+                        decoration: TextDecoration.none,
                       ),
                       decoration: const InputDecoration(
                         isDense: true,
@@ -438,10 +450,13 @@ class _HeaderBar extends StatelessWidget {
                       onTap: onToggleEdit,
                       child: Text(
                         groupName,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
                         style: TextStyle(
                           color: colors.textPrimary,
                           fontSize: 18,
                           fontWeight: FontWeight.w600,
+                          decoration: TextDecoration.none,
                         ),
                       ),
                     ),
@@ -519,7 +534,15 @@ class _ReorderList extends StatelessWidget {
             leading: ReadingOrderPill(
               order: member.readingOrder ?? (i + 1),
             ),
-            title: Text(title, style: TextStyle(color: colors.textPrimary)),
+            title: Text(
+              title,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                color: colors.textPrimary,
+                decoration: TextDecoration.none,
+              ),
+            ),
             trailing: Icon(Icons.drag_handle, color: colors.textTertiary),
           ),
         );
@@ -625,6 +648,7 @@ class _MemberTile extends ConsumerWidget {
               color: c.textPrimary,
               fontSize: 12,
               fontWeight: FontWeight.w600,
+              decoration: TextDecoration.none,
             ),
           ),
         ],

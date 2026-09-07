@@ -12,7 +12,6 @@ import '../../core/utils/text_extractor.dart';
 import '../../theme/app_icons.dart';
 import '../../theme/app_theme.dart';
 import '../../theme/theme_provider.dart';
-import '../../theme/tokens/app_colors.dart';
 import '../../theme/tokens/app_motion.dart';
 import '../../theme/tokens/app_spacing.dart';
 import '../../theme/tokens/app_type.dart';
@@ -833,19 +832,16 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
     final provider = ref.watch(readerProvider);
     if (provider.loading || !_sessionReady) {
       return Scaffold(
-        backgroundColor: themeProv.isSepia
-            ? AppColors.sepiaBg
-            : (themeProv.isDark ? AppColors.darkBg : AppColors.lightBg),
+        backgroundColor: themeProv.bgColor,
         body: const Center(child: CircularProgressIndicator()),
       );
     }
     if (provider.error != null || provider.currentChapter == null) {
       return Scaffold(
-        backgroundColor: themeProv.isSepia
-            ? AppColors.sepiaBg
-            : (themeProv.isDark ? AppColors.darkBg : AppColors.lightBg),
+        backgroundColor: themeProv.bgColor,
         body: EmptyState(
           icon: AppIcons.alert,
+          emoji: '⚠️',
           title: 'Content not available',
           subtitle: provider.error ?? 'This chapter could not be loaded.',
           primaryActionLabel: 'Back to library',
@@ -859,9 +855,11 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
     final progress = (provider.currentIndex + 1) / provider.chapters.length;
     final readingTime = _estimateReadingTime(chapter.content);
     final chrome = provider.currentKir == null ? null : provider.currentScene;
+    // Prefer the active theme extension so the page sheet matches scaffold /
+    // margins in every mode (light, dark, sepia, AMOLED).
     final pageBg = SceneChrome.pageBackground(
       chrome,
-      themeProv.bgColor,
+      context.colors.bg,
       userDark: themeProv.isDarkMode,
     );
     final pageDark =
@@ -924,10 +922,12 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
                                         maxWidth: themeProv.pageWidth,
                                       ),
                                       child: RepaintBoundary(
-                                        child: Column(
-                                          crossAxisAlignment:
-                                              CrossAxisAlignment.start,
-                                          children: [
+                                        child: ColoredBox(
+                                          color: pageBg,
+                                          child: Column(
+                                            crossAxisAlignment:
+                                                CrossAxisAlignment.start,
+                                            children: [
                                             Text(
                                               chapter.title,
                                               style:
@@ -1008,6 +1008,7 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
                                               },
                                             ),
                                           ],
+                                        ),
                                         ),
                                       ),
                                     ),

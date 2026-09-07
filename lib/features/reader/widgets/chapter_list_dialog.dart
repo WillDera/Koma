@@ -4,6 +4,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/providers.dart';
 import '../../../core/models/manga_chapter.dart';
 import '../../../core/models/manga.dart';
+import '../../../theme/app_theme.dart';
+import '../../../theme/tokens/app_spacing.dart';
+import '../../../widgets/animated_press.dart';
 
 /// Dialog for viewing and jumping to chapters from within the reader.
 ///
@@ -35,11 +38,14 @@ class _ChapterListDialogState extends ConsumerState<ChapterListDialog> {
   @override
   void initState() {
     super.initState();
-    _load();
+    // ref.* needs the element to finish mounting — never call from initState body.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _load();
+    });
   }
 
   Future<void> _load() async {
-    final repos = ref.watch(repositoriesProvider);
+    final repos = ref.read(repositoriesProvider);
     final manga = await repos.manga.getMangaByKey(
       widget.sourceId,
       widget.mangaUrl,
@@ -57,9 +63,14 @@ class _ChapterListDialogState extends ConsumerState<ChapterListDialog> {
 
   @override
   Widget build(BuildContext context) {
+    final c = context.colors;
     return Dialog(
-      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      backgroundColor: c.bgElevated,
+      surfaceTintColor: Colors.transparent,
+      shape: RoundedRectangleBorder(
+        borderRadius: AppSpacing.brXl,
+        side: BorderSide(color: c.border, width: 0.5),
+      ),
       child: Container(
         constraints: BoxConstraints(
           maxHeight: MediaQuery.of(context).size.height * 0.75,
@@ -67,53 +78,49 @@ class _ChapterListDialogState extends ConsumerState<ChapterListDialog> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            // Header
-            Container(
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                border: Border(
-                  bottom: BorderSide(
-                    color: Theme.of(
-                      context,
-                    ).dividerColor.withValues(alpha: 0.1),
-                  ),
-                ),
-              ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 16, 8, 12),
               child: Row(
                 children: [
-                  const Icon(Icons.menu_book_rounded, size: 22),
+                  Icon(Icons.menu_book_rounded, size: 22, color: c.accent),
                   const SizedBox(width: 10),
                   Expanded(
                     child: Text(
                       _manga?.name ?? 'Chapters',
                       style: Theme.of(context).textTheme.titleMedium?.copyWith(
                         fontWeight: FontWeight.w600,
+                        color: c.textPrimary,
                       ),
                       overflow: TextOverflow.ellipsis,
                     ),
                   ),
-                  IconButton(
-                    icon: const Icon(Icons.close, size: 20),
-                    onPressed: () => Navigator.pop(context),
-                    padding: EdgeInsets.zero,
-                    constraints: const BoxConstraints(
-                      minWidth: 32,
-                      minHeight: 32,
+                  AnimatedPress(
+                    onTap: () => Navigator.pop(context),
+                    child: Padding(
+                      padding: const EdgeInsets.all(8),
+                      child: Icon(
+                        Icons.close,
+                        size: 20,
+                        color: c.textSecondary,
+                      ),
                     ),
                   ),
                 ],
               ),
             ),
-            // List
+            Divider(height: 1, thickness: 0.5, color: c.border),
             if (_loading)
-              const Padding(
-                padding: EdgeInsets.all(40),
-                child: CircularProgressIndicator(),
+              Padding(
+                padding: const EdgeInsets.all(40),
+                child: CircularProgressIndicator(color: c.accent),
               )
             else if (_chapters == null || _chapters!.isEmpty)
-              const Padding(
-                padding: EdgeInsets.all(40),
-                child: Text('No chapters'),
+              Padding(
+                padding: const EdgeInsets.all(40),
+                child: Text(
+                  'No chapters',
+                  style: TextStyle(color: c.textSecondary),
+                ),
               )
             else
               Flexible(
@@ -154,95 +161,89 @@ class _ChapterTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
+    final c = context.colors;
     final isRead = chapter.isRead;
 
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 3),
-      child: Material(
-        color: isCurrent
-            ? theme.colorScheme.primary.withValues(alpha: 0.12)
-            : Colors.transparent,
-        borderRadius: BorderRadius.circular(10),
-        child: InkWell(
-          borderRadius: BorderRadius.circular(10),
-          onTap: () {
-            HapticFeedback.selectionClick();
-            onTap();
-          },
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-            child: Row(
-              children: [
-                // Read indicator
-                Container(
-                  width: 3,
-                  height: 36,
-                  decoration: BoxDecoration(
-                    color: isRead
-                        ? Colors.grey.withValues(alpha: 0.3)
-                        : theme.colorScheme.primary,
-                    borderRadius: BorderRadius.circular(2),
-                  ),
+      child: AnimatedPress(
+        onTap: () {
+          HapticFeedback.selectionClick();
+          onTap();
+        },
+        child: Container(
+          decoration: BoxDecoration(
+            color: isCurrent
+                ? c.accent.withValues(alpha: 0.12)
+                : Colors.transparent,
+            borderRadius: AppSpacing.brMd,
+          ),
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+          child: Row(
+            children: [
+              Container(
+                width: 3,
+                height: 36,
+                decoration: BoxDecoration(
+                  color: isRead
+                      ? c.textTertiary.withValues(alpha: 0.35)
+                      : c.accent,
+                  borderRadius: BorderRadius.circular(2),
                 ),
-                const SizedBox(width: 12),
-                // Content
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        chapter.name,
-                        style: TextStyle(
-                          fontSize: 13,
-                          fontWeight: isCurrent
-                              ? FontWeight.w600
-                              : FontWeight.w400,
-                          color: isRead
-                              ? theme.textTheme.bodySmall?.color?.withValues(
-                                  alpha: 0.4,
-                                )
-                              : null,
-                        ),
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      chapter.name,
+                      style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: isCurrent
+                            ? FontWeight.w600
+                            : FontWeight.w400,
+                        color: isRead
+                            ? c.textTertiary
+                            : c.textPrimary,
                       ),
-                      if (chapter.lastPageRead > 0 && !isRead)
-                        Padding(
-                          padding: const EdgeInsets.only(top: 2),
-                          child: Text(
-                            'Page ${chapter.lastPageRead + 1}',
-                            style: TextStyle(
-                              fontSize: 11,
-                              color: theme.colorScheme.primary,
-                            ),
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    if (chapter.lastPageRead > 0 && !isRead)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 2),
+                        child: Text(
+                          'Page ${chapter.lastPageRead + 1}',
+                          style: TextStyle(
+                            fontSize: 11,
+                            color: c.accent,
                           ),
                         ),
-                    ],
+                      ),
+                  ],
+                ),
+              ),
+              if (isCurrent)
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 3,
+                  ),
+                  decoration: BoxDecoration(
+                    color: c.accent.withValues(alpha: 0.2),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Text(
+                    'Now',
+                    style: TextStyle(
+                      fontSize: 10,
+                      fontWeight: FontWeight.w600,
+                      color: c.accent,
+                    ),
                   ),
                 ),
-                // Current indicator
-                if (isCurrent)
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 8,
-                      vertical: 3,
-                    ),
-                    decoration: BoxDecoration(
-                      color: theme.colorScheme.primary.withValues(alpha: 0.2),
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: Text(
-                      'Now',
-                      style: TextStyle(
-                        fontSize: 10,
-                        fontWeight: FontWeight.w600,
-                        color: theme.colorScheme.primary,
-                      ),
-                    ),
-                  ),
-              ],
-            ),
+            ],
           ),
         ),
       ),

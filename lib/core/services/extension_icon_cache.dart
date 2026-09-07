@@ -1,22 +1,18 @@
-import 'dart:convert';
 import 'dart:isolate';
 
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'extension_index_codec.dart';
+
 /// Persistent cache mapping an extension package name to its launcher-icon URL.
 ///
 /// Keiyoushi's distribution repo (`extensions`) does **not** host an `icon/`
 /// directory, so the legacy `.../repo/icon/${pkg}.png` URLs the app used to
-/// build always 404'd. The authoritative icon URLs live in the full
-/// `index.json` as each entry's `resources.iconUrl` field — but that file is
-/// ~1.3 MB vs the ~460 KB `index.min.json` the app normally fetches, and it
-/// uses a different schema (object with `extensionList.extensions[]`,
-/// `packageName`, `versionName`, `resources.iconUrl`).
+/// build always 404'd. The authoritative icon URLs live in the full catalog
+/// (`index.pb` / `index.json`) as each entry's `resources.iconUrl` field.
 ///
-/// To keep the fast, light `index.min.json` as the per-fetch source of the
-/// extension *list* while still resolving icons correctly, we fetch the full
-/// `index.json` **once**, extract every `packageName → resources.iconUrl`
+/// We fetch the full index **once**, extract every `packageName → iconUrl`
 /// pair, and persist them to `SharedPreferences`. Subsequent icon lookups are
 /// a single synchronous key read — fast, offline-friendly, and self-healing
 /// (any pkg missing from the cache falls back to the deterministic CDN
@@ -121,19 +117,20 @@ class ExtensionIconCache {
     return iconUrlForPkg(pkg);
   }
 
-  /// Fetch the full Keiyoushi `index.json` (~1.3 MB) once, extract every
+  /// Fetch the full Keiyoushi catalog once, extract every
   /// `packageName → resources.iconUrl` pair, and persist them. Parsing runs
   /// in a background isolate so the UI isolate never blocks on the large
   /// decode. Subsequent calls are no-ops once the cache is populated, unless
   /// [force] is true.
   ///
-  /// [fullIndexUrl] defaults to the Keiyoushi full index. Network or parse
-  /// failures are swallowed (and reported via [onError]) so icon resolution
-  /// degrades gracefully to the derivation fallback instead of crashing the
+  /// [fullIndexUrl] defaults to Keiyoushi `index.pb` (falls back internally
+  /// only if that URL fails at the call site). Network or parse failures are
+  /// swallowed (and reported via [onError]) so icon resolution degrades
+  /// gracefully to the derivation fallback instead of crashing the
   /// extension list.
   Future<void> ensurePopulated({
     String fullIndexUrl =
-        'https://raw.githubusercontent.com/keiyoushi/extensions/repo/index.json',
+        'https://raw.githubusercontent.com/keiyoushi/extensions/repo/index.pb',
     http.Client? httpClient,
     bool force = false,
     void Function(Object error)? onError,
@@ -142,19 +139,27 @@ class ExtensionIconCache {
     final http.Client client = httpClient ?? http.Client();
     final bool ownsClient = httpClient == null;
     try {
-      final res = await client.get(Uri.parse(fullIndexUrl));
+      var resolvedUrl = fullIndexUrl;
+      var res = await client.get(Uri.parse(resolvedUrl));
+      // Older mirrors may only ship JSON — try once if .pb missing.
+      if (res.statusCode != 200 && resolvedUrl.endsWith('/index.pb')) {
+        resolvedUrl = resolvedUrl.replaceFirst(
+          RegExp(r'/index\.pb$'),
+          '/index.json',
+        );
+        res = await client.get(Uri.parse(resolvedUrl));
+      }
       if (res.statusCode != 200) {
         onError?.call(
-          Exception('Full index returned ${res.statusCode}: $fullIndexUrl'),
+          Exception('Full index returned ${res.statusCode}: $resolvedUrl'),
         );
         return;
       }
-      // Decode off the UI isolate — the full index is ~1.3 MB.
-      final pairs = await Isolate.run(() => _parseFullIndexIconUrls(res.body));
+      final pairs = await Isolate.run(
+        () => parseExtensionIconUrls(res.bodyBytes),
+      );
       final prefs = await _sp;
       await prefs.setBool(_populatedKey, true);
-      // SharedPreferences has no batch set, so write each pair. There are
-      // ~1.3k extensions; this is a one-time cost on a background future.
       for (final entry in pairs.entries) {
         await prefs.setString('$_prefix${entry.key}', entry.value);
       }
@@ -163,27 +168,5 @@ class ExtensionIconCache {
     } finally {
       if (ownsClient) client.close();
     }
-  }
-
-  /// Top-level isolate entry: parse the full `index.json` (object with
-  /// `extensionList.extensions[]`) and return `{packageName: iconUrl}`.
-  static Map<String, String> _parseFullIndexIconUrls(String body) {
-    final root = jsonDecode(body);
-    if (root is! Map) return const {};
-    final list = root['extensionList']?['extensions'];
-    if (list is! List) return const {};
-    final out = <String, String>{};
-    for (final raw in list) {
-      if (raw is! Map) continue;
-      final pkg = raw['packageName'];
-      if (pkg is! String || pkg.isEmpty) continue;
-      final resources = raw['resources'];
-      if (resources is! Map) continue;
-      final icon = resources['iconUrl'];
-      if (icon is String && icon.isNotEmpty) {
-        out[pkg] = icon;
-      }
-    }
-    return out;
   }
 }

@@ -130,14 +130,13 @@ class KeiyoushiExtensionService implements ExtensionService {
       url: chapter.url,
       memo: chapter.memo,
     );
-    // Dalvik returns `imageUrl`; normalize to MPage.`url`.
+    // Dalvik Page.toMap() always includes `url` (often "") and puts the real
+    // address in `imageUrl`. Empty string must not win over imageUrl via `??`.
     final normalized = <Map<String, dynamic>>[
       for (var i = 0; i < result.length; i++)
         {
           'index': result[i]['index'] ?? i,
-          'url': (result[i]['url'] as String?) ??
-              (result[i]['imageUrl'] as String?) ??
-              '',
+          'url': _pageImageUrl(result[i]),
           if (result[i]['headers'] != null) 'headers': result[i]['headers'],
         },
     ];
@@ -154,4 +153,13 @@ class KeiyoushiExtensionService implements ExtensionService {
     MSource source,
     SourcePreference pref,
   ) async {}
+}
+
+/// Prefer non-empty [url], else [imageUrl] (Dalvik Page mapping).
+String _pageImageUrl(Map<String, dynamic> page) {
+  final url = page['url'];
+  if (url is String && url.isNotEmpty) return url;
+  final imageUrl = page['imageUrl'];
+  if (imageUrl is String && imageUrl.isNotEmpty) return imageUrl;
+  return '';
 }

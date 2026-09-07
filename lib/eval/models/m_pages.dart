@@ -13,13 +13,17 @@ class MPage {
     if (headers != null) 'headers': headers,
   };
 
-  factory MPage.fromJson(Map<String, dynamic> json) => MPage(
-    index: asIntOr(json['index']),
-    url: json['url'] as String? ?? '',
-    headers: json['headers'] != null
-        ? Map<String, String>.from(json['headers'] as Map)
-        : null,
-  );
+  factory MPage.fromJson(Map<String, dynamic> json) {
+    final url = json['url'] as String? ?? '';
+    final imageUrl = json['imageUrl'] as String? ?? '';
+    return MPage(
+      index: asIntOr(json['index']),
+      url: url.isNotEmpty ? url : imageUrl,
+      headers: json['headers'] != null
+          ? Map<String, String>.from(json['headers'] as Map)
+          : null,
+    );
+  }
 
   factory MPage.fromMap(Map<String, dynamic> map) => MPage.fromJson(map);
 

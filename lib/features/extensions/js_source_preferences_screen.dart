@@ -7,6 +7,7 @@ import '../../eval/javascript/bridges/prefs_bridge.dart';
 import '../../eval/models/m_source.dart';
 import '../../eval/models/source_preference.dart';
 import '../../theme/app_theme.dart';
+import '../../widgets/dialog_sheet.dart';
 
 /// Flutter source-settings UI for JS extensions (mangayomi
 /// [SourcePreferenceWidget] patterns + PrefsCache persistence).
@@ -217,58 +218,39 @@ class _PreferenceTile extends StatelessWidget {
         subtitle: Text(subtitle, style: _subtitleStyle),
         onTap: () async {
           if (entries.isEmpty) return;
-          final res = await showDialog<int>(
-            context: context,
-            builder: (context) => AlertDialog(
-              backgroundColor: colors.bgElevated,
-              title: Text.rich(
-                TextSpan(
-                  children: [
-                    TextSpan(
-                      text: pref.title ?? '',
-                      style: TextStyle(color: colors.textPrimary),
-                    ),
-                    if (pref.summary?.isNotEmpty ?? false)
-                      TextSpan(
-                        text: '\n\n${pref.summary!}',
-                        style: TextStyle(
-                          fontSize: 13,
-                          color: colors.textSecondary,
-                        ),
+          final res = await StashDialog.show<int>(
+            context,
+            title: pref.title ?? '',
+            content: (pref.summary?.isNotEmpty ?? false) ? pref.summary : null,
+            contentWidget: SizedBox(
+              width: MediaQuery.sizeOf(context).width * 0.8,
+              child: RadioGroup<int>(
+                groupValue: pref.valueIndex,
+                onChanged: (value) => Navigator.pop(context, value),
+                child: ListView.builder(
+                  shrinkWrap: true,
+                  itemCount: entries.length,
+                  itemBuilder: (context, index) {
+                    return RadioListTile<int>(
+                      dense: true,
+                      contentPadding: EdgeInsets.zero,
+                      value: index,
+                      activeColor: colors.accent,
+                      title: Text(
+                        entries[index],
+                        style: TextStyle(color: colors.textPrimary),
                       ),
-                  ],
+                    );
+                  },
                 ),
               ),
-              content: SizedBox(
-                width: MediaQuery.sizeOf(context).width * 0.8,
-                child: RadioGroup<int>(
-                  groupValue: pref.valueIndex,
-                  onChanged: (value) => Navigator.pop(context, value),
-                  child: ListView.builder(
-                    shrinkWrap: true,
-                    itemCount: entries.length,
-                    itemBuilder: (context, index) {
-                      return RadioListTile<int>(
-                        dense: true,
-                        contentPadding: EdgeInsets.zero,
-                        value: index,
-                        activeColor: colors.accent,
-                        title: Text(
-                          entries[index],
-                          style: TextStyle(color: colors.textPrimary),
-                        ),
-                      );
-                    },
-                  ),
-                ),
-              ),
-              actions: [
-                TextButton(
-                  onPressed: () => Navigator.pop(context),
-                  child: Text('Cancel', style: TextStyle(color: colors.accent)),
-                ),
-              ],
             ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: Text('Cancel', style: TextStyle(color: colors.accent)),
+              ),
+            ],
           );
           if (res != null) {
             pref.valueIndex = res;
@@ -290,74 +272,66 @@ class _PreferenceTile extends StatelessWidget {
           final entries = pref.entries ?? const <String>[];
           final entryValues = pref.entryValues ?? const <String>[];
           final indexList = List<String>.from(pref.values ?? const []);
-          showDialog(
-            context: context,
-            builder: (context) {
-              return StatefulBuilder(
-                builder: (context, setDialogState) {
-                  return AlertDialog(
-                    backgroundColor: colors.bgElevated,
-                    title: Text(
-                      pref.title ?? '',
-                      style: TextStyle(color: colors.textPrimary),
-                    ),
-                    content: SizedBox(
-                      width: MediaQuery.sizeOf(context).width * 0.8,
-                      child: ListView.builder(
-                        shrinkWrap: true,
-                        itemCount: entries.length,
-                        itemBuilder: (context, index) {
-                          final entryValue = index < entryValues.length
-                              ? entryValues[index]
-                              : entries[index];
-                          final selected = indexList.contains(entryValue);
-                          return CheckboxListTile(
-                            dense: true,
-                            controlAffinity: ListTileControlAffinity.leading,
-                            value: selected,
-                            activeColor: colors.accent,
-                            title: Text(
-                              entries[index],
-                              style: TextStyle(
-                                color: colors.textPrimary,
-                                fontSize: 14,
-                              ),
-                            ),
-                            onChanged: (_) {
-                              setDialogState(() {
-                                if (selected) {
-                                  indexList.remove(entryValue);
-                                } else {
-                                  indexList.add(entryValue);
-                                }
-                                pref.values = List<String>.from(indexList);
-                              });
-                              onPersist();
-                            },
-                          );
+          StashDialog.show<void>(
+            context,
+            title: pref.title ?? '',
+            contentWidget: StatefulBuilder(
+              builder: (context, setDialogState) {
+                return SizedBox(
+                  width: MediaQuery.sizeOf(context).width * 0.8,
+                  child: ListView.builder(
+                    shrinkWrap: true,
+                    itemCount: entries.length,
+                    itemBuilder: (context, index) {
+                      final entryValue = index < entryValues.length
+                          ? entryValues[index]
+                          : entries[index];
+                      final selected = indexList.contains(entryValue);
+                      return CheckboxListTile(
+                        dense: true,
+                        controlAffinity: ListTileControlAffinity.leading,
+                        value: selected,
+                        activeColor: colors.accent,
+                        title: Text(
+                          entries[index],
+                          style: TextStyle(
+                            color: colors.textPrimary,
+                            fontSize: 14,
+                          ),
+                        ),
+                        onChanged: (_) {
+                          setDialogState(() {
+                            if (selected) {
+                              indexList.remove(entryValue);
+                            } else {
+                              indexList.add(entryValue);
+                            }
+                            pref.values = List<String>.from(indexList);
+                          });
+                          onPersist();
                         },
-                      ),
-                    ),
-                    actions: [
-                      TextButton(
-                        onPressed: () => Navigator.pop(context),
-                        child: Text(
-                          'Cancel',
-                          style: TextStyle(color: colors.accent),
-                        ),
-                      ),
-                      TextButton(
-                        onPressed: () => Navigator.pop(context),
-                        child: Text(
-                          'OK',
-                          style: TextStyle(color: colors.accent),
-                        ),
-                      ),
-                    ],
-                  );
-                },
-              );
-            },
+                      );
+                    },
+                  ),
+                );
+              },
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: Text(
+                  'Cancel',
+                  style: TextStyle(color: colors.accent),
+                ),
+              ),
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: Text(
+                  'OK',
+                  style: TextStyle(color: colors.accent),
+                ),
+              ),
+            ],
           );
         },
       );
@@ -399,35 +373,22 @@ class _EditTextDialogState extends State<_EditTextDialog> {
   @override
   Widget build(BuildContext context) {
     final c = widget.colors;
-    return AlertDialog(
-      backgroundColor: c.bgElevated,
-      title: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(widget.dialogTitle, style: TextStyle(color: c.textPrimary)),
-          if (widget.dialogMessage.isNotEmpty)
-            Text(
-              widget.dialogMessage,
-              style: TextStyle(fontSize: 13, color: c.textSecondary),
-            ),
-        ],
-      ),
-      content: Padding(
-        padding: const EdgeInsets.only(top: 12),
-        child: TextField(
-          controller: _controller,
-          style: TextStyle(color: c.textPrimary),
-          decoration: InputDecoration(
-            isDense: true,
-            filled: false,
-            enabledBorder: OutlineInputBorder(
-              borderSide: BorderSide(color: c.border),
-            ),
-            focusedBorder: OutlineInputBorder(
-              borderSide: BorderSide(color: c.accent),
-            ),
-            border: const OutlineInputBorder(borderSide: BorderSide()),
+    return StashDialog(
+      title: widget.dialogTitle,
+      content: widget.dialogMessage.isNotEmpty ? widget.dialogMessage : null,
+      contentWidget: TextField(
+        controller: _controller,
+        style: TextStyle(color: c.textPrimary),
+        decoration: InputDecoration(
+          isDense: true,
+          filled: false,
+          enabledBorder: OutlineInputBorder(
+            borderSide: BorderSide(color: c.border),
           ),
+          focusedBorder: OutlineInputBorder(
+            borderSide: BorderSide(color: c.accent),
+          ),
+          border: const OutlineInputBorder(borderSide: BorderSide()),
         ),
       ),
       actions: [

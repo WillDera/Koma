@@ -4,6 +4,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/providers.dart';
 import '../../core/services/migrate_manga_use_case.dart';
 import '../../theme/app_theme.dart';
+import '../../widgets/dialog_sheet.dart';
+import '../../widgets/screen_chrome.dart';
 import 'global_search_provider.dart';
 import 'global_search_widgets.dart';
 
@@ -65,6 +67,8 @@ class _MigrateSearchScreenState extends ConsumerState<MigrateSearchScreen> {
 
     final choice = await showDialog<_MigrateChoice>(
       context: context,
+      useRootNavigator: false,
+      barrierColor: Colors.black.withValues(alpha: 0.4),
       builder: (ctx) => _MigrateConfirmDialog(
         currentTitle: widget.currentTitle,
         targetTitle: title,
@@ -127,45 +131,50 @@ class _MigrateSearchScreenState extends ConsumerState<MigrateSearchScreen> {
         }
       },
       child: Stack(
-      children: [
-        Scaffold(
-          backgroundColor: c.bg,
-          appBar: AppBar(
-            backgroundColor: c.bg,
-            iconTheme: IconThemeData(color: c.textPrimary),
-            title: TextField(
-              controller: _ctrl,
-              focusNode: _focus,
-              textInputAction: TextInputAction.search,
-              onChanged: notifier.setQuery,
-              onSubmitted: (_) => _submit(),
-              style: TextStyle(color: c.textPrimary),
-              decoration: InputDecoration(
-                hintText: 'Migrate search',
-                hintStyle: TextStyle(color: c.textSecondary),
-                border: InputBorder.none,
-                suffixIcon: IconButton(
-                  icon: Icon(Icons.search, color: c.textSecondary),
-                  onPressed: _submit,
+        children: [
+          ScreenBackdrop(
+            child: Scaffold(
+              backgroundColor: Colors.transparent,
+              appBar: AppBar(
+                backgroundColor: const Color(0xFF0F0F0F),
+                surfaceTintColor: Colors.transparent,
+                elevation: 0,
+                foregroundColor: c.textPrimary,
+                iconTheme: IconThemeData(color: c.textPrimary),
+                title: TextField(
+                  controller: _ctrl,
+                  focusNode: _focus,
+                  textInputAction: TextInputAction.search,
+                  onChanged: notifier.setQuery,
+                  onSubmitted: (_) => _submit(),
+                  style: TextStyle(color: c.textPrimary),
+                  decoration: InputDecoration(
+                    hintText: 'Migrate search',
+                    hintStyle: TextStyle(color: c.textSecondary),
+                    border: InputBorder.none,
+                    suffixIcon: IconButton(
+                      icon: Icon(Icons.search, color: c.textSecondary),
+                      onPressed: _submit,
+                    ),
+                  ),
+                ),
+                bottom: PreferredSize(
+                  preferredSize: Size.fromHeight(state.searching ? 52 : 48),
+                  child: const GlobalSearchFilterBar(),
                 ),
               ),
+              body: GlobalSearchResultsList(
+                onMangaTap: _onMangaTap,
+              ),
             ),
-            bottom: PreferredSize(
-              preferredSize: Size.fromHeight(state.searching ? 52 : 48),
-              child: const GlobalSearchFilterBar(),
+          ),
+          if (_busy)
+            const ColoredBox(
+              color: Color(0x99000000),
+              child: Center(child: CircularProgressIndicator()),
             ),
-          ),
-          body: GlobalSearchResultsList(
-            onMangaTap: _onMangaTap,
-          ),
-        ),
-        if (_busy)
-          const ColoredBox(
-            color: Color(0x99000000),
-            child: Center(child: CircularProgressIndicator()),
-          ),
-      ],
-    ),
+        ],
+      ),
     );
   }
 }
@@ -212,9 +221,10 @@ class _MigrateConfirmDialogState extends State<_MigrateConfirmDialog> {
 
   @override
   Widget build(BuildContext context) {
-    return AlertDialog(
-      title: const Text('Migrate'),
-      content: SingleChildScrollView(
+    final c = context.colors;
+    return StashDialog(
+      title: 'Migrate',
+      contentWidget: SingleChildScrollView(
         child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -222,40 +232,62 @@ class _MigrateConfirmDialogState extends State<_MigrateConfirmDialog> {
             Text(
               'From “${widget.currentTitle}” → “${widget.targetTitle}” '
               '(${widget.targetSourceName})',
+              style: TextStyle(color: c.textSecondary, height: 1.4),
             ),
             const SizedBox(height: 12),
             CheckboxListTile(
               contentPadding: EdgeInsets.zero,
-              title: const Text('Chapters'),
-              subtitle: const Text('Transfer read progress by chapter number'),
+              title: Text('Chapters', style: TextStyle(color: c.textPrimary)),
+              subtitle: Text(
+                'Transfer read progress by chapter number',
+                style: TextStyle(color: c.textTertiary, fontSize: 12),
+              ),
               value: _chapters,
               onChanged: (v) => setState(() => _chapters = v ?? true),
             ),
             CheckboxListTile(
               contentPadding: EdgeInsets.zero,
-              title: const Text('Remove downloads'),
-              subtitle: const Text('Delete downloads on the old source entry'),
+              title: Text(
+                'Remove downloads',
+                style: TextStyle(color: c.textPrimary),
+              ),
+              subtitle: Text(
+                'Delete downloads on the old source entry',
+                style: TextStyle(color: c.textTertiary, fontSize: 12),
+              ),
               value: _removeDownloads,
               onChanged: (v) => setState(() => _removeDownloads = v ?? true),
             ),
             CheckboxListTile(
               contentPadding: EdgeInsets.zero,
-              title: const Text('Categories'),
-              subtitle: const Text('Copy library category membership'),
+              title: Text('Categories', style: TextStyle(color: c.textPrimary)),
+              subtitle: Text(
+                'Copy library category membership',
+                style: TextStyle(color: c.textTertiary, fontSize: 12),
+              ),
               value: _categories,
               onChanged: (v) => setState(() => _categories = v ?? true),
             ),
             CheckboxListTile(
               contentPadding: EdgeInsets.zero,
-              title: const Text('Notes'),
-              subtitle: const Text('Copy user notes'),
+              title: Text('Notes', style: TextStyle(color: c.textPrimary)),
+              subtitle: Text(
+                'Copy user notes',
+                style: TextStyle(color: c.textTertiary, fontSize: 12),
+              ),
               value: _notes,
               onChanged: (v) => setState(() => _notes = v ?? true),
             ),
             CheckboxListTile(
               contentPadding: EdgeInsets.zero,
-              title: const Text('Custom cover'),
-              subtitle: const Text('Copy local cover override if set'),
+              title: Text(
+                'Custom cover',
+                style: TextStyle(color: c.textPrimary),
+              ),
+              subtitle: Text(
+                'Copy local cover override if set',
+                style: TextStyle(color: c.textTertiary, fontSize: 12),
+              ),
               value: _customCover,
               onChanged: (v) => setState(() => _customCover = v ?? true),
             ),
@@ -265,7 +297,7 @@ class _MigrateConfirmDialogState extends State<_MigrateConfirmDialog> {
       actions: [
         TextButton(
           onPressed: () => Navigator.pop(context),
-          child: const Text('Cancel'),
+          child: Text('Cancel', style: TextStyle(color: c.textSecondary)),
         ),
         TextButton(
           onPressed: () => Navigator.pop(
@@ -279,9 +311,9 @@ class _MigrateConfirmDialogState extends State<_MigrateConfirmDialog> {
               customCover: _customCover,
             ),
           ),
-          child: const Text('Copy'),
+          child: Text('Copy', style: TextStyle(color: c.accent)),
         ),
-        FilledButton(
+        TextButton(
           onPressed: () => Navigator.pop(
             context,
             _MigrateChoice(
@@ -293,7 +325,7 @@ class _MigrateConfirmDialogState extends State<_MigrateConfirmDialog> {
               customCover: _customCover,
             ),
           ),
-          child: const Text('Migrate'),
+          child: Text('Migrate', style: TextStyle(color: c.accent)),
         ),
       ],
     );

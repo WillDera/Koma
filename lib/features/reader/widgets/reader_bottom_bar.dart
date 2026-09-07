@@ -1,13 +1,12 @@
 import 'dart:math';
-import 'package:flutter/material.dart';
-import 'package:flutter/foundation.dart';
 
-/// Reader bottom bar with page navigation + specialized quick actions.
-///
-/// Layout:
-/// - Page slider in a rounded pill container with prev/next buttons
-/// - Chapter skip buttons (skip_previous / skip_next)
-/// - Quick actions row: reading mode, crop borders, settings
+import 'package:flutter/foundation.dart';
+import 'package:flutter/material.dart';
+
+import '../../../theme/app_theme.dart';
+import '../../../widgets/animated_press.dart';
+
+/// Kenji-style manga bottom chrome: pill page scrubber + circular controls.
 class ReaderBottomBar extends StatelessWidget {
   final ValueListenable<int> pageListenable;
   final int totalPages;
@@ -34,195 +33,206 @@ class ReaderBottomBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final c = context.colors;
     return AnimatedPositioned(
       duration: const Duration(milliseconds: 250),
       curve: Curves.easeInOut,
-      bottom: isVisible ? 0 : -200,
+      bottom: isVisible ? 0 : -220,
       left: 0,
       right: 0,
-      child: Container(
-        decoration: const BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.bottomCenter,
-            end: Alignment.topCenter,
-            colors: [Colors.black87, Colors.transparent],
-          ),
+      child: Padding(
+        padding: EdgeInsets.only(
+          left: 12,
+          right: 12,
+          top: 8,
+          bottom: MediaQuery.of(context).padding.bottom + 10,
         ),
-        child: Padding(
-          padding: EdgeInsets.only(
-            top: 8,
-            bottom: MediaQuery.of(context).padding.bottom + 8,
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              // ── Page slider in a rounded pill ──
-              if (showNavigator)
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 12),
-                  child: Container(
-                    height: 52,
-                    decoration: BoxDecoration(
-                      color: Colors.black45,
-                      borderRadius: BorderRadius.circular(26),
-                    ),
-                    child: ValueListenableBuilder<int>(
-                      valueListenable: pageListenable,
-                      builder: (_, page, _) => Row(
-                        children: [
-                          // Prev page arrow
-                          _PageButton(
-                            icon: Icons.chevron_left,
-                            enabled: page > 0,
-                            onTap: () => onPageChanged(page - 1),
-                          ),
-                          // Prev chapter
-                          if (onPreviousChapter != null)
-                            _PageButton(
-                              icon: Icons.skip_previous_rounded,
-                              enabled: true,
-                              onTap: onPreviousChapter!,
-                            ),
-                          // Page label
-                          SizedBox(
-                            width: 44,
-                            child: Center(
-                              child: Text(
-                                '${page + 1}',
-                                style: const TextStyle(
-                                  color: Colors.white,
-                                  fontSize: 12,
-                                  fontWeight: FontWeight.bold,
-                                ),
-                              ),
-                            ),
-                          ),
-                          // Slider
-                          Expanded(
-                            child: SliderTheme(
-                              data: SliderThemeData(
-                                trackHeight: 3,
-                                thumbShape: const RoundSliderThumbShape(
-                                  enabledThumbRadius: 6,
-                                ),
-                                overlayShape: const RoundSliderOverlayShape(
-                                  overlayRadius: 12,
-                                ),
-                                activeTrackColor: Colors.white,
-                                inactiveTrackColor: Colors.white24,
-                                thumbColor: Colors.white,
-                                overlayColor: Colors.white12,
-                                valueIndicatorColor: Colors.white,
-                                valueIndicatorTextStyle: const TextStyle(
-                                  color: Colors.black,
-                                  fontSize: 11,
-                                ),
-                              ),
-                              child: Slider(
-                                value: page.toDouble(),
-                                min: 0,
-                                max: max(0, (totalPages - 1).toDouble()),
-                                divisions: totalPages > 1
-                                    ? totalPages - 1
-                                    : null,
-                                onChanged: (v) => onPageChanged(v.round()),
-                              ),
-                            ),
-                          ),
-                          // Total pages label
-                          SizedBox(
-                            width: 44,
-                            child: Center(
-                              child: Text(
-                                '$totalPages',
-                                style: const TextStyle(
-                                  color: Colors.white54,
-                                  fontSize: 12,
-                                  fontWeight: FontWeight.w500,
-                                ),
-                              ),
-                            ),
-                          ),
-                          // Next chapter
-                          if (onNextChapter != null)
-                            _PageButton(
-                              icon: Icons.skip_next_rounded,
-                              enabled: true,
-                              onTap: onNextChapter!,
-                            ),
-                          // Next page arrow
-                          _PageButton(
-                            icon: Icons.chevron_right,
-                            enabled: page < totalPages - 1,
-                            onTap: () => onPageChanged(page + 1),
-                          ),
-                        ],
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (showNavigator)
+              ValueListenableBuilder<int>(
+                valueListenable: pageListenable,
+                builder: (_, page, _) {
+                  return Row(
+                    children: [
+                      _CircleBtn(
+                        icon: Icons.chevron_left,
+                        enabled: page > 0,
+                        onTap: () => onPageChanged(page - 1),
                       ),
-                    ),
-                  ),
-                ),
-
-              const SizedBox(height: 6),
-
-              // ── Quick action buttons ──
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 32),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceAround,
-                  children: [
-                    _ActionButton(
-                      icon: Icons.crop_outlined,
-                      tooltip: 'Crop borders',
-                      onPressed: onCropToggle ?? onSettings,
-                    ),
-                    _ActionButton(
-                      icon: Icons.settings_rounded,
-                      tooltip: 'Settings',
-                      onPressed: onSettings,
-                    ),
-                  ],
-                ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Container(
+                          height: 52,
+                          decoration: BoxDecoration(
+                            color: const Color(0xFF1A1A1A),
+                            borderRadius: BorderRadius.circular(26),
+                          ),
+                          padding: const EdgeInsets.symmetric(horizontal: 8),
+                          child: Row(
+                            children: [
+                              if (onPreviousChapter != null)
+                                _MiniIcon(
+                                  icon: Icons.skip_previous_rounded,
+                                  onTap: onPreviousChapter!,
+                                ),
+                              SizedBox(
+                                width: 36,
+                                child: Text(
+                                  '${page + 1}',
+                                  textAlign: TextAlign.center,
+                                  style: TextStyle(
+                                    color: c.textPrimary,
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                              ),
+                              Expanded(
+                                child: SliderTheme(
+                                  data: SliderThemeData(
+                                    trackHeight: 3,
+                                    thumbShape: const RoundSliderThumbShape(
+                                      enabledThumbRadius: 7,
+                                    ),
+                                    overlayShape:
+                                        const RoundSliderOverlayShape(
+                                      overlayRadius: 14,
+                                    ),
+                                    activeTrackColor: c.accent,
+                                    inactiveTrackColor: c.border,
+                                    thumbColor: c.textPrimary,
+                                    overlayColor: c.accent.withValues(
+                                      alpha: 0.2,
+                                    ),
+                                  ),
+                                  child: Slider(
+                                    value: page.toDouble(),
+                                    min: 0,
+                                    max: max(0, (totalPages - 1).toDouble()),
+                                    divisions: totalPages > 1
+                                        ? totalPages - 1
+                                        : null,
+                                    onChanged: (v) =>
+                                        onPageChanged(v.round()),
+                                  ),
+                                ),
+                              ),
+                              SizedBox(
+                                width: 36,
+                                child: Text(
+                                  '$totalPages',
+                                  textAlign: TextAlign.center,
+                                  style: TextStyle(
+                                    color: c.textTertiary,
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w500,
+                                  ),
+                                ),
+                              ),
+                              if (onNextChapter != null)
+                                _MiniIcon(
+                                  icon: Icons.skip_next_rounded,
+                                  onTap: onNextChapter!,
+                                ),
+                            ],
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      _CircleBtn(
+                        icon: Icons.chevron_right,
+                        enabled: page < totalPages - 1,
+                        onTap: () => onPageChanged(page + 1),
+                        filled: true,
+                      ),
+                    ],
+                  );
+                },
               ),
-            ],
-          ),
+            const SizedBox(height: 10),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                _FloatAction(
+                  icon: Icons.crop_outlined,
+                  tooltip: 'Crop borders',
+                  onPressed: onCropToggle ?? onSettings,
+                ),
+                const SizedBox(width: 16),
+                _FloatAction(
+                  icon: Icons.settings_rounded,
+                  tooltip: 'Settings',
+                  onPressed: onSettings,
+                ),
+              ],
+            ),
+          ],
         ),
       ),
     );
   }
 }
 
-class _PageButton extends StatelessWidget {
+class _CircleBtn extends StatelessWidget {
   final IconData icon;
   final bool enabled;
   final VoidCallback onTap;
+  final bool filled;
 
-  const _PageButton({
+  const _CircleBtn({
     required this.icon,
     required this.enabled,
     required this.onTap,
+    this.filled = false,
   });
 
   @override
   Widget build(BuildContext context) {
-    return IconButton(
-      icon: Icon(
-        icon,
-        color: enabled ? Colors.white70 : Colors.white24,
-        size: 22,
+    final c = context.colors;
+    final bg = filled && enabled ? c.accent : const Color(0xFF1A1A1A);
+    final fg = filled && enabled
+        ? c.onAccent
+        : (enabled ? c.textPrimary : c.textTertiary.withValues(alpha: 0.4));
+    return AnimatedPress(
+      onTap: enabled ? onTap : null,
+      child: Container(
+        width: 48,
+        height: 48,
+        decoration: BoxDecoration(
+          color: bg,
+          shape: BoxShape.circle,
+        ),
+        child: Icon(icon, color: fg, size: 26),
       ),
-      onPressed: enabled ? onTap : null,
-      padding: EdgeInsets.zero,
-      constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
     );
   }
 }
 
-class _ActionButton extends StatelessWidget {
+class _MiniIcon extends StatelessWidget {
+  final IconData icon;
+  final VoidCallback onTap;
+
+  const _MiniIcon({required this.icon, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return IconButton(
+      icon: Icon(icon, color: context.colors.textSecondary, size: 20),
+      onPressed: onTap,
+      padding: EdgeInsets.zero,
+      constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+    );
+  }
+}
+
+class _FloatAction extends StatelessWidget {
   final IconData icon;
   final String tooltip;
   final VoidCallback onPressed;
 
-  const _ActionButton({
+  const _FloatAction({
     required this.icon,
     required this.tooltip,
     required this.onPressed,
@@ -230,10 +240,15 @@ class _ActionButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return IconButton(
-      icon: Icon(icon, color: Colors.white70, size: 22),
-      onPressed: onPressed,
-      tooltip: tooltip,
+    final c = context.colors;
+    return Material(
+      color: const Color(0xFF1A1A1A),
+      shape: const CircleBorder(),
+      child: IconButton(
+        icon: Icon(icon, color: c.textSecondary, size: 22),
+        onPressed: onPressed,
+        tooltip: tooltip,
+      ),
     );
   }
 }

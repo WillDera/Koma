@@ -8,9 +8,16 @@ import '../../core/services/extension_icon_cache.dart';
 import '../../core/utils/custom_extended_image_provider.dart';
 import '../../core/utils/language.dart';
 import '../../router/router.dart';
+import '../../theme/app_icons.dart';
 import '../../theme/app_theme.dart';
+import '../../theme/tokens/app_motion.dart';
 import '../../theme/tokens/app_spacing.dart';
 import '../../widgets/animated_press.dart';
+import '../../widgets/empty_state.dart';
+import '../../widgets/icon_button_round.dart';
+import '../../widgets/library_header.dart';
+import '../../widgets/page_transitions.dart';
+import '../../widgets/screen_chrome.dart';
 import 'source_browse_screen.dart';
 
 /// Extract the package name from an installed extension's on-disk APK path,
@@ -21,6 +28,16 @@ String _extractPkgFromApkPath(String apkPath) {
     return fileName.substring(0, fileName.length - 4);
   }
   return fileName;
+}
+
+Route<T> _scaleFadeRoute<T>(Widget page) {
+  return PageRouteBuilder<T>(
+    transitionDuration: AppMotion.page,
+    reverseTransitionDuration: AppMotion.base,
+    pageBuilder: (_, animation, secondaryAnimation) => page,
+    transitionsBuilder: (context, animation, secondaryAnimation, child) =>
+        scaleFadePageTransition(animation: animation, child: child),
+  );
 }
 
 /// Browse all installed sources — ported from mangayomi's SourcesScreen.
@@ -69,8 +86,8 @@ class _SourcesScreenState extends ConsumerState<SourcesScreen> {
     if (!mounted) return;
     Navigator.push(
       context,
-      MaterialPageRoute(
-        builder: (_) => SourceBrowseScreen(
+      _scaleFadeRoute(
+        SourceBrowseScreen(
           sourceId: src.sourceId,
           sourceName: src.name,
           baseUrl: src.baseUrl,
@@ -85,8 +102,8 @@ class _SourcesScreenState extends ConsumerState<SourcesScreen> {
     // Open Popular/Latest browse on the Latest tab (mangayomi parity).
     Navigator.push(
       context,
-      MaterialPageRoute(
-        builder: (_) => SourceBrowseScreen(
+      _scaleFadeRoute(
+        SourceBrowseScreen(
           sourceId: src.sourceId,
           sourceName: src.name,
           baseUrl: src.baseUrl,
@@ -111,35 +128,52 @@ class _SourcesScreenState extends ConsumerState<SourcesScreen> {
   @override
   Widget build(BuildContext context) {
     final c = context.colors;
-    return Scaffold(
-      backgroundColor: c.bg,
-      appBar: AppBar(
-        backgroundColor: c.bg,
-        title: Text('Sources', style: TextStyle(color: c.textPrimary)),
-        iconTheme: IconThemeData(color: c.textPrimary),
-        actions: [
-          IconButton(
-            tooltip: 'Global search',
-            icon: Icon(Icons.travel_explore, color: c.textPrimary),
-            onPressed: () => context.pushNamed(Routes.globalSearch),
-          ),
-        ],
-      ),
-      body: _loading
-          ? const Center(child: CircularProgressIndicator())
-          : _sources.isEmpty
-          ? _EmptyState(c)
-          : ListView(
-              padding: const EdgeInsets.all(16),
-              children: [
-                // ── Last Used ──
-                ..._buildLastUsedSection(c),
-                // ── Pinned ──
-                ..._buildPinnedSection(c),
-                // ── By Language ──
-                ..._buildLanguageSection(c),
+    return ScreenBackdrop(
+      child: SafeArea(
+        bottom: false,
+        child: Column(
+          children: [
+            LibraryHeader(
+              title: 'Sources',
+              showBackButton: true,
+              actions: [
+                IconButtonRound(
+                  icon: Icons.travel_explore,
+                  size: 38,
+                  variant: IconButtonVariant.tonal,
+                  iconColor: c.textSecondary,
+                  tooltip: 'Global search',
+                  onPressed: () => context.pushNamed(Routes.globalSearch),
+                ),
               ],
             ),
+            Expanded(
+              child: _loading
+                  ? const Center(child: CircularProgressIndicator())
+                  : _sources.isEmpty
+                  ? EmptyState(
+                      icon: AppIcons.discover,
+                      emoji: '📡',
+                      title: 'No sources installed',
+                      subtitle:
+                          'Install extensions from the Extensions tab first.',
+                      primaryActionLabel: 'Open Extensions',
+                      onPrimaryAction: () =>
+                          context.pushNamed(Routes.extensions),
+                      pillPrimary: true,
+                    )
+                  : ListView(
+                      padding: const EdgeInsets.all(16),
+                      children: [
+                        ..._buildLastUsedSection(c),
+                        ..._buildPinnedSection(c),
+                        ..._buildLanguageSection(c),
+                      ],
+                    ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 
@@ -149,12 +183,15 @@ class _SourcesScreenState extends ConsumerState<SourcesScreen> {
     if (src == null) return [];
     return [
       _sectionHeader(c, 'Last Used'),
-      _SourceTile(
-        source: src,
-        c: c,
-        onTap: () => _navigateToSource(src),
-        onLatest: () => _navigateToLatest(src),
-        onPinToggle: () => _togglePin(src),
+      StaggeredFadeScale(
+        index: 0,
+        child: _SourceTile(
+          source: src,
+          c: c,
+          onTap: () => _navigateToSource(src),
+          onLatest: () => _navigateToLatest(src),
+          onPinToggle: () => _togglePin(src),
+        ),
       ),
       const SizedBox(height: 16),
     ];
@@ -166,15 +203,18 @@ class _SourcesScreenState extends ConsumerState<SourcesScreen> {
     // Remove the last used from pinned to avoid dupes (mangayomi allows dupes though)
     return [
       _sectionHeader(c, 'Pinned'),
-      ...pinned.map(
-        (src) => Padding(
+      ...pinned.asMap().entries.map(
+        (e) => Padding(
           padding: const EdgeInsets.only(bottom: 6),
-          child: _SourceTile(
-            source: src,
-            c: c,
-            onTap: () => _navigateToSource(src),
-            onLatest: () => _navigateToLatest(src),
-            onPinToggle: () => _togglePin(src),
+          child: StaggeredFadeScale(
+            index: e.key,
+            child: _SourceTile(
+              source: e.value,
+              c: c,
+              onTap: () => _navigateToSource(e.value),
+              onLatest: () => _navigateToLatest(e.value),
+              onPinToggle: () => _togglePin(e.value),
+            ),
           ),
         ),
       ),
@@ -202,6 +242,7 @@ class _SourcesScreenState extends ConsumerState<SourcesScreen> {
       );
 
     final widgets = <Widget>[];
+    var stagger = 0;
     for (final langKey in sortedKeys) {
       final langName = completeLanguageName(langKey);
       final group = groups[langKey]!;
@@ -212,12 +253,15 @@ class _SourcesScreenState extends ConsumerState<SourcesScreen> {
         widgets.add(
           Padding(
             padding: const EdgeInsets.only(bottom: 6),
-            child: _SourceTile(
-              source: src,
-              c: c,
-              onTap: () => _navigateToSource(src),
-              onLatest: () => _navigateToLatest(src),
-              onPinToggle: () => _togglePin(src),
+            child: StaggeredFadeScale(
+              index: stagger++,
+              child: _SourceTile(
+                source: src,
+                c: c,
+                onTap: () => _navigateToSource(src),
+                onLatest: () => _navigateToLatest(src),
+                onPinToggle: () => _togglePin(src),
+              ),
             ),
           ),
         );
@@ -361,41 +405,6 @@ class _SourceTile extends StatelessWidget {
     String? iconUrl,
   }) {
     return _PkgExtensionIcon(pkg: pkg, colors: c, size: size, iconUrl: iconUrl);
-  }
-}
-
-class _EmptyState extends StatelessWidget {
-  final KomaColors c;
-  const _EmptyState(this.c);
-
-  @override
-  Widget build(BuildContext context) {
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(32),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(Icons.extension_off_outlined, size: 56, color: c.textTertiary),
-            const SizedBox(height: 16),
-            Text(
-              'No sources installed',
-              style: TextStyle(
-                color: c.textPrimary,
-                fontSize: 16,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-            const SizedBox(height: 6),
-            Text(
-              'Install extensions from the Extensions tab first.',
-              textAlign: TextAlign.center,
-              style: TextStyle(color: c.textSecondary, fontSize: 13),
-            ),
-          ],
-        ),
-      ),
-    );
   }
 }
 

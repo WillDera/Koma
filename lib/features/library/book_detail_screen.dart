@@ -34,35 +34,63 @@ class BookDetailScreen extends ConsumerWidget {
     final book = ref.watch(bookDetailStreamProvider(bookId));
     final chapters = ref.watch(bookChaptersStreamProvider(bookId));
     final c = context.colors;
+    final loadedBook = book.asData?.value;
+    final loadedChapters = chapters.asData?.value ?? const <Chapter>[];
 
     return Scaffold(
       backgroundColor: c.bg,
       appBar: AppBar(
-        backgroundColor: c.bg.withValues(alpha: 0.92),
+        backgroundColor: const Color(0xFF0F0F0F),
         surfaceTintColor: Colors.transparent,
-        title: const Text('Book details'),
+        foregroundColor: c.textPrimary,
+        elevation: 0,
+        title: Text(
+          book.maybeWhen(
+            data: (value) => value?.title.trim().isNotEmpty == true
+                ? value!.title
+                : 'Book details',
+            orElse: () => 'Book details',
+          ),
+          style: TextStyle(
+            color: c.textPrimary,
+            fontSize: 16,
+            fontWeight: FontWeight.w600,
+          ),
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+        ),
         actions: book.maybeWhen(
           data: (value) {
             if (value == null) return const <Widget>[];
             return [
-              IconButton(
-                tooltip: 'Edit book info',
-                icon: const Icon(Icons.edit_outlined),
-                onPressed: () => editBookInfo(context, ref, value),
-              ),
-              IconButton(
-                tooltip: 'Share book',
-                icon: const Icon(Icons.share_outlined),
-                onPressed: value.filePath?.trim().isNotEmpty == true
-                    ? () => shareBookFile(context, value)
-                    : null,
-              ),
-              IconButton(
-                tooltip: 'Export to folder',
-                icon: const Icon(Icons.folder_copy_outlined),
-                onPressed: value.filePath?.trim().isNotEmpty == true
-                    ? () => exportEbooksToPickedFolder(context, books: [value])
-                    : null,
+              PopupMenuButton<String>(
+                icon: Icon(Icons.more_vert_rounded, color: c.textPrimary),
+                onSelected: (v) {
+                  switch (v) {
+                    case 'edit':
+                      editBookInfo(context, ref, value);
+                    case 'share':
+                      shareBookFile(context, value);
+                    case 'export':
+                      exportEbooksToPickedFolder(context, books: [value]);
+                  }
+                },
+                itemBuilder: (ctx) => [
+                  const PopupMenuItem(
+                    value: 'edit',
+                    child: Text('Edit info'),
+                  ),
+                  if (value.filePath?.trim().isNotEmpty == true)
+                    const PopupMenuItem(
+                      value: 'share',
+                      child: Text('Share'),
+                    ),
+                  if (value.filePath?.trim().isNotEmpty == true)
+                    const PopupMenuItem(
+                      value: 'export',
+                      child: Text('Export to folder'),
+                    ),
+                ],
               ),
             ];
           },
@@ -101,6 +129,23 @@ class BookDetailScreen extends ConsumerWidget {
           },
         ),
       ),
+      bottomNavigationBar: loadedBook == null
+          ? null
+          : _StickyReadBar(
+              label: loadedBook.progress > 0 ? 'Continue' : 'Read',
+              onPressed: () => openBookReader(
+                context,
+                bookId: loadedBook.id,
+                chapterId: savedChapterId(
+                  loadedChapters,
+                  loadedBook.currentChapterIndex,
+                ),
+                fileExtension: loadedBook.fileExtension,
+                initialPage: loadedBook.fileExtension.toLowerCase() == 'pdf'
+                    ? loadedBook.currentChapterIndex
+                    : null,
+              ),
+            ),
     );
   }
 }
@@ -122,7 +167,6 @@ class _DetailBody extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final c = context.colors;
     final theme = ref.watch(themeProvider);
-    final chapterId = savedChapterId(chapters, book.currentChapterIndex);
     final progress = book.progress.clamp(0.0, 1.0);
     final currentPosition = chapters.isEmpty
         ? 'No saved chapter'
@@ -141,119 +185,64 @@ class _DetailBody extends ConsumerWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    SizedBox(
-                      width: 132,
-                      child: Hero(
-                        tag: 'book-cover-${book.id}',
-                        child: BookCover(
-                          book: book,
-                          variant: BookCoverVariant.hero,
-                        ),
+                Center(
+                  child: SizedBox(
+                    width: 168,
+                    child: Hero(
+                      tag: 'book-cover-${book.id}',
+                      child: BookCover(
+                        book: book,
+                        variant: BookCoverVariant.hero,
                       ),
                     ),
-                    const SizedBox(width: AppSpacing.xl),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            book.title,
-                            style: Theme.of(context).textTheme.headlineMedium
-                                ?.copyWith(
-                                  color: c.textPrimary,
-                                  fontFamily: theme.uiFontFamily,
-                                  height: 1.15,
-                                ),
-                          ),
-                          if (book.author?.trim().isNotEmpty == true) ...[
-                            const SizedBox(height: AppSpacing.sm),
-                            Text(
-                              book.author!.trim(),
-                              style: Theme.of(context).textTheme.bodyMedium
-                                  ?.copyWith(color: c.textSecondary),
-                            ),
-                          ],
-                          const SizedBox(height: AppSpacing.lg),
-                          Text(
-                            currentPosition,
-                            style: AppType.labelCaps(color: c.textTertiary),
-                          ),
-                          const SizedBox(height: AppSpacing.sm),
-                          Row(
-                            children: [
-                              Expanded(
-                                child: ThinProgressBar(
-                                  progress: progress,
-                                  height: 5,
-                                  color: c.accent,
-                                  trackColor: c.border,
-                                ),
-                              ),
-                              const SizedBox(width: AppSpacing.sm),
-                              Text(
-                                '${(progress * 100).round()}%',
-                                style: AppType.mono(
-                                  fontSize: 11,
-                                  color: c.accent,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: AppSpacing.xxl),
-                PremiumButton(
-                  label: book.progress > 0 ? 'Continue reading' : 'Read',
-                  leading: const Icon(Icons.menu_book_rounded),
-                  size: PremiumButtonSize.lg,
-                  expand: true,
-                  onPressed: () => openBookReader(
-                    context,
-                    bookId: book.id,
-                    chapterId: chapterId,
-                    fileExtension: book.fileExtension,
-                    initialPage: book.fileExtension.toLowerCase() == 'pdf'
-                        ? book.currentChapterIndex
-                        : null,
                   ),
                 ),
-                const SizedBox(height: AppSpacing.md),
+                const SizedBox(height: AppSpacing.xxl),
+                Text(
+                  book.title,
+                  style: Theme.of(context).textTheme.headlineMedium?.copyWith(
+                    color: c.textPrimary,
+                    fontFamily: theme.uiFontFamily,
+                    height: 1.15,
+                  ),
+                ),
+                if (book.author?.trim().isNotEmpty == true) ...[
+                  const SizedBox(height: AppSpacing.sm),
+                  Text(
+                    book.author!.trim(),
+                    style: Theme.of(
+                      context,
+                    ).textTheme.bodyMedium?.copyWith(color: c.textSecondary),
+                  ),
+                ],
+                const SizedBox(height: AppSpacing.lg),
+                Text(
+                  currentPosition,
+                  style: AppType.labelCaps(color: c.textTertiary),
+                ),
+                const SizedBox(height: AppSpacing.sm),
                 Row(
                   children: [
                     Expanded(
-                      child: PremiumButton(
-                        label: 'Edit info',
-                        leading: const Icon(Icons.edit_outlined),
-                        variant: PremiumButtonVariant.secondary,
-                        onPressed: () => editBookInfo(context, ref, book),
+                      child: ThinProgressBar(
+                        progress: progress,
+                        height: 5,
+                        color: c.accent,
+                        trackColor: c.border,
                       ),
                     ),
                     const SizedBox(width: AppSpacing.sm),
-                    Expanded(
-                      child: PremiumButton(
-                        label: 'Share',
-                        leading: const Icon(Icons.ios_share_outlined),
-                        variant: PremiumButtonVariant.secondary,
-                        onPressed: book.filePath?.trim().isNotEmpty == true
-                            ? () => shareBookFile(context, book)
-                            : null,
-                      ),
+                    Text(
+                      '${(progress * 100).round()}%',
+                      style: AppType.mono(fontSize: 11, color: c.accent),
                     ),
                   ],
                 ),
                 if (book.description.trim().isNotEmpty) ...[
                   const SizedBox(height: AppSpacing.xxl),
                   Text(
-                    'Description',
-                    style: Theme.of(
-                      context,
-                    ).textTheme.titleMedium?.copyWith(color: c.textPrimary),
+                    'DESCRIPTION',
+                    style: AppType.labelCaps(color: c.textTertiary),
                   ),
                   const SizedBox(height: AppSpacing.sm),
                   Text(
@@ -270,10 +259,8 @@ class _DetailBody extends ConsumerWidget {
                 Row(
                   children: [
                     Text(
-                      'Chapters',
-                      style: Theme.of(
-                        context,
-                      ).textTheme.titleLarge?.copyWith(color: c.textPrimary),
+                      'CHAPTERS',
+                      style: AppType.labelCaps(color: c.textTertiary),
                     ),
                     const SizedBox(width: AppSpacing.sm),
                     Container(
@@ -385,6 +372,55 @@ class _DetailBody extends ConsumerWidget {
           ),
         const SliverToBoxAdapter(child: SizedBox(height: AppSpacing.xxxxl)),
       ],
+    );
+  }
+}
+
+/// Kenji sticky stadium Read / Continue bar.
+class _StickyReadBar extends StatelessWidget {
+  const _StickyReadBar({required this.label, required this.onPressed});
+
+  final String label;
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.colors;
+    final bottom = MediaQuery.of(context).padding.bottom;
+    return Material(
+      color: const Color(0xFF0F0F0F),
+      child: Padding(
+        padding: EdgeInsets.fromLTRB(16, 10, 16, 10 + bottom),
+        child: SizedBox(
+          height: 56,
+          width: double.infinity,
+          child: AnimatedPress(
+            onTap: onPressed,
+            child: Container(
+              alignment: Alignment.center,
+              decoration: BoxDecoration(
+                color: c.accent,
+                borderRadius: BorderRadius.circular(999),
+              ),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(Icons.menu_book_rounded, size: 18, color: c.onAccent),
+                  const SizedBox(width: 8),
+                  Text(
+                    label,
+                    style: TextStyle(
+                      color: c.onAccent,
+                      fontSize: 15,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
     );
   }
 }

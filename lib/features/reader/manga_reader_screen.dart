@@ -30,7 +30,7 @@ import '../../eval/models/m_chapter.dart';
 import '../../eval/models/m_source.dart';
 import '../../features/snippets/bookmarks_provider.dart';
 import '../../router/router.dart';
-import '../../theme/app_theme.dart';
+import '../../widgets/dialog_sheet.dart';
 import 'mixins/reader_memory_management.dart';
 import 'models/page_data.dart';
 import 'reader_settings_sheet.dart';
@@ -1034,14 +1034,13 @@ class _MangaReaderScreenState extends ConsumerState<MangaReaderScreen>
 
   void _showSettings() {
     _showNavigationOverlay = false;
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: context.colors.surface,
-      isScrollControlled: true,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
-      ),
-      builder: (ctx) => ReaderSettingsSheet(
+    StashSheet.show(
+      context,
+      title: 'Reader',
+      subtitle: 'Reading and display options.',
+      initialChildSize: 0.65,
+      maxChildSize: 0.9,
+      child: ReaderSettingsSheet(
         settings: _settings,
         onChanged: (s) {
           final oldMode = _settings.readingMode;

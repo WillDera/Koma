@@ -65,20 +65,14 @@ class EpubService {
           : EbookMediaStore.newSessionId();
 
       // Map EPUB image file names → absolute local paths.
+      // Use both content.images and allFiles: epub_pro only classifies a
+      // narrow MIME set as images (misses image/jpg, image/webp, etc.).
       final imagePaths = <String, String>{};
-      final images = epubBook.content?.images;
-      if (images != null) {
-        for (final entry in images.entries) {
-          final content = entry.value.content;
-          if (content == null || content.isEmpty) continue;
-          final path = await EbookMediaStore.storeBytes(
-            bookOrSessionId: sessionId,
-            bytes: content,
-            logicalName: entry.key,
-          );
-          imagePaths[entry.key] = path;
-        }
-      }
+      await _collectImages(
+        sessionId: sessionId,
+        imagePaths: imagePaths,
+        epubBook: epubBook,
+      );
 
       final chapters = <Chapter>[];
 
@@ -113,6 +107,49 @@ class EpubService {
     }
   }
 
+  Future<void> _collectImages({
+    required String sessionId,
+    required Map<String, String> imagePaths,
+    required EpubBook epubBook,
+  }) async {
+    final content = epubBook.content;
+    if (content == null) return;
+
+    Future<void> store(String key, List<int>? bytes, {String? mime}) async {
+      if (bytes == null || bytes.isEmpty) return;
+      if (!EbookMediaStore.looksLikeImage(href: key, mime: mime)) return;
+      final path = await EbookMediaStore.storeBytes(
+        bookOrSessionId: sessionId,
+        bytes: bytes,
+        logicalName: key,
+      );
+      EbookMediaStore.indexImagePath(
+        imagePaths,
+        logicalKey: key,
+        path: path,
+      );
+    }
+
+    for (final entry in content.images.entries) {
+      await store(
+        entry.key,
+        entry.value.content,
+        mime: entry.value.contentMimeType,
+      );
+    }
+
+    for (final entry in content.allFiles.entries) {
+      if (imagePaths.containsKey(entry.key)) continue;
+      final file = entry.value;
+      if (file is! EpubByteContentFile) continue;
+      await store(
+        entry.key,
+        file.content,
+        mime: file.contentMimeType,
+      );
+    }
+  }
+
   int _extractChapters(
     List<EpubChapter> epubChapters,
     int bookId,
@@ -135,13 +172,21 @@ class EpubService {
         '',
       );
       if (imagePaths.isNotEmpty) {
+        final baseHref = ec.contentFileName;
         content = EbookMediaStore.rewriteImgSrcs(content, (src) {
-          final key = EbookMediaStore.matchContentKey(src, imagePaths.keys);
+          final key = EbookMediaStore.matchContentKey(
+            src,
+            imagePaths.keys,
+            baseHref: baseHref,
+          );
           if (key == null) {
             if (kDebugMode &&
                 !src.startsWith('http://') &&
                 !src.startsWith('https://')) {
-              debugPrint('EpubService: unresolved image src: $src');
+              debugPrint(
+                'EpubService: unresolved image src="$src" '
+                '(chapter=${baseHref ?? "?"})',
+              );
             }
             return null;
           }

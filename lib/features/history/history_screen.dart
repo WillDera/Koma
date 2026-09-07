@@ -1,9 +1,13 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:intl/intl.dart';
 
 import '../../app.dart' show routeObserver;
 import '../../core/models/book.dart';
+import '../../core/models/manga.dart';
 import '../../core/providers.dart';
 import '../../core/repositories/manga_repository.dart';
 import '../../core/utils/image_cache.dart';
@@ -12,18 +16,28 @@ import '../../router/book_navigation.dart';
 import '../../router/router.dart';
 import '../../theme/app_icons.dart';
 import '../../theme/app_theme.dart';
-import '../../theme/tokens/app_colors.dart';
-import '../../theme/tokens/app_spacing.dart';
-import '../../widgets/animated_press.dart';
 import '../../widgets/book_cover.dart';
 import '../../widgets/dialog_sheet.dart';
 import '../../widgets/empty_state.dart';
-import '../../widgets/library_header.dart';
 import '../../widgets/one_hand_spacer.dart';
-import '../../widgets/progress_ring.dart';
 import '../../widgets/screen_chrome.dart';
 
-enum _HistoryFilter { all, books, manga }
+/// Unified history row for date grouping (books + manga).
+class _HistoryEntry {
+  _HistoryEntry.book(Book book)
+    : book = book,
+      manga = null,
+      when = book.updatedAt;
+
+  _HistoryEntry.manga(InProgressManga manga)
+    : book = null,
+      manga = manga,
+      when = manga.lastReadAt ?? manga.manga.updatedAt;
+
+  final Book? book;
+  final InProgressManga? manga;
+  final DateTime when;
+}
 
 class HistoryScreen extends ConsumerStatefulWidget {
   const HistoryScreen({super.key});
@@ -34,13 +48,11 @@ class HistoryScreen extends ConsumerStatefulWidget {
 
 class _HistoryScreenState extends ConsumerState<HistoryScreen> with RouteAware {
   final ScrollController _scrollCtrl = ScrollController();
-  final TextEditingController _searchCtrl = TextEditingController();
 
   List<Book> _books = [];
   List<InProgressManga> _mangaRows = [];
   bool _loading = true;
   int _lastSeenRevision = 0;
-  _HistoryFilter _filter = _HistoryFilter.all;
 
   /// Cover providers cached per manga id so tile rebuilds reuse the same
   /// [ImageProvider] instance instead of constructing a new one each build.
@@ -50,16 +62,11 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> with RouteAware {
   void initState() {
     super.initState();
     _lastSeenRevision = ref.read(historyRevisionProvider);
-    _searchCtrl.addListener(_onSearchChanged);
     _load();
   }
 
-  void _onSearchChanged() => setState(() {});
-
   @override
   void dispose() {
-    _searchCtrl.removeListener(_onSearchChanged);
-    _searchCtrl.dispose();
     _scrollCtrl.dispose();
     routeObserver.unsubscribe(this);
     super.dispose();
@@ -93,29 +100,30 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> with RouteAware {
     ]);
     _books = results[0] as List<Book>;
     _mangaRows = results[1] as List<InProgressManga>;
-    // Cover URLs may have changed with the reloaded rows.
     _coverCache.clear();
     if (mounted) setState(() => _loading = false);
   }
 
   int get _totalCount => _books.length + _mangaRows.length;
 
-  List<Book> get _filteredBooks {
-    if (_filter == _HistoryFilter.manga) return const [];
-    final q = _searchCtrl.text.trim().toLowerCase();
-    if (q.isEmpty) return _books;
-    return _books
-        .where((b) => b.title.toLowerCase().contains(q))
-        .toList(growable: false);
+  List<_HistoryEntry> get _entries {
+    final out = <_HistoryEntry>[
+      for (final b in _books) _HistoryEntry.book(b),
+      for (final m in _mangaRows) _HistoryEntry.manga(m),
+    ];
+    out.sort((a, b) => b.when.compareTo(a.when));
+    return out;
   }
 
-  List<InProgressManga> get _filteredManga {
-    if (_filter == _HistoryFilter.books) return const [];
-    final q = _searchCtrl.text.trim().toLowerCase();
-    if (q.isEmpty) return _mangaRows;
-    return _mangaRows
-        .where((r) => r.manga.name.toLowerCase().contains(q))
-        .toList(growable: false);
+  String _relativeDay(DateTime when) {
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final day = DateTime(when.year, when.month, when.day);
+    final diff = today.difference(day).inDays;
+    if (diff == 0) return 'Today';
+    if (diff == 1) return 'Yesterday';
+    if (diff < 7) return '$diff days ago';
+    return DateFormat.MMMd().format(when);
   }
 
   Future<void> _clearProgress(Book book) async {
@@ -197,6 +205,42 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> with RouteAware {
     await _load();
   }
 
+  void _openEntry(_HistoryEntry entry) {
+    if (entry.book != null) {
+      openBookFromCollection(context, entry.book!.id);
+      return;
+    }
+    final manga = entry.manga!.manga;
+    context.pushNamed(
+      Routes.mangaDetail,
+      extra: (
+        sourceId: manga.sourceId,
+        url: manga.url,
+        title: manga.name,
+        manga: manga,
+        memo: manga.memo,
+      ) as MangaDetailArgs,
+    );
+  }
+
+  String _subtitleFor(_HistoryEntry entry) {
+    if (entry.book != null) {
+      final book = entry.book!;
+      if (book.totalChapters > 0) {
+        return 'Chapter ${book.currentChapterIndex + 1}';
+      }
+      final pct = (book.progress * 100).round();
+      return '$pct% complete';
+    }
+    final row = entry.manga!;
+    if (row.totalChapters > 0) {
+      return '${row.readCount} / ${row.totalChapters} chapters';
+    }
+    final author = row.manga.author;
+    if (author != null && author.isNotEmpty) return author;
+    return 'In progress';
+  }
+
   @override
   Widget build(BuildContext context) {
     final c = context.colors;
@@ -207,276 +251,148 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> with RouteAware {
         _load();
       }
     });
+
     if (_loading) {
-      return const Center(child: CircularProgressIndicator());
+      return ScreenBackdrop(
+        child: SafeArea(
+          bottom: false,
+          child: Center(
+            child: CircularProgressIndicator(color: c.accent),
+          ),
+        ),
+      );
     }
 
-    final books = _filteredBooks;
-    final manga = _filteredManga;
-    final filteredCount = books.length + manga.length;
-    final isEmpty = filteredCount == 0;
+    final entries = _entries;
+    final grouped = <String, List<_HistoryEntry>>{};
+    for (final e in entries) {
+      grouped.putIfAbsent(_relativeDay(e.when), () => []).add(e);
+    }
+
+    // Precompute global stagger indices so section builders stay pure.
+    final staggerBase = <String, int>{};
+    var nextStagger = 0;
+    for (final section in grouped.entries) {
+      staggerBase[section.key] = nextStagger;
+      nextStagger += section.value.length;
+    }
 
     return ScreenBackdrop(
       child: SafeArea(
         bottom: false,
-        child: ListView.separated(
-          controller: _scrollCtrl,
-          physics: const AlwaysScrollableScrollPhysics(),
-          padding: const EdgeInsets.only(bottom: 100),
-          itemCount: isEmpty ? 2 : filteredCount + 1,
-          separatorBuilder: (_, i) =>
-              i == 0 ? const SizedBox.shrink() : const SizedBox(height: 10),
-          itemBuilder: (ctx, i) {
-            if (i == 0) {
-              return Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  const OneHandSpacer(),
-                  LibraryHeader(
-                    title: 'History',
-                    subtitle:
-                        '$filteredCount ${filteredCount == 1 ? 'entry' : 'entries'}',
-                    actions: [
-                      if (_totalCount > 0) _ClearAllButton(onTap: _clearAll),
+        child: RefreshIndicator(
+          color: c.accent,
+          backgroundColor: c.surface,
+          onRefresh: _load,
+          child: CustomScrollView(
+            controller: _scrollCtrl,
+            physics: const AlwaysScrollableScrollPhysics(),
+            slivers: [
+              const SliverToBoxAdapter(child: OneHandSpacer()),
+              SliverToBoxAdapter(
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(24, 8, 16, 12),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          'Your History',
+                          style: TextStyle(
+                            color: c.textPrimary,
+                            fontSize: 24,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      ),
+                      Material(
+                        color: c.surfaceMuted,
+                        borderRadius: BorderRadius.circular(64),
+                        child: InkWell(
+                          onTap: _totalCount > 0 ? _clearAll : _load,
+                          borderRadius: BorderRadius.circular(64),
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 14,
+                              vertical: 10,
+                            ),
+                            child: Row(
+                              children: [
+                                Icon(
+                                  _totalCount > 0
+                                      ? Icons.delete_outline_rounded
+                                      : Icons.refresh_rounded,
+                                  size: 22,
+                                  color: c.textPrimary,
+                                ),
+                                const SizedBox(width: 8),
+                                Text(
+                                  _totalCount > 0 ? 'Clear' : 'Refresh',
+                                  style: TextStyle(
+                                    color: c.textPrimary,
+                                    fontWeight: FontWeight.w700,
+                                    fontSize: 15,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
                     ],
                   ),
-                  Padding(
-                    padding: const EdgeInsets.fromLTRB(20, 0, 20, 12),
-                    child: TextField(
-                      controller: _searchCtrl,
-                      style: TextStyle(
-                        color: c.textPrimary,
-                        fontSize: 13,
-                        fontWeight: FontWeight.w400,
-                      ),
-                      decoration: InputDecoration(
-                        hintText: 'Search history...',
-                        hintStyle: TextStyle(
-                          color: c.textSecondary,
-                          fontSize: 13,
-                        ),
-                        prefixIcon: Padding(
-                          padding: const EdgeInsets.only(left: 12, right: 8),
-                          child: AppIcon(
-                            data: AppIcons.search,
-                            size: 15,
-                            color: c.textSecondary,
-                          ),
-                        ),
-                        prefixIconConstraints: const BoxConstraints(
-                          minWidth: 36,
-                          minHeight: 36,
-                        ),
-                        filled: true,
-                        fillColor: c.surfaceMuted,
-                        contentPadding: const EdgeInsets.symmetric(
-                          horizontal: 16,
-                          vertical: 10,
-                        ),
-                        border: OutlineInputBorder(
-                          borderRadius: AppSpacing.brMd,
-                          borderSide: BorderSide.none,
-                        ),
-                        enabledBorder: OutlineInputBorder(
-                          borderRadius: AppSpacing.brMd,
-                          borderSide: BorderSide.none,
-                        ),
-                        focusedBorder: OutlineInputBorder(
-                          borderRadius: AppSpacing.brMd,
-                          borderSide: BorderSide(color: c.accent, width: 1.2),
+                ),
+              ),
+              if (entries.isEmpty)
+                const SliverFillRemaining(
+                  hasScrollBody: false,
+                  child: EmptyState(
+                    icon: AppIcons.history,
+                    emoji: '📚',
+                    title: 'No history yet',
+                    subtitle:
+                        'Books and manga you\'re reading will appear here.',
+                  ),
+                )
+              else
+                for (final section in grouped.entries) ...[
+                  SliverToBoxAdapter(
+                    child: Padding(
+                      padding: const EdgeInsets.fromLTRB(24, 8, 24, 8),
+                      child: Text(
+                        section.key,
+                        style: TextStyle(
+                          color: c.textTertiary,
+                          fontSize: 14,
+                          fontWeight: FontWeight.w500,
                         ),
                       ),
                     ),
                   ),
-                  Padding(
-                    padding: const EdgeInsets.fromLTRB(20, 0, 20, 12),
-                    child: Row(
-                      children: [
-                        for (final f in _HistoryFilter.values) ...[
-                          if (f != _HistoryFilter.all) const SizedBox(width: 8),
-                          _FilterChip(
-                            label: switch (f) {
-                              _HistoryFilter.all => 'All',
-                              _HistoryFilter.books => 'Books',
-                              _HistoryFilter.manga => 'Manga',
-                            },
-                            selected: _filter == f,
-                            onTap: () => setState(() => _filter = f),
-                          ),
-                        ],
-                      ],
-                    ),
+                  SliverList(
+                    delegate: SliverChildBuilderDelegate((context, i) {
+                      final entry = section.value[i];
+                      final index = (staggerBase[section.key] ?? 0) + i;
+                      return StaggeredFadeScale(
+                        index: index,
+                        child: _HistoryRow(
+                          entry: entry,
+                          subtitle: _subtitleFor(entry),
+                          coverCache: _coverCache,
+                          onTap: () => _openEntry(entry),
+                          onLongPress: () {
+                            if (entry.book != null) {
+                              _clearProgress(entry.book!);
+                            } else {
+                              _clearMangaProgress(entry.manga!);
+                            }
+                          },
+                        ),
+                      );
+                    }, childCount: section.value.length),
                   ),
                 ],
-              );
-            }
-            if (isEmpty) {
-              return Padding(
-                padding: const EdgeInsets.only(top: 64),
-                child: EmptyState(
-                  icon: AppIcons.history,
-                  title: _totalCount == 0
-                      ? 'No history yet'
-                      : 'No matching history',
-                  subtitle: _totalCount == 0
-                      ? 'Books and manga you\'re reading will appear here'
-                      : 'Try a different search or filter',
-                ),
-              );
-            }
-            final idx = i - 1;
-            if (idx < books.length) {
-              return _bookTile(c, books[idx], idx);
-            }
-            return _mangaTile(c, manga[idx - books.length], idx);
-          },
-        ),
-      ),
-    );
-  }
-
-  /// Caps the entrance-animation stagger.
-  static int _staggerIndex(int i) =>
-      i < StaggeredEntrance.maxStaggerIndex
-      ? i
-      : StaggeredEntrance.maxStaggerIndex;
-
-  Widget _bookTile(KomaColors c, Book book, int i) {
-    final pct = (book.progress * 100).round();
-    final subtitle = book.author != null && book.author!.isNotEmpty
-        ? book.author!
-        : book.totalChapters > 0
-        ? 'Chapter ${book.currentChapterIndex + 1}'
-        : null;
-    return StaggeredEntrance(
-      index: _staggerIndex(i + 1),
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(16, 0, 16, 0),
-        child: AnimatedPress(
-          onTap: () => openBookFromCollection(context, book.id),
-          child: _HistoryCard(
-            cover: SizedBox(
-              width: 56,
-              height: 80,
-              child: BookCover(
-                book: book,
-                expand: true,
-                borderRadius: AppSpacing.brMd,
-              ),
-            ),
-            typeLabel: 'Book',
-            typeIcon: AppIcons.bookOpen,
-            typeColor: c.accent,
-            title: book.title,
-            subtitle: subtitle,
-            progress: book.progress,
-            percentLabel: '$pct% complete',
-            relativeTime: _formatRelativeTime(book.updatedAt),
-            onRemove: () => _clearProgress(book),
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _mangaTile(KomaColors c, InProgressManga row, int i) {
-    final manga = row.manga;
-    final name = manga.name;
-    final author = manga.author;
-    final imageUrl = manga.imageUrl;
-    final headers = ref.watch(sourceImageHeadersProvider(manga.sourceId)).value;
-    final id = manga.id;
-    final sourceId = manga.sourceId;
-    final url = manga.url;
-    final readCount = row.readCount;
-    final totalChapters = row.totalChapters;
-    final progress = totalChapters > 0 ? readCount / totalChapters : 0.0;
-    final pct = (progress * 100).round();
-    final subtitle = totalChapters > 0
-        ? '$readCount / $totalChapters chapters'
-        : (author != null && author.isNotEmpty ? author : null);
-
-    // Reuse one provider instance per manga. cachedCover() builds a fresh
-    // ResizeImage/CustomExtendedNetworkImageProvider on every call, which
-    // forces a resolve + cache lookup on each rebuild; caching by id keeps
-    // the identity stable across scroll-driven rebuilds. Only cached once
-    // headers have resolved, so the entry isn't pinned to a null-header
-    // provider that would then never refresh.
-    ImageProvider? coverProvider;
-    if (imageUrl != null && imageUrl.isNotEmpty) {
-      final cached = _coverCache[id];
-      if (cached != null) {
-        coverProvider = cached;
-      } else {
-        coverProvider = cachedCover(
-          imageUrl,
-          headers: headers,
-          width: 56,
-          height: 80,
-        );
-        if (headers != null) _coverCache[id] = coverProvider;
-      }
-    }
-
-    return StaggeredEntrance(
-      index: _staggerIndex(i + 1),
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(16, 0, 16, 0),
-        child: AnimatedPress(
-          onTap: () => context.pushNamed(
-            Routes.mangaDetail,
-            extra:
-                (
-                      sourceId: sourceId,
-                      url: url,
-                      title: name,
-                      manga: manga,
-                      memo: manga.memo,
-                    )
-                    as MangaDetailArgs,
-          ),
-          child: _HistoryCard(
-            cover: ClipRRect(
-              borderRadius: AppSpacing.brMd,
-              child: SizedBox(
-                width: 56,
-                height: 80,
-                child: coverProvider != null
-                    ? Image(
-                        image: coverProvider,
-                        width: 56,
-                        height: 80,
-                        fit: BoxFit.cover,
-                        errorBuilder: (_, _, _) => Container(
-                          color: c.surfaceMuted,
-                          child: Icon(
-                            Icons.broken_image,
-                            size: 24,
-                            color: c.textTertiary,
-                          ),
-                        ),
-                      )
-                    : Container(
-                        color: c.surfaceMuted,
-                        child: Icon(
-                          Icons.auto_stories,
-                          size: 24,
-                          color: c.textTertiary,
-                        ),
-                      ),
-              ),
-            ),
-            typeLabel: 'Manga',
-            typeIcon: AppIcons.bookshelf,
-            typeColor: AppColors.success,
-            title: name,
-            subtitle: subtitle,
-            progress: progress,
-            percentLabel: '$pct% complete',
-            relativeTime: row.lastReadAt != null
-                ? _formatRelativeTime(row.lastReadAt!)
-                : null,
-            onRemove: () => _clearMangaProgress(row),
+              const SliverToBoxAdapter(child: SizedBox(height: 100)),
+            ],
           ),
         ),
       ),
@@ -484,33 +400,74 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> with RouteAware {
   }
 }
 
-class _ClearAllButton extends StatelessWidget {
-  final VoidCallback onTap;
+class _HistoryRow extends ConsumerWidget {
+  const _HistoryRow({
+    required this.entry,
+    required this.subtitle,
+    required this.coverCache,
+    required this.onTap,
+    required this.onLongPress,
+  });
 
-  const _ClearAllButton({required this.onTap});
+  final _HistoryEntry entry;
+  final String subtitle;
+  final Map<int, ImageProvider> coverCache;
+  final VoidCallback onTap;
+  final VoidCallback onLongPress;
 
   @override
-  Widget build(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    return AnimatedPress(
+  Widget build(BuildContext context, WidgetRef ref) {
+    final c = context.colors;
+    final title = entry.book?.title ?? entry.manga!.manga.name;
+
+    return InkWell(
       onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-        decoration: BoxDecoration(
-          color: isDark ? const Color(0xFF2A1A1A) : AppColors.dangerMuted,
-          borderRadius: AppSpacing.brMd,
-        ),
+      onLongPress: onLongPress,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 6),
         child: Row(
-          mainAxisSize: MainAxisSize.min,
           children: [
-            AppIcon(data: AppIcons.delete, size: 14, color: AppColors.danger),
-            const SizedBox(width: 6),
-            const Text(
-              'Clear all',
-              style: TextStyle(
-                color: AppColors.danger,
-                fontSize: 12,
-                fontWeight: FontWeight.w500,
+            ClipRRect(
+              borderRadius: BorderRadius.circular(4),
+              child: SizedBox(
+                width: 58,
+                height: 72,
+                child: entry.book != null
+                    ? BookCover(
+                        book: entry.book!,
+                        expand: true,
+                        borderRadius: BorderRadius.circular(4),
+                      )
+                    : _MangaCover(
+                        manga: entry.manga!.manga,
+                        coverCache: coverCache,
+                      ),
+              ),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: c.textPrimary,
+                      fontSize: 16,
+                      fontWeight: FontWeight.w500,
+                      height: 22 / 16,
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    subtitle,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(color: c.textTertiary, fontSize: 14),
+                  ),
+                ],
               ),
             ),
           ],
@@ -520,218 +477,50 @@ class _ClearAllButton extends StatelessWidget {
   }
 }
 
-class _FilterChip extends StatelessWidget {
-  final String label;
-  final bool selected;
-  final VoidCallback onTap;
-
-  const _FilterChip({
-    required this.label,
-    required this.selected,
-    required this.onTap,
+class _MangaCover extends ConsumerWidget {
+  const _MangaCover({
+    required this.manga,
+    required this.coverCache,
   });
 
-  @override
-  Widget build(BuildContext context) {
-    final c = context.colors;
-    return AnimatedPress(
-      onTap: onTap,
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 180),
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-        decoration: BoxDecoration(
-          color: selected ? c.accent : c.surfaceMuted,
-          borderRadius: AppSpacing.brPill,
-        ),
-        child: Text(
-          label,
-          style: TextStyle(
-            color: selected ? c.onAccent : c.textSecondary,
-            fontSize: 12,
-            fontWeight: selected ? FontWeight.w600 : FontWeight.w400,
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _HistoryCard extends StatelessWidget {
-  final Widget cover;
-  final String typeLabel;
-  final AppIconData typeIcon;
-  final Color typeColor;
-  final String title;
-  final String? subtitle;
-  final double progress;
-  final String percentLabel;
-  final String? relativeTime;
-  final VoidCallback onRemove;
-
-  const _HistoryCard({
-    required this.cover,
-    required this.typeLabel,
-    required this.typeIcon,
-    required this.typeColor,
-    required this.title,
-    required this.subtitle,
-    required this.progress,
-    required this.percentLabel,
-    required this.relativeTime,
-    required this.onRemove,
-  });
+  final Manga manga;
+  final Map<int, ImageProvider> coverCache;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final c = context.colors;
-    return Container(
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: c.surface,
-        borderRadius: AppSpacing.brLg,
-      ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          cover,
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 6,
-                              vertical: 2,
-                            ),
-                            decoration: BoxDecoration(
-                              color: typeColor.withValues(alpha: 0.13),
-                              borderRadius: BorderRadius.circular(4),
-                            ),
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                AppIcon(
-                                  data: typeIcon,
-                                  size: 9,
-                                  color: typeColor,
-                                ),
-                                const SizedBox(width: 4),
-                                Text(
-                                  typeLabel,
-                                  style: TextStyle(
-                                    color: typeColor,
-                                    fontSize: 9,
-                                    fontWeight: FontWeight.w600,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                          const SizedBox(height: 4),
-                          Text(
-                            title,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: TextStyle(
-                              color: c.textPrimary,
-                              fontSize: 13,
-                              fontWeight: FontWeight.w600,
-                              height: 1.3,
-                            ),
-                          ),
-                          if (subtitle != null) ...[
-                            const SizedBox(height: 2),
-                            Text(
-                              subtitle!,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: TextStyle(
-                                color: c.textSecondary,
-                                fontSize: 11,
-                              ),
-                            ),
-                          ],
-                        ],
-                      ),
-                    ),
-                    const SizedBox(width: 4),
-                    IconButton(
-                      padding: const EdgeInsets.all(6),
-                      constraints: const BoxConstraints(
-                        minWidth: 32,
-                        minHeight: 32,
-                      ),
-                      visualDensity: VisualDensity.compact,
-                      icon: AppIcon(
-                        data: AppIcons.delete,
-                        size: 14,
-                        color: c.textSecondary,
-                      ),
-                      onPressed: onRemove,
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 10),
-                Row(
-                  children: [
-                    Expanded(
-                      child: ThinProgressBar(
-                        progress: progress,
-                        height: 4,
-                        color: c.accent,
-                        trackColor: c.border,
-                      ),
-                    ),
-                    if (relativeTime != null) ...[
-                      const SizedBox(width: 8),
-                      AppIcon(
-                        data: AppIcons.clock,
-                        size: 10,
-                        color: c.textSecondary,
-                      ),
-                      const SizedBox(width: 4),
-                      Text(
-                        relativeTime!,
-                        style: TextStyle(
-                          color: c.textSecondary,
-                          fontSize: 10,
-                        ),
-                      ),
-                    ],
-                  ],
-                ),
-                const SizedBox(height: 2),
-                Text(
-                  percentLabel,
-                  style: TextStyle(
-                    color: c.textSecondary,
-                    fontSize: 10,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
+    final custom = manga.customCoverPath;
+    final imageUrl = manga.imageUrl;
+    final headers =
+        ref.watch(sourceImageHeadersProvider(manga.sourceId)).value;
 
-String _formatRelativeTime(DateTime date) {
-  final diff = DateTime.now().difference(date);
-  if (diff.inMinutes < 1) return 'Just now';
-  if (diff.inHours < 1) return '${diff.inMinutes}m ago';
-  if (diff.inHours < 24) return '${diff.inHours}h ago';
-  final days = diff.inDays;
-  if (days == 1) return 'Yesterday';
-  if (days < 7) return '$days days ago';
-  return '${days ~/ 7}w ago';
+    if (custom != null && custom.isNotEmpty && File(custom).existsSync()) {
+      return Image.file(File(custom), fit: BoxFit.cover);
+    }
+
+    ImageProvider? coverProvider;
+    if (imageUrl != null && imageUrl.isNotEmpty) {
+      final cached = coverCache[manga.id];
+      if (cached != null) {
+        coverProvider = cached;
+      } else {
+        coverProvider = cachedCover(
+          imageUrl,
+          headers: headers,
+          width: 58,
+          height: 72,
+        );
+        if (headers != null) coverCache[manga.id] = coverProvider;
+      }
+    }
+
+    if (coverProvider != null) {
+      return Image(
+        image: coverProvider,
+        fit: BoxFit.cover,
+        errorBuilder: (_, _, _) => ColoredBox(color: c.iconWell),
+      );
+    }
+    return ColoredBox(color: c.iconWell);
+  }
 }

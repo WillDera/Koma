@@ -17,21 +17,36 @@ import '../../router/router.dart';
 import '../../theme/app_icons.dart';
 import '../../theme/app_theme.dart';
 import '../../theme/theme_provider.dart';
+import '../../theme/tokens/app_motion.dart';
 import '../../theme/tokens/app_spacing.dart';
 import '../../widgets/aethelgard_fab.dart';
 import '../../widgets/animated_press.dart';
+import '../../widgets/dialog_sheet.dart';
+import '../../widgets/empty_state.dart';
+import '../../widgets/page_transitions.dart';
+import '../../widgets/screen_chrome.dart';
 import 'extension_detail_screen.dart';
 import 'extensions_catalog_provider.dart';
 import 'source_browse_screen.dart';
 
 const _keiyoushiDefaultRepoUrl =
-    'https://raw.githubusercontent.com/keiyoushi/extensions/repo/index.json';
+    'https://raw.githubusercontent.com/keiyoushi/extensions/repo/index.pb';
 const _keiyoushiDefaultRepoName = 'Keiyoushi (official)';
 
 String _extractPkgFromApkPath(String apkPath) => extractPkgFromApkPath(apkPath);
 
 Set<String> _installedPkgs(List<ExtensionSource> installed) =>
     installedPkgsOf(installed);
+
+Route<T> _scaleFadeRoute<T>(Widget page) {
+  return PageRouteBuilder<T>(
+    transitionDuration: AppMotion.page,
+    reverseTransitionDuration: AppMotion.base,
+    pageBuilder: (_, animation, secondaryAnimation) => page,
+    transitionsBuilder: (context, animation, secondaryAnimation, child) =>
+        scaleFadePageTransition(animation: animation, child: child),
+  );
+}
 
 class ExtensionsScreen extends ConsumerStatefulWidget {
   const ExtensionsScreen({super.key});
@@ -98,17 +113,13 @@ class _ExtensionsScreenState extends ConsumerState<ExtensionsScreen>
     final action = await showDialog<bool>(
       context: context,
       barrierDismissible: false,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: c.surface,
-        title: Text(
-          'Untrusted extension',
-          style: TextStyle(color: c.textPrimary),
-        ),
-        content: Text(
-          '${e.info.packageName} is not signed by a known repository. '
-          'Installing it may put your device and data at risk.',
-          style: TextStyle(color: c.textSecondary),
-        ),
+      barrierColor: Colors.black.withValues(alpha: 0.4),
+      useRootNavigator: false,
+      builder: (ctx) => StashDialog(
+        title: 'Untrusted extension',
+        content:
+            '${e.info.packageName} is not signed by a known repository. '
+            'Installing it may put your device and data at risk.',
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
@@ -138,89 +149,83 @@ class _ExtensionsScreenState extends ConsumerState<ExtensionsScreen>
     final nameCtl = TextEditingController();
     final urlCtl = TextEditingController();
     var kind = ExtensionRepoKind.mihon;
-    final ok = await showDialog<bool>(
-      context: context,
-      builder: (ctx) {
-        final c = ctx.colors;
-        return StatefulBuilder(
-          builder: (ctx, setLocal) {
-            return AlertDialog(
-              backgroundColor: c.surface,
-              title: Text('Add repo', style: TextStyle(color: c.textPrimary)),
-              content: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
+    final ok = await StashDialog.show<bool>(
+      context,
+      title: 'Add repo',
+      contentWidget: StatefulBuilder(
+        builder: (ctx, setLocal) {
+          final c = ctx.colors;
+          return Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              TextField(
+                controller: nameCtl,
+                decoration: const InputDecoration(
+                  labelText: 'Name',
+                  hintText: 'My sources',
+                ),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: urlCtl,
+                decoration: const InputDecoration(
+                  labelText: 'Index URL (.pb or JSON)',
+                  hintText: _keiyoushiDefaultRepoUrl,
+                ),
+                keyboardType: TextInputType.url,
+              ),
+              const SizedBox(height: 16),
+              Text(
+                'Ecosystem',
+                style: TextStyle(
+                  color: c.textSecondary,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Wrap(
+                spacing: 8,
                 children: [
-                  TextField(
-                    controller: nameCtl,
-                    decoration: const InputDecoration(
-                      labelText: 'Name',
-                      hintText: 'My sources',
-                    ),
+                  ChoiceChip(
+                    label: const Text('Mihon (APK)'),
+                    selected: kind == ExtensionRepoKind.mihon,
+                    onSelected: (_) =>
+                        setLocal(() => kind = ExtensionRepoKind.mihon),
                   ),
-                  const SizedBox(height: 12),
-                  TextField(
-                    controller: urlCtl,
-                    decoration: const InputDecoration(
-                      labelText: 'index.json URL',
-                      hintText: _keiyoushiDefaultRepoUrl,
-                    ),
-                    keyboardType: TextInputType.url,
-                  ),
-                  const SizedBox(height: 16),
-                  Text(
-                    'Ecosystem',
-                    style: TextStyle(
-                      color: c.textSecondary,
-                      fontSize: 12,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  Wrap(
-                    spacing: 8,
-                    children: [
-                      ChoiceChip(
-                        label: const Text('Mihon (APK)'),
-                        selected: kind == ExtensionRepoKind.mihon,
-                        onSelected: (_) =>
-                            setLocal(() => kind = ExtensionRepoKind.mihon),
-                      ),
-                      ChoiceChip(
-                        label: const Text('JavaScript'),
-                        selected: kind == ExtensionRepoKind.javascript,
-                        onSelected: (_) =>
-                            setLocal(() => kind = ExtensionRepoKind.javascript),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    'Leave blank URL schema defaults — kind is also auto-detected from the index when unsure.',
-                    style: TextStyle(color: c.textTertiary, fontSize: 11),
+                  ChoiceChip(
+                    label: const Text('JavaScript'),
+                    selected: kind == ExtensionRepoKind.javascript,
+                    onSelected: (_) =>
+                        setLocal(() => kind = ExtensionRepoKind.javascript),
                   ),
                 ],
               ),
-              actions: [
-                TextButton(
-                  onPressed: () => Navigator.of(ctx).pop(false),
-                  child: const Text('Cancel'),
-                ),
-                FilledButton(
-                  onPressed: () {
-                    if (nameCtl.text.trim().isEmpty ||
-                        urlCtl.text.trim().isEmpty) {
-                      return;
-                    }
-                    Navigator.of(ctx).pop(true);
-                  },
-                  child: const Text('Add'),
-                ),
-              ],
-            );
+              const SizedBox(height: 4),
+              Text(
+                'Leave blank URL schema defaults — kind is also auto-detected from the index when unsure.',
+                style: TextStyle(color: c.textTertiary, fontSize: 11),
+              ),
+            ],
+          );
+        },
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(false),
+          child: const Text('Cancel'),
+        ),
+        FilledButton(
+          onPressed: () {
+            if (nameCtl.text.trim().isEmpty || urlCtl.text.trim().isEmpty) {
+              return;
+            }
+            Navigator.of(context).pop(true);
           },
-        );
-      },
+          child: const Text('Add'),
+        ),
+      ],
     );
     if (ok == true) {
       await _mgr.addRepo(
@@ -355,9 +360,7 @@ class _ExtensionsScreenState extends ConsumerState<ExtensionsScreen>
     if (target != null &&
         target.isNotEmpty &&
         compareVersions(src.version, target) < 0) {
-      final exact = candidates
-          .where((c) => c.entry.version == target)
-          .toList();
+      final exact = candidates.where((c) => c.entry.version == target).toList();
       if (exact.isNotEmpty) {
         // Prefer the source's own repo when multiple indexes share a pkg id.
         final sameRepo = exact.where((c) => c.repo.url == src.repoUrl).toList();
@@ -367,13 +370,14 @@ class _ExtensionsScreenState extends ConsumerState<ExtensionsScreen>
 
     // Newest entry that is actually newer than the installed version.
     // Prefer candidates from the extension's install repo.
-    final ordered = [...candidates]..sort((a, b) {
-      final byVer = compareVersions(b.entry.version, a.entry.version);
-      if (byVer != 0) return byVer;
-      final aSame = a.repo.url == src.repoUrl ? 0 : 1;
-      final bSame = b.repo.url == src.repoUrl ? 0 : 1;
-      return aSame.compareTo(bSame);
-    });
+    final ordered = [...candidates]
+      ..sort((a, b) {
+        final byVer = compareVersions(b.entry.version, a.entry.version);
+        if (byVer != 0) return byVer;
+        final aSame = a.repo.url == src.repoUrl ? 0 : 1;
+        final bSame = b.repo.url == src.repoUrl ? 0 : 1;
+        return aSame.compareTo(bSame);
+      });
     for (final c in ordered) {
       if (compareVersions(src.version, c.entry.version) < 0) return c;
     }
@@ -395,9 +399,7 @@ class _ExtensionsScreenState extends ConsumerState<ExtensionsScreen>
       final kind = (src.isJs || src.isDart)
           ? ExtensionRepoKind.javascript
           : ExtensionRepoKind.mihon;
-      reposToFetch.addAll(
-        _repos.where((r) => r.enabled && r.kind == kind),
-      );
+      reposToFetch.addAll(_repos.where((r) => r.enabled && r.kind == kind));
     }
     if (reposToFetch.isEmpty) {
       reposToFetch.addAll(_repos.where((r) => r.enabled));
@@ -515,188 +517,172 @@ class _ExtensionsScreenState extends ConsumerState<ExtensionsScreen>
     var showOnlyNsfw = showNsfw && _availShowOnlyNsfw;
     var lang = _availLang;
     final types = Set<String>.from(_availTypes);
-    final c = context.colors;
-    showModalBottomSheet<void>(
-      context: context,
-      backgroundColor: c.surface,
-      isScrollControlled: true,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-      ),
-      builder: (ctx) {
-        return StatefulBuilder(
-          builder: (ctx, setSheet) {
-            Widget typeChip(String value, String label) {
-              final selected = types.contains(value);
-              return FilterChip(
-                label: Text(label),
-                selected: selected,
-                onSelected: (v) {
-                  setSheet(() {
-                    if (v) {
-                      types.add(value);
-                    } else if (types.length > 1) {
-                      types.remove(value);
-                    }
-                  });
-                },
-              );
-            }
+    StashSheet.show<void>(
+      context,
+      title: 'Filters and Controls',
+      initialChildSize: 0.65,
+      child: StatefulBuilder(
+        builder: (ctx, setSheet) {
+          final c = ctx.colors;
+          Widget typeChip(String value, String label) {
+            final selected = types.contains(value);
+            return FilterChip(
+              label: Text(label),
+              selected: selected,
+              onSelected: (v) {
+                setSheet(() {
+                  if (v) {
+                    types.add(value);
+                  } else if (types.length > 1) {
+                    types.remove(value);
+                  }
+                });
+              },
+            );
+          }
 
-            return SafeArea(
-              child: SingleChildScrollView(
-                padding: const EdgeInsets.fromLTRB(20, 12, 20, 28),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Center(
-                      child: Container(
-                        width: 36,
-                        height: 4,
-                        decoration: BoxDecoration(
-                          color: c.textTertiary,
-                          borderRadius: BorderRadius.circular(99),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 16),
-                    Text(
-                      'Filters and Controls',
-                      style: TextStyle(
-                        color: c.textPrimary,
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    SwitchListTile(
-                      contentPadding: EdgeInsets.zero,
-                      title: Text(
-                        'Show NSFW extensions',
-                        style: TextStyle(color: c.textPrimary),
-                      ),
-                      subtitle: Text(
-                        showNsfw
-                            ? 'NSFW extensions are listed'
-                            : 'NSFW extensions are hidden',
-                        style: TextStyle(color: c.textSecondary, fontSize: 12),
-                      ),
-                      value: showNsfw,
-                      onChanged: (v) => setSheet(() {
-                        showNsfw = v;
-                        if (!v) showOnlyNsfw = false;
-                      }),
-                    ),
-                    SwitchListTile(
-                      contentPadding: EdgeInsets.zero,
-                      title: Text(
-                        'Show only NSFW',
-                        style: TextStyle(
-                          color: showNsfw ? c.textPrimary : c.textTertiary,
-                        ),
-                      ),
-                      subtitle: Text(
-                        !showNsfw
-                            ? 'Turn on Show NSFW extensions first'
-                            : showOnlyNsfw
-                            ? 'Only NSFW extensions listed'
-                            : 'NSFW and non-NSFW extensions listed',
-                        style: TextStyle(color: c.textSecondary, fontSize: 12),
-                      ),
-                      value: showOnlyNsfw,
-                      onChanged: showNsfw
-                          ? (v) => setSheet(() => showOnlyNsfw = v)
-                          : null,
-                    ),
-                    SwitchListTile(
-                      contentPadding: EdgeInsets.zero,
-                      title: Text(
-                        'Show obsolete extensions',
-                        style: TextStyle(color: c.textPrimary),
-                      ),
-                      subtitle: Text(
-                        showObsolete
-                            ? 'Outdated extensions are listed'
-                            : 'Outdated extensions are hidden',
-                        style: TextStyle(color: c.textSecondary, fontSize: 12),
-                      ),
-                      value: showObsolete,
-                      onChanged: (v) => setSheet(() => showObsolete = v),
-                    ),
-                    const SizedBox(height: 8),
-                    Text(
-                      'Language',
-                      style: TextStyle(
-                        color: c.textTertiary,
-                        fontSize: 12,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    Wrap(
-                      spacing: 8,
-                      runSpacing: 8,
+          Widget kenjiToggle({
+            required String title,
+            required String subtitle,
+            required bool value,
+            required ValueChanged<bool>? onChanged,
+          }) {
+            final enabled = onChanged != null;
+            return Padding(
+              padding: const EdgeInsets.symmetric(vertical: 8),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        for (final code in _allowedLanguages)
-                          ChoiceChip(
-                            label: Text(
-                              code == 'all'
-                                  ? 'All'
-                                  : completeLanguageName(code),
-                            ),
-                            selected: lang == code,
-                            onSelected: (_) => setSheet(() => lang = code),
+                        Text(
+                          title,
+                          style: TextStyle(
+                            color: enabled ? c.textPrimary : c.textTertiary,
+                            fontSize: 14,
+                            fontWeight: FontWeight.w500,
                           ),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          subtitle,
+                          style: TextStyle(
+                            color: c.textSecondary,
+                            fontSize: 12,
+                          ),
+                        ),
                       ],
                     ),
-                    const SizedBox(height: 16),
-                    Text(
-                      'Type',
-                      style: TextStyle(
-                        color: c.textTertiary,
-                        fontSize: 12,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    Wrap(
-                      spacing: 8,
-                      runSpacing: 8,
-                      children: [
-                        typeChip(SourceCodeLanguage.mihon, 'Mihon'),
-                        typeChip(SourceCodeLanguage.dart, 'Dart'),
-                        typeChip(SourceCodeLanguage.js, 'JS'),
-                      ],
-                    ),
-                    const SizedBox(height: 20),
-                    SizedBox(
-                      width: double.infinity,
-                      child: FilledButton(
-                        onPressed: () async {
-                          final tn = ref.read(themeProvider.notifier);
-                          await tn.setShowNsfwExtensions(showNsfw);
-                          await tn.setShowObsoleteExtensions(showObsolete);
-                          if (!mounted) return;
-                          setState(() {
-                            _availShowOnlyNsfw = showNsfw && showOnlyNsfw;
-                            _availLang = lang;
-                            _availTypes
-                              ..clear()
-                              ..addAll(types);
-                          });
-                          if (ctx.mounted) Navigator.pop(ctx);
-                        },
-                        child: const Text('Apply'),
-                      ),
-                    ),
-                  ],
-                ),
+                  ),
+                  Switch(value: value, onChanged: onChanged),
+                ],
               ),
             );
-          },
-        );
-      },
+          }
+
+          return ListView(
+            padding: const EdgeInsets.fromLTRB(20, 4, 20, 28),
+            children: [
+              kenjiToggle(
+                title: 'Show NSFW extensions',
+                subtitle: showNsfw
+                    ? 'NSFW extensions are listed'
+                    : 'NSFW extensions are hidden',
+                value: showNsfw,
+                onChanged: (v) => setSheet(() {
+                  showNsfw = v;
+                  if (!v) showOnlyNsfw = false;
+                }),
+              ),
+              kenjiToggle(
+                title: 'Show only NSFW',
+                subtitle: !showNsfw
+                    ? 'Turn on Show NSFW extensions first'
+                    : showOnlyNsfw
+                    ? 'Only NSFW extensions listed'
+                    : 'NSFW and non-NSFW extensions listed',
+                value: showOnlyNsfw,
+                onChanged: showNsfw
+                    ? (v) => setSheet(() => showOnlyNsfw = v)
+                    : null,
+              ),
+              kenjiToggle(
+                title: 'Show obsolete extensions',
+                subtitle: showObsolete
+                    ? 'Outdated extensions are listed'
+                    : 'Outdated extensions are hidden',
+                value: showObsolete,
+                onChanged: (v) => setSheet(() => showObsolete = v),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'Language',
+                style: TextStyle(
+                  color: c.textTertiary,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  for (final code in _allowedLanguages)
+                    ChoiceChip(
+                      label: Text(
+                        code == 'all' ? 'All' : completeLanguageName(code),
+                      ),
+                      selected: lang == code,
+                      onSelected: (_) => setSheet(() => lang = code),
+                    ),
+                ],
+              ),
+              const SizedBox(height: 16),
+              Text(
+                'Type',
+                style: TextStyle(
+                  color: c.textTertiary,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  typeChip(SourceCodeLanguage.mihon, 'Mihon'),
+                  typeChip(SourceCodeLanguage.dart, 'Dart'),
+                  typeChip(SourceCodeLanguage.js, 'JS'),
+                ],
+              ),
+              const SizedBox(height: 20),
+              SizedBox(
+                width: double.infinity,
+                child: FilledButton(
+                  onPressed: () async {
+                    final tn = ref.read(themeProvider.notifier);
+                    await tn.setShowNsfwExtensions(showNsfw);
+                    await tn.setShowObsoleteExtensions(showObsolete);
+                    if (!mounted) return;
+                    setState(() {
+                      _availShowOnlyNsfw = showNsfw && showOnlyNsfw;
+                      _availLang = lang;
+                      _availTypes
+                        ..clear()
+                        ..addAll(types);
+                    });
+                    if (ctx.mounted) Navigator.pop(ctx);
+                  },
+                  child: const Text('Apply'),
+                ),
+              ),
+            ],
+          );
+        },
+      ),
     );
   }
 
@@ -708,6 +694,8 @@ class _ExtensionsScreenState extends ConsumerState<ExtensionsScreen>
       backgroundColor: c.bg,
       appBar: AppBar(
         backgroundColor: c.bg,
+        surfaceTintColor: Colors.transparent,
+        foregroundColor: c.textPrimary,
         title: Text('Extensions', style: TextStyle(color: c.textPrimary)),
         iconTheme: IconThemeData(color: c.textPrimary),
         actions: [
@@ -763,8 +751,8 @@ class _ExtensionsScreenState extends ConsumerState<ExtensionsScreen>
                   onTrust: _trustExisting,
                   onBrowse: (src) => Navigator.push(
                     context,
-                    MaterialPageRoute(
-                      builder: (_) => SourceBrowseScreen(
+                    _scaleFadeRoute(
+                      SourceBrowseScreen(
                         sourceId: src.sourceId,
                         sourceName: src.name,
                         baseUrl: src.baseUrl,
@@ -778,8 +766,7 @@ class _ExtensionsScreenState extends ConsumerState<ExtensionsScreen>
                   loading: _loadingIndex,
                   installed: _installed,
                   showNsfw: theme.showNsfwExtensions,
-                  showOnlyNsfw:
-                      theme.showNsfwExtensions && _availShowOnlyNsfw,
+                  showOnlyNsfw: theme.showNsfwExtensions && _availShowOnlyNsfw,
                   langFilter: _availLang,
                   typeFilters: _availTypes,
                   showObsolete: theme.showObsoleteExtensions,
@@ -829,19 +816,19 @@ class _InstalledTab extends StatelessWidget {
         if (r.url == url) return r.name;
       }
     }
-    return src.isDart
-        ? 'Dart'
-        : (src.isJs ? 'JavaScript' : 'Mihon');
+    return src.isDart ? 'Dart' : (src.isJs ? 'JavaScript' : 'Mihon');
   }
 
   @override
   Widget build(BuildContext context) {
     final c = context.colors;
     if (installed.isEmpty) {
-      return _EmptyState(
-        icon: Icons.extension_outlined,
+      return const EmptyState(
+        icon: AppIcons.download,
+        emoji: '🧩',
         title: 'Nothing installed yet',
         subtitle: 'Open the Available tab to load your first extension.',
+        pillPrimary: true,
       );
     }
 
@@ -855,9 +842,7 @@ class _InstalledTab extends StatelessWidget {
     final untrusted = unique
         .where((s) => s.isUntrusted || (!s.isActive && s.apkPath.isNotEmpty))
         .toList();
-    final active = unique
-        .where((s) => s.isActive)
-        .toList();
+    final active = unique.where((s) => s.isActive).toList();
     final updates = active.where((s) => s.isUpdateAvailable).toList();
 
     final children = <Widget>[];
@@ -921,7 +906,7 @@ class _InstalledTab extends StatelessWidget {
       padding: const EdgeInsets.all(16),
       itemCount: children.length,
       separatorBuilder: (_, _) => const SizedBox(height: 8),
-      itemBuilder: (_, i) => children[i],
+      itemBuilder: (_, i) => StaggeredFadeScale(index: i, child: children[i]),
     );
   }
 }
@@ -1024,9 +1009,7 @@ class _ActiveInstalledTile extends StatelessWidget {
       child: Container(
         padding: const EdgeInsets.all(14),
         decoration: BoxDecoration(
-          color: hasUpdate
-              ? c.accentMuted.withValues(alpha: 0.35)
-              : c.surface,
+          color: hasUpdate ? c.accentMuted.withValues(alpha: 0.35) : c.surface,
           borderRadius: AppSpacing.brMd,
           border: Border.all(
             color: hasUpdate ? c.accent.withValues(alpha: 0.6) : c.border,
@@ -1131,18 +1114,11 @@ class _ActiveInstalledTile extends StatelessWidget {
               const SizedBox(width: 4),
             ],
             IconButton(
-              icon: Icon(
-                Icons.info_outline,
-                color: c.textSecondary,
-                size: 20,
-              ),
+              icon: Icon(Icons.info_outline, color: c.textSecondary, size: 20),
               onPressed: () => Navigator.push(
                 context,
-                MaterialPageRoute(
-                  builder: (_) => ExtensionDetailScreen(
-                    source: src,
-                    onUninstall: onUninstall,
-                  ),
+                _scaleFadeRoute(
+                  ExtensionDetailScreen(source: src, onUninstall: onUninstall),
                 ),
               ),
               tooltip: 'Info',
@@ -1407,17 +1383,10 @@ class _AvailableTabState extends State<_AvailableTab> {
         ),
       );
       if (!fetched) {
-        rows.add(
-          _AvailableRow.pendingFetch(
-            repoId: repo.id,
-            loading: loading,
-          ),
-        );
+        rows.add(_AvailableRow.pendingFetch(repoId: repo.id, loading: loading));
       } else if (expanded) {
         for (final er in sortedGroup) {
-          rows.add(
-            _AvailableRow.entry(er, installed: false, hasUpdate: false),
-          );
+          rows.add(_AvailableRow.entry(er, installed: false, hasUpdate: false));
         }
         if (sortedGroup.isEmpty) {
           rows.add(
@@ -1448,16 +1417,15 @@ class _AvailableTabState extends State<_AvailableTab> {
   Widget build(BuildContext context) {
     final c = context.colors;
     if (widget.repos.isEmpty) {
-      return _EmptyState(
-        icon: Icons.cloud_download_outlined,
+      return EmptyState(
+        icon: AppIcons.cloudLoading,
+        emoji: '☁️',
         title: 'No repos yet',
         subtitle:
             'Tap below to add the official Keiyoushi repo, then fetch its index.',
-        action: FilledButton.icon(
-          onPressed: widget.onSeed,
-          icon: const Icon(Icons.add),
-          label: const Text('Add Keiyoushi repo'),
-        ),
+        primaryActionLabel: 'Add Keiyoushi repo',
+        onPrimaryAction: widget.onSeed,
+        pillPrimary: true,
       );
     }
 
@@ -1486,11 +1454,7 @@ class _AvailableTabState extends State<_AvailableTab> {
                 fontSize: 15,
                 letterSpacing: 0.2,
               ),
-              prefixIcon: Icon(
-                Icons.search,
-                size: 20,
-                color: c.textTertiary,
-              ),
+              prefixIcon: Icon(Icons.search, size: 20, color: c.textTertiary),
               suffixIcon: _query.isNotEmpty || _searchCtrl.text.isNotEmpty
                   ? IconButton(
                       icon: Icon(Icons.close, size: 18, color: c.textTertiary),
@@ -1527,9 +1491,10 @@ class _AvailableTabState extends State<_AvailableTab> {
               itemCount: rows.length,
               itemBuilder: (context, index) {
                 final row = rows[index];
+                Widget built;
                 switch (row.kind) {
                   case _AvailableRowKind.repoHeader:
-                    return _RepoGroupHeader(
+                    built = _RepoGroupHeader(
                       repoName: row.title!,
                       count: row.count,
                       expanded: row.expanded,
@@ -1548,7 +1513,7 @@ class _AvailableTabState extends State<_AvailableTab> {
                     final repo = widget.repos.firstWhere(
                       (r) => r.id == row.repoId,
                     );
-                    return Padding(
+                    built = Padding(
                       padding: const EdgeInsets.fromLTRB(12, 0, 4, 16),
                       child: Row(
                         children: [
@@ -1583,7 +1548,7 @@ class _AvailableTabState extends State<_AvailableTab> {
                     );
                   case _AvailableRowKind.entry:
                     final er = row.entry!;
-                    return Padding(
+                    built = Padding(
                       padding: const EdgeInsets.only(
                         left: 8,
                         right: 0,
@@ -1594,12 +1559,11 @@ class _AvailableTabState extends State<_AvailableTab> {
                         installed: row.installed,
                         hasUpdate: row.hasUpdate,
                         installedVersion: row.installedVersion,
-                        onInstall: () =>
-                            widget.onInstall(er.entry, er.repo),
+                        onInstall: () => widget.onInstall(er.entry, er.repo),
                       ),
                     );
                   case _AvailableRowKind.emptyMessage:
-                    return Padding(
+                    built = Padding(
                       padding: const EdgeInsets.only(top: 24, bottom: 16),
                       child: Center(
                         child: Text(
@@ -1613,6 +1577,7 @@ class _AvailableTabState extends State<_AvailableTab> {
                       ),
                     );
                 }
+                return StaggeredFadeScale(index: index, child: built);
               },
             ),
           ),
@@ -1621,7 +1586,6 @@ class _AvailableTabState extends State<_AvailableTab> {
     );
   }
 }
-
 
 enum _AvailableRowKind { repoHeader, pendingFetch, entry, emptyMessage }
 
@@ -1666,14 +1630,12 @@ class _AvailableRow {
          expanded: expanded,
        );
 
-  const _AvailableRow.pendingFetch({
-    required int repoId,
-    required bool loading,
-  }) : this._(
-         kind: _AvailableRowKind.pendingFetch,
-         repoId: repoId,
-         loading: loading,
-       );
+  const _AvailableRow.pendingFetch({required int repoId, required bool loading})
+    : this._(
+        kind: _AvailableRowKind.pendingFetch,
+        repoId: repoId,
+        loading: loading,
+      );
 
   const _AvailableRow.entry(
     _EntryWithRepo entry, {
@@ -1840,8 +1802,9 @@ class _ReposTab extends StatelessWidget {
     return Stack(
       children: [
         if (repos.isEmpty)
-          _EmptyState(
-            icon: Icons.cloud_outlined,
+          const EmptyState(
+            icon: AppIcons.globe,
+            emoji: '🌐',
             title: 'No repos',
             subtitle: 'Add a repo to discover extensions.',
           )
@@ -1852,9 +1815,9 @@ class _ReposTab extends StatelessWidget {
             separatorBuilder: (_, _) => const SizedBox(height: 8),
             itemBuilder: (_, i) {
               final r = repos[i];
-              return Material(
-                color: Colors.transparent,
-                child: InkWell(
+              return StaggeredFadeScale(
+                index: i,
+                child: AnimatedPress(
                   onLongPress: () async {
                     await Clipboard.setData(ClipboardData(text: r.url));
                     if (!context.mounted) return;
@@ -1865,7 +1828,6 @@ class _ReposTab extends StatelessWidget {
                       ),
                     );
                   },
-                  borderRadius: AppSpacing.brMd,
                   child: Container(
                     padding: const EdgeInsets.all(12),
                     decoration: BoxDecoration(
@@ -1925,52 +1887,7 @@ class _ReposTab extends StatelessWidget {
   }
 }
 
-// ─── Shared empty state ────────────────────────────────────────────────
-class _EmptyState extends StatelessWidget {
-  final IconData icon;
-  final String title;
-  final String subtitle;
-  final Widget? action;
-
-  const _EmptyState({
-    required this.icon,
-    required this.title,
-    required this.subtitle,
-    this.action,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final c = context.colors;
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(32),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(icon, size: 56, color: c.textTertiary),
-            const SizedBox(height: 16),
-            Text(
-              title,
-              style: TextStyle(
-                color: c.textPrimary,
-                fontSize: 16,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-            const SizedBox(height: 6),
-            Text(
-              subtitle,
-              textAlign: TextAlign.center,
-              style: TextStyle(color: c.textSecondary, fontSize: 13),
-            ),
-            if (action != null) ...[const SizedBox(height: 20), action!],
-          ],
-        ),
-      ),
-    );
-  }
-}
+// ─── Shared empty state removed — use widgets/empty_state.dart EmptyState.
 
 /// Shared icon widget for extension list tiles.
 ///
@@ -2076,11 +1993,7 @@ class _PkgExtensionIconState extends State<_PkgExtensionIcon> {
     return SizedBox(
       width: size,
       height: size,
-      child: Icon(
-        Icons.extension_rounded,
-        color: c.accent,
-        size: size * 0.75,
-      ),
+      child: Icon(Icons.extension_rounded, color: c.accent, size: size * 0.75),
     );
   }
 
@@ -2138,68 +2051,64 @@ class _RepoGroupHeader extends StatelessWidget {
     final c = context.colors;
     return Padding(
       padding: const EdgeInsets.only(bottom: 6, top: 4),
-      child: Material(
-        color: Colors.transparent,
-        child: InkWell(
-          onTap: onToggle,
-          borderRadius: BorderRadius.circular(2),
-          child: Ink(
-            decoration: BoxDecoration(
-              color: c.bgElevated,
-              border: Border(
-                left: BorderSide(color: c.accent, width: 2.5),
-                bottom: BorderSide(color: c.border),
-              ),
+      child: AnimatedPress(
+        onTap: onToggle,
+        child: Container(
+          decoration: BoxDecoration(
+            color: c.bgElevated,
+            border: Border(
+              left: BorderSide(color: c.accent, width: 2.5),
+              bottom: BorderSide(color: c.border),
             ),
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(12, 12, 12, 12),
-              child: Row(
-                children: [
-                  AnimatedRotation(
-                    turns: expanded ? 0.25 : 0,
-                    duration: const Duration(milliseconds: 180),
-                    child: Icon(
-                      Icons.chevron_right,
-                      size: 18,
-                      color: c.textSecondary,
-                    ),
+          ),
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(12, 12, 12, 12),
+            child: Row(
+              children: [
+                AnimatedRotation(
+                  turns: expanded ? 0.25 : 0,
+                  duration: const Duration(milliseconds: 180),
+                  child: Icon(
+                    Icons.chevron_right,
+                    size: 18,
+                    color: c.textSecondary,
                   ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      repoName,
-                      style: TextStyle(
-                        fontWeight: FontWeight.w600,
-                        fontSize: 14,
-                        letterSpacing: 0.15,
-                        color: c.textPrimary,
-                      ),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ),
-                  const SizedBox(width: 10),
-                  Text(
-                    '$count',
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    repoName,
                     style: TextStyle(
-                      fontSize: 12,
                       fontWeight: FontWeight.w600,
-                      fontFeatures: const [FontFeature.tabularFigures()],
-                      color: c.textTertiary,
+                      fontSize: 14,
+                      letterSpacing: 0.15,
+                      color: c.textPrimary,
                     ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
                   ),
-                  const SizedBox(width: 4),
-                  Text(
-                    expanded ? 'hide' : 'open',
-                    style: TextStyle(
-                      fontSize: 10,
-                      letterSpacing: 0.8,
-                      fontWeight: FontWeight.w600,
-                      color: c.accent,
-                    ),
+                ),
+                const SizedBox(width: 10),
+                Text(
+                  '$count',
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                    fontFeatures: const [FontFeature.tabularFigures()],
+                    color: c.textTertiary,
                   ),
-                ],
-              ),
+                ),
+                const SizedBox(width: 4),
+                Text(
+                  expanded ? 'hide' : 'open',
+                  style: TextStyle(
+                    fontSize: 10,
+                    letterSpacing: 0.8,
+                    fontWeight: FontWeight.w600,
+                    color: c.accent,
+                  ),
+                ),
+              ],
             ),
           ),
         ),

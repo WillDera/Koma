@@ -2,6 +2,7 @@ import 'dart:io';
 import 'dart:math';
 
 import 'package:crypto/crypto.dart';
+import 'package:path/path.dart' as p;
 import 'app_storage.dart';
 
 import '../models/chapter.dart';
@@ -16,6 +17,18 @@ class EbookMediaStore {
   EbookMediaStore._();
 
   static const _rootName = 'ebook_media';
+
+  static final _imageExts = {
+    '.png',
+    '.jpg',
+    '.jpeg',
+    '.gif',
+    '.webp',
+    '.bmp',
+    '.svg',
+    '.jfif',
+    '.jpe',
+  };
 
   /// Creates a unique pending session key for an in-flight import.
   static String newSessionId() {
@@ -120,31 +133,64 @@ class EbookMediaStore {
     }
   }
 
-  /// Rewrites `src` attributes in [html] whose paths resolve via [resolver].
+  /// True when [href] / [mime] looks like an image resource publishers put in
+  /// EPUBs — including nonstandard MIME types (`image/jpg`, `image/webp`) that
+  /// `epub_pro` leaves out of [EpubContent.images].
+  static bool looksLikeImage({String? href, String? mime}) {
+    final m = (mime ?? '').trim().toLowerCase();
+    if (m.startsWith('image/')) return true;
+    final name = (href ?? '').split('#').first.split('?').first;
+    final ext = p.extension(name.replaceAll('\\', '/')).toLowerCase();
+    return _imageExts.contains(ext);
+  }
+
+  /// Rewrites image references in [html] whose paths resolve via [resolver].
   ///
-  /// [resolver] receives the raw src (may be relative) and returns an absolute
-  /// file path, or null to leave the attribute unchanged.
+  /// Handles `<img src>`, SVG `<image href>` / `xlink:href`.
   static String rewriteImgSrcs(
     String html,
     String? Function(String src) resolver,
   ) {
-    return html.replaceAllMapped(
+    var out = html.replaceAllMapped(
       RegExp(
         r'''(<img\b[^>]*?\bsrc\s*=\s*)(["'])([^"']+)\2''',
         caseSensitive: false,
       ),
-      (m) {
-        final prefix = m.group(1)!;
-        final quote = m.group(2)!;
-        final src = m.group(3)!;
-        final resolved = resolver(src);
-        if (resolved == null || resolved.isEmpty) return m.group(0)!;
-        final fileUri = resolved.startsWith('file:')
-            ? resolved
-            : Uri.file(resolved).toString();
-        return '$prefix$quote$fileUri$quote';
-      },
+      (m) => _replaceAttr(m, resolver),
     );
+    // EPUB / SVG wrappers often use <image href="…"> instead of <img>.
+    out = out.replaceAllMapped(
+      RegExp(
+        r'''(<image\b[^>]*?\b(?:xlink:)?href\s*=\s*)(["'])([^"']+)\2''',
+        caseSensitive: false,
+      ),
+      (m) => _replaceAttr(m, resolver),
+    );
+    return out;
+  }
+
+  static String _replaceAttr(
+    Match m,
+    String? Function(String src) resolver,
+  ) {
+    final prefix = m.group(1)!;
+    final quote = m.group(2)!;
+    final src = _decodeHtmlEntities(m.group(3)!);
+    final resolved = resolver(src);
+    if (resolved == null || resolved.isEmpty) return m.group(0)!;
+    final fileUri = resolved.startsWith('file:')
+        ? resolved
+        : Uri.file(resolved).toString();
+    return '$prefix$quote$fileUri$quote';
+  }
+
+  static String _decodeHtmlEntities(String raw) {
+    return raw
+        .replaceAll('&amp;', '&')
+        .replaceAll('&quot;', '"')
+        .replaceAll('&#39;', "'")
+        .replaceAll('&lt;', '<')
+        .replaceAll('&gt;', '>');
   }
 
   static String _rewritePaths(String html, String fromPrefix, String toPrefix) {
@@ -162,7 +208,9 @@ class EbookMediaStore {
   static String _sanitizeExt(String ext) {
     final cleaned = ext.replaceAll(RegExp(r'[^a-zA-Z0-9]'), '').toLowerCase();
     if (cleaned.isEmpty) return 'bin';
-    if (cleaned == 'jpeg') return 'jpg';
+    if (cleaned == 'jpeg' || cleaned == 'jpe' || cleaned == 'jfif') {
+      return 'jpg';
+    }
     return cleaned.length > 5 ? cleaned.substring(0, 5) : cleaned;
   }
 
@@ -204,11 +252,20 @@ class EbookMediaStore {
 
   /// Resolve a relative EPUB image href against content image map keys.
   ///
-  /// Matching is exact first, then basename / suffix, then the same passes
-  /// case-insensitively (Android's file system is case-sensitive; Apple Books
-  /// is not, so EPUBs often mix casing between manifest keys and HTML `src`).
-  static String? matchContentKey(String src, Iterable<String> keys) {
-    var cleaned = src.trim();
+  /// Matching order:
+  /// 1. Exact / case-insensitive on the cleaned href
+  /// 2. Path resolved against [baseHref] (chapter file location)
+  /// 3. Basename / suffix (case-insensitive)
+  /// 4. One percent-decode pass, then retry
+  ///
+  /// [baseHref] is the chapter's content file path in the EPUB (e.g.
+  /// `OEBPS/Text/ch1.xhtml`), so `../Images/fig.png` resolves correctly.
+  static String? matchContentKey(
+    String src,
+    Iterable<String> keys, {
+    String? baseHref,
+  }) {
+    var cleaned = _decodeHtmlEntities(src.trim());
     if (cleaned.startsWith('file:')) return null;
     if (cleaned.startsWith('http://') || cleaned.startsWith('https://')) {
       return null;
@@ -218,40 +275,134 @@ class EbookMediaStore {
     while (cleaned.startsWith('./')) {
       cleaned = cleaned.substring(2);
     }
-    final resolved = _matchContentKeyNormalized(cleaned, keys, caseSensitive: true);
-    if (resolved != null) return resolved;
-    final resolvedCi = _matchContentKeyNormalized(
+
+    final hit = _matchAgainstKeys(cleaned, keys, baseHref: baseHref);
+    if (hit != null) return hit;
+
+    // Percent-decode once.
+    try {
+      final decoded = Uri.decodeComponent(cleaned);
+      if (decoded != cleaned) {
+        return matchContentKey(decoded, keys, baseHref: baseHref);
+      }
+    } catch (_) {}
+    return null;
+  }
+
+  static String? _matchAgainstKeys(
+    String cleaned,
+    Iterable<String> keys, {
+    String? baseHref,
+  }) {
+    final exact = _matchContentKeyNormalized(
+      cleaned,
+      keys,
+      caseSensitive: true,
+    );
+    if (exact != null) return exact;
+    final ci = _matchContentKeyNormalized(
       cleaned,
       keys,
       caseSensitive: false,
     );
-    if (resolvedCi != null) return resolvedCi;
-    // Percent-decode once.
-    try {
-      final decoded = Uri.decodeComponent(cleaned);
-      if (decoded != cleaned) return matchContentKey(decoded, keys);
-    } catch (_) {}
-    return null;
+    if (ci != null) return ci;
+
+    final resolved = resolveAgainstBase(cleaned, baseHref);
+    if (resolved != null && resolved != cleaned) {
+      final rExact = _matchContentKeyNormalized(
+        resolved,
+        keys,
+        caseSensitive: true,
+      );
+      if (rExact != null) return rExact;
+      final rCi = _matchContentKeyNormalized(
+        resolved,
+        keys,
+        caseSensitive: false,
+      );
+      if (rCi != null) return rCi;
+    }
+
+    return _matchContentKeyNormalized(
+          cleaned,
+          keys,
+          caseSensitive: true,
+          basenameOnly: true,
+        ) ??
+        _matchContentKeyNormalized(
+          cleaned,
+          keys,
+          caseSensitive: false,
+          basenameOnly: true,
+        );
+  }
+
+  /// Joins [href] to the directory of [baseHref] and normalizes `..` segments.
+  static String? resolveAgainstBase(String href, String? baseHref) {
+    if (baseHref == null || baseHref.isEmpty) return null;
+    var base = baseHref.replaceAll('\\', '/');
+    if (base.startsWith('/')) base = base.substring(1);
+    final dir = p.posix.dirname(base);
+    if (dir.isEmpty || dir == '.') {
+      return p.posix.normalize(href);
+    }
+    return p.posix.normalize(p.posix.join(dir, href));
   }
 
   static String? _matchContentKeyNormalized(
     String cleaned,
     Iterable<String> keys, {
     required bool caseSensitive,
+    bool basenameOnly = false,
   }) {
-    String norm(String s) => caseSensitive ? s : s.toLowerCase();
+    String norm(String s) {
+      var v = s;
+      try {
+        v = Uri.decodeFull(v);
+      } catch (_) {}
+      return caseSensitive ? v : v.toLowerCase();
+    }
+
     final want = norm(cleaned);
-    for (final key in keys) {
-      if (norm(key) == want) return key;
+    if (!basenameOnly) {
+      for (final key in keys) {
+        if (norm(key) == want) return key;
+      }
     }
     final base = cleaned.split('/').last;
+    if (base.isEmpty) return null;
     final wantBase = norm(base);
     for (final key in keys) {
       final k = norm(key);
-      if (k == wantBase || k.endsWith('/$wantBase') || k.endsWith(wantBase)) {
+      final keyBase = k.split('/').last;
+      if (k == wantBase || keyBase == wantBase || k.endsWith('/$wantBase')) {
         return key;
       }
     }
     return null;
+  }
+
+  /// Registers [path] under common aliases of [logicalKey] so later matching
+  /// succeeds whether the HTML used encoded, decoded, or basename-only hrefs.
+  static void indexImagePath(
+    Map<String, String> imagePaths, {
+    required String logicalKey,
+    required String path,
+  }) {
+    for (final alias in _keyAliases(logicalKey)) {
+      imagePaths.putIfAbsent(alias, () => path);
+    }
+  }
+
+  static Iterable<String> _keyAliases(String key) sync* {
+    final raw = key.trim().replaceAll('\\', '/');
+    if (raw.isEmpty) return;
+    yield raw;
+    try {
+      final decoded = Uri.decodeFull(raw);
+      if (decoded != raw) yield decoded;
+    } catch (_) {}
+    final base = raw.split('/').last;
+    if (base.isNotEmpty && base != raw) yield base;
   }
 }
