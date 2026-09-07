@@ -112,23 +112,35 @@ class LibraryNotifier extends Notifier<LibraryState> {
 
   Future<void> init() async {
     final prefs = await SharedPreferences.getInstance();
+    final legacyList = prefs.getBool(_keyIsGridView) == false;
+    final rawVariant = (prefs.getInt(_keyCardVariant) ?? 0).clamp(
+      0,
+      LibraryCardVariant.values.length - 1,
+    );
+    var variant = LibraryCardVariant.values[rawVariant];
+    // Old layout toggle wrote isGridView=false without setting cardVariant.
+    // That stuck View all in list forever while Settings only changed cols/style.
+    if (legacyList && variant != LibraryCardVariant.list) {
+      variant = LibraryCardVariant.list;
+      await prefs.setInt(_keyCardVariant, variant.index);
+    }
+    final isGrid = variant != LibraryCardVariant.list;
+    await prefs.setBool(_keyIsGridView, isGrid);
     state = state.copyWith(
-      isGridView: prefs.getBool(_keyIsGridView) ?? true,
+      isGridView: isGrid,
       showSourcePills: prefs.getBool(_keyShowSourcePills) ?? true,
       gridColumns: prefs.getInt(_keyGridColumns) ?? 2,
-      cardVariant:
-          LibraryCardVariant.values[prefs.getInt(_keyCardVariant) ?? 0],
+      cardVariant: variant,
     );
     // Prefetch so Library isn't empty on first paint after splash.
     await loadBooks();
   }
 
   void toggleLayout() {
-    final next = !state.isGridView;
-    state = state.copyWith(isGridView: next);
-    SharedPreferences.getInstance().then(
-      (prefs) => prefs.setBool(_keyIsGridView, next),
-    );
+    final next = state.cardVariant == LibraryCardVariant.list
+        ? LibraryCardVariant.grid
+        : LibraryCardVariant.list;
+    setCardVariant(next);
   }
 
   void setShowSourcePills(bool value) {
@@ -147,10 +159,12 @@ class LibraryNotifier extends Notifier<LibraryState> {
   }
 
   void setCardVariant(LibraryCardVariant value) {
-    state = state.copyWith(cardVariant: value);
-    SharedPreferences.getInstance().then(
-      (prefs) => prefs.setInt(_keyCardVariant, value.index),
-    );
+    final isGrid = value != LibraryCardVariant.list;
+    state = state.copyWith(cardVariant: value, isGridView: isGrid);
+    SharedPreferences.getInstance().then((prefs) async {
+      await prefs.setInt(_keyCardVariant, value.index);
+      await prefs.setBool(_keyIsGridView, isGrid);
+    });
   }
 
   Future<void> loadBooks() async {

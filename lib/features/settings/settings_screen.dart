@@ -40,7 +40,6 @@ import '../../theme/tokens/app_motion.dart';
 import '../../theme/tokens/app_spacing.dart';
 import '../../widgets/animated_press.dart';
 import '../../widgets/dialog_sheet.dart';
-import '../../widgets/library_book_card.dart';
 import '../../widgets/library_header.dart';
 import '../../widgets/new_update_sheet.dart';
 import '../../widgets/one_hand_spacer.dart';
@@ -65,11 +64,6 @@ class SettingsScreen extends StatelessWidget {
           padding: const EdgeInsets.only(bottom: 100),
           children: [
             const OneHandSpacer(),
-            const LibraryHeader(
-              title: 'You',
-              subtitle: 'Profile and preferences',
-              padding: EdgeInsets.fromLTRB(20, 8, 16, 12),
-            ),
             const StaggeredFadeScale(index: 0, child: _ProfileHero()),
             const SizedBox(height: 16),
             const _SettingsHub(),
@@ -93,7 +87,7 @@ class _ProfileHero extends ConsumerWidget {
         : profile.displayName.trim();
     final letter = name.isEmpty ? '?' : name[0].toUpperCase();
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 20),
+      padding: const EdgeInsets.fromLTRB(20, 8, 20, 0),
       child: Row(
         children: [
           Container(
@@ -128,7 +122,7 @@ class _ProfileHero extends ConsumerWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  name,
+                  profile.greeting(),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
@@ -139,7 +133,7 @@ class _ProfileHero extends ConsumerWidget {
                 ),
                 const SizedBox(height: 2),
                 Text(
-                  profile.greeting(),
+                  'Profile and preferences',
                   style: TextStyle(
                     color: c.textSecondary,
                     fontSize: 13,
@@ -350,8 +344,6 @@ class _AppearanceSection extends ConsumerWidget {
     final c = context.colors;
     final theme = ref.watch(themeProvider);
     final tn = ref.read(themeProvider.notifier);
-    final library = ref.watch(libraryProvider);
-    final ln = ref.read(libraryProvider.notifier);
     final violet = AppColors.figmaViolet;
 
     return Column(
@@ -529,56 +521,6 @@ class _AppearanceSection extends ConsumerWidget {
               ),
             ),
             const _OneHandToggle(),
-          ],
-        ),
-        _gap,
-        SettingsSection(
-          title: 'Library',
-          headerColor: violet,
-          padding: _pad,
-          children: [
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 14, 16, 16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'Library grid',
-                    style: TextStyle(
-                      color: c.textPrimary,
-                      fontSize: 14,
-                      fontWeight: FontWeight.w500,
-                    ),
-                  ),
-                  const SizedBox(height: 10),
-                  SegmentedControl<int>(
-                    segments: const {2: '2 cols', 3: '3 cols'},
-                    value: library.gridColumns,
-                    onChanged: (v) => ln.setGridColumns(v),
-                  ),
-                  const SizedBox(height: 16),
-                  Text(
-                    'Card style',
-                    style: TextStyle(
-                      color: c.textPrimary,
-                      fontSize: 14,
-                      fontWeight: FontWeight.w500,
-                    ),
-                  ),
-                  const SizedBox(height: 10),
-                  SegmentedControl<LibraryCardVariant>(
-                    segments: const {
-                      LibraryCardVariant.grid: 'Grid',
-                      LibraryCardVariant.list: 'List',
-                      LibraryCardVariant.compact: 'Compact',
-                      LibraryCardVariant.overlay: 'Overlay',
-                    },
-                    value: library.cardVariant,
-                    onChanged: (v) => ln.setCardVariant(v),
-                  ),
-                ],
-              ),
-            ),
           ],
         ),
       ],
