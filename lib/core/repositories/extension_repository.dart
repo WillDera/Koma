@@ -77,6 +77,14 @@ class ExtensionRepository {
   }
 
   Future<int> insertExtensionRepo(ExtensionRepo repo) async {
+    // Prefer update-by-id when the caller already has a row (e.g. URL
+    // normalization from github.com → raw.githubusercontent.com).
+    if (repo.id != 0) {
+      await _isar.writeTxn(
+        () => _isar.extensionRepos.put(_repoFromModel(repo)),
+      );
+      return repo.id;
+    }
     final existing = await getExtensionRepoByUrl(repo.url);
     if (existing != null) {
       await _isar.writeTxn(

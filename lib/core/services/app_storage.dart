@@ -44,7 +44,7 @@ class _StorageLayout {
 String _canon(String path) => p.normalize(Directory(path).absolute.path);
 
 /// App-wide data root. When the user picks a folder, every Koma-created
-/// file (Isar, downloads, covers, exports, fonts, Piper voices, …) lives
+/// file (Isar, downloads, covers, exports, fonts, …) lives
 /// under that folder. Changing the folder moves existing data there.
 ///
 /// When no folder is set, paths match the historical split:
@@ -210,7 +210,6 @@ class AppStorage {
   static const _komaDirNames = {
     'koma',
     'ebook_media',
-    'piper_voices',
     'fonts',
     'covers',
     'thumbnails',

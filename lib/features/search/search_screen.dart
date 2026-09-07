@@ -169,6 +169,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
                 slivers: _bodySlivers(context, q),
               ),
             ),
+            if (q.isNotEmpty) _extensionsCta(context, q),
           ],
         ),
       ),
@@ -176,25 +177,38 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
   }
 
   Widget _searchHeader(KomaColors c) {
-    return Container(
-      padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
-      decoration: BoxDecoration(
-        border: Border(bottom: BorderSide(color: c.border, width: 0.5)),
-      ),
-      child: Row(
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(4, 4, 16, 8),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          IconButtonRound(
-            iconData: AppIcons.back,
-            size: 38,
-            variant: IconButtonVariant.tonal,
-            onPressed: () => context.pop(),
+          Row(
+            children: [
+              IconButtonRound(
+                iconData: AppIcons.back,
+                size: 40,
+                variant: IconButtonVariant.plain,
+                onPressed: () => context.pop(),
+              ),
+              Expanded(
+                child: Text(
+                  'Search your library',
+                  style: TextStyle(
+                    color: c.textPrimary,
+                    fontSize: 20,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ),
+            ],
           ),
-          const SizedBox(width: 8),
-          Expanded(
+          const SizedBox(height: 4),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12),
             child: StashTextField(
               controller: _searchController,
               focusNode: _focusNode,
-              hint: 'Search your library...',
+              hint: 'Title, author, phrase…',
               leadingIcon: Icons.search,
               showClearButton: true,
               autofocus: true,
@@ -204,6 +218,39 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _extensionsCta(BuildContext context, String q) {
+    final c = context.colors;
+    return Material(
+      color: c.bg,
+      child: SafeArea(
+        top: false,
+        child: InkWell(
+          onTap: () => context.pushNamed(Routes.globalSearch, extra: q),
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(20, 10, 20, 12),
+            child: Row(
+              children: [
+                Icon(Icons.extension_outlined, size: 20, color: c.accent),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    'Search on extensions',
+                    style: TextStyle(
+                      color: c.accent,
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+                Icon(Icons.chevron_right_rounded, color: c.textTertiary),
+              ],
+            ),
+          ),
+        ),
       ),
     );
   }
@@ -237,6 +284,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
           hasScrollBody: false,
           child: EmptyState(
             icon: AppIcons.search,
+            emoji: '🔎',
             title: 'No results found',
             subtitle: 'No items matching "$q" in your library',
           ),
@@ -374,6 +422,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
               const SizedBox(height: 32),
               EmptyState(
                 icon: AppIcons.search,
+                emoji: '🔎',
                 title: 'Search your library',
                 subtitle:
                     'Type a title, author, phrase, or tag. Results stream as you type.',
@@ -513,14 +562,19 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
                   entry.accent!,
                   entry.icon!,
                 ),
-                _SearchRowKind.item => Padding(
-                  padding: const EdgeInsets.only(bottom: 8),
-                  child: switch (entry.itemKind!) {
-                    _SearchItemKind.book => _bookResult(entry.result!),
-                    _SearchItemKind.chapter => _chapterResult(entry.result!),
-                    _SearchItemKind.snippet => _snippetResult(entry.result!),
-                    _SearchItemKind.manga => _mangaResult(entry.manga!),
-                  },
+                _SearchRowKind.item => StaggeredFadeScale(
+                  index: i - 1,
+                  child: Padding(
+                    padding: const EdgeInsets.only(bottom: 8),
+                    child: switch (entry.itemKind!) {
+                      _SearchItemKind.book => _bookResult(entry.result!),
+                      _SearchItemKind.chapter =>
+                        _chapterResult(entry.result!),
+                      _SearchItemKind.snippet =>
+                        _snippetResult(entry.result!),
+                      _SearchItemKind.manga => _mangaResult(entry.manga!),
+                    },
+                  ),
                 ),
               };
             },

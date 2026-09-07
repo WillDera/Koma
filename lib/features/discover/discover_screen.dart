@@ -1,19 +1,27 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../core/models/book.dart';
+import '../../core/models/manga.dart';
 import '../../core/models/source.dart';
 import '../../core/providers.dart';
 import '../../core/services/discover_metadata_cache.dart';
 import '../../core/services/metadata_enrichment_service.dart';
 import '../../core/services/source_service.dart';
+import '../../core/utils/image_cache.dart';
+import '../../core/utils/image_headers.dart';
+import '../../router/book_navigation.dart';
 import '../../router/router.dart';
 import '../../theme/app_icons.dart';
 import '../../theme/app_theme.dart';
 import '../../theme/tokens/app_spacing.dart';
 import '../../widgets/animated_press.dart';
+import '../../widgets/book_cover.dart';
 import '../../widgets/catalog_card_layout.dart';
 import '../../widgets/catalog_cover_card.dart';
 import '../../widgets/empty_state.dart';
@@ -21,12 +29,14 @@ import '../../widgets/horizontal_tab_swipe.dart';
 import '../../widgets/icon_button_round.dart';
 import '../../widgets/library_book_card.dart';
 import '../../widgets/library_header.dart';
+import '../../widgets/media_rail.dart';
 import '../../widgets/one_hand_spacer.dart';
 import '../../widgets/screen_chrome.dart';
 import '../../widgets/segmented_control.dart';
 import '../../widgets/toast.dart';
 import '../extensions/global_search_provider.dart';
 import '../extensions/global_search_widgets.dart';
+import '../library/library_provider.dart';
 
 class DiscoverScreen extends ConsumerStatefulWidget {
   const DiscoverScreen({super.key});
@@ -501,140 +511,95 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
     final searching = _searching;
     final gridView = library.isGridView;
     final showIdle = !_loaded && _results.isEmpty && !hasMangaUi;
-    final subtitle = _section == _DiscoverSection.manga
-        ? 'Manga extensions'
-        : (_sourceSubtitle ?? 'Find books from your sources');
+    final idleHasHero =
+        showIdle && (library.books.isNotEmpty || library.mangas.isNotEmpty);
+    final subtitle = showIdle
+        ? (_sourceSubtitle ?? 'Browse your library & sources')
+        : (_section == _DiscoverSection.manga
+            ? 'Manga extensions'
+            : (_sourceSubtitle ?? 'Find books from your sources'));
 
     return ScreenBackdrop(
-      child: HorizontalTabSwipe(
+      child: AnnotatedRegion<SystemUiOverlayStyle>(
+        value: idleHasHero
+            ? SystemUiOverlayStyle.light.copyWith(
+                statusBarColor: Colors.transparent,
+              )
+            : SystemUiOverlayStyle.dark.copyWith(
+                statusBarColor: Colors.transparent,
+              ),
+        child: HorizontalTabSwipe(
         tabIndex: _section == _DiscoverSection.books ? 0 : 1,
         tabCount: 2,
         onTabChanged: (i) => _setSection(
           i == 0 ? _DiscoverSection.books : _DiscoverSection.manga,
         ),
+        // Bleed the recommendation cover under the status bar on idle.
         child: SafeArea(
+          top: !idleHasHero,
           bottom: false,
           child: CustomScrollView(
             controller: _scrollCtrl,
             physics: const AlwaysScrollableScrollPhysics(),
             slivers: [
-              const SliverToBoxAdapter(child: OneHandSpacer()),
-              SliverToBoxAdapter(
-                child: LibraryHeader(
-                  title: 'Discover',
-                  subtitle: subtitle,
-                  actions: [
-                    IconButtonRound(
-                      iconData: AppIcons.filter,
-                      size: 38,
-                      variant: IconButtonVariant.tonal,
-                      iconColor: c.textSecondary,
-                      tooltip: 'Sources',
-                      onPressed: _openSourcePicker,
-                    ),
-                  ],
-                ),
-              ),
-              SliverToBoxAdapter(
-                child: Padding(
-                  padding: const EdgeInsets.fromLTRB(20, 4, 20, 12),
-                  child: SegmentedControl<_DiscoverSection>(
-                    segments: const {
-                      _DiscoverSection.books: 'Books',
-                      _DiscoverSection.manga: 'Manga',
-                    },
-                    value: _section,
-                    onChanged: _setSection,
-                    height: 42,
-                  ),
-                ),
-              ),
-              SliverToBoxAdapter(
-                child: Padding(
-                  padding: const EdgeInsets.fromLTRB(20, 0, 20, 12),
-                  child: Row(
-                    children: [
-                      Expanded(
-                        child: TextField(
-                          controller: _ctrl,
-                          focusNode: _searchFocus,
-                          decoration: InputDecoration(
-                            hintText: _section == _DiscoverSection.books
-                                ? 'Search books...'
-                                : 'Search manga...',
-                            prefixIcon: const Icon(Icons.search, size: 18),
-                            suffixIcon: _ctrl.text.isNotEmpty
-                                ? IconButton(
-                                    icon: const Icon(Icons.clear, size: 18),
-                                    onPressed: _clearSearch,
-                                  )
-                                : null,
-                          ),
-                          onChanged: (_) {
-                            setState(() {});
-                            _scheduleIdleUnfocus();
-                          },
-                          onSubmitted: (_) => _search(),
-                          textInputAction: TextInputAction.search,
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      AnimatedPress(
-                        onTap: searching ? null : _search,
-                        child: Container(
-                          height: 48,
-                          padding: const EdgeInsets.symmetric(horizontal: 16),
-                          alignment: Alignment.center,
-                          decoration: BoxDecoration(
-                            color: c.accent,
-                            borderRadius: AppSpacing.brMd,
-                          ),
-                          child: searching
-                              ? SizedBox(
-                                  width: 18,
-                                  height: 18,
-                                  child: CircularProgressIndicator(
-                                    strokeWidth: 2,
-                                    color: c.onAccent,
-                                  ),
-                                )
-                              : Text(
-                                  'Search',
-                                  style: TextStyle(
-                                    color: c.onAccent,
-                                    fontSize: 13,
-                                    fontWeight: FontWeight.w600,
-                                  ),
-                                ),
-                        ),
+              if (!idleHasHero) ...[
+                const SliverToBoxAdapter(child: OneHandSpacer()),
+                SliverToBoxAdapter(
+                  child: LibraryHeader(
+                    title: 'Explore',
+                    subtitle: subtitle,
+                    actions: [
+                      IconButtonRound(
+                        iconData: AppIcons.filter,
+                        size: 38,
+                        variant: IconButtonVariant.tonal,
+                        iconColor: c.textSecondary,
+                        tooltip: 'Sources',
+                        onPressed: _openSourcePicker,
                       ),
                     ],
                   ),
                 ),
-              ),
-            if (showIdle)
-              const SliverToBoxAdapter(
-                child: SizedBox(
-                  height: 280,
-                  child: EmptyState(
-                    icon: AppIcons.search,
-                    title: 'Find your next read',
-                    subtitle: 'Search across your configured sources',
+              ],
+              if (showIdle)
+                ..._idleChromeSlivers(
+                  context,
+                  library,
+                  searching,
+                  bleedHero: idleHasHero,
+                ),
+              if (!showIdle) ...[
+                SliverToBoxAdapter(
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(20, 4, 20, 12),
+                    child: SegmentedControl<_DiscoverSection>(
+                      segments: const {
+                        _DiscoverSection.books: 'Books',
+                        _DiscoverSection.manga: 'Manga',
+                      },
+                      value: _section,
+                      onChanged: _setSection,
+                      height: 42,
+                    ),
                   ),
                 ),
-              )
-            else if (_loaded && _results.isEmpty && !hasMangaUi)
+                SliverToBoxAdapter(
+                  child: _searchBar(searching: searching),
+                ),
+              ],
+            if (!showIdle && _loaded && _results.isEmpty && !hasMangaUi)
               const SliverToBoxAdapter(
                 child: SizedBox(
                   height: 240,
                   child: EmptyState(
                     icon: AppIcons.search,
+                    emoji: '🔎',
                     title: 'No results',
                     subtitle: 'Try another title or switch Books / Manga.',
                   ),
                 ),
               )
-            else ...[
+            else if (!showIdle) ...[
               if (_section == _DiscoverSection.books) ...[
                 SliverToBoxAdapter(
                   child: Padding(
@@ -702,7 +667,567 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
         ),
         ),
       ),
+      ),
     );
+  }
+
+  Widget _searchBar({required bool searching, bool compact = false}) {
+    final c = context.colors;
+    final hint = _section == _DiscoverSection.books
+        ? 'Search books, authors…'
+        : 'Search manga, authors…';
+    final hasQuery = _ctrl.text.isNotEmpty;
+
+    return Padding(
+      padding: EdgeInsets.fromLTRB(20, compact ? 4 : 0, 20, compact ? 10 : 14),
+      child: Container(
+        height: compact ? 50 : 54,
+        decoration: BoxDecoration(
+          color: c.surface,
+          borderRadius: AppSpacing.brPill,
+          border: Border.all(
+            color: c.border.withValues(alpha: 0.65),
+            width: 0.5,
+          ),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.18),
+              blurRadius: 18,
+              offset: const Offset(0, 8),
+            ),
+          ],
+        ),
+        child: Row(
+          children: [
+            const SizedBox(width: 16),
+            Icon(
+              Icons.search_rounded,
+              size: 22,
+              color: c.textTertiary,
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: TextField(
+                controller: _ctrl,
+                focusNode: _searchFocus,
+                style: TextStyle(
+                  color: c.textPrimary,
+                  fontSize: 15,
+                  fontWeight: FontWeight.w500,
+                ),
+                cursorColor: c.accent,
+                decoration: InputDecoration(
+                  hintText: hint,
+                  hintStyle: TextStyle(
+                    color: c.textTertiary,
+                    fontSize: 15,
+                    fontWeight: FontWeight.w400,
+                  ),
+                  border: InputBorder.none,
+                  enabledBorder: InputBorder.none,
+                  focusedBorder: InputBorder.none,
+                  disabledBorder: InputBorder.none,
+                  errorBorder: InputBorder.none,
+                  filled: false,
+                  isDense: true,
+                  contentPadding: EdgeInsets.zero,
+                ),
+                onChanged: (_) {
+                  setState(() {});
+                  _scheduleIdleUnfocus();
+                },
+                onSubmitted: (_) => _search(),
+                textInputAction: TextInputAction.search,
+              ),
+            ),
+            if (hasQuery)
+              IconButton(
+                visualDensity: VisualDensity.compact,
+                tooltip: 'Clear',
+                onPressed: _clearSearch,
+                icon: Icon(
+                  Icons.close_rounded,
+                  size: 18,
+                  color: c.textTertiary,
+                ),
+              ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(2, 6, 6, 6),
+              child: AnimatedPress(
+                onTap: searching ? null : _search,
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 180),
+                  width: 40,
+                  height: 40,
+                  alignment: Alignment.center,
+                  decoration: BoxDecoration(
+                    color: c.accent,
+                    shape: BoxShape.circle,
+                    boxShadow: [
+                      BoxShadow(
+                        color: c.accent.withValues(alpha: 0.35),
+                        blurRadius: 10,
+                        offset: const Offset(0, 3),
+                      ),
+                    ],
+                  ),
+                  child: searching
+                      ? SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: c.onAccent,
+                          ),
+                        )
+                      : Icon(
+                          Icons.arrow_forward_rounded,
+                          size: 20,
+                          color: c.onAccent,
+                        ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _openManga(Manga manga) {
+    context.pushNamed(
+      Routes.mangaDetail,
+      extra: (
+        sourceId: manga.sourceId,
+        url: manga.url,
+        title: manga.name,
+        manga: manga,
+        memo: manga.memo,
+      ) as MangaDetailArgs,
+    );
+  }
+
+  void _openRecommendation({Book? book, Manga? manga}) {
+    if (book != null) {
+      openBookReader(
+        context,
+        bookId: book.id,
+        fileExtension: book.fileExtension,
+      );
+      return;
+    }
+    if (manga != null) _openManga(manga);
+  }
+
+  List<Widget> _idleChromeSlivers(
+    BuildContext context,
+    LibraryState library,
+    bool searching, {
+    required bool bleedHero,
+  }) {
+    final booksByCreated = [...library.books]
+      ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
+    final mangasByCreated = [...library.mangas]
+      ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
+    final booksByUpdated = [...library.books]
+      ..sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
+    final mangasByUpdated = [...library.mangas]
+      ..sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
+
+    // Mixed newly-added / latest, newest first across books + manga.
+    final newlyAdded = <({Book? book, Manga? manga})>[
+      ...booksByCreated.map((b) => (book: b, manga: null)),
+      ...mangasByCreated.map((m) => (book: null, manga: m)),
+    ]..sort((a, b) {
+        final ad = a.book?.createdAt ?? a.manga!.createdAt;
+        final bd = b.book?.createdAt ?? b.manga!.createdAt;
+        return bd.compareTo(ad);
+      });
+    final latest = <({Book? book, Manga? manga})>[
+      ...booksByUpdated.map((b) => (book: b, manga: null)),
+      ...mangasByUpdated.map((m) => (book: null, manga: m)),
+    ]..sort((a, b) {
+        final ad = a.book?.updatedAt ?? a.manga!.updatedAt;
+        final bd = b.book?.updatedAt ?? b.manga!.updatedAt;
+        return bd.compareTo(ad);
+      });
+
+    final hasLibrary = newlyAdded.isNotEmpty;
+    final newlyPreview = newlyAdded.take(12).toList();
+    final latestPreview = latest.take(12).toList();
+
+    Book? recBook;
+    Manga? recManga;
+    if (latest.isNotEmpty) {
+      recBook = latest.first.book;
+      recManga = latest.first.manga;
+    }
+
+    final slivers = <Widget>[
+      if (hasLibrary && (recBook != null || recManga != null))
+        SliverToBoxAdapter(
+          child: StaggeredFadeScale(
+            index: 0,
+            child: _ExploreRecommendationHero(
+              book: recBook,
+              manga: recManga,
+              bleedIntoStatusBar: bleedHero,
+              onSources: _openSourcePicker,
+              onStartReading: () =>
+                  _openRecommendation(book: recBook, manga: recManga),
+            ),
+          ),
+        ),
+      // Search is secondary on idle — no Books|Manga segment.
+      SliverToBoxAdapter(
+        child: Padding(
+          padding: EdgeInsets.only(top: hasLibrary ? 4 : 0),
+          child: _searchBar(searching: searching, compact: true),
+        ),
+      ),
+    ];
+
+    if (!hasLibrary) {
+      slivers.add(
+        const SliverToBoxAdapter(
+          child: SizedBox(
+            height: 220,
+            child: EmptyState(
+              icon: AppIcons.search,
+              emoji: '🧭',
+              title: 'Find your next read',
+              subtitle: 'Search across your configured sources',
+            ),
+          ),
+        ),
+      );
+      return slivers;
+    }
+
+    if (newlyPreview.isNotEmpty) {
+      slivers.add(
+        SliverToBoxAdapter(
+          child: MediaRail(
+            title: 'Newly Added',
+            subtitle: '${newlyAdded.length} recent',
+            onViewAll: () => context.goNamed(Routes.library),
+            itemCount: newlyPreview.length,
+            itemBuilder: (context, i) {
+              final item = newlyPreview[i];
+              final book = item.book;
+              if (book != null) {
+                final path = book.coverPath;
+                return MediaRailCover(
+                  child: StaggeredFadeScale(
+                    index: i + 1,
+                    child: CatalogCoverCard(
+                      title: book.title,
+                      subtitle: book.author,
+                      imageProvider:
+                          path != null &&
+                              path.isNotEmpty &&
+                              File(path).existsSync()
+                          ? FileImage(File(path))
+                          : null,
+                      variant: LibraryCardVariant.grid,
+                      onTap: () => openBookFromCollection(context, book.id),
+                    ),
+                  ),
+                );
+              }
+              final manga = item.manga!;
+              final custom = manga.customCoverPath;
+              return MediaRailCover(
+                child: StaggeredFadeScale(
+                  index: i + 1,
+                  child: CatalogCoverCard(
+                    title: manga.name,
+                    subtitle: manga.author,
+                    imageProvider:
+                        custom != null &&
+                            custom.isNotEmpty &&
+                            File(custom).existsSync()
+                        ? FileImage(File(custom))
+                        : null,
+                    imageUrl: manga.imageUrl,
+                    variant: LibraryCardVariant.grid,
+                    onTap: () => _openManga(manga),
+                  ),
+                ),
+              );
+            },
+          ),
+        ),
+      );
+    }
+
+    if (latestPreview.isNotEmpty) {
+      slivers.add(
+        SliverToBoxAdapter(
+          child: MediaRail(
+            title: 'Latest Titles',
+            onViewAll: () => context.goNamed(Routes.library),
+            itemCount: latestPreview.length,
+            itemBuilder: (context, i) {
+              final item = latestPreview[i];
+              final book = item.book;
+              if (book != null) {
+                final path = book.coverPath;
+                return MediaRailCover(
+                  child: StaggeredFadeScale(
+                    index: i + 1,
+                    child: CatalogCoverCard(
+                      title: book.title,
+                      subtitle: book.author,
+                      imageProvider:
+                          path != null &&
+                              path.isNotEmpty &&
+                              File(path).existsSync()
+                          ? FileImage(File(path))
+                          : null,
+                      variant: LibraryCardVariant.grid,
+                      onTap: () => openBookFromCollection(context, book.id),
+                    ),
+                  ),
+                );
+              }
+              final manga = item.manga!;
+              final custom = manga.customCoverPath;
+              return MediaRailCover(
+                child: StaggeredFadeScale(
+                  index: i + 1,
+                  child: CatalogCoverCard(
+                    title: manga.name,
+                    subtitle: manga.author,
+                    imageProvider:
+                        custom != null &&
+                            custom.isNotEmpty &&
+                            File(custom).existsSync()
+                        ? FileImage(File(custom))
+                        : null,
+                    imageUrl: manga.imageUrl,
+                    variant: LibraryCardVariant.grid,
+                    onTap: () => _openManga(manga),
+                  ),
+                ),
+              );
+            },
+          ),
+        ),
+      );
+    }
+
+    return slivers;
+  }
+}
+
+
+class _ExploreRecommendationHero extends ConsumerWidget {
+  const _ExploreRecommendationHero({
+    required this.onStartReading,
+    required this.onSources,
+    this.bleedIntoStatusBar = false,
+    this.book,
+    this.manga,
+  });
+
+  final Book? book;
+  final Manga? manga;
+  final bool bleedIntoStatusBar;
+  final VoidCallback onStartReading;
+  final VoidCallback onSources;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final c = context.colors;
+    final topInset =
+        bleedIntoStatusBar ? MediaQuery.paddingOf(context).top : 0.0;
+    final title = book?.title ?? manga?.name ?? '';
+    final author = book?.author ?? manga?.author;
+    final metaParts = <String>[
+      if (author != null && author.isNotEmpty) author,
+      if (book != null && book!.totalChapters > 0)
+        '${book!.totalChapters} chapter${book!.totalChapters == 1 ? '' : 's'}',
+      if (book != null &&
+          book!.totalChapters <= 0 &&
+          book!.fileExtension.isNotEmpty)
+        book!.fileExtension.toUpperCase(),
+      if (manga != null && manga!.genres.isNotEmpty) manga!.genres.first,
+    ];
+    final meta = metaParts.join('  ·  ');
+    final heroHeight = 420.0 + topInset;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        SizedBox(
+          height: heroHeight,
+          width: double.infinity,
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              _heroCover(context, ref, c),
+              // Soft top veil so Explore chrome stays readable on light covers.
+              DecoratedBox(
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                    colors: [
+                      Colors.black.withValues(alpha: 0.55),
+                      Colors.black.withValues(alpha: 0.12),
+                      Colors.black.withValues(alpha: 0.45),
+                      Colors.black.withValues(alpha: 0.92),
+                    ],
+                    stops: const [0.0, 0.22, 0.55, 1.0],
+                  ),
+                ),
+              ),
+              if (bleedIntoStatusBar)
+                Positioned(
+                  top: topInset + 6,
+                  left: 20,
+                  right: 12,
+                  child: Row(
+                    children: [
+                      const Expanded(
+                        child: Text(
+                          'Explore',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 24,
+                            fontWeight: FontWeight.w700,
+                            letterSpacing: -0.3,
+                            height: 1.2,
+                            decoration: TextDecoration.none,
+                          ),
+                        ),
+                      ),
+                      IconButtonRound(
+                        iconData: AppIcons.filter,
+                        size: 40,
+                        variant: IconButtonVariant.filled,
+                        backgroundColor: Colors.white.withValues(alpha: 0.16),
+                        iconColor: Colors.white,
+                        tooltip: 'Sources',
+                        onPressed: onSources,
+                      ),
+                    ],
+                  ),
+                ),
+              Positioned(
+                left: 24,
+                right: 24,
+                bottom: 20,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.fromLTRB(8, 6, 12, 6),
+                      decoration: BoxDecoration(
+                        color: Colors.black.withValues(alpha: 0.45),
+                        borderRadius: AppSpacing.brPill,
+                      ),
+                      child: const Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text('🔥', style: TextStyle(fontSize: 12)),
+                          SizedBox(width: 6),
+                          Text(
+                            'Your Recommendation of the Day',
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontSize: 12,
+                              fontWeight: FontWeight.w500,
+                              decoration: TextDecoration.none,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    Text(
+                      title,
+                      maxLines: 3,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 28,
+                        fontWeight: FontWeight.w700,
+                        height: 1.15,
+                        letterSpacing: -0.6,
+                        decoration: TextDecoration.none,
+                      ),
+                    ),
+                    if (meta.isNotEmpty) ...[
+                      const SizedBox(height: 8),
+                      Text(
+                        meta,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          color: Colors.white.withValues(alpha: 0.78),
+                          fontSize: 14,
+                          decoration: TextDecoration.none,
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(24, 16, 24, 8),
+          child: SizedBox(
+            width: double.infinity,
+            height: 52,
+            child: FilledButton(
+              onPressed: onStartReading,
+              style: FilledButton.styleFrom(
+                backgroundColor: c.accent,
+                foregroundColor: c.onAccent,
+                shape: const StadiumBorder(),
+                textStyle: const TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              child: const Text('Start Reading'),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _heroCover(BuildContext context, WidgetRef ref, KomaColors c) {
+    if (book != null) {
+      return BookCover(
+        book: book!,
+        variant: BookCoverVariant.hero,
+        borderRadius: BorderRadius.zero,
+        expand: true,
+      );
+    }
+    final m = manga!;
+    final custom = m.customCoverPath;
+    if (custom != null && custom.isNotEmpty && File(custom).existsSync()) {
+      return Image.file(File(custom), fit: BoxFit.cover);
+    }
+    if (m.imageUrl != null && m.imageUrl!.isNotEmpty) {
+      final headers =
+          ref.watch(sourceImageHeadersProvider(m.sourceId)).value;
+      return Image(
+        image: cachedCover(m.imageUrl!, headers: headers),
+        fit: BoxFit.cover,
+        errorBuilder: (_, _, _) => ColoredBox(color: c.iconWell),
+      );
+    }
+    return ColoredBox(color: c.iconWell);
   }
 }
 
@@ -740,6 +1265,7 @@ class _DiscoverBookResults extends ConsumerWidget {
           height: 240,
           child: EmptyState(
             icon: AppIcons.search,
+            emoji: '🔎',
             title: 'No book results',
             subtitle: 'Try another title or switch to manga.',
           ),
@@ -758,7 +1284,7 @@ class _DiscoverBookResults extends ConsumerWidget {
           delegate: SliverChildBuilderDelegate(
             (_, i) {
               final result = results[i];
-              return StaggeredEntrance(
+              return StaggeredFadeScale(
                 index: i + 1,
                 child: _bookCard(
                   result: result,
@@ -781,7 +1307,7 @@ class _DiscoverBookResults extends ConsumerWidget {
             if (index.isOdd) return const SizedBox(height: 8);
             final i = index ~/ 2;
             final result = results[i];
-            return StaggeredEntrance(
+            return StaggeredFadeScale(
               index: i + 1,
               child: _bookCard(
                 result: result,

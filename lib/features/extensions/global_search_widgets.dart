@@ -7,14 +7,30 @@ import '../../core/services/keiyoushi_service.dart';
 import '../../core/utils/image_headers.dart';
 import '../../core/utils/language.dart';
 import '../../router/router.dart';
+import '../../theme/app_icons.dart';
 import '../../theme/app_theme.dart';
+import '../../theme/tokens/app_motion.dart';
 import '../../theme/tokens/app_spacing.dart';
+import '../../widgets/animated_press.dart';
 import '../../widgets/catalog_card_layout.dart';
 import '../../widgets/catalog_cover_card.dart';
+import '../../widgets/empty_state.dart';
 import '../../widgets/library_book_card.dart';
+import '../../widgets/page_transitions.dart';
 import '../../widgets/progress_ring.dart';
+import '../../widgets/screen_chrome.dart';
 import 'global_search_provider.dart';
 import 'source_browse_screen.dart';
+
+Route<T> _scaleFadeRoute<T>(Widget page) {
+  return PageRouteBuilder<T>(
+    transitionDuration: AppMotion.page,
+    reverseTransitionDuration: AppMotion.base,
+    pageBuilder: (_, animation, secondaryAnimation) => page,
+    transitionsBuilder: (context, animation, secondaryAnimation, child) =>
+        scaleFadePageTransition(animation: animation, child: child),
+  );
+}
 
 /// Pinned / All / Has-results chips shared by Global Search + Discover manga.
 class GlobalSearchFilterBar extends ConsumerWidget {
@@ -87,21 +103,20 @@ class GlobalSearchFilterChip extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final c = context.colors;
-    return Material(
-      color: selected ? c.accentMuted : c.surfaceMuted,
-      borderRadius: AppSpacing.brPill,
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: AppSpacing.brPill,
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-          child: Text(
-            label,
-            style: TextStyle(
-              color: selected ? c.accent : c.textSecondary,
-              fontSize: 12,
-              fontWeight: FontWeight.w600,
-            ),
+    return AnimatedPress(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+        decoration: BoxDecoration(
+          color: selected ? c.accentMuted : c.surfaceMuted,
+          borderRadius: AppSpacing.brPill,
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+            color: selected ? c.accent : c.textSecondary,
+            fontSize: 12,
+            fontWeight: FontWeight.w600,
           ),
         ),
       ),
@@ -114,30 +129,40 @@ class GlobalSearchResultsList extends ConsumerWidget {
   const GlobalSearchResultsList({super.key, this.padding, this.onMangaTap});
 
   final EdgeInsetsGeometry? padding;
-  final void Function(
-    GlobalSearchSourceItem item,
-    Map<String, dynamic> manga,
-  )?
+  final void Function(GlobalSearchSourceItem item, Map<String, dynamic> manga)?
   onMangaTap;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final c = context.colors;
     final state = ref.watch(globalSearchProvider);
     final visible = state.visibleItems;
 
     if (visible.isEmpty) {
-      return Center(
-        child: Text(
-          state.query.trim().isEmpty
-              ? 'Search installed sources'
-              : state.searching
-              ? 'Searching…'
-              : state.onlyShowHasResults
-              ? 'No sources with results'
-              : 'No results',
-          style: TextStyle(color: c.textSecondary),
-        ),
+      final q = state.query.trim();
+      if (q.isEmpty) {
+        return const EmptyState(
+          icon: AppIcons.search,
+          emoji: '🔎',
+          title: 'Search installed sources',
+          subtitle: 'Results appear here as each source responds.',
+          pillPrimary: true,
+        );
+      }
+      if (state.searching) {
+        return const EmptyState(
+          icon: AppIcons.loading,
+          emoji: '⏳',
+          title: 'Searching…',
+          subtitle: 'Scanning your installed extensions.',
+        );
+      }
+      return EmptyState(
+        icon: AppIcons.search,
+        emoji: '📭',
+        title: state.onlyShowHasResults
+            ? 'No sources with results'
+            : 'No results',
+        subtitle: 'Try another query or switch filters.',
       );
     }
 
@@ -146,16 +171,19 @@ class GlobalSearchResultsList extends ConsumerWidget {
       itemCount: visible.length,
       itemBuilder: (context, i) {
         final item = visible[i];
-        return GlobalSearchSourceSection(
-          item: item,
-          onHeaderTap: () => openGlobalSearchSource(context, ref, item),
-          onMangaTap: (m) {
-            if (onMangaTap != null) {
-              onMangaTap!(item, m);
-            } else {
-              openGlobalSearchManga(context, item, m);
-            }
-          },
+        return StaggeredFadeScale(
+          index: i,
+          child: GlobalSearchSourceSection(
+            item: item,
+            onHeaderTap: () => openGlobalSearchSource(context, ref, item),
+            onMangaTap: (m) {
+              if (onMangaTap != null) {
+                onMangaTap!(item, m);
+              } else {
+                openGlobalSearchManga(context, item, m);
+              }
+            },
+          ),
         );
       },
     );
@@ -168,26 +196,34 @@ class GlobalSearchResultsSliver extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final c = context.colors;
     final state = ref.watch(globalSearchProvider);
     final visible = state.visibleItems;
 
     if (visible.isEmpty) {
+      final q = state.query.trim();
       return SliverToBoxAdapter(
-        child: Padding(
-          padding: const EdgeInsets.symmetric(vertical: 40, horizontal: 20),
-          child: Center(
-            child: Text(
-              state.query.trim().isEmpty
-                  ? 'Search installed sources'
-                  : state.searching
-                  ? 'Searching…'
-                  : state.onlyShowHasResults
-                  ? 'No sources with results'
-                  : 'No manga results',
-              style: TextStyle(color: c.textSecondary, fontSize: 14),
-            ),
-          ),
+        child: SizedBox(
+          height: 240,
+          child: q.isEmpty
+              ? const EmptyState(
+                  icon: AppIcons.search,
+                  emoji: '🔎',
+                  title: 'Search installed sources',
+                  subtitle: 'Manga hits from your extensions.',
+                )
+              : state.searching
+              ? const EmptyState(
+                  icon: AppIcons.loading,
+                  emoji: '⏳',
+                  title: 'Searching…',
+                )
+              : EmptyState(
+                  icon: AppIcons.search,
+                  emoji: '📭',
+                  title: state.onlyShowHasResults
+                      ? 'No sources with results'
+                      : 'No manga results',
+                ),
         ),
       );
     }
@@ -195,10 +231,13 @@ class GlobalSearchResultsSliver extends ConsumerWidget {
     return SliverList(
       delegate: SliverChildBuilderDelegate((context, i) {
         final item = visible[i];
-        return GlobalSearchSourceSection(
-          item: item,
-          onHeaderTap: () => openGlobalSearchSource(context, ref, item),
-          onMangaTap: (m) => openGlobalSearchManga(context, item, m),
+        return StaggeredFadeScale(
+          index: i,
+          child: GlobalSearchSourceSection(
+            item: item,
+            onHeaderTap: () => openGlobalSearchSource(context, ref, item),
+            onMangaTap: (m) => openGlobalSearchManga(context, item, m),
+          ),
         );
       }, childCount: visible.length),
     );
@@ -246,7 +285,7 @@ class GlobalSearchSourceSection extends ConsumerWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        InkWell(
+        AnimatedPress(
           onTap: onHeaderTap,
           child: Padding(
             padding: const EdgeInsets.fromLTRB(16, 14, 8, 8),
@@ -310,50 +349,57 @@ class GlobalSearchSourceSection extends ConsumerWidget {
               style: TextStyle(color: c.textTertiary, fontSize: 12),
             ),
           ),
-          GlobalSearchItemKind.success => gridView
-              ? Padding(
-                  padding: CatalogCardLayout.paddingFor(variant).add(
-                    const EdgeInsets.only(bottom: 12),
-                  ),
-                  child: GridView.builder(
-                    shrinkWrap: true,
-                    physics: const NeverScrollableScrollPhysics(),
-                    gridDelegate: CatalogCardLayout.gridDelegate(
-                      columns: columns,
-                      variant: variant,
-                    ),
-                    itemCount: item.mangas.length,
-                    itemBuilder: (_, i) {
-                      final manga = item.mangas[i];
-                      return CatalogCoverCard(
-                        title: manga['title'] as String? ?? '',
-                        imageUrl: _thumb(manga, src.baseUrl),
-                        headers: headers,
-                        badge: src.name,
-                        showBadge: showPills,
+          GlobalSearchItemKind.success =>
+            gridView
+                ? Padding(
+                    padding: CatalogCardLayout.paddingFor(
+                      variant,
+                    ).add(const EdgeInsets.only(bottom: 12)),
+                    child: GridView.builder(
+                      shrinkWrap: true,
+                      physics: const NeverScrollableScrollPhysics(),
+                      gridDelegate: CatalogCardLayout.gridDelegate(
+                        columns: columns,
                         variant: variant,
-                        onTap: () => onMangaTap(manga),
-                      );
-                    },
+                      ),
+                      itemCount: item.mangas.length,
+                      itemBuilder: (_, i) {
+                        final manga = item.mangas[i];
+                        return StaggeredFadeScale(
+                          index: i,
+                          child: CatalogCoverCard(
+                            title: manga['title'] as String? ?? '',
+                            imageUrl: _thumb(manga, src.baseUrl),
+                            headers: headers,
+                            badge: src.name,
+                            showBadge: showPills,
+                            variant: variant,
+                            onTap: () => onMangaTap(manga),
+                          ),
+                        );
+                      },
+                    ),
+                  )
+                : Padding(
+                    padding: const EdgeInsets.only(bottom: 8),
+                    child: Column(
+                      children: [
+                        for (var i = 0; i < item.mangas.length; i++)
+                          StaggeredFadeScale(
+                            index: i,
+                            child: CatalogCoverCard(
+                              title: item.mangas[i]['title'] as String? ?? '',
+                              imageUrl: _thumb(item.mangas[i], src.baseUrl),
+                              headers: headers,
+                              badge: src.name,
+                              showBadge: showPills,
+                              variant: LibraryCardVariant.list,
+                              onTap: () => onMangaTap(item.mangas[i]),
+                            ),
+                          ),
+                      ],
+                    ),
                   ),
-                )
-              : Padding(
-                  padding: const EdgeInsets.only(bottom: 8),
-                  child: Column(
-                    children: [
-                      for (final manga in item.mangas)
-                        CatalogCoverCard(
-                          title: manga['title'] as String? ?? '',
-                          imageUrl: _thumb(manga, src.baseUrl),
-                          headers: headers,
-                          badge: src.name,
-                          showBadge: showPills,
-                          variant: LibraryCardVariant.list,
-                          onTap: () => onMangaTap(manga),
-                        ),
-                    ],
-                  ),
-                ),
         },
       ],
     );
@@ -367,8 +413,8 @@ void openGlobalSearchSource(
 ) {
   final query = ref.read(globalSearchProvider).query.trim();
   Navigator.of(context).push(
-    MaterialPageRoute(
-      builder: (_) => SourceBrowseScreen(
+    _scaleFadeRoute(
+      SourceBrowseScreen(
         sourceId: item.source.sourceId,
         sourceName: item.source.name,
         baseUrl: item.source.baseUrl,

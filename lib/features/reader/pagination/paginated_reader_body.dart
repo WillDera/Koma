@@ -10,6 +10,7 @@ import '../../../theme/app_theme.dart';
 import '../../../theme/theme_state.dart';
 import '../../../widgets/loading_skeleton.dart';
 import '../html/kir_model.dart';
+import '../html/reading_document.dart';
 import '../layout/kre_layout.dart';
 import '../layout/kre_page_view.dart';
 import '../layout/reading_font_file.dart';
@@ -23,7 +24,7 @@ import 'resume_resolver.dart';
 
 /// The paginated reader body: measures each chapter into screen-sized sheets
 /// and turns between them with [SheetSwitcher] or, in curl mode,
-/// [CurlPageTurner] (single-page peel in both directions).
+/// [CurlPageTurner] (physics-based single-page fold via real_page_flip).
 ///
 /// ## Why the sheet index is not a book-wide page number
 ///
@@ -134,7 +135,8 @@ class PaginatedReaderBody extends StatefulWidget {
   /// [ChapterPaginator].
   final int? bookId;
 
-  /// Opaque sheet fill. Defaults to [ThemeState.bgColor].
+  /// Opaque sheet fill. Defaults to the active theme bg (light / dark / sepia /
+  /// AMOLED) so the page matches reader chrome.
   final Color? sheetColor;
 
   /// Instant sheet swap (reduce-motion / tests).
@@ -263,6 +265,75 @@ class _PaginatedReaderBodyState extends State<PaginatedReaderBody> {
       exact: true,
       pageEnd: cursor.pageAt(step).end,
     );
+    _logCurrentPageImages(cursor);
+  }
+
+  /// Prints absolute paths of every image on the page currently on screen.
+  BookPosition? _loggedImagesFor;
+
+  void _logCurrentPageImages(BookPageCursor cursor) {
+    final pos = _position;
+    if (_loggedImagesFor == pos) return;
+    _loggedImagesFor = pos;
+    final paths = _imagePathsOnPage(cursor, pos);
+    debugPrint(
+      'Reader images ch=${pos.chapterIndex} page=${pos.pageIndex} '
+      '(${paths.length})',
+    );
+    if (paths.isEmpty) {
+      debugPrint('  (none)');
+      return;
+    }
+    for (final path in paths) {
+      debugPrint('  $path');
+    }
+  }
+
+  List<String> _imagePathsOnPage(BookPageCursor cursor, BookPosition pos) {
+    if (pos.chapterIndex < 0 || pos.chapterIndex >= widget.chapters.length) {
+      return const [];
+    }
+    final chapter = widget.chapters[pos.chapterIndex];
+    final doc = TextExtractor.documentCached(
+      chapter.id,
+      chapter.content,
+      kir: widget.kirForChapter?.call(pos.chapterIndex),
+    );
+
+    int rangeStart;
+    int rangeEnd;
+    final kre = _kreLayouts[pos.chapterIndex];
+    if (kre != null && pos.pageIndex < kre.pages.length) {
+      final page = kre.pages[pos.pageIndex];
+      rangeStart = page.charStart;
+      rangeEnd = page.charEnd;
+    } else if (cursor.isPaginated(pos.chapterIndex)) {
+      final page = cursor.pageAt(pos);
+      rangeStart = page.start;
+      rangeEnd = page.end;
+    } else {
+      return [
+        for (final e in doc.embeds) e.path,
+      ];
+    }
+
+    final seen = <String>{};
+    final out = <String>[];
+    void add(String path) {
+      final p = path.trim();
+      if (p.isEmpty || !seen.add(p)) return;
+      out.add(p);
+    }
+
+    for (final e in doc.embedsInRange(rangeStart, rangeEnd)) {
+      add(e.path);
+    }
+    for (final b in doc.blocksInRange(rangeStart, rangeEnd)) {
+      if (b.kind == ReadingBlockKind.image && b.imagePath != null) {
+        add(b.imagePath!);
+      }
+    }
+    return out;
   }
 
   void _handlePointerTurn(BookPageCursor cursor, {
@@ -485,6 +556,7 @@ class _PaginatedReaderBodyState extends State<PaginatedReaderBody> {
         exact: true,
         pageEnd: cursor.pageAt(_position).end,
       );
+      _logCurrentPageImages(cursor);
       return;
     }
 
@@ -508,6 +580,7 @@ class _PaginatedReaderBodyState extends State<PaginatedReaderBody> {
         pageEnd: cursor.pageAt(_position).end,
       );
     }
+    _logCurrentPageImages(cursor);
   }
 
   void _turnSheet({required bool forward}) {
@@ -535,6 +608,7 @@ class _PaginatedReaderBodyState extends State<PaginatedReaderBody> {
     if (step.chapterIndex != previousChapter) {
       widget.onChapterChanged?.call(step.chapterIndex);
     }
+    _logCurrentPageImages(cursor);
   }
 
   /// Whether stepping once from [pos] toward [delta] stays inside the chapter,
@@ -626,6 +700,7 @@ class _PaginatedReaderBodyState extends State<PaginatedReaderBody> {
         chapterTitle: chapter.title,
         showTitle: pos.pageIndex == 0,
         themeProv: widget.themeProv,
+        backgroundColor: widget.sheetColor ?? context.colors.bg,
         contentWidth: _viewport.width,
         highlights: isCurrentChapter ? widget.highlights : const [],
         highlightVersion: widget.highlightVersion,
@@ -667,7 +742,7 @@ class _PaginatedReaderBodyState extends State<PaginatedReaderBody> {
 
   Widget _krePlaceholder() {
     return ColoredBox(
-      color: widget.sheetColor ?? widget.themeProv.bgColor,
+      color: widget.sheetColor ?? context.colors.bg,
       child: const Padding(
         padding: EdgeInsets.symmetric(vertical: 24, horizontal: 8),
         child: Column(
@@ -704,6 +779,7 @@ class _PaginatedReaderBodyState extends State<PaginatedReaderBody> {
       showTitle: pos.pageIndex == 0 &&
           !layout.pages[pos.pageIndex].isImageOnly,
       themeProv: widget.themeProv,
+      backgroundColor: widget.sheetColor ?? context.colors.bg,
       highlights: isCurrentChapter ? widget.highlights : const [],
       highlightVersion: widget.highlightVersion,
       ttsActive:
@@ -764,13 +840,15 @@ class _PaginatedReaderBodyState extends State<PaginatedReaderBody> {
         final page = _pageAt(cursor, 0);
         if (page == null) return const SizedBox.shrink();
 
-        final sheetFill = widget.sheetColor ?? widget.themeProv.bgColor;
+        final sheetFill = widget.sheetColor ?? context.colors.bg;
         final reduceMotion = MediaQuery.disableAnimationsOf(context);
 
         Widget sheetChild;
         if (_useCurlTurn && !reduceMotion) {
           final measured = cursor.pageCountOf(_position.chapterIndex);
-          if (measured <= 0) return const SizedBox.shrink();
+          if (measured <= 0) {
+            return ColoredBox(color: sheetFill);
+          }
           final pageSize = Size(
             viewport.width.clamp(1.0, 4000.0),
             viewport.height.clamp(1.0, 4000.0),
@@ -810,43 +888,46 @@ class _PaginatedReaderBodyState extends State<PaginatedReaderBody> {
           );
         }
 
-        return Listener(
-          onPointerDown: (event) {
-            _pointerDowns++;
-            if (_pointerDowns == 1) {
-              _panStart = event.position;
-              _panStartAt = event.timeStamp;
+        return ColoredBox(
+          color: sheetFill,
+          child: Listener(
+            onPointerDown: (event) {
+              _pointerDowns++;
+              if (_pointerDowns == 1) {
+                _panStart = event.position;
+                _panStartAt = event.timeStamp;
+                _sawMultiTouch = false;
+              } else {
+                _sawMultiTouch = true;
+              }
+            },
+            onPointerCancel: (_) {
+              _pointerDowns = 0;
               _sawMultiTouch = false;
-            } else {
-              _sawMultiTouch = true;
-            }
-          },
-          onPointerCancel: (_) {
-            _pointerDowns = 0;
-            _sawMultiTouch = false;
-            _panStart = null;
-            _panStartAt = null;
-          },
-          onPointerUp: (event) {
-            _pointerDowns = _pointerDowns > 0 ? _pointerDowns - 1 : 0;
-            if (_pointerDowns > 0) return;
-            final start = _panStart;
-            final startedAt = _panStartAt;
-            final multi = _sawMultiTouch;
-            _panStart = null;
-            _panStartAt = null;
-            _sawMultiTouch = false;
-            if (multi || _imageZoomed) return;
-            if (start == null || startedAt == null) return;
-            final dx = event.position.dx - start.dx;
-            final dy = event.position.dy - start.dy;
-            if (dx.abs() < 64 || dx.abs() < dy.abs()) return;
-            if (_useCurlTurn) return;
-            final dtMs = (event.timeStamp - startedAt).inMilliseconds;
-            final vx = dtMs > 0 ? dx / dtMs * 1000 : 0.0;
-            _handlePointerTurn(cursor, dx: dx, vx: vx);
-          },
-          child: sheetChild,
+              _panStart = null;
+              _panStartAt = null;
+            },
+            onPointerUp: (event) {
+              _pointerDowns = _pointerDowns > 0 ? _pointerDowns - 1 : 0;
+              if (_pointerDowns > 0) return;
+              final start = _panStart;
+              final startedAt = _panStartAt;
+              final multi = _sawMultiTouch;
+              _panStart = null;
+              _panStartAt = null;
+              _sawMultiTouch = false;
+              if (multi || _imageZoomed) return;
+              if (start == null || startedAt == null) return;
+              final dx = event.position.dx - start.dx;
+              final dy = event.position.dy - start.dy;
+              if (dx.abs() < 64 || dx.abs() < dy.abs()) return;
+              if (_useCurlTurn) return;
+              final dtMs = (event.timeStamp - startedAt).inMilliseconds;
+              final vx = dtMs > 0 ? dx / dtMs * 1000 : 0.0;
+              _handlePointerTurn(cursor, dx: dx, vx: vx);
+            },
+            child: sheetChild,
+          ),
         );
       },
     );

@@ -12,11 +12,24 @@ import '../../eval/models/filter_list.dart';
 import '../../eval/models/m_manga.dart';
 import '../../eval/models/m_source.dart';
 import '../../theme/app_theme.dart';
+import '../../theme/tokens/app_motion.dart';
 import '../../widgets/catalog_card_layout.dart';
 import '../../widgets/catalog_cover_card.dart';
 import '../../widgets/horizontal_tab_swipe.dart';
 import '../../widgets/library_book_card.dart';
+import '../../widgets/page_transitions.dart';
+import '../../widgets/screen_chrome.dart';
 import 'manga_detail_screen.dart';
+
+Route<T> _scaleFadeRoute<T>(Widget page) {
+  return PageRouteBuilder<T>(
+    transitionDuration: AppMotion.page,
+    reverseTransitionDuration: AppMotion.base,
+    pageBuilder: (_, animation, secondaryAnimation) => page,
+    transitionsBuilder: (context, animation, secondaryAnimation, child) =>
+        scaleFadePageTransition(animation: animation, child: child),
+  );
+}
 
 class SourceBrowseScreen extends ConsumerStatefulWidget {
   final String sourceId;
@@ -440,20 +453,16 @@ class _SourceBrowseScreenState extends ConsumerState<SourceBrowseScreen>
     }
   }
 
-
   VoidCallback _openManga(MManga m) {
     return () async {
       final repos = ref.read(repositoriesProvider);
-      final existing = await repos.manga.getMangaByKey(
-        widget.sourceId,
-        m.url,
-      );
+      final existing = await repos.manga.getMangaByKey(widget.sourceId, m.url);
       if (existing != null) {
         if (!mounted) return;
         Navigator.push(
           context,
-          MaterialPageRoute(
-            builder: (_) => MangaDetailScreen(
+          _scaleFadeRoute(
+            MangaDetailScreen(
               sourceId: widget.sourceId,
               url: m.url,
               title: m.title,
@@ -481,8 +490,8 @@ class _SourceBrowseScreenState extends ConsumerState<SourceBrowseScreen>
       if (!mounted) return;
       Navigator.push(
         context,
-        MaterialPageRoute(
-          builder: (_) => MangaDetailScreen(
+        _scaleFadeRoute(
+          MangaDetailScreen(
             sourceId: widget.sourceId,
             url: m.url,
             title: m.title,
@@ -517,9 +526,9 @@ class _SourceBrowseScreenState extends ConsumerState<SourceBrowseScreen>
     if (gridView) {
       child = GridView.builder(
         controller: controller,
-        padding: CatalogCardLayout.paddingFor(variant).resolve(TextDirection.ltr).add(
-          const EdgeInsets.symmetric(vertical: 12),
-        ),
+        padding: CatalogCardLayout.paddingFor(variant)
+            .resolve(TextDirection.ltr)
+            .add(const EdgeInsets.symmetric(vertical: 12)),
         gridDelegate: CatalogCardLayout.gridDelegate(
           columns: columns,
           variant: variant,
@@ -589,8 +598,9 @@ class _SourceBrowseScreenState extends ConsumerState<SourceBrowseScreen>
   Widget build(BuildContext context) {
     final c = context.colors;
     final headersAsync = ref.watch(sourceImageHeadersProvider(widget.sourceId));
-    final coverBytesAsync =
-        ref.watch(sourceCoverMaxBytesProvider(widget.sourceId));
+    final coverBytesAsync = ref.watch(
+      sourceCoverMaxBytesProvider(widget.sourceId),
+    );
     final resolvedHeaders = headersAsync.maybeWhen(
       data: (h) => h,
       orElse: () {
@@ -602,107 +612,111 @@ class _SourceBrowseScreenState extends ConsumerState<SourceBrowseScreen>
     );
     final coverMaxBytes = coverBytesAsync.asData?.value;
     final headers = resolvedHeaders;
-    return Scaffold(
-      backgroundColor: c.bg,
-      appBar: AppBar(
-        backgroundColor: c.bg,
-        title: _searchActive
-            ? TextField(
-                controller: _searchCtrl,
-                autofocus:
-                    widget.initialQuery == null ||
-                    widget.initialQuery!.trim().isEmpty,
-                decoration: InputDecoration(
-                  hintText: 'Search...',
-                  border: InputBorder.none,
-                  hintStyle: TextStyle(color: c.textSecondary),
-                ),
-                style: TextStyle(color: c.textPrimary),
-                onChanged: _onSearchChanged,
-                onSubmitted: (v) {
-                  FocusScope.of(context).unfocus();
-                  _performSearch(v);
-                },
-                textInputAction: TextInputAction.search,
-              )
-            : Text(widget.sourceName),
-        actions: [
-          if (_filtersLoaded && _filters.isNotEmpty)
+    return ScreenBackdrop(
+      child: Scaffold(
+        backgroundColor: Colors.transparent,
+        appBar: AppBar(
+          backgroundColor: c.bg,
+          surfaceTintColor: Colors.transparent,
+          foregroundColor: c.textPrimary,
+          title: _searchActive
+              ? TextField(
+                  controller: _searchCtrl,
+                  autofocus:
+                      widget.initialQuery == null ||
+                      widget.initialQuery!.trim().isEmpty,
+                  decoration: InputDecoration(
+                    hintText: 'Search...',
+                    border: InputBorder.none,
+                    hintStyle: TextStyle(color: c.textSecondary),
+                  ),
+                  style: TextStyle(color: c.textPrimary),
+                  onChanged: _onSearchChanged,
+                  onSubmitted: (v) {
+                    FocusScope.of(context).unfocus();
+                    _performSearch(v);
+                  },
+                  textInputAction: TextInputAction.search,
+                )
+              : Text(widget.sourceName),
+          actions: [
+            if (_filtersLoaded && _filters.isNotEmpty)
+              IconButton(
+                icon: const Icon(Icons.filter_list),
+                onPressed: _openFilterSheet,
+              ),
             IconButton(
-              icon: const Icon(Icons.filter_list),
-              onPressed: _openFilterSheet,
-            ),
-          IconButton(
-            icon: Icon(
-              _tab == 'popular'
-                  ? Icons.arrow_upward_rounded
-                  : Icons.arrow_downward_rounded,
-            ),
-            onPressed: _booting ? null : _toggleSort,
-            tooltip: _tab == 'popular' ? 'Sort: Popular' : 'Sort: Latest',
-          ),
-          IconButton(
-            icon: Icon(_searchActive ? Icons.close : Icons.search),
-            onPressed: _booting ? null : _toggleSearch,
-          ),
-        ],
-        bottom: _searchActive
-            ? null
-            : TabBar(
-                controller: _tabCtrl,
-                indicatorColor: c.accent,
-                labelColor: c.accent,
-                unselectedLabelColor: c.textSecondary,
-                tabs: const [
-                  Tab(text: 'Popular'),
-                  Tab(text: 'Latest'),
-                ],
+              icon: Icon(
+                _tab == 'popular'
+                    ? Icons.arrow_upward_rounded
+                    : Icons.arrow_downward_rounded,
               ),
-      ),
-      body: HorizontalTabSwipe(
-        tabIndex: _tabCtrl.index,
-        tabCount: 2,
-        onTabChanged: (i) {
-          if (_booting || _searchActive) return;
-          _tabCtrl.animateTo(i);
-        },
-        child: _booting
-            ? const Center(child: CircularProgressIndicator())
-            : _searchActive
-            ? _buildSearchBody(c, headers, coverMaxBytes)
-            : _error != null && _mangas.isEmpty && !_loading
-            ? ListView(
-                children: [
-                  Padding(
-                    padding: const EdgeInsets.all(16),
-                    child: Text(
-                      _error!,
-                      style: TextStyle(color: c.accent, fontSize: 13),
+              onPressed: _booting ? null : _toggleSort,
+              tooltip: _tab == 'popular' ? 'Sort: Popular' : 'Sort: Latest',
+            ),
+            IconButton(
+              icon: Icon(_searchActive ? Icons.close : Icons.search),
+              onPressed: _booting ? null : _toggleSearch,
+            ),
+          ],
+          bottom: _searchActive
+              ? null
+              : TabBar(
+                  controller: _tabCtrl,
+                  indicatorColor: c.accent,
+                  labelColor: c.accent,
+                  unselectedLabelColor: c.textSecondary,
+                  tabs: const [
+                    Tab(text: 'Popular'),
+                    Tab(text: 'Latest'),
+                  ],
+                ),
+        ),
+        body: HorizontalTabSwipe(
+          tabIndex: _tabCtrl.index,
+          tabCount: 2,
+          onTabChanged: (i) {
+            if (_booting || _searchActive) return;
+            _tabCtrl.animateTo(i);
+          },
+          child: _booting
+              ? const Center(child: CircularProgressIndicator())
+              : _searchActive
+              ? _buildSearchBody(c, headers, coverMaxBytes)
+              : _error != null && _mangas.isEmpty && !_loading
+              ? ListView(
+                  children: [
+                    Padding(
+                      padding: const EdgeInsets.all(16),
+                      child: Text(
+                        _error!,
+                        style: TextStyle(color: c.accent, fontSize: 13),
+                      ),
                     ),
-                  ),
-                  Center(
-                    child: TextButton(
-                      onPressed: _refresh,
-                      child: const Text('Retry'),
+                    Center(
+                      child: TextButton(
+                        onPressed: _refresh,
+                        child: const Text('Retry'),
+                      ),
                     ),
-                  ),
-                ],
-              )
-            : _mangas.isEmpty && !_loading
-            ? ListView(
-                children: [
-                  const SizedBox(height: 120),
-                  const Center(child: Text('Nothing found')),
-                ],
-              )
-            : _catalogMangaBody(
-                mangas: _mangas,
-                headers: headers,
-                controller: _scrollCtrl,
-                hasNext: _hasNext && _error == null,
-                onRefresh: _refresh,
-                coverMaxBytes: coverMaxBytes,
-              ),
+                  ],
+                )
+              : _mangas.isEmpty && !_loading
+              ? ListView(
+                  children: [
+                    const SizedBox(height: 120),
+                    const Center(child: Text('Nothing found')),
+                  ],
+                )
+              : _catalogMangaBody(
+                  mangas: _mangas,
+                  headers: headers,
+                  controller: _scrollCtrl,
+                  hasNext: _hasNext && _error == null,
+                  onRefresh: _refresh,
+                  coverMaxBytes: coverMaxBytes,
+                ),
+        ),
       ),
     );
   }

@@ -3,7 +3,6 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'tts/tts_engine.dart';
 import 'tts/device_tts.dart';
 import 'tts/edge_tts.dart';
-import 'tts/piper_tts.dart';
 
 class TtsProvider extends ChangeNotifier {
   static const prefsRemember = 'tts_remember_selection';
@@ -106,7 +105,6 @@ class TtsProvider extends ChangeNotifier {
       final engineName = prefs.getString(prefsEngine);
       final type = switch (engineName) {
         'edge' => TtsEngineType.edge,
-        'piper' => TtsEngineType.piper,
         'googleCloud' => TtsEngineType.device,
         'neural' => TtsEngineType.device,
         _ => TtsEngineType.device,
@@ -147,7 +145,6 @@ class TtsProvider extends ChangeNotifier {
       prefsEngine,
       switch (_engineType) {
         TtsEngineType.edge => 'edge',
-        TtsEngineType.piper => 'piper',
         TtsEngineType.device => 'device',
       },
     );
@@ -173,25 +170,21 @@ class TtsProvider extends ChangeNotifier {
   static double _defaultRate(TtsEngineType type) => switch (type) {
     TtsEngineType.device => 0.5,
     TtsEngineType.edge => 0.88,
-    TtsEngineType.piper => 1.0,
   };
 
   static double _defaultPitch(TtsEngineType type) => switch (type) {
     TtsEngineType.device => 1.0,
     TtsEngineType.edge => -0.02,
-    TtsEngineType.piper => 0.0,
   };
 
   static (double, double) _rateRange(TtsEngineType type) => switch (type) {
     TtsEngineType.device => (0.0, 1.0),
     TtsEngineType.edge => (0.25, 2.0),
-    TtsEngineType.piper => (0.25, 2.0),
   };
 
   static (double, double) _pitchRange(TtsEngineType type) => switch (type) {
     TtsEngineType.device => (0.5, 2.0),
     TtsEngineType.edge => (-0.5, 0.5),
-    TtsEngineType.piper => (-0.5, 0.5),
   };
 
   static double _coerce(double? saved, TtsEngineType type, {required bool rate}) {
@@ -241,7 +234,6 @@ class TtsProvider extends ChangeNotifier {
     _engine = switch (type) {
       TtsEngineType.device => DeviceTtsEngine(),
       TtsEngineType.edge => EdgeTtsEngine(),
-      TtsEngineType.piper => PiperTtsEngine(),
     };
     _rate = _defaultRate(type);
     _pitch = _defaultPitch(type);

@@ -87,6 +87,71 @@ class _StaggeredEntranceState extends State<StaggeredEntrance>
   }
 }
 
+/// AnymeX-style fade + scale entrance with a capped stagger delay.
+class StaggeredFadeScale extends StatefulWidget {
+  const StaggeredFadeScale({
+    super.key,
+    required this.child,
+    required this.index,
+    this.duration = const Duration(milliseconds: 420),
+    this.scaleBegin = 0.88,
+    this.delayStepMs = 55,
+    this.maxDelayMs = 440,
+  });
+
+  final Widget child;
+  final int index;
+  final Duration duration;
+  final double scaleBegin;
+  final int delayStepMs;
+  final int maxDelayMs;
+
+  /// Cap for list stagger indices (AnymeX-style; avoids long delay waves).
+  static const int maxStaggerIndex = 8;
+
+  @override
+  State<StaggeredFadeScale> createState() => _StaggeredFadeScaleState();
+}
+
+class _StaggeredFadeScaleState extends State<StaggeredFadeScale>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller;
+  late final Animation<double> _fade;
+  late final Animation<double> _scale;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(vsync: this, duration: widget.duration);
+    _fade = CurvedAnimation(parent: _controller, curve: Curves.easeIn);
+    _scale = Tween<double>(begin: widget.scaleBegin, end: 1).animate(
+      CurvedAnimation(parent: _controller, curve: Curves.easeOutBack),
+    );
+    final delayMs = (widget.index * widget.delayStepMs).clamp(
+      0,
+      widget.maxDelayMs,
+    );
+    Future<void>.delayed(Duration(milliseconds: delayMs), () {
+      if (mounted) _controller.forward();
+    });
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (MediaQuery.disableAnimationsOf(context)) return widget.child;
+    return FadeTransition(
+      opacity: _fade,
+      child: ScaleTransition(scale: _scale, child: widget.child),
+    );
+  }
+}
+
 class FeaturePanel extends StatelessWidget {
   final AppIconData icon;
   final String title;

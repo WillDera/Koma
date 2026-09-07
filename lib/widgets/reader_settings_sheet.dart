@@ -290,50 +290,47 @@ class _ReaderSettingsSheetState extends ConsumerState<ReaderSettingsSheet> {
   }
 
   void _showAlignPicker(BuildContext context, ThemeState p, ThemeNotifier tn) {
-    showDialog(
-      context: context,
-      builder: (ctx) {
-        final c = ctx.colors;
-        return AlertDialog(
-          backgroundColor: c.surface,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(18),
-            side: BorderSide(color: c.border, width: 0.5),
+    StashDialog.show(
+      context,
+      title: 'Alignment',
+      contentWidget: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          _PickerOption(
+            label: 'Left',
+            selected: p.textAlign == TextAlign.left,
+            onTap: () {
+              tn.setTextAlign(TextAlign.left);
+              Navigator.of(context).pop();
+            },
           ),
-          content: SizedBox(
-            width: double.maxFinite,
-            child: ListView(
-              shrinkWrap: true,
-              children: [
-                _PickerOption(
-                  label: 'Left',
-                  selected: p.textAlign == TextAlign.left,
-                  onTap: () {
-                    tn.setTextAlign(TextAlign.left);
-                    Navigator.of(ctx).pop();
-                  },
-                ),
-                _PickerOption(
-                  label: 'Justify',
-                  selected: p.textAlign == TextAlign.justify,
-                  onTap: () {
-                    tn.setTextAlign(TextAlign.justify);
-                    Navigator.of(ctx).pop();
-                  },
-                ),
-                _PickerOption(
-                  label: 'Center',
-                  selected: p.textAlign == TextAlign.center,
-                  onTap: () {
-                    tn.setTextAlign(TextAlign.center);
-                    Navigator.of(ctx).pop();
-                  },
-                ),
-              ],
-            ),
+          _PickerOption(
+            label: 'Justify',
+            selected: p.textAlign == TextAlign.justify,
+            onTap: () {
+              tn.setTextAlign(TextAlign.justify);
+              Navigator.of(context).pop();
+            },
           ),
-        );
-      },
+          _PickerOption(
+            label: 'Center',
+            selected: p.textAlign == TextAlign.center,
+            onTap: () {
+              tn.setTextAlign(TextAlign.center);
+              Navigator.of(context).pop();
+            },
+          ),
+        ],
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: Text(
+            'Cancel',
+            style: TextStyle(color: context.colors.textTertiary),
+          ),
+        ),
+      ],
     );
   }
 
@@ -342,35 +339,32 @@ class _ReaderSettingsSheetState extends ConsumerState<ReaderSettingsSheet> {
     ThemeState p,
     ThemeNotifier tn,
   ) {
-    showDialog(
-      context: context,
-      builder: (ctx) {
-        final c = ctx.colors;
-        return AlertDialog(
-          backgroundColor: c.surface,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(18),
-            side: BorderSide(color: c.border, width: 0.5),
-          ),
-          content: SizedBox(
-            width: double.maxFinite,
-            child: ListView(
-              shrinkWrap: true,
-              children: [
-                for (final style in PageStyle.values)
-                  _PickerOption(
-                    label: style.label,
-                    selected: p.pageStyle == style,
-                    onTap: () {
-                      tn.setPageStyle(style);
-                      Navigator.of(ctx).pop();
-                    },
-                  ),
-              ],
+    StashDialog.show(
+      context,
+      title: 'Page style',
+      contentWidget: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          for (final style in PageStyle.values)
+            _PickerOption(
+              label: style.label,
+              selected: p.pageStyle == style,
+              onTap: () {
+                tn.setPageStyle(style);
+                Navigator.of(context).pop();
+              },
             ),
+        ],
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: Text(
+            'Cancel',
+            style: TextStyle(color: context.colors.textTertiary),
           ),
-        );
-      },
+        ),
+      ],
     );
   }
 }
@@ -388,27 +382,24 @@ class _PickerOption extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final c = context.colors;
-    return Material(
-      type: MaterialType.transparency,
-      child: InkWell(
-        onTap: onTap,
-        child: Padding(
-          padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 4),
-          child: Row(
-            children: [
-              Expanded(
-                child: Text(
-                  label,
-                  style: TextStyle(
-                    color: selected ? c.accent : c.textPrimary,
-                    fontSize: 16,
-                    fontWeight: selected ? FontWeight.w600 : FontWeight.w400,
-                  ),
+    return AnimatedPress(
+      onTap: onTap,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 4),
+        child: Row(
+          children: [
+            Expanded(
+              child: Text(
+                label,
+                style: TextStyle(
+                  color: selected ? c.accent : c.textPrimary,
+                  fontSize: 16,
+                  fontWeight: selected ? FontWeight.w600 : FontWeight.w400,
                 ),
               ),
-              if (selected) Icon(Icons.check, size: 20, color: c.accent),
-            ],
-          ),
+            ),
+            if (selected) Icon(Icons.check, size: 20, color: c.accent),
+          ],
         ),
       ),
     );

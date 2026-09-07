@@ -21,27 +21,27 @@ class AppColors {
   static const Color lightTextPrimary = Color(0xFF12121A);
   static const Color lightTextSecondary = Color(0xFF7070A0);
   static const Color lightTextTertiary = Color(0xFFA0A0C0);
-  static const Color lightAccent = Color(0xFF7857FF);
+  static const Color lightAccent = Color(0xFF9852FF);
   static const Color lightAccentMuted = Color(0xFFEDE9FF);
   static const Color lightAccentText = Color(0xFFFFFFFF);
   static const Color lightOnAccent = Color(0xFFFFFFFF);
 
-  // ─── Dark (Figma cool charcoal — #0c0c11 family) ──────────────────────
-  static const Color darkBg = Color(0xFF0C0C11);
-  static const Color darkBgElevated = Color(0xFF12121A);
-  static const Color darkSurface = Color(0xFF16161F);
-  // Segment track / muted fills (#1a1a24). Icon wells / cover fill use iconWell.
-  static const Color darkSurfaceMuted = Color(0xFF1A1A24);
-  static const Color darkIconWell = Color(0xFF1E1E2A);
-  static const Color darkBorder = Color(0xFF24242E);
-  static const Color darkBorderStrong = Color(0xFF2E2E3A);
-  static const Color darkTextPrimary = Color(0xFFF0F0F8);
-  static const Color darkTextSecondary = Color(0xFF8888A0);
-  static const Color darkTextTertiary = Color(0xFF707088);
-  // Figma keeps #7857ff in dark mode for active tabs / progress.
-  static const Color darkAccent = Color(0xFF7857FF);
-  static const Color darkAccentMuted = Color(0xFF261E44);
-  static const Color darkAccentText = Color(0xFF0C0C11);
+  // ─── Dark (Kenji #0F0F0F family + violet accent) ───────────────────────
+  static const Color darkBg = Color(0xFF0F0F0F);
+  static const Color darkBgElevated = Color(0xFF19191C);
+  static const Color darkSurface = Color(0xFF19191C);
+  // Segment track / muted fills. Icon wells / cover fill use iconWell.
+  static const Color darkSurfaceMuted = Color(0xFF1A1A1E);
+  static const Color darkIconWell = Color(0xFF222228);
+  static const Color darkBorder = Color(0xFF2A2A32);
+  static const Color darkBorderStrong = Color(0xFF59575F);
+  static const Color darkTextPrimary = Color(0xFFEFEFF0);
+  static const Color darkTextSecondary = Color(0xFFC7C6CA);
+  static const Color darkTextTertiary = Color(0xFF7C7A82);
+  // Kenji primary /base.
+  static const Color darkAccent = Color(0xFF9852FF);
+  static const Color darkAccentMuted = Color(0xFF2A1A44);
+  static const Color darkAccentText = Color(0xFF0F0F0F);
   static const Color darkOnAccent = Color(0xFFFFFFFF);
 
   // ─── AMOLED (true black) ──────────────────────────────────────────────
@@ -55,7 +55,7 @@ class AppColors {
   static const Color amoledTextPrimary = Color(0xFFF0F0F8);
   static const Color amoledTextSecondary = Color(0xFF8888A0);
   static const Color amoledTextTertiary = Color(0xFF707088);
-  static const Color amoledAccent = Color(0xFF7857FF);
+  static const Color amoledAccent = Color(0xFF9852FF);
   static const Color amoledAccentMuted = Color(0xFF261E44);
   static const Color amoledAccentText = Color(0xFF0C0C11);
   static const Color amoledOnAccent = Color(0xFFFFFFFF);
@@ -124,7 +124,7 @@ class AppColors {
   static const Color glassSepia = Color(0xCCF8EFDD);
 
   // ─── Figma section hues (settings tiles, section labels, type badges) ─
-  static const Color figmaViolet = Color(0xFF7857FF);
+  static const Color figmaViolet = Color(0xFF9852FF);
   static const Color figmaVioletLight = Color(0xFF9B7CFF);
   static const Color figmaGreen = Color(0xFF22C55E);
   static const Color figmaAmber = Color(0xFFF59E0B);
@@ -132,8 +132,8 @@ class AppColors {
   static const Color figmaRose = Color(0xFFF43F5E);
 
   // ─── Accent presets (Settings → Accent color) ─────────────────────────
-  static const Color accentIndigo = Color(0xFF7857FF);
-  static const Color accentIndigoDark = Color(0xFF7857FF);
+  static const Color accentIndigo = Color(0xFF9852FF);
+  static const Color accentIndigoDark = Color(0xFF9852FF);
   static const Color accentAmber = Color(0xFFB07D52);
   static const Color accentAmberDark = Color(0xFFD4A277);
   static const Color accentForest = Color(0xFF4F7A55);

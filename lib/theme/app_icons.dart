@@ -109,6 +109,12 @@ class AppIcons {
   static const AppIconData discoverActive = HugeIconData(
     HugeIcons.strokeRoundedCompass,
   );
+  static const AppIconData updates = HugeIconData(
+    HugeIcons.strokeRoundedBellDot,
+  );
+  static const AppIconData updatesActive = HugeIconData(
+    HugeIcons.strokeRoundedBellElectric,
+  );
   static const AppIconData search = HugeIconData(
     HugeIcons.strokeRoundedSearch01,
   );

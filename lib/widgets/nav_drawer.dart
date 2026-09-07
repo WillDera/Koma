@@ -6,6 +6,7 @@ import '../theme/app_theme.dart';
 import '../theme/tokens/app_spacing.dart';
 import '../theme/tokens/app_type.dart';
 import 'animated_press.dart';
+import 'screen_chrome.dart';
 
 class NavDrawer extends StatelessWidget {
   final int currentIndex;
@@ -26,24 +27,24 @@ class NavDrawer extends StatelessWidget {
       label: 'Library',
     ),
     DrawerNavItem(
+      icon: AppIcons.updates,
+      activeIcon: AppIcons.updatesActive,
+      label: 'Updates',
+    ),
+    DrawerNavItem(
       icon: AppIcons.history,
       activeIcon: AppIcons.historyActive,
       label: 'History',
     ),
     DrawerNavItem(
-      icon: AppIcons.snippets,
-      activeIcon: AppIcons.snippetsActive,
-      label: 'Snippets',
-    ),
-    DrawerNavItem(
       icon: AppIcons.discover,
       activeIcon: AppIcons.discoverActive,
-      label: 'Discover',
+      label: 'Explore',
     ),
     DrawerNavItem(
       icon: AppIcons.settings,
       activeIcon: AppIcons.settingsActive,
-      label: 'Settings',
+      label: 'You',
     ),
   ];
 
@@ -72,19 +73,38 @@ class NavDrawer extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  'Koma',
-                  style: TextStyle(
-                    fontSize: 22,
-                    height: 28 / 22,
-                    fontWeight: FontWeight.w700,
-                    color: c.textPrimary,
-                  ),
+                Row(
+                  children: [
+                    Container(
+                      width: 4,
+                      height: 22,
+                      decoration: BoxDecoration(
+                        color: c.accent,
+                        borderRadius: BorderRadius.circular(2),
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Text(
+                      'Koma',
+                      style: TextStyle(
+                        fontSize: 22,
+                        height: 28 / 22,
+                        fontWeight: FontWeight.w700,
+                        color: c.textPrimary,
+                      ),
+                    ),
+                  ],
                 ),
                 const SizedBox(height: 4),
-                Text(
-                  'Your personal library',
-                  style: AppType.labelCaps(fontSize: 12, color: c.textTertiary),
+                Padding(
+                  padding: const EdgeInsets.only(left: 14),
+                  child: Text(
+                    'Your personal library',
+                    style: AppType.labelCaps(
+                      fontSize: 12,
+                      color: c.textTertiary,
+                    ),
+                  ),
                 ),
               ],
             ),
@@ -97,14 +117,20 @@ class NavDrawer extends StatelessWidget {
               children: List.generate(_items.length, (i) {
                 final item = _items[i];
                 final active = i == currentIndex;
-                return _NavTile(
-                  icon: active ? item.activeIcon : item.icon,
-                  label: item.label,
-                  active: active,
-                  onTap: () {
-                    onTap(i);
-                    if (context.canPop()) Navigator.of(context).pop();
-                  },
+                return StaggeredFadeScale(
+                  index: i,
+                  delayStepMs: 40,
+                  maxDelayMs: 200,
+                  scaleBegin: 0.96,
+                  child: _NavTile(
+                    icon: active ? item.activeIcon : item.icon,
+                    label: item.label,
+                    active: active,
+                    onTap: () {
+                      onTap(i);
+                      if (context.canPop()) Navigator.of(context).pop();
+                    },
+                  ),
                 );
               }),
             ),

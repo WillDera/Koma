@@ -47,6 +47,14 @@ void main() {
       expect(doc.plainText.contains('\uFFFC'), isFalse);
     });
 
+    test('records SVG image href embeds', () {
+      final doc = HtmlToDocument.parse(
+        '<svg><image href="file:///tmp/fig.png" width="10" height="10"/></svg>',
+      );
+      expect(doc.embeds, isNotEmpty);
+      expect(doc.embeds.first.path, contains('fig.png'));
+    });
+
     test('ignores script and style tags', () {
       final doc = HtmlToDocument.parse(
         '<p>Hi</p><script>alert(1)</script><style>p{}</style>',

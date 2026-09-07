@@ -119,6 +119,8 @@ class LibraryNotifier extends Notifier<LibraryState> {
       cardVariant:
           LibraryCardVariant.values[prefs.getInt(_keyCardVariant) ?? 0],
     );
+    // Prefetch so Library isn't empty on first paint after splash.
+    await loadBooks();
   }
 
   void toggleLayout() {

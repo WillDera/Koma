@@ -95,6 +95,7 @@ class _Builder {
         _ensureBlockGap();
         return;
       case 'img':
+      case 'image':
         _addImage(el, isBlock: blockHint != null || _open.isEmpty);
         return;
       case 'em':
@@ -238,8 +239,8 @@ class _Builder {
   }
 
   void _addImage(dom.Element el, {required bool isBlock}) {
-    final src = (el.attributes['src'] ?? '').trim();
-    if (src.isEmpty) return;
+    final src = _imageSrc(el);
+    if (src == null || src.isEmpty) return;
     final path = _normalizeImagePath(src);
     if (path == null) return;
 
@@ -267,6 +268,23 @@ class _Builder {
       );
       _ensureBlockGap();
     }
+  }
+
+  /// `<img src>` or SVG `<image href>` / `xlink:href`.
+  String? _imageSrc(dom.Element el) {
+    for (final name in ['src', 'href', 'xlink:href']) {
+      final v = el.attributes[name]?.trim();
+      if (v != null && v.isNotEmpty) return v;
+    }
+    // Some parsers store namespaced attrs under the local name only.
+    for (final entry in el.attributes.entries) {
+      final key = entry.key.toString().toLowerCase();
+      if (key == 'href' || key.endsWith(':href') || key == 'src') {
+        final v = entry.value.trim();
+        if (v.isNotEmpty) return v;
+      }
+    }
+    return null;
   }
 
   String? _normalizeImagePath(String src) {

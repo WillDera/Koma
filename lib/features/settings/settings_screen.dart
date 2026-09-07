@@ -4,6 +4,7 @@ import 'dart:typed_data';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -28,8 +29,8 @@ import '../../core/services/http/m_client.dart';
 import '../../core/services/library_update_prefs.dart';
 import '../../core/services/annas_archive_prefs.dart';
 import '../../core/services/metadata_enrichment_service.dart';
+import '../../core/services/user_profile.dart';
 import '../../router/router.dart';
-import '../library/library_provider.dart';
 import 'custom_font_ui.dart';
 import 'open_source_licenses_sheet.dart';
 import '../../theme/app_theme.dart';
@@ -45,6 +46,7 @@ import '../../widgets/new_update_sheet.dart';
 import '../../widgets/one_hand_spacer.dart';
 import '../../widgets/reading_streak_card.dart';
 import '../../widgets/reading_calendar_sheet.dart';
+import '../../widgets/page_transitions.dart';
 import '../../widgets/screen_chrome.dart';
 import '../../widgets/segmented_control.dart';
 import '../../widgets/settings_section.dart';
@@ -64,13 +66,13 @@ class SettingsScreen extends StatelessWidget {
           children: [
             const OneHandSpacer(),
             const LibraryHeader(
-              title: 'Settings',
-              subtitle: 'Customize your reading experience',
+              title: 'You',
+              subtitle: 'Profile and preferences',
               padding: EdgeInsets.fromLTRB(20, 8, 16, 12),
             ),
-            const StaggeredEntrance(index: 0, child: _ThemePreviewPill()),
+            const StaggeredFadeScale(index: 0, child: _ProfileHero()),
             const SizedBox(height: 16),
-            const StaggeredEntrance(index: 1, child: _SettingsHub()),
+            const _SettingsHub(),
           ],
         ),
       ),
@@ -78,62 +80,76 @@ class SettingsScreen extends StatelessWidget {
   }
 }
 
-class _ThemePreviewPill extends ConsumerWidget {
-  const _ThemePreviewPill();
+/// Soft Kenji-style avatar + greeting (photo when set, else initials).
+class _ProfileHero extends ConsumerWidget {
+  const _ProfileHero();
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final c = context.colors;
-    final theme = ref.watch(themeProvider);
-    final modeLabel = switch (theme.themeMode) {
-      ThemeMode.light => 'Light',
-      ThemeMode.dark => 'Dark',
-      ThemeMode.system => 'Auto',
-    };
+    final profile = ref.watch(userProfileProvider);
+    final name = profile.displayName.trim().isEmpty
+        ? 'Reader'
+        : profile.displayName.trim();
+    final letter = name.isEmpty ? '?' : name[0].toUpperCase();
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 20),
-      child: Container(
-        padding: const EdgeInsets.all(12),
-        decoration: BoxDecoration(
-          color: c.accentMuted,
-          borderRadius: AppSpacing.brLg,
-        ),
-        child: Row(
-          children: [
-            Container(
-              width: 40,
-              height: 40,
-              decoration: BoxDecoration(
-                color: c.accent,
-                borderRadius: AppSpacing.brMd,
-              ),
+      child: Row(
+        children: [
+          Container(
+            width: 52,
+            height: 52,
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: c.accent.withValues(alpha: 0.18),
+              border: Border.all(color: c.accent.withValues(alpha: 0.45)),
+              image: profile.hasAvatar
+                  ? DecorationImage(
+                      image: FileImage(File(profile.avatarPath!)),
+                      fit: BoxFit.cover,
+                    )
+                  : null,
             ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    '$modeLabel theme',
+            child: profile.hasAvatar
+                ? null
+                : Text(
+                    letter,
                     style: TextStyle(
-                      color: c.textPrimary,
-                      fontSize: 13,
-                      fontWeight: FontWeight.w600,
+                      color: c.accent,
+                      fontSize: 22,
+                      fontWeight: FontWeight.w700,
                     ),
                   ),
-                  const SizedBox(height: 2),
-                  Text(
-                    '${theme.readingFontLabel} · ${theme.fontSize.toInt()}px · ${theme.lineHeight.toStringAsFixed(2)}× leading',
-                    style: TextStyle(
-                      color: c.textSecondary,
-                      fontSize: 11,
-                    ),
+          ),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  name,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: c.textPrimary,
+                    fontSize: 18,
+                    fontWeight: FontWeight.w600,
                   ),
-                ],
-              ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  profile.greeting(),
+                  style: TextStyle(
+                    color: c.textSecondary,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ],
             ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
@@ -144,45 +160,85 @@ class _SettingsHub extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    Widget row(int index, Widget child) =>
+        StaggeredFadeScale(index: index, child: child);
+
     return SettingsSection(
       title: 'Settings',
       showHeader: false,
       children: [
-        SettingsRow(
-          icon: Icons.palette_outlined,
-          iconColor: AppColors.figmaViolet,
-          title: 'Appearance',
-          subtitle: 'Theme, accent, single hand mode',
-          onTap: () => _open(context, 'Appearance', const _AppearanceSection()),
+        row(
+          0,
+          SettingsRow(
+            icon: Icons.person_outline_rounded,
+            iconColor: AppColors.figmaViolet,
+            title: 'Profile',
+            subtitle: 'Name, photo, genres',
+            onTap: () => _open(context, 'Profile', const _ProfileSection()),
+          ),
         ),
-        SettingsRow(
-          icon: Icons.text_fields_rounded,
-          iconColor: AppColors.figmaGreen,
-          title: 'Typography',
-          subtitle: 'Font, size, line height, bionic reading',
-          onTap: () => _open(context, 'Typography', const _TypographySection()),
+        row(
+          1,
+          SettingsRow(
+            icon: Icons.bookmark_outline_rounded,
+            iconColor: AppColors.figmaAmber,
+            title: 'Snippets',
+            subtitle: 'Highlights and bookmarks',
+            onTap: () => context.pushNamed(Routes.snippets),
+          ),
         ),
-        SettingsRow(
-          icon: Icons.storage_outlined,
-          iconColor: AppColors.figmaAmber,
-          title: 'Data',
-          subtitle: 'Storage folder, export and import',
-          onTap: () => _open(context, 'Data', const _DataAndStatsPage()),
+        row(
+          2,
+          SettingsRow(
+            icon: Icons.palette_outlined,
+            iconColor: AppColors.figmaViolet,
+            title: 'Appearance',
+            subtitle: 'Theme, accent, single hand mode',
+            onTap: () =>
+                _open(context, 'Appearance', const _AppearanceSection()),
+          ),
         ),
-        SettingsRow(
-          icon: Icons.layers_outlined,
-          iconColor: AppColors.figmaCyan,
-          title: 'Sources',
-          subtitle: 'Ebook sources and manga plugins',
-          onTap: () =>
-              _open(context, 'Sources', const _SourcesAndPluginsPage()),
+        row(
+          3,
+          SettingsRow(
+            icon: Icons.text_fields_rounded,
+            iconColor: AppColors.figmaGreen,
+            title: 'Typography',
+            subtitle: 'Font, size, line height, bionic reading',
+            onTap: () =>
+                _open(context, 'Typography', const _TypographySection()),
+          ),
         ),
-        SettingsRow(
-          icon: Icons.info_outline_rounded,
-          iconColor: const Color(0xFF8888A0),
-          title: 'About',
-          subtitle: 'App info, version, credits',
-          onTap: () => _open(context, 'About', const _AboutSection()),
+        row(
+          4,
+          SettingsRow(
+            icon: Icons.storage_outlined,
+            iconColor: AppColors.figmaAmber,
+            title: 'Data',
+            subtitle: 'Storage folder, export and import',
+            onTap: () => _open(context, 'Data', const _DataAndStatsPage()),
+          ),
+        ),
+        row(
+          5,
+          SettingsRow(
+            icon: Icons.layers_outlined,
+            iconColor: AppColors.figmaCyan,
+            title: 'Sources',
+            subtitle: 'Ebook sources and manga plugins',
+            onTap: () =>
+                _open(context, 'Sources', const _SourcesAndPluginsPage()),
+          ),
+        ),
+        row(
+          6,
+          SettingsRow(
+            icon: Icons.info_outline_rounded,
+            iconColor: const Color(0xFF8888A0),
+            title: 'About',
+            subtitle: 'App info, version, credits',
+            onTap: () => _open(context, 'About', const _AboutSection()),
+          ),
         ),
       ],
     );
@@ -193,8 +249,13 @@ class _SettingsHub extends StatelessWidget {
     // matching pre-go_router full-screen behavior (the Settings tab now
     // has its own nested Navigator under the StatefulShellRoute).
     Navigator.of(context, rootNavigator: true).push(
-      MaterialPageRoute(
-        builder: (_) => _SettingsDestinationScreen(title: title, child: child),
+      PageRouteBuilder<void>(
+        transitionDuration: AppMotion.page,
+        reverseTransitionDuration: AppMotion.base,
+        pageBuilder: (_, animation, secondaryAnimation) =>
+            _SettingsDestinationScreen(title: title, child: child),
+        transitionsBuilder: (context, animation, secondaryAnimation, child) =>
+            scaleFadePageTransition(animation: animation, child: child),
       ),
     );
   }
@@ -222,7 +283,11 @@ class _SettingsDestinationScreen extends StatelessWidget {
                 showBackButton: true,
                 padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
               ),
-              child,
+              StaggeredFadeScale(
+                index: 0,
+                scaleBegin: 0.97,
+                child: child,
+              ),
             ],
           ),
         ),
@@ -1887,7 +1952,7 @@ class _StorageSectionState extends ConsumerState<_StorageSection> {
       headerColor: amber,
       padding: const EdgeInsets.symmetric(horizontal: 16),
       footer:
-          'Downloaded ebooks, manga chapters, covers, fonts, Piper voices, '
+          'Downloaded ebooks, manga chapters, covers, fonts, '
           'and the library database are stored here. Changing the folder '
           'moves Koma’s library files. On Android 11+, shared folders '
           '(like /storage/emulated/0/koma) need All files access.',
@@ -1958,29 +2023,32 @@ class _StorageSectionState extends ConsumerState<_StorageSection> {
     }
     if (await AndroidStorageAccess.hasAllFilesAccess()) return true;
     if (!mounted) return false;
-    final go = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('All files access'),
-        content: const Text(
+    final go = await StashDialog.show<bool>(
+      context,
+      title: 'All files access',
+      content:
           'Android does not let apps write the library database into a '
           'shared folder (for example /storage/emulated/0/koma) unless you '
           'grant All files access. This is a system restriction, not a '
           'Koma bug.\n\n'
           'Open the next screen, enable access for Koma, then come back '
           'and choose the folder again.',
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context, false),
+          child: Text(
+            'Cancel',
+            style: TextStyle(color: context.colors.textSecondary),
+          ),
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Cancel'),
+        TextButton(
+          onPressed: () => Navigator.pop(context, true),
+          child: Text(
+            'Grant access',
+            style: TextStyle(color: context.colors.accent),
           ),
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('Grant access'),
-          ),
-        ],
-      ),
+        ),
+      ],
     );
     if (go != true) return false;
     await AndroidStorageAccess.requestAllFilesAccess();
@@ -2066,21 +2134,21 @@ class _StorageSectionState extends ConsumerState<_StorageSection> {
 
   Future<void> _promptRestart() async {
     if (!mounted) return;
-    await showDialog<void>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Restart required'),
-        content: const Text(
+    await StashDialog.show<void>(
+      context,
+      title: 'Restart required',
+      content:
           'Your files are in the new folder. Close and reopen Koma so it '
           'can open the library from there.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('OK'),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: Text(
+            'OK',
+            style: TextStyle(color: context.colors.accent),
           ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 }
@@ -2453,124 +2521,103 @@ Future<Source?> _sourceDialog(BuildContext context, Source? existing) async {
   final extCtrl = TextEditingController(
     text: existing?.fileExtensions.join(', ') ?? 'epub',
   );
-  String tag = existing?.tag ?? 'libgen';
+  var tag = existing?.tag ?? 'libgen';
   final c = context.colors;
 
-  return showDialog<Source>(
-    context: context,
-    builder: (ctx) => StatefulBuilder(
-      builder: (ctx, setDlgState) => AlertDialog(
-        backgroundColor: c.surface,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(18),
-          side: BorderSide(color: c.border, width: 0.5),
-        ),
-        content: SingleChildScrollView(
-          child: SizedBox(
-            width: double.maxFinite,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  existing == null ? 'Add source' : 'Edit source',
-                style: TextStyle(
-                  color: c.textPrimary,
-                  fontSize: 16,
-                  fontWeight: FontWeight.w600,
-                ),
+  return StashDialog.show<Source>(
+    context,
+    title: existing == null ? 'Add source' : 'Edit source',
+    contentWidget: StatefulBuilder(
+      builder: (ctx, setDlgState) => Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Tag',
+            style: TextStyle(color: c.textTertiary, fontSize: 12),
+          ),
+          const SizedBox(height: 4),
+          DropdownButton<String>(
+            value: tag,
+            isExpanded: true,
+            underline: const SizedBox(),
+            items: const [
+              DropdownMenuItem(
+                value: 'libgen',
+                child: Text('Library Genesis'),
               ),
-              const SizedBox(height: 16),
-              Text(
-                'Tag',
-                style: TextStyle(color: c.textTertiary, fontSize: 12),
+              DropdownMenuItem(
+                value: 'annas-archive',
+                child: Text("Anna's Archive"),
               ),
-              const SizedBox(height: 4),
-              DropdownButton<String>(
-                value: tag,
-                isExpanded: true,
-                underline: const SizedBox(),
-                items: const [
-                  DropdownMenuItem(
-                    value: 'libgen',
-                    child: Text('Library Genesis'),
-                  ),
-                  DropdownMenuItem(
-                    value: 'annas-archive',
-                    child: Text("Anna's Archive"),
-                  ),
-                ],
-                onChanged: (v) {
-                  if (v != null) setDlgState(() => tag = v);
-                },
-              ),
-              const SizedBox(height: 12),
-              TextField(
-                controller: nameCtrl,
-                decoration: const InputDecoration(hintText: 'Name'),
-              ),
-              const SizedBox(height: 12),
-              TextField(
-                controller: urlCtrl,
-                decoration: InputDecoration(
-                  hintText: tag == 'annas-archive'
-                      ? 'Base URL (e.g. https://annas-archive.gl)'
-                      : 'Base URL (e.g. https://libgen.li/index.php)',
-                ),
-              ),
-              const SizedBox(height: 12),
-              TextField(
-                controller: langCtrl,
-                decoration: const InputDecoration(
-                  hintText: 'Language filter (e.g. English, French)',
-                ),
-              ),
-              const SizedBox(height: 12),
-                TextField(
-                  controller: extCtrl,
-                  decoration: const InputDecoration(
-                    hintText:
-                        'File types (comma-separated, e.g. epub, pdf, mobi)',
-                  ),
-                ),
-              ],
+            ],
+            onChanged: (v) {
+              if (v != null) setDlgState(() => tag = v);
+            },
+          ),
+          const SizedBox(height: 12),
+          TextField(
+            controller: nameCtrl,
+            decoration: const InputDecoration(hintText: 'Name'),
+          ),
+          const SizedBox(height: 12),
+          TextField(
+            controller: urlCtrl,
+            decoration: InputDecoration(
+              hintText: tag == 'annas-archive'
+                  ? 'Base URL (e.g. https://annas-archive.gl)'
+                  : 'Base URL (e.g. https://libgen.li/index.php)',
             ),
           ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(),
-            child: Text('Cancel', style: TextStyle(color: c.textTertiary)),
+          const SizedBox(height: 12),
+          TextField(
+            controller: langCtrl,
+            decoration: const InputDecoration(
+              hintText: 'Language filter (e.g. English, French)',
+            ),
           ),
-          TextButton(
-            onPressed: () {
-              if (nameCtrl.text.trim().isEmpty || urlCtrl.text.trim().isEmpty) {
-                return;
-              }
-              final exts = extCtrl.text
-                  .split(',')
-                  .map((e) => e.trim().toLowerCase().replaceAll('.', ''))
-                  .where((e) => e.isNotEmpty)
-                  .toList();
-              Navigator.of(ctx).pop(
-                Source(
-                  id: existing?.id ?? 0,
-                  name: nameCtrl.text.trim(),
-                  tag: tag,
-                  baseUrl: urlCtrl.text.trim(),
-                  enabled: existing?.enabled ?? true,
-                  language: langCtrl.text.trim().isEmpty
-                      ? null
-                      : langCtrl.text.trim(),
-                  fileExtensions: exts,
-                ),
-              );
-            },
-            child: Text('Save', style: TextStyle(color: c.accent)),
+          const SizedBox(height: 12),
+          TextField(
+            controller: extCtrl,
+            decoration: const InputDecoration(
+              hintText: 'File types (comma-separated, e.g. epub, pdf, mobi)',
+            ),
           ),
         ],
       ),
     ),
+    actions: [
+      TextButton(
+        onPressed: () => Navigator.of(context).pop(),
+        child: Text('Cancel', style: TextStyle(color: c.textTertiary)),
+      ),
+      TextButton(
+        onPressed: () {
+          if (nameCtrl.text.trim().isEmpty || urlCtrl.text.trim().isEmpty) {
+            return;
+          }
+          final exts = extCtrl.text
+              .split(',')
+              .map((e) => e.trim().toLowerCase().replaceAll('.', ''))
+              .where((e) => e.isNotEmpty)
+              .toList();
+          Navigator.of(context).pop(
+            Source(
+              id: existing?.id ?? 0,
+              name: nameCtrl.text.trim(),
+              tag: tag,
+              baseUrl: urlCtrl.text.trim(),
+              enabled: existing?.enabled ?? true,
+              language: langCtrl.text.trim().isEmpty
+                  ? null
+                  : langCtrl.text.trim(),
+              fileExtensions: exts,
+            ),
+          );
+        },
+        child: Text('Save', style: TextStyle(color: c.accent)),
+      ),
+    ],
   );
 }
 
@@ -3075,30 +3122,22 @@ class _PluginsSection extends ConsumerWidget {
     WidgetRef ref,
   ) async {
     final c = context.colors;
-    final ok = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: c.surface,
-        title: Text(
-          'Revoke trusted extensions?',
-          style: TextStyle(color: c.textPrimary),
-        ),
-        content: Text(
+    final ok = await StashDialog.show<bool>(
+      context,
+      title: 'Revoke trusted extensions?',
+      content:
           'This clears extensions you explicitly trusted. Packages signed by '
           'a known repository remain usable.',
-          style: TextStyle(color: c.textSecondary),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context, false),
+          child: Text('Cancel', style: TextStyle(color: c.textSecondary)),
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: Text('Cancel', style: TextStyle(color: c.textSecondary)),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            child: Text('Revoke', style: TextStyle(color: c.accent)),
-          ),
-        ],
-      ),
+        TextButton(
+          onPressed: () => Navigator.pop(context, true),
+          child: Text('Revoke', style: TextStyle(color: c.accent)),
+        ),
+      ],
     );
     if (ok != true || !context.mounted) return;
     final mgr = ExtensionManager(
@@ -3252,6 +3291,562 @@ class _HttpNetworkSectionState extends State<_HttpNetworkSection> {
   }
 }
 
+// ─── Profile ────────────────────────────────────────────────────────────
+class _ProfileSection extends ConsumerStatefulWidget {
+  const _ProfileSection();
+
+  @override
+  ConsumerState<_ProfileSection> createState() => _ProfileSectionState();
+}
+
+class _ProfileSectionState extends ConsumerState<_ProfileSection> {
+  static const _genrePreviewLimit = 5;
+
+  late final TextEditingController _nameCtrl;
+  bool _pickingAvatar = false;
+  bool _genresExpanded = false;
+  bool _savingName = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _nameCtrl = TextEditingController(
+      text: ref.read(userProfileProvider).displayName,
+    );
+  }
+
+  @override
+  void dispose() {
+    _nameCtrl.dispose();
+    super.dispose();
+  }
+
+  Future<void> _pickAvatar() async {
+    if (_pickingAvatar) return;
+    setState(() => _pickingAvatar = true);
+    try {
+      try {
+        await FilePicker.clearTemporaryFiles();
+      } catch (_) {}
+      final result = await FilePicker.pickFiles(
+        type: FileType.image,
+        allowMultiple: false,
+        withData: false,
+      );
+      final path = result?.files.isNotEmpty == true
+          ? result!.files.first.path
+          : null;
+      if (path == null || path.isEmpty) return;
+      await ref.read(userProfileProvider.notifier).setAvatarFromFile(path);
+    } on PlatformException catch (e) {
+      if (e.code == 'already_active') return;
+      rethrow;
+    } finally {
+      if (mounted) setState(() => _pickingAvatar = false);
+    }
+  }
+
+  Future<void> _saveName() async {
+    setState(() => _savingName = true);
+    await ref.read(userProfileProvider.notifier).setDisplayName(_nameCtrl.text);
+    if (mounted) setState(() => _savingName = false);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.colors;
+    final profile = ref.watch(userProfileProvider);
+    final letter = profile.displayName.trim().isEmpty
+        ? '?'
+        : profile.displayName.trim()[0].toUpperCase();
+    final nameLabel = profile.displayName.trim().isEmpty
+        ? 'Add your name'
+        : profile.displayName.trim();
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 4, 20, 24),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          // ── Identity hero ──────────────────────────────────────────
+          Center(
+            child: Column(
+              children: [
+                GestureDetector(
+                  onTap: _pickAvatar,
+                  child: Stack(
+                    clipBehavior: Clip.none,
+                    children: [
+                      Container(
+                        width: 104,
+                        height: 104,
+                        alignment: Alignment.center,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          color: c.iconWell,
+                          border: Border.all(
+                            color: c.accent.withValues(alpha: 0.35),
+                            width: 2.5,
+                          ),
+                          boxShadow: [
+                            BoxShadow(
+                              color: c.accent.withValues(alpha: 0.12),
+                              blurRadius: 24,
+                              offset: const Offset(0, 8),
+                            ),
+                          ],
+                          image: profile.hasAvatar
+                              ? DecorationImage(
+                                  image: FileImage(File(profile.avatarPath!)),
+                                  fit: BoxFit.cover,
+                                )
+                              : null,
+                        ),
+                        child: profile.hasAvatar
+                            ? null
+                            : Text(
+                                letter,
+                                style: TextStyle(
+                                  color: c.accent,
+                                  fontSize: 40,
+                                  fontWeight: FontWeight.w700,
+                                  height: 1,
+                                ),
+                              ),
+                      ),
+                      Positioned(
+                        right: 2,
+                        bottom: 2,
+                        child: Container(
+                          width: 32,
+                          height: 32,
+                          decoration: BoxDecoration(
+                            color: c.accent,
+                            shape: BoxShape.circle,
+                            border: Border.all(color: c.bg, width: 2),
+                          ),
+                          child: _pickingAvatar
+                              ? const Padding(
+                                  padding: EdgeInsets.all(7),
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                    color: Colors.white,
+                                  ),
+                                )
+                              : const Icon(
+                                  Icons.photo_camera_rounded,
+                                  size: 16,
+                                  color: Colors.white,
+                                ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 18),
+                Text(
+                  profile.greeting(),
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    color: c.textTertiary,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                    letterSpacing: 0.2,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  nameLabel,
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    color: c.textPrimary,
+                    fontSize: 26,
+                    fontWeight: FontWeight.w600,
+                    letterSpacing: -0.5,
+                    height: 1.2,
+                  ),
+                ),
+                if (profile.hasAvatar) ...[
+                  const SizedBox(height: 8),
+                  TextButton(
+                    onPressed: () =>
+                        ref.read(userProfileProvider.notifier).clearAvatar(),
+                    child: Text(
+                      'Remove photo',
+                      style: TextStyle(
+                        color: c.textSecondary,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+          const SizedBox(height: 28),
+
+          // ── Name card ──────────────────────────────────────────────
+          _ProfileCard(
+            label: 'Display name',
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                TextField(
+                  controller: _nameCtrl,
+                  textCapitalization: TextCapitalization.words,
+                  textInputAction: TextInputAction.done,
+                  style: TextStyle(
+                    color: c.textPrimary,
+                    fontSize: 16,
+                    fontWeight: FontWeight.w500,
+                  ),
+                  decoration: InputDecoration(
+                    hintText: 'What should we call you?',
+                    hintStyle: TextStyle(color: c.textTertiary),
+                    filled: true,
+                    fillColor: c.bg,
+                    contentPadding: const EdgeInsets.symmetric(
+                      horizontal: 16,
+                      vertical: 14,
+                    ),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(14),
+                      borderSide: BorderSide.none,
+                    ),
+                  ),
+                  onSubmitted: (_) => _saveName(),
+                ),
+                const SizedBox(height: 12),
+                SizedBox(
+                  height: 44,
+                  child: FilledButton(
+                    onPressed: _savingName ? null : _saveName,
+                    style: FilledButton.styleFrom(
+                      backgroundColor: c.accent,
+                      foregroundColor: c.onAccent,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(14),
+                      ),
+                    ),
+                    child: _savingName
+                        ? const SizedBox(
+                            width: 18,
+                            height: 18,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : const Text(
+                            'Save name',
+                            style: TextStyle(fontWeight: FontWeight.w600),
+                          ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 16),
+
+          // ── Genres card ────────────────────────────────────────────
+          _ProfileCard(
+            label: 'Your tastes',
+            trailing: TextButton(
+              onPressed: () => _showAddGenresSheet(context, profile),
+              style: TextButton.styleFrom(
+                foregroundColor: c.accent,
+                padding: const EdgeInsets.symmetric(horizontal: 8),
+                minimumSize: Size.zero,
+                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              ),
+              child: Text(
+                profile.preferredGenres.isEmpty ? 'Add' : 'Edit',
+                style: const TextStyle(
+                  fontWeight: FontWeight.w600,
+                  fontSize: 13,
+                ),
+              ),
+            ),
+            child: _PreferredGenresBlock(
+              selected: profile.preferredGenres,
+              expanded: _genresExpanded,
+              previewLimit: _genrePreviewLimit,
+              onExpandToggle: () =>
+                  setState(() => _genresExpanded = !_genresExpanded),
+              onRemove: (label) {
+                final next = profile.preferredGenres
+                    .where((g) => g != label)
+                    .toList();
+                ref
+                    .read(userProfileProvider.notifier)
+                    .setPreferredGenres(next);
+              },
+              onAddMore: () => _showAddGenresSheet(context, profile),
+            ),
+          ),
+          const SizedBox(height: 12),
+          Text(
+            'We’ll remember these for later. Suggestions aren’t available yet.',
+            style: TextStyle(
+              color: c.textTertiary,
+              fontSize: 12,
+              height: 1.35,
+            ),
+          ),
+          const SizedBox(height: 28),
+          Center(
+            child: TextButton(
+              onPressed: () async {
+                await ref.read(userProfileProvider.notifier).resetOnboarding();
+                if (context.mounted) {
+                  context.goNamed(Routes.onboarding);
+                }
+              },
+              child: Text(
+                'Replay onboarding',
+                style: TextStyle(
+                  color: c.textSecondary,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _showAddGenresSheet(
+    BuildContext context,
+    UserProfile profile,
+  ) async {
+    final selected = profile.preferredGenres.toSet();
+    await StashSheet.show<void>(
+      context,
+      title: 'Add genres',
+      subtitle: 'Pick tastes to remember for later.',
+      initialChildSize: 0.72,
+      maxChildSize: 0.95,
+      child: _AddGenresSheetBody(
+        initialSelected: selected,
+        onChanged: (next) {
+          ref.read(userProfileProvider.notifier).setPreferredGenres(next);
+        },
+      ),
+    );
+  }
+}
+
+class _ProfileCard extends StatelessWidget {
+  const _ProfileCard({
+    required this.label,
+    required this.child,
+    this.trailing,
+  });
+
+  final String label;
+  final Widget child;
+  final Widget? trailing;
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.colors;
+    return Container(
+      padding: const EdgeInsets.fromLTRB(16, 14, 16, 16),
+      decoration: BoxDecoration(
+        color: c.surface,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: c.border, width: 0.5),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  label.toUpperCase(),
+                  style: TextStyle(
+                    color: c.textTertiary,
+                    fontSize: 11,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: 0.7,
+                  ),
+                ),
+              ),
+              if (trailing != null) trailing!,
+            ],
+          ),
+          const SizedBox(height: 12),
+          child,
+        ],
+      ),
+    );
+  }
+}
+
+/// Selected genres only — collapse past [previewLimit], plus Add genres.
+class _PreferredGenresBlock extends StatelessWidget {
+  const _PreferredGenresBlock({
+    required this.selected,
+    required this.expanded,
+    required this.previewLimit,
+    required this.onExpandToggle,
+    required this.onRemove,
+    required this.onAddMore,
+  });
+
+  final List<String> selected;
+  final bool expanded;
+  final int previewLimit;
+  final VoidCallback onExpandToggle;
+  final ValueChanged<String> onRemove;
+  final VoidCallback onAddMore;
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.colors;
+    final overflow = selected.length > previewLimit;
+    final visible = (!overflow || expanded)
+        ? selected
+        : selected.take(previewLimit).toList();
+    final hiddenCount = selected.length - previewLimit;
+
+    if (selected.isEmpty) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text(
+            'No genres yet.',
+            style: TextStyle(color: c.textSecondary, fontSize: 14),
+          ),
+          const SizedBox(height: 12),
+          OutlinedButton.icon(
+            onPressed: onAddMore,
+            icon: const Icon(Icons.add_rounded, size: 18),
+            label: const Text('Add genres'),
+            style: OutlinedButton.styleFrom(
+              foregroundColor: c.textPrimary,
+              side: BorderSide(color: c.borderStrong),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(14),
+              ),
+              padding: const EdgeInsets.symmetric(vertical: 12),
+            ),
+          ),
+        ],
+      );
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: [
+            for (final label in visible)
+              InputChip(
+                label: Text(
+                  '${OnboardingGenres.emojiFor(label) ?? '📚'} $label',
+                ),
+                onDeleted: () => onRemove(label),
+                deleteIconColor: c.textSecondary,
+                backgroundColor: c.bg,
+                side: BorderSide(color: c.border),
+              ),
+          ],
+        ),
+        if (overflow)
+          TextButton(
+            onPressed: onExpandToggle,
+            style: TextButton.styleFrom(
+              foregroundColor: c.accent,
+              padding: EdgeInsets.zero,
+              minimumSize: const Size(0, 36),
+              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+            ),
+            child: Text(
+              expanded ? 'Show less' : 'View all ($hiddenCount more)',
+              style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
+            ),
+          ),
+        const SizedBox(height: 8),
+        TextButton.icon(
+          onPressed: onAddMore,
+          icon: Icon(Icons.add_rounded, size: 18, color: c.accent),
+          label: Text(
+            'Add more',
+            style: TextStyle(
+              color: c.accent,
+              fontWeight: FontWeight.w600,
+              fontSize: 13,
+            ),
+          ),
+          style: TextButton.styleFrom(
+            padding: EdgeInsets.zero,
+            minimumSize: const Size(0, 36),
+            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _AddGenresSheetBody extends StatefulWidget {
+  const _AddGenresSheetBody({
+    required this.initialSelected,
+    required this.onChanged,
+  });
+
+  final Set<String> initialSelected;
+  final ValueChanged<List<String>> onChanged;
+
+  @override
+  State<_AddGenresSheetBody> createState() => _AddGenresSheetBodyState();
+}
+
+class _AddGenresSheetBodyState extends State<_AddGenresSheetBody> {
+  late final Set<String> _selected;
+
+  @override
+  void initState() {
+    super.initState();
+    _selected = {...widget.initialSelected};
+  }
+
+  void _toggle(String label) {
+    setState(() {
+      if (!_selected.add(label)) _selected.remove(label);
+    });
+    final ordered = [
+      for (final opt in OnboardingGenres.options)
+        if (_selected.contains(opt.label)) opt.label,
+      for (final g in _selected)
+        if (!OnboardingGenres.options.any((o) => o.label == g)) g,
+    ];
+    widget.onChanged(ordered);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return SingleChildScrollView(
+      padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
+      child: Wrap(
+        spacing: 8,
+        runSpacing: 8,
+        children: [
+          for (final opt in OnboardingGenres.options)
+            FilterChip(
+              label: Text('${opt.emoji} ${opt.label}'),
+              selected: _selected.contains(opt.label),
+              onSelected: (_) => _toggle(opt.label),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
 // ─── About ──────────────────────────────────────────────────────────────
 class _AboutSection extends ConsumerWidget {
   const _AboutSection();
@@ -3387,7 +3982,7 @@ class _AboutSection extends ConsumerWidget {
                 ),
                 const SizedBox(height: 8),
                 Text(
-                  'Free software under GPL-3.0-or-later.',
+                  'Free software under the MIT License.',
                   textAlign: TextAlign.center,
                   style: TextStyle(
                     color: c.textTertiary,

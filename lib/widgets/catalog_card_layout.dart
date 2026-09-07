@@ -14,32 +14,31 @@ abstract final class CatalogCardLayout {
     final v = gridVariant(variant);
     final tight =
         v == LibraryCardVariant.compact || v == LibraryCardVariant.overlay;
-    // Figma Library: px-4 (16). Compact/overlay stay tighter.
-    return EdgeInsets.symmetric(horizontal: tight ? 12 : 16);
+    // Kenji Library: 24px horizontal inset; compact/overlay stay tighter.
+    return EdgeInsets.symmetric(horizontal: tight ? 12 : 24);
   }
 
   static double mainAxisSpacing(LibraryCardVariant variant) {
     final v = gridVariant(variant);
     if (v == LibraryCardVariant.overlay) return 8;
     if (v == LibraryCardVariant.compact) return 10;
-    // Figma: gap-3 = 12.
-    return 12;
+    // Kenji collection rows: 16.
+    return 16;
   }
 
   static double crossAxisSpacing(LibraryCardVariant variant) {
     final v = gridVariant(variant);
     if (v == LibraryCardVariant.overlay) return 8;
     if (v == LibraryCardVariant.compact) return 10;
-    return 12;
+    return 14;
   }
 
   static double childAspectRatio(LibraryCardVariant variant) {
     final v = gridVariant(variant);
     if (v == LibraryCardVariant.overlay) return AppSpacing.coverAspectRatio;
     if (v == LibraryCardVariant.compact) return 0.70;
-    // Grid: title + optional subtitle under a 2:3 cover. Higher ratio = shorter
-    // cells (height = width / ratio).
-    return 0.58;
+    // Kenji cover ~123×178 + title line ≈ 0.60.
+    return 0.60;
   }
 
   static SliverGridDelegateWithFixedCrossAxisCount gridDelegate({

@@ -12,6 +12,7 @@ import '../../theme/app_icons.dart';
 import '../../theme/app_theme.dart';
 import '../../theme/theme_provider.dart';
 import '../../widgets/aethelgard_fab.dart';
+import '../../widgets/animated_press.dart';
 import '../../widgets/bookmark_card.dart';
 import '../../widgets/dialog_sheet.dart';
 import '../../widgets/empty_state.dart';
@@ -158,7 +159,11 @@ class _SnippetsScreenState extends ConsumerState<SnippetsScreen> {
         padding: EdgeInsets.zero,
         children: [
           const OneHandSpacer(),
-          const LibraryHeader(title: 'Snippets', subtitle: '0 snippets'),
+          const LibraryHeader(
+            title: 'Snippets',
+            subtitle: '0 snippets',
+            showBackButton: true,
+          ),
           _buildTabBar(),
           const SizedBox(height: 60),
           EmptyState(
@@ -203,16 +208,22 @@ class _SnippetsScreenState extends ConsumerState<SnippetsScreen> {
         padding: EdgeInsets.zero,
         children: [
           const OneHandSpacer(),
-          const LibraryHeader(title: 'Snippets', subtitle: '0 snippets'),
+          const LibraryHeader(
+            title: 'Snippets',
+            subtitle: '0 snippets',
+            showBackButton: true,
+          ),
           _buildTabBar(),
           const SizedBox(height: 60),
           EmptyState(
             icon: AppIcons.bookmark,
+            emoji: '✍️',
             title: 'No snippets yet',
             subtitle: 'Highlight text while reading, or tap + to create one.',
             primaryActionLabel: 'New snippet',
             primaryActionIcon: AppIcons.add,
             onPrimaryAction: () => _createSnippet(context),
+            pillPrimary: true,
           ),
         ],
       );
@@ -285,7 +296,7 @@ class _SnippetsScreenState extends ConsumerState<SnippetsScreen> {
           ...items.indexed.map(
             (entry) => Padding(
               padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
-              child: StaggeredEntrance(
+              child: StaggeredFadeScale(
                 index: entry.$1 + 1,
                 child: SnippetCard(
                   snippet: entry.$2,
@@ -396,6 +407,7 @@ class _SnippetsScreenState extends ConsumerState<SnippetsScreen> {
     return LibraryHeader(
       title: 'Snippets',
       subtitle: '$count snippet${count == 1 ? '' : 's'}',
+      showBackButton: context.canPop(),
       actions: [
         IconButtonRound(
           icon: Icons.checklist_rtl_rounded,
@@ -544,127 +556,123 @@ class _SnippetsScreenState extends ConsumerState<SnippetsScreen> {
 
   Future<void> _groupSelected(BuildContext context, SnippetsState p) async {
     final sn = ref.read(snippetsProvider.notifier);
-    final result = await showModalBottomSheet<int?>(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (ctx) {
-        final c = Theme.of(ctx).colorScheme;
-        return Container(
-          decoration: BoxDecoration(
-            color: c.surface,
-            borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+    final c = context.colors;
+    final result = await StashSheet.show<int?>(
+      context,
+      title: 'Move to collection',
+      initialChildSize: 0.45,
+      maxChildSize: 0.75,
+      child: ListView(
+        padding: const EdgeInsets.fromLTRB(8, 0, 8, 24),
+        children: [
+          ListTile(
+            leading: Icon(
+              Icons.folder_off_outlined,
+              color: c.textSecondary,
+            ),
+            title: Text(
+              'Ungrouped',
+              style: TextStyle(color: c.textSecondary),
+            ),
+            onTap: () => Navigator.pop(context, -1),
           ),
-          child: ListView(
-            shrinkWrap: true,
-            padding: const EdgeInsets.symmetric(vertical: 8),
-            children: [
-              ListTile(
-                leading: Icon(Icons.folder_off_outlined, color: c.secondary),
-                title: Text('Ungrouped', style: TextStyle(color: c.secondary)),
-                onTap: () => Navigator.pop(ctx, null),
+          if (p.collections.isNotEmpty) const Divider(height: 1),
+          ...p.collections.map((col) {
+            return ListTile(
+              leading: CircleAvatar(
+                radius: 12,
+                backgroundColor: _parseColor(col.color),
               ),
-              if (p.collections.isNotEmpty) const Divider(height: 1),
-              ...p.collections.map((col) {
-                return ListTile(
-                  leading: CircleAvatar(
-                    radius: 12,
-                    backgroundColor: _parseColor(col.color),
-                  ),
-                  title: Text(col.name),
-                  onTap: () => Navigator.pop(ctx, col.id),
-                );
-              }),
-              const Divider(height: 1),
-              ListTile(
-                leading: Icon(Icons.add_circle_outline, color: c.primary),
-                title: Text(
-                  'New collection',
-                  style: TextStyle(color: c.primary),
-                ),
-                trailing: Icon(Icons.chevron_right, color: c.primary),
-                onTap: () async {
-                  final nameController = TextEditingController();
-                  String selectedColor = '#FFD700';
-                  final confirmed = await showDialog<bool>(
-                    context: ctx,
-                    builder: (dialogCtx) {
-                      final dc = Theme.of(dialogCtx).colorScheme;
-                      return StatefulBuilder(
-                        builder: (ctx2, setState2) => AlertDialog(
-                          title: const Text('New collection'),
-                          content: Column(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              TextField(
-                                controller: nameController,
-                                decoration: const InputDecoration(
-                                  labelText: 'Name',
-                                  hintText: 'My collection',
-                                ),
-                                autofocus: true,
-                              ),
-                              const SizedBox(height: 16),
-                              Text(
-                                'Accent colour',
-                                style: TextStyle(
-                                  color: dc.secondary,
-                                  fontSize: 13,
-                                ),
-                              ),
-                              const SizedBox(height: 8),
-                              HighlightColorPicker(
-                                colors: HighlightColorPicker.palette,
-                                selected: selectedColor,
-                                onChanged: (c) {
-                                  setState2(() => selectedColor = c);
-                                },
-                              ),
-                            ],
-                          ),
-                          actions: [
-                            TextButton(
-                              onPressed: () => Navigator.pop(dialogCtx, false),
-                              child: Text(
-                                'Cancel',
-                                style: TextStyle(color: dc.secondary),
-                              ),
-                            ),
-                            TextButton(
-                              onPressed: () => Navigator.pop(dialogCtx, true),
-                              child: const Text('Create'),
-                            ),
-                          ],
+              title: Text(col.name),
+              onTap: () => Navigator.pop(context, col.id),
+            );
+          }),
+          const Divider(height: 1),
+          ListTile(
+            leading: Icon(Icons.add_circle_outline, color: c.accent),
+            title: Text(
+              'New collection',
+              style: TextStyle(color: c.accent),
+            ),
+            trailing: Icon(Icons.chevron_right, color: c.accent),
+            onTap: () async {
+              final nameController = TextEditingController();
+              var selectedColor = 'yellow';
+              final confirmed = await StashDialog.show<bool>(
+                context,
+                title: 'New collection',
+                contentWidget: StatefulBuilder(
+                  builder: (ctx2, setState2) => Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      TextField(
+                        controller: nameController,
+                        decoration: const InputDecoration(
+                          labelText: 'Name',
+                          hintText: 'My collection',
                         ),
-                      );
-                    },
-                  );
-                  const keyToHex = <String, String>{
-                    'yellow': '#FFE8A8',
-                    'blue': '#C8D8FF',
-                    'pink': '#FFD4DC',
-                    'green': '#C8E6C9',
-                  };
-                  if (confirmed == true &&
-                      nameController.text.trim().isNotEmpty) {
-                    final hex = keyToHex[selectedColor] ?? '#FFE8A8';
-                    final id = await sn.createCollection(
-                      nameController.text.trim(),
-                      color: hex,
-                    );
-                    if (ctx.mounted) {
-                      Navigator.pop(ctx, id);
-                    }
-                  }
-                },
-              ),
-            ],
+                        autofocus: true,
+                      ),
+                      const SizedBox(height: 16),
+                      Text(
+                        'Accent colour',
+                        style: TextStyle(
+                          color: c.textSecondary,
+                          fontSize: 13,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      HighlightColorPicker(
+                        colors: HighlightColorPicker.palette,
+                        selected: selectedColor,
+                        onChanged: (v) {
+                          setState2(() => selectedColor = v);
+                        },
+                      ),
+                    ],
+                  ),
+                ),
+                actions: [
+                  TextButton(
+                    onPressed: () => Navigator.pop(context, false),
+                    child: Text(
+                      'Cancel',
+                      style: TextStyle(color: c.textSecondary),
+                    ),
+                  ),
+                  TextButton(
+                    onPressed: () => Navigator.pop(context, true),
+                    child: const Text('Create'),
+                  ),
+                ],
+              );
+              const keyToHex = <String, String>{
+                'yellow': '#FFE8A8',
+                'blue': '#C8D8FF',
+                'pink': '#FFD4DC',
+                'green': '#C8E6C9',
+              };
+              if (confirmed == true &&
+                  nameController.text.trim().isNotEmpty) {
+                final hex = keyToHex[selectedColor] ?? '#FFE8A8';
+                final id = await sn.createCollection(
+                  nameController.text.trim(),
+                  color: hex,
+                );
+                if (context.mounted) {
+                  Navigator.pop(context, id);
+                }
+              }
+            },
           ),
-        );
-      },
+        ],
+      ),
     );
 
     if (result == null) {
+      // Sheet dismissed — leave membership unchanged.
+    } else if (result == -1) {
       await sn.moveSnippetsToCollection(p.selectedIds.toList(), null);
     } else if (result > 0) {
       await sn.moveSnippetsToCollection(p.selectedIds.toList(), result);
@@ -692,6 +700,7 @@ class _SnippetsScreenState extends ConsumerState<SnippetsScreen> {
         LibraryHeader(
           title: 'Bookmarks',
           subtitle: '${bookmarks.length} bookmark${bookmarks.length == 1 ? '' : 's'}',
+          showBackButton: context.canPop(),
         ),
         _buildTabBar(),
         if (bp.loading && bookmarks.isEmpty)
@@ -704,18 +713,22 @@ class _SnippetsScreenState extends ConsumerState<SnippetsScreen> {
             padding: const EdgeInsets.all(40),
             child: EmptyState(
               icon: AppIcons.bookmark,
+              emoji: '🔖',
               title: 'No bookmarks yet',
               subtitle: 'Tap the bookmark icon while reading to save a page.',
             ),
           )
         else
-          ...bookmarks.map(
-            (b) => Padding(
+          ...bookmarks.indexed.map(
+            (entry) => Padding(
               padding: const EdgeInsets.fromLTRB(20, 12, 20, 12),
-              child: BookmarkCard(
-                bookmark: b,
-                onTap: () => _openBookmark(context, b),
-                onDelete: () => _confirmDeleteBookmark(context, b.id),
+              child: StaggeredFadeScale(
+                index: entry.$1,
+                child: BookmarkCard(
+                  bookmark: entry.$2,
+                  onTap: () => _openBookmark(context, entry.$2),
+                  onDelete: () => _confirmDeleteBookmark(context, entry.$2.id),
+                ),
               ),
             ),
           ),
@@ -934,7 +947,7 @@ class _Chip extends StatelessWidget {
       fg = c.textSecondary;
       border = null;
     }
-    return GestureDetector(
+    return AnimatedPress(
       onTap: onSelected,
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 180),

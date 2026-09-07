@@ -188,11 +188,15 @@ class ExtensionsCatalogNotifier extends Notifier<ExtensionsCatalogState> {
         fullIndexCache: full,
         indexCache: avail,
         installed: installed,
+        repos: await _mgr.listRepos(),
         error: null,
       );
       unawaited(ref.read(extensionUpdateCountProvider.notifier).refresh());
     } catch (e) {
-      state = state.copyWith(error: '$e');
+      final msg = '$e'
+          .replaceFirst('FormatException: ', '')
+          .replaceFirst('Exception: ', '');
+      state = state.copyWith(error: msg);
     } finally {
       final loading = Set<int>.from(state.loadingIndex)..remove(repo.id);
       state = state.copyWith(loadingIndex: loading);

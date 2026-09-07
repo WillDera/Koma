@@ -69,13 +69,22 @@ class StashSheet extends StatelessWidget {
       maxChildSize: maxChildSize,
       expand: false,
       builder: (context, scrollController) {
+        final isDark = c.bg.computeLuminance() < 0.5;
         return Container(
           decoration: BoxDecoration(
             color: c.bgElevated,
             borderRadius: const BorderRadius.vertical(top: AppSpacing.rXl),
-            boxShadow: AppSpacing.shadow4(
-              isDark: c.bg.computeLuminance() < 0.5,
+            border: Border(
+              top: BorderSide(color: c.border, width: 0.5),
             ),
+            // Flat Kenji: light lift only — avoid heavy shadow4 against #0F0F0F.
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: isDark ? 0.28 : 0.08),
+                blurRadius: 12,
+                offset: const Offset(0, -2),
+              ),
+            ],
           ),
           child: Column(
             children: [
@@ -93,7 +102,7 @@ class StashSheet extends StatelessWidget {
                 ),
               if (title != null || actions.isNotEmpty || leading != null)
                 Padding(
-                  padding: const EdgeInsets.fromLTRB(20, 12, 12, 8),
+                  padding: const EdgeInsets.fromLTRB(20, 10, 12, 6),
                   child: Row(
                     children: [
                       if (leading != null) ...[
@@ -106,8 +115,13 @@ class StashSheet extends StatelessWidget {
                           children: [
                             Text(
                               title ?? '',
-                              style: Theme.of(context).textTheme.titleLarge
-                                  ?.copyWith(color: c.textPrimary),
+                              style: Theme.of(context).textTheme.titleMedium
+                                  ?.copyWith(
+                                    color: c.textPrimary,
+                                    fontWeight: FontWeight.w600,
+                                    letterSpacing: -0.3,
+                                    height: 1.2,
+                                  ),
                             ),
                             if (subtitle != null)
                               Text(
@@ -177,21 +191,25 @@ class StashDialog extends StatelessWidget {
     return Dialog(
       backgroundColor: c.bgElevated,
       surfaceTintColor: Colors.transparent,
+      elevation: 0,
       shape: RoundedRectangleBorder(
         borderRadius: AppSpacing.brXl,
         side: BorderSide(color: c.border, width: 0.5),
       ),
       child: Padding(
-        padding: const EdgeInsets.fromLTRB(24, 24, 24, 16),
+        padding: const EdgeInsets.fromLTRB(22, 20, 22, 14),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             Text(
               title,
-              style: Theme.of(
-                context,
-              ).textTheme.titleLarge?.copyWith(color: c.textPrimary),
+              style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                color: c.textPrimary,
+                fontWeight: FontWeight.w600,
+                letterSpacing: -0.3,
+                height: 1.2,
+              ),
             ),
             if (content != null) ...[
               const SizedBox(height: 8),
@@ -207,7 +225,7 @@ class StashDialog extends StatelessWidget {
               const SizedBox(height: 16),
               contentWidget!,
             ],
-            const SizedBox(height: 24),
+            const SizedBox(height: 20),
             Row(
               mainAxisAlignment: MainAxisAlignment.end,
               children:

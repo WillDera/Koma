@@ -39,8 +39,10 @@ void main() {
     expect(ch1.content.contains('<style'), isFalse);
     expect(ch1.content.contains('@page'), isFalse);
     expect(ch1.content.contains('Hello from chapter one.'), isTrue);
-    expect(ch1.content.contains('img.png'), isFalse);
+    // Relative + odd-MIME + SVG image href all rewritten to local media.
+    expect(ch1.content.contains('../Images/'), isFalse);
     expect(ch1.content.contains('ebook_media'), isTrue);
+    expect('file://'.allMatches(ch1.content).length, greaterThanOrEqualTo(3));
   });
 }
 
@@ -96,10 +98,11 @@ List<int> _buildFixtureEpub() {
   </metadata>
   <manifest>
     <item id="ncx" href="toc.ncx" media-type="application/x-dtbncx+xml"/>
-    <item id="ch1" href="ch1.xhtml" media-type="application/xhtml+xml"/>
+    <item id="ch1" href="Text/ch1.xhtml" media-type="application/xhtml+xml"/>
     <item id="ch2" href="ch2.xhtml" media-type="application/xhtml+xml"/>
     <item id="cover-image" href="cover.png" media-type="image/png"/>
-    <item id="inline-img" href="img.png" media-type="image/png"/>
+    <item id="inline-img" href="Images/img.png" media-type="image/png"/>
+    <item id="jpg-odd" href="Images/odd.jpg" media-type="image/jpg"/>
   </manifest>
   <spine toc="ncx">
     <itemref idref="ch1"/>
@@ -119,7 +122,7 @@ List<int> _buildFixtureEpub() {
   <navMap>
     <navPoint id="nav1" playOrder="1">
       <navLabel><text>Chapter One</text></navLabel>
-      <content src="ch1.xhtml"/>
+      <content src="Text/ch1.xhtml"/>
       <navPoint id="nav1a" playOrder="2">
         <navLabel><text>Section Nested</text></navLabel>
         <content src="ch2.xhtml"/>
@@ -130,16 +133,21 @@ List<int> _buildFixtureEpub() {
 '''.codeUnits,
   );
   add(
-    'OEBPS/ch1.xhtml',
+    'OEBPS/Text/ch1.xhtml',
     '''<?xml version="1.0"?>
-<html xmlns="http://www.w3.org/1999/xhtml">
+<html xmlns="http://www.w3.org/1999/xhtml"
+      xmlns:xlink="http://www.w3.org/1999/xlink">
 <head>
   <title>Chapter One</title>
   <style type="text/css">p { color: red; }</style>
 </head>
 <body>
   <p>Hello from chapter one.</p>
-  <img src="img.png" alt="inline"/>
+  <img src="../Images/img.png" alt="inline"/>
+  <img src="../Images/odd.jpg" alt="odd-mime"/>
+  <svg xmlns="http://www.w3.org/2000/svg">
+    <image width="10" height="10" xlink:href="../Images/img.png"/>
+  </svg>
   <style>body { background: blue; }</style>
   @page { margin: 2em; }
 </body>
@@ -156,7 +164,8 @@ List<int> _buildFixtureEpub() {
 '''.codeUnits,
   );
   add('OEBPS/cover.png', png);
-  add('OEBPS/img.png', png);
+  add('OEBPS/Images/img.png', png);
+  add('OEBPS/Images/odd.jpg', png);
 
-  return ZipEncoder().encode(archive);
+  return ZipEncoder().encode(archive)!;
 }

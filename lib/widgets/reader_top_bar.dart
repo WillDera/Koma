@@ -1,10 +1,9 @@
 import 'package:flutter/material.dart';
 import '../theme/app_theme.dart';
 import '../theme/tokens/app_motion.dart';
-import '../theme/tokens/glass_blur.dart';
 import 'icon_button_round.dart';
 
-/// Auto-hiding top bar for the reader. Slides up/down with the parent.
+/// Kenji-style opaque top bar for the ebook reader.
 class ReaderTopBar extends StatelessWidget {
   final String bookTitle;
   final String? bookAuthor;
@@ -31,128 +30,105 @@ class ReaderTopBar extends StatelessWidget {
     this.background,
   });
 
-  /// Height of the bar below [MediaQuery.viewPadding.top] (row + progress).
-  /// Keep in sync with the Column below; page padding uses this.
-  /// Sized for title + optional author + optional chapter + progress strip.
-  static const double bodyHeight = 62;
+  /// Height of the bar below [MediaQuery.viewPadding.top].
+  static const double bodyHeight = 56;
 
   @override
   Widget build(BuildContext context) {
     final c = context.colors;
-    final bg = background ?? c.bg;
-    final author = bookAuthor?.trim();
-    final hasAuthor = author != null && author.isNotEmpty;
+    final bg = background ?? const Color(0xFF0F0F0F);
+    final chapter = chapterTitle?.trim();
     return AnimatedSlide(
       duration: AppMotion.base,
       curve: AppMotion.standard,
       offset: visible ? Offset.zero : const Offset(0, -1),
       child: IgnorePointer(
         ignoring: !visible,
-        child: GlassBlur.layer(
-        child: Container(
-          color: bg.withValues(alpha: 0.78),
+        child: Material(
+          color: bg,
           child: SafeArea(
-              bottom: false,
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Padding(
-                    padding: const EdgeInsets.fromLTRB(8, 4, 8, 4),
-                    child: Row(
-                      children: [
-                        IconButtonRound(
-                          icon: Icons.arrow_back_ios_new,
-                          size: 40,
-                          variant: IconButtonVariant.tonal,
-                          onPressed: onBack,
-                        ),
-                        const SizedBox(width: 4),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
+            bottom: false,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(8, 6, 8, 6),
+                  child: Row(
+                    children: [
+                      IconButtonRound(
+                        icon: Icons.arrow_back_ios_new,
+                        size: 40,
+                        variant: IconButtonVariant.tonal,
+                        onPressed: onBack,
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(
+                              bookTitle,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                color: c.textPrimary,
+                                fontSize: 15,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                            if (chapter != null && chapter.isNotEmpty)
                               Text(
-                                bookTitle,
+                                chapter,
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
                                 style: TextStyle(
-                                  color: c.textPrimary,
-                                  fontSize: 15,
-                                  fontWeight: FontWeight.w600,
+                                  color: c.textTertiary,
+                                  fontSize: 12,
                                 ),
                               ),
-                              if (hasAuthor)
-                                Text(
-                                  author,
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: TextStyle(
-                                    color: c.textSecondary,
-                                    fontSize: 12,
-                                  ),
-                                ),
-                              if (chapterTitle != null)
-                                Text(
-                                  chapterTitle!,
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: TextStyle(
-                                    color: c.textTertiary,
-                                    fontSize: 12,
-                                  ),
-                                ),
-                            ],
-                          ),
+                          ],
                         ),
-                        if (onTtsToggle != null) ...[
-                          const SizedBox(width: 4),
-                          IconButtonRound(
-                            icon: isTtsActive
-                                ? Icons.headphones
-                                : Icons.headphones_outlined,
-                            size: 40,
-                            variant: isTtsActive
-                                ? IconButtonVariant.filled
-                                : IconButtonVariant.tonal,
-                            iconColor: isTtsActive
-                                ? context.colors.onAccent
-                                : null,
-                            backgroundColor: isTtsActive
-                                ? context.colors.accent
-                                : null,
-                            onPressed: onTtsToggle,
-                          ),
-                        ],
+                      ),
+                      if (onTtsToggle != null) ...[
                         const SizedBox(width: 4),
                         IconButtonRound(
-                          icon: Icons.tune,
+                          icon: isTtsActive
+                              ? Icons.headphones
+                              : Icons.headphones_outlined,
                           size: 40,
-                          variant: IconButtonVariant.tonal,
-                          onPressed: onSettings,
+                          variant: isTtsActive
+                              ? IconButtonVariant.filled
+                              : IconButtonVariant.tonal,
+                          iconColor: isTtsActive ? c.onAccent : null,
+                          backgroundColor: isTtsActive ? c.accent : null,
+                          onPressed: onTtsToggle,
                         ),
-                        const SizedBox(width: 4),
                       ],
-                    ),
+                      const SizedBox(width: 4),
+                      IconButtonRound(
+                        icon: Icons.settings_outlined,
+                        size: 40,
+                        variant: IconButtonVariant.tonal,
+                        onPressed: onSettings,
+                      ),
+                      const SizedBox(width: 4),
+                    ],
                   ),
-                  SizedBox(
-                    height: 2,
-                    child: LayoutBuilder(
-                      builder: (context, constraints) {
-                        return Stack(
-                          children: [
-                            Container(color: c.border),
-                            FractionallySizedBox(
-                              widthFactor: progress.clamp(0.0, 1.0),
-                              child: Container(color: c.accent),
-                            ),
-                          ],
-                        );
-                      },
-                    ),
+                ),
+                SizedBox(
+                  height: 2,
+                  child: Stack(
+                    children: [
+                      Container(color: c.border.withValues(alpha: 0.4)),
+                      FractionallySizedBox(
+                        widthFactor: progress.clamp(0.0, 1.0),
+                        child: Container(color: c.accent),
+                      ),
+                    ],
                   ),
-                ],
-              ),
+                ),
+              ],
             ),
           ),
         ),
@@ -160,5 +136,3 @@ class ReaderTopBar extends StatelessWidget {
     );
   }
 }
-
-

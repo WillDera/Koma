@@ -1,7 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
+import '../../theme/app_icons.dart';
 import '../../theme/app_theme.dart';
+import '../../widgets/animated_press.dart';
+import '../../widgets/icon_button_round.dart';
+import '../../widgets/screen_chrome.dart';
+import '../../widgets/text_field.dart';
 import 'global_search_provider.dart';
 import 'global_search_widgets.dart';
 
@@ -52,37 +58,61 @@ class _GlobalSearchScreenState extends ConsumerState<GlobalSearchScreen> {
   @override
   Widget build(BuildContext context) {
     final c = context.colors;
-    final state = ref.watch(globalSearchProvider);
     final notifier = ref.read(globalSearchProvider.notifier);
 
-    return Scaffold(
-      backgroundColor: c.bg,
-      appBar: AppBar(
-        backgroundColor: c.bg,
-        iconTheme: IconThemeData(color: c.textPrimary),
-        title: TextField(
-          controller: _ctrl,
-          focusNode: _focus,
-          textInputAction: TextInputAction.search,
-          onChanged: notifier.setQuery,
-          onSubmitted: (_) => _submit(),
-          style: TextStyle(color: c.textPrimary),
-          decoration: InputDecoration(
-            hintText: 'Global search',
-            hintStyle: TextStyle(color: c.textSecondary),
-            border: InputBorder.none,
-            suffixIcon: IconButton(
-              icon: Icon(Icons.search, color: c.textSecondary),
-              onPressed: _submit,
+    return ScreenBackdrop(
+      child: SafeArea(
+        bottom: false,
+        child: Column(
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(4, 4, 16, 4),
+              child: Row(
+                children: [
+                  IconButtonRound(
+                    iconData: AppIcons.back,
+                    size: 40,
+                    variant: IconButtonVariant.plain,
+                    onPressed: () => context.pop(),
+                  ),
+                  Expanded(
+                    child: Text(
+                      'Global search',
+                      style: TextStyle(
+                        color: c.textPrimary,
+                        fontSize: 20,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
             ),
-          ),
-        ),
-        bottom: PreferredSize(
-          preferredSize: Size.fromHeight(state.searching ? 52 : 48),
-          child: const GlobalSearchFilterBar(),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+              child: StashTextField(
+                controller: _ctrl,
+                focusNode: _focus,
+                hint: 'Search installed sources…',
+                leadingIcon: Icons.search,
+                showClearButton: true,
+                textInputAction: TextInputAction.search,
+                onChanged: notifier.setQuery,
+                onSubmitted: (_) => _submit(),
+                trailing: AnimatedPress(
+                  onTap: _submit,
+                  child: Padding(
+                    padding: const EdgeInsets.all(8),
+                    child: Icon(Icons.search, color: c.accent, size: 20),
+                  ),
+                ),
+              ),
+            ),
+            const GlobalSearchFilterBar(),
+            const Expanded(child: GlobalSearchResultsList()),
+          ],
         ),
       ),
-      body: const GlobalSearchResultsList(),
     );
   }
 }

@@ -1,10 +1,12 @@
 package eu.kanade.tachiyomi.extension
 
 import android.util.Log
+import android.webkit.CookieManager
 import eu.kanade.tachiyomi.source.model.Page
 import eu.kanade.tachiyomi.source.model.SChapter
 import eu.kanade.tachiyomi.source.online.HttpSource
 import eu.kanade.tachiyomi.util.asJsoup
+import keiyoushi.utils.WebViewTimeoutException
 import keiyoushi.utils.runWebView
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
@@ -15,18 +17,18 @@ import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.Request
+import kotlin.time.Duration.Companion.milliseconds
 import kotlin.time.Duration.Companion.seconds
 
 /**
  * Host-owned page-list fetch for AllManga / mkissa.
  *
- * The extension APK R8-obfuscates its `runWebView` into a private class, so we cannot
- * patch it via ClassLoader. Instead we reimplement AllManga's [getPageList] here using
- * the host [keiyoushi.utils.runWebView] — same OkHttp HTML fetch + head hooks +
- * [loadData] + synthetic chapter click that Mihon runs successfully.
+ * Matches the last released implementation (OkHttp manga HTML → head hooks →
+ * [loadData] → synthetic chapter click). Do **not** [loadUrl] the chapter page:
+ * that re-triggers Cloudflare Turnstile in a headless WebView that cannot be
+ * solved, even after the user cleared CF in Open in WebView.
  *
- * Cloudflare: if OkHttp gets 403/503, tell the user to use Open in WebView (same as
- * the extension's own message). Do not auto-dump into an interactive reader WebView.
+ * The extension APK R8-obfuscates its own `runWebView`, so Dalvik routes here.
  */
 object MkissaHostPageList {
     private const val TAG = "MkissaHostPageList"
@@ -36,6 +38,9 @@ object MkissaHostPageList {
 
     private val urlRegex = Regex("^https?://.*")
     private val json = Json { ignoreUnknownKeys = true; isLenient = true }
+
+    private val captchaMessage =
+        "Solve captcha in WebView and retry"
 
     fun appliesTo(source: HttpSource): Boolean {
         if (source.id == ALLMANGA_EN_ID) return true
@@ -59,6 +64,9 @@ object MkissaHostPageList {
             ?: source.headers["user-agent"]
             ?: throw Exception("Missing User-Agent")
 
+        CookieManager.getInstance().flush()
+        logClearance(base)
+
         Log.i(TAG, "AllManga-style loadData manga=$mangaUrl chapterPath=$chapterPath")
 
         val document = source.client.newCall(
@@ -66,64 +74,31 @@ object MkissaHostPageList {
         ).execute().use { response ->
             if (!response.isSuccessful) {
                 if (response.code == 403 || response.code == 503) {
-                    throw Exception("Solve captcha in WebView and retry")
+                    throw Exception(captchaMessage)
                 }
                 throw Exception("HTTP error ${response.code}")
             }
             response.asJsoup().also { doc ->
-                doc.head().prepend(
-                    """
-                    <script>
-                    (() => {
-                        const originalJson = Response.prototype.json;
-                        Response.prototype.json = function() {
-                            return originalJson.call(this).then(data => {
-                                if (data && data.chapterPages) {
-                                    window.$interfaceName.post(JSON.stringify(data));
-                                }
-                                return data;
-                            });
-                        };
-
-                        const originalParse = JSON.parse;
-                        JSON.parse = new Proxy(originalParse, {
-                            apply(target, thisArg, args) {
-                                const result = Reflect.apply(target, thisArg, args);
-                                if (result && result.chapterPages) {
-                                    window.$interfaceName.post(args[0]);
-                                }
-                                return result;
-                            }
-                        });
-
-                      const hook = e => {
-                        if (e.tagName.toUpperCase() === "IFRAME") {
-                          Object.defineProperty(e, "contentWindow", {
-                            get: () => null,
-                            configurable: false
-                          });
-                        }
-                        return e;
-                      };
-
-                      for (const k of ["createElement", "createElementNS"]) {
-                        const c = Document.prototype[k];
-                        Document.prototype[k] = function(...a) {
-                          return hook(c.call(this, ...a));
-                        };
-                      }
-                    })();
-                    </script>
-                    """.trimIndent(),
-                )
+                val html = doc.html()
+                if (looksLikeCloudflareChallenge(html)) {
+                    throw Exception(captchaMessage)
+                }
+                doc.head().prepend(buildHeadHooks(interfaceName))
             }
         }
 
-        val payload = runWebView<String>(timeout = 45.seconds) {
-            blockImages = true
-            userAgent = ua
+        val payload = try {
+            runWebView<String>(timeout = 45.seconds) {
+                // Same as released AllManga / Mihon path.
+                blockImages = true
+                userAgent = ua
 
-            val script = """
+                jsBridge(interfaceName) { message ->
+                    Log.i(TAG, "chapterPages bridge len=${message.length}")
+                    resolve(message)
+                }
+
+                val clickScript = """
                 (function () {
                     function triggerChapterNav() {
                         const a = document.createElement('a');
@@ -147,27 +122,231 @@ object MkissaHostPageList {
                    }
                    check();
                 })();
-            """.trimIndent()
+                """.trimIndent()
 
-            jsBridge(interfaceName) { message ->
-                resolve(message)
+                // Re-install capture hooks if a soft/hard nav replaces the document.
+                val reinstallHooks = buildReinstallHooks(interfaceName)
+
+                onPageStarted { url ->
+                    Log.d(TAG, "onPageStarted $url")
+                    evaluateJs(reinstallHooks)
+                    evaluateJs(clickScript)
+                }
+
+                // Fail fast if Turnstile appears (cannot be solved headless).
+                poll(interval = 1500.milliseconds) {
+                    evaluateJs(CHALLENGE_DETECT_JS) { value ->
+                        if (value == "true" || value == "\"true\"") {
+                            reject(Exception(captchaMessage))
+                        }
+                    }
+                }
+
+                // Host loadData injects ServiceWorker stub (see keiyoushi.utils.WebView).
+                loadData(mangaUrl, document.outerHtml())
             }
-
-            onPageStarted {
-                evaluateJs(script)
-            }
-
-            // Host loadData injects ServiceWorker stub (see keiyoushi.utils.WebView).
-            loadData(mangaUrl, document.outerHtml())
+        } catch (e: WebViewTimeoutException) {
+            throw Exception(
+                "Timed out loading pages (Cloudflare?). Open the source in WebView, " +
+                    "solve the captcha, then retry.",
+                e,
+            )
         }
 
         return parseChapterPages(payload)
     }
 
+    private fun logClearance(baseUrl: String) {
+        val cookies = CookieManager.getInstance().getCookie(baseUrl).orEmpty()
+        val hasClearance = cookies.contains("cf_clearance=")
+        Log.i(
+            TAG,
+            "cookies for $baseUrl: cf_clearance=${if (hasClearance) "yes" else "NO"} " +
+                "len=${cookies.length}",
+        )
+    }
+
+    /**
+     * AllManga head hooks (Response.json + JSON.parse + iframe contentWindow null),
+     * plus fetch/XHR so we still catch chapterPages if the SPA avoids Response.json.
+     */
+    private fun buildHeadHooks(interfaceName: String): String =
+        """
+        <script>
+        (() => {
+            window.__komaMkissaHooks = true;
+            const postPages = (obj, raw) => {
+                try {
+                    if (!obj) return;
+                    if (obj.chapterPages) {
+                        window.$interfaceName.post(raw || JSON.stringify(obj));
+                        return;
+                    }
+                    if (obj.data && obj.data.chapterPages) {
+                        window.$interfaceName.post(JSON.stringify(obj.data));
+                    }
+                } catch (e) {}
+            };
+
+            const originalJson = Response.prototype.json;
+            Response.prototype.json = function() {
+                return originalJson.call(this).then(data => {
+                    postPages(data);
+                    return data;
+                });
+            };
+
+            const originalParse = JSON.parse;
+            JSON.parse = new Proxy(originalParse, {
+                apply(target, thisArg, args) {
+                    const result = Reflect.apply(target, thisArg, args);
+                    postPages(result, typeof args[0] === 'string' ? args[0] : undefined);
+                    return result;
+                }
+            });
+
+            try {
+                const origFetch = window.fetch;
+                window.fetch = function() {
+                    return origFetch.apply(this, arguments).then(function(res) {
+                        try {
+                            const clone = res.clone();
+                            clone.text().then(function(t) {
+                                if (t && t.indexOf('chapterPages') !== -1) {
+                                    try { postPages(JSON.parse(t), t); }
+                                    catch (e) { window.$interfaceName.post(t); }
+                                }
+                            });
+                        } catch (e) {}
+                        return res;
+                    });
+                };
+            } catch (e) {}
+
+            try {
+                const xhrSend = XMLHttpRequest.prototype.send;
+                XMLHttpRequest.prototype.send = function() {
+                    this.addEventListener('load', function() {
+                        try {
+                            const t = this.responseText;
+                            if (t && t.indexOf('chapterPages') !== -1) {
+                                try { postPages(JSON.parse(t), t); }
+                                catch (e) { window.$interfaceName.post(t); }
+                            }
+                        } catch (e) {}
+                    });
+                    return xhrSend.apply(this, arguments);
+                };
+            } catch (e) {}
+
+            // AllManga blanks tracking iframes. Safe on loadData after CF is cleared
+            // via OkHttp — do not use loadUrl(chapter) or Turnstile never finishes.
+            const hook = e => {
+                if (e.tagName && e.tagName.toUpperCase() === "IFRAME") {
+                    Object.defineProperty(e, "contentWindow", {
+                        get: () => null,
+                        configurable: false
+                    });
+                }
+                return e;
+            };
+
+            for (const k of ["createElement", "createElementNS"]) {
+                const c = Document.prototype[k];
+                Document.prototype[k] = function(...a) {
+                    return hook(c.call(this, ...a));
+                };
+            }
+        })();
+        </script>
+        """.trimIndent()
+
+    /** Idempotent re-install after navigations (no iframe hook — Turnstile may appear). */
+    private fun buildReinstallHooks(interfaceName: String): String =
+        """
+        (function(){
+          if (window.__komaMkissaHooks) return;
+          window.__komaMkissaHooks = true;
+          function postPages(obj, raw) {
+            try {
+              if (!obj) return;
+              if (obj.chapterPages) {
+                window.$interfaceName.post(raw || JSON.stringify(obj));
+                return;
+              }
+              if (obj.data && obj.data.chapterPages) {
+                window.$interfaceName.post(JSON.stringify(obj.data));
+              }
+            } catch (e) {}
+          }
+          try {
+            var originalJson = Response.prototype.json;
+            Response.prototype.json = function() {
+              return originalJson.call(this).then(function(data) {
+                postPages(data);
+                return data;
+              });
+            };
+          } catch (e) {}
+          try {
+            var originalParse = JSON.parse;
+            JSON.parse = function(text, reviver) {
+              var result = originalParse.call(this, text, reviver);
+              postPages(result, typeof text === 'string' ? text : undefined);
+              return result;
+            };
+          } catch (e) {}
+          try {
+            var origFetch = window.fetch;
+            window.fetch = function() {
+              return origFetch.apply(this, arguments).then(function(res) {
+                try {
+                  var clone = res.clone();
+                  clone.text().then(function(t) {
+                    if (t && t.indexOf('chapterPages') !== -1) {
+                      try { postPages(JSON.parse(t), t); }
+                      catch (e) { window.$interfaceName.post(t); }
+                    }
+                  });
+                } catch (e) {}
+                return res;
+              });
+            };
+          } catch (e) {}
+        })();
+        """.trimIndent()
+
+    private val CHALLENGE_DETECT_JS =
+        """
+        (function(){
+          try {
+            var u = location.href || '';
+            if (u.indexOf('cdn-cgi/challenge') !== -1) return true;
+            if (document.querySelector(
+              '#challenge-form, #challenge-error-title, #challenge-error-text, iframe[src*="challenges.cloudflare"], iframe[src*="turnstile"]'
+            )) return true;
+            var t = (document.body && document.body.innerText) || '';
+            if (/just a moment/i.test(t)) return true;
+          } catch (e) {}
+          return false;
+        })();
+        """.trimIndent()
+
+    private fun looksLikeCloudflareChallenge(html: String): Boolean {
+        val h = html.lowercase()
+        return "cf-browser-verification" in h ||
+            "challenge-platform" in h ||
+            "cdn-cgi/challenge" in h ||
+            "just a moment" in h ||
+            ("turnstile" in h && "cloudflare" in h)
+    }
+
     private fun parseChapterPages(payload: String): List<Page> {
         val root = json.parseToJsonElement(payload).jsonObject
-        val edges = root["chapterPages"]?.jsonObject?.get("edges")?.jsonArray
+        val chapterPages = root["chapterPages"]?.jsonObject
+            ?: root["data"]?.jsonObject?.get("chapterPages")?.jsonObject
             ?: return emptyList()
+        val edges = chapterPages["edges"]?.jsonArray ?: return emptyList()
         if (edges.isEmpty()) return emptyList()
 
         fun edgeScore(edge: JsonObject): Int {
@@ -198,7 +377,7 @@ object MkissaHostPageList {
         return pictureUrls.mapIndexedNotNull { index, el ->
             val path = (el as? JsonObject)?.get("url").asString() ?: return@mapIndexedNotNull null
             val imageUrl = if (path.matches(urlRegex)) path else imageDomain + path.removePrefix("/")
-            Page(index = index, imageUrl = imageUrl)
+            Page(index = index, url = imageUrl, imageUrl = imageUrl)
         }
     }
 

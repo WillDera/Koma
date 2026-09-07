@@ -1,8 +1,11 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../core/app_version.dart';
+import '../core/services/user_profile.dart';
 import '../theme/app_icons.dart';
 import '../theme/theme_provider.dart';
 import '../widgets/app_update_gate.dart';
@@ -13,10 +16,8 @@ import '../widgets/nav_drawer.dart';
 /// (an IndexedStack of the five tab branches, each with its own Navigator
 /// and preserved state) and renders the [AppBottomNav] under it.
 ///
-/// Replaces the old hand-rolled Stack+IgnorePointer+AnimatedOpacity shell
-/// from app.dart. Tab switching now goes through `navigationShell.goBranch`,
-/// which keeps every branch alive — same state-preservation guarantee as
-/// before, but with real per-tab navigation history.
+/// Kenji tab order: Library → Updates → History → Explore → You.
+/// Snippets lives as a pushed route (Settings / library entry).
 class MainShell extends ConsumerWidget {
   final StatefulNavigationShell navigationShell;
 
@@ -29,24 +30,25 @@ class MainShell extends ConsumerWidget {
       label: 'Library',
     ),
     NavItem(
+      icon: AppIcons.updates,
+      activeIcon: AppIcons.updatesActive,
+      label: 'Updates',
+    ),
+    NavItem(
       icon: AppIcons.history,
       activeIcon: AppIcons.historyActive,
       label: 'History',
     ),
     NavItem(
-      icon: AppIcons.snippets,
-      activeIcon: AppIcons.snippetsActive,
-      label: 'Snippets',
-    ),
-    NavItem(
       icon: AppIcons.discover,
       activeIcon: AppIcons.discoverActive,
-      label: 'Discover',
+      label: 'Explore',
     ),
     NavItem(
       icon: AppIcons.settings,
       activeIcon: AppIcons.settingsActive,
-      label: 'Settings',
+      label: 'You',
+      profileTab: true,
     ),
   ];
 
@@ -62,6 +64,13 @@ class MainShell extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final theme = ref.watch(themeProvider);
+    final profile = ref.watch(userProfileProvider);
+    final initials = profile.firstName.isNotEmpty
+        ? profile.firstName
+        : (profile.displayName.isNotEmpty ? profile.displayName : 'K');
+    final profileImage = profile.hasAvatar
+        ? FileImage(File(profile.avatarPath!))
+        : null;
     final version = ref.watch(packageInfoProvider).when(
           data: (info) => '${info.version}+${info.buildNumber}',
           loading: () => '',
@@ -76,6 +85,8 @@ class MainShell extends ConsumerWidget {
           items: _navItems,
           currentIndex: navigationShell.currentIndex,
           onTap: _onTap,
+          profileInitials: initials,
+          profileImage: profileImage,
         ),
         drawer: NavDrawer(
           currentIndex: navigationShell.currentIndex,

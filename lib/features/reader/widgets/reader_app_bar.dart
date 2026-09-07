@@ -1,9 +1,8 @@
 import 'package:flutter/material.dart';
 
-/// Redesigned reader app bar inspired by mangayomi.
-///
-/// Shows manga name + chapter title, back button, chapter list button,
-/// bookmark toggle. Animates in/out with the toolbar visibility.
+import '../../../theme/app_theme.dart';
+
+/// Kenji-style opaque manga reader top bar.
 class ReaderAppBar extends StatelessWidget {
   final String? mangaName;
   final String chapterName;
@@ -26,84 +25,79 @@ class ReaderAppBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final c = context.colors;
     return AnimatedPositioned(
       duration: const Duration(milliseconds: 250),
       curve: Curves.easeInOut,
       top: isVisible ? 0 : -120,
       left: 0,
       right: 0,
-      child: Container(
-        padding: EdgeInsets.only(top: MediaQuery.of(context).padding.top + 4),
-        decoration: const BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
-            colors: [Colors.black87, Colors.transparent],
+      child: Material(
+        color: const Color(0xFF0F0F0F),
+        child: Padding(
+          padding: EdgeInsets.only(
+            top: MediaQuery.of(context).padding.top + 4,
+            left: 4,
+            right: 4,
+            bottom: 8,
           ),
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Row(
-              children: [
-                IconButton(
-                  icon: const Icon(Icons.arrow_back, color: Colors.white),
-                  onPressed: onClose,
-                ),
-                Expanded(
-                  child: GestureDetector(
-                    onTap: onChapterList,
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(vertical: 4),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          if (mangaName != null)
-                            Text(
-                              mangaName!,
-                              style: const TextStyle(
-                                color: Colors.white,
-                                fontSize: 13,
-                                fontWeight: FontWeight.w600,
-                              ),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                            ),
+          child: Row(
+            children: [
+              IconButton(
+                icon: Icon(Icons.arrow_back_ios_new, color: c.textPrimary),
+                onPressed: onClose,
+              ),
+              Expanded(
+                child: GestureDetector(
+                  onTap: onChapterList,
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 4),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        if (mangaName != null)
                           Text(
-                            chapterName,
+                            mangaName!,
                             style: TextStyle(
-                              color: Colors.white.withValues(alpha: 0.8),
-                              fontSize: 12,
+                              color: c.textPrimary,
+                              fontSize: 14,
+                              fontWeight: FontWeight.w600,
                             ),
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                           ),
-                        ],
-                      ),
+                        Text(
+                          chapterName,
+                          style: TextStyle(
+                            color: c.textTertiary,
+                            fontSize: 12,
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ],
                     ),
                   ),
                 ),
-                IconButton(
-                  icon: Icon(
-                    isBookmarked
-                        ? Icons.bookmark
-                        : Icons.bookmark_border_outlined,
-                    color: isBookmarked ? Colors.orangeAccent : Colors.white70,
-                  ),
-                  onPressed: onBookmarkToggle,
-                  tooltip: 'Bookmark',
+              ),
+              IconButton(
+                icon: Icon(
+                  isBookmarked ? Icons.bookmark : Icons.bookmark_border_outlined,
+                  color: isBookmarked ? c.accent : c.textSecondary,
                 ),
-                IconButton(
-                  icon: const Icon(
-                    Icons.format_list_numbered_outlined,
-                    color: Colors.white70,
-                  ),
-                  onPressed: onChapterList,
-                  tooltip: 'Chapter list',
+                onPressed: onBookmarkToggle,
+                tooltip: 'Bookmark',
+              ),
+              IconButton(
+                icon: Icon(
+                  Icons.format_list_numbered_outlined,
+                  color: c.textSecondary,
                 ),
-              ],
-            ),
-          ],
+                onPressed: onChapterList,
+                tooltip: 'Chapter list',
+              ),
+            ],
+          ),
         ),
       ),
     );

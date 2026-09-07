@@ -24,20 +24,29 @@ class KirToDocument {
     return b.finish();
   }
 
-  /// `file://` / absolute `img` srcs in HTML order, for pairing with KIR images.
+  /// `file://` / absolute image srcs in HTML order, for pairing with KIR images.
   static List<String> imagePathsFromHtml(String html) {
     final out = <String>[];
-    final re = RegExp(
+    void take(String src) {
+      final s = src.trim();
+      if (s.startsWith('file://')) {
+        out.add(Uri.parse(s).toFilePath());
+      } else if (s.startsWith('/')) {
+        out.add(s);
+      }
+    }
+
+    for (final m in RegExp(
       r'''<img\b[^>]*?\bsrc\s*=\s*(["'])([^"']+)\1''',
       caseSensitive: false,
-    );
-    for (final m in re.allMatches(html)) {
-      final src = m.group(2)!.trim();
-      if (src.startsWith('file://')) {
-        out.add(Uri.parse(src).toFilePath());
-      } else if (src.startsWith('/')) {
-        out.add(src);
-      }
+    ).allMatches(html)) {
+      take(m.group(2)!);
+    }
+    for (final m in RegExp(
+      r'''<image\b[^>]*?\b(?:xlink:)?href\s*=\s*(["'])([^"']+)\1''',
+      caseSensitive: false,
+    ).allMatches(html)) {
+      take(m.group(2)!);
     }
     return out;
   }

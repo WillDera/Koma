@@ -24,7 +24,8 @@ fun SChapter.toMap(): Map<String, Any?> = mapOf(
 
 fun Page.toMap(): Map<String, Any?> = mapOf(
     "index" to index,
-    "url" to url,
+    // Prefer imageUrl when url is blank — Flutter MPage reads `url`.
+    "url" to url.ifBlank { imageUrl.orEmpty() },
     "imageUrl" to imageUrl,
     "uri" to uri?.toString(),
 )

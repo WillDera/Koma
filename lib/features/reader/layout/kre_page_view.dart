@@ -22,6 +22,7 @@ class KrePageView extends StatefulWidget {
     required this.themeProv,
     required this.chapterTitle,
     this.document,
+    this.backgroundColor,
     this.showTitle = false,
     this.titleGap = 28,
     this.highlights = const [],
@@ -44,6 +45,11 @@ class KrePageView extends StatefulWidget {
   final String plainText;
   final ReadingDocument? document;
   final ThemeState themeProv;
+
+  /// Page fill. Defaults to the active theme [KomaColors.bg] so light / dark /
+  /// sepia / AMOLED sheets match the reader chrome. Pass [backgroundColor] to
+  /// override (e.g. scene chrome).
+  final Color? backgroundColor;
   final String chapterTitle;
   final bool showTitle;
   final double titleGap;
@@ -126,7 +132,7 @@ class _KrePageViewState extends State<KrePageView> {
     final brightness = Theme.of(context).brightness;
 
     return ColoredBox(
-      color: widget.themeProv.bgColor,
+      color: widget.backgroundColor ?? context.colors.bg,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [

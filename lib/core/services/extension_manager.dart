@@ -8,6 +8,7 @@ import 'package:http/http.dart' as http;
 import 'package:path/path.dart' as p;
 import 'app_storage.dart';
 
+import '../models/extension_index_entry.dart';
 import '../models/extension_repo.dart';
 import '../models/extension_source.dart';
 import '../repositories/repositories.dart';
@@ -15,9 +16,11 @@ import '../utils/language.dart';
 import '../../eval/javascript/js_source_meta.dart';
 import 'apk_signature_service.dart';
 import 'extension_icon_cache.dart';
+import 'extension_index_codec.dart';
 import 'keiyoushi_service.dart';
 import 'trust_extension.dart';
 
+export '../models/extension_index_entry.dart' show ExtensionIndexEntry;
 export '../models/extension_source.dart' show SourceCodeLanguage;
 export 'trust_extension.dart' show UntrustedExtensionException;
 export 'apk_signature_service.dart' show ApkSigningInfo;
@@ -35,246 +38,6 @@ class UnsupportedExtensionLanguageException implements Exception {
     return 'Unsupported extension language "$language"$label — '
         'Koma installs Mihon APKs, JavaScript, and Dart (d4rt) sources '
         '(LNReader and unknown languages are out of scope).';
-  }
-}
-
-class ExtensionIndexEntry {
-  final String pkg;
-  final String name;
-
-  /// Mihon APK relative/absolute URL only. Never holds JS [sourceCodeUrl].
-  final String apkUrl;
-
-  /// Mangayomi native index `sourceCodeUrl` (JS/Dart script). Null for Mihon.
-  final String? sourceCodeUrl;
-
-  /// Catalog language: [SourceCodeLanguage.mihon], [SourceCodeLanguage.js],
-  /// [SourceCodeLanguage.dart], or [SourceCodeLanguage.unsupported].
-  final String sourceCodeLanguage;
-
-  final String version;
-  final String lang;
-  final String contentWarning;
-  final bool isNsfw;
-  final String? baseUrl;
-  final String? iconUrl;
-  final String? apiUrl;
-  final bool hasCloudflare;
-
-  /// `manga` / `anime` / `novel`, or null when the index omitted itemType/isManga.
-  final String? itemType;
-  final List<Map<String, dynamic>> sources;
-
-  const ExtensionIndexEntry({
-    required this.pkg,
-    required this.name,
-    required this.apkUrl,
-    this.sourceCodeUrl,
-    this.sourceCodeLanguage = SourceCodeLanguage.mihon,
-    required this.version,
-    required this.lang,
-    this.contentWarning = 'CONTENT_WARNING_SAFE',
-    this.isNsfw = false,
-    this.baseUrl,
-    this.iconUrl,
-    this.apiUrl,
-    this.hasCloudflare = false,
-    this.itemType,
-    required this.sources,
-  });
-
-  bool get isJs => SourceCodeLanguage.isJs(sourceCodeLanguage);
-  bool get isMihon => SourceCodeLanguage.isMihon(sourceCodeLanguage);
-  bool get isDart => sourceCodeLanguage == SourceCodeLanguage.dart;
-
-  String? get className {
-    if (sources.isEmpty) return null;
-    final c = sources.first['className'];
-    if (c is String && c.isNotEmpty) return c;
-    return null;
-  }
-
-  /// Map mangayomi `sourceCodeLanguage` (int index or string) → catalog token.
-  /// Enum order: dart=0, javascript=1, mihon=2, lnreader=3.
-  static String parseSourceCodeLanguage(dynamic raw) {
-    if (raw is int) {
-      switch (raw) {
-        case 0:
-          return SourceCodeLanguage.dart;
-        case 1:
-          return SourceCodeLanguage.js;
-        case 2:
-          return SourceCodeLanguage.mihon;
-        default:
-          return SourceCodeLanguage.unsupported;
-      }
-    }
-    if (raw is String) {
-      switch (raw.toLowerCase().trim()) {
-        case 'js':
-        case 'javascript':
-          return SourceCodeLanguage.js;
-        case 'dart':
-          return SourceCodeLanguage.dart;
-        case 'mihon':
-          return SourceCodeLanguage.mihon;
-        default:
-          return SourceCodeLanguage.unsupported;
-      }
-    }
-    // Mangayomi Source.fromJson defaults missing language to dart (index 0).
-    return SourceCodeLanguage.dart;
-  }
-
-  /// Map mangayomi `itemType` / legacy `isManga` → `manga`/`anime`/`novel`.
-  /// Returns null when neither field is present in the index JSON.
-  static String? parseItemType(Map<String, dynamic> j) {
-    if (!j.containsKey('itemType') && !j.containsKey('isManga')) return null;
-    final raw = j['itemType'];
-    if (raw is int && raw >= 0 && raw <= 2) {
-      return const ['manga', 'anime', 'novel'][raw];
-    }
-    if (raw is String) {
-      final s = raw.toLowerCase().trim();
-      if (s == 'manga' || s == 'anime' || s == 'novel') return s;
-      final n = int.tryParse(s);
-      if (n != null && n >= 0 && n <= 2) {
-        return const ['manga', 'anime', 'novel'][n];
-      }
-    }
-    final isManga = j['isManga'];
-    if (isManga == true) return 'manga';
-    if (isManga == false) return 'anime';
-    // itemType present but unusable — same default as Source.fromJson (0).
-    return 'manga';
-  }
-
-  static bool _looksLikeMihon(Map<String, dynamic> j) {
-    return j.containsKey('apk') ||
-        j.containsKey('pkg') ||
-        j.containsKey('packageName') ||
-        j.containsKey('sources');
-  }
-
-  factory ExtensionIndexEntry.fromJson(Map<String, dynamic> j) {
-    final sources = (j['sources'] as List? ?? const [])
-        .cast<Map>()
-        .map((e) => Map<String, dynamic>.from(e))
-        .toList(growable: false);
-
-    final hasPackageName = j['packageName'] != null || j['pkg'] != null;
-    final hasSourceCodeUrl = j['sourceCodeUrl'] != null;
-    final hasId = j['id'] != null;
-    final apiUrl = j['apiUrl'] as String?;
-    final hasCloudflare = j['hasCloudflare'] == true;
-    final itemType = parseItemType(j);
-
-    // Mihon/Keiyoushi shape first — never put JS URLs into apkUrl.
-    if (_looksLikeMihon(j)) {
-      final pkg = j['packageName'] as String? ?? j['pkg'] as String? ?? '';
-      final name = j['name'] as String? ?? (pkg.isEmpty ? 'Unknown' : pkg);
-
-      String apk;
-      if (j['resources'] is Map) {
-        final r = j['resources'] as Map;
-        apk = (r['apkUrl'] as String?) ?? '';
-      } else {
-        apk = j['apk'] as String? ?? '';
-      }
-
-      final version =
-          j['versionName'] as String? ?? j['version'] as String? ?? '0';
-
-      final String lang;
-      if (sources.isNotEmpty) {
-        lang =
-            sources.first['language'] as String? ??
-            sources.first['lang'] as String? ??
-            'en';
-      } else {
-        lang = j['lang'] as String? ?? 'en';
-      }
-
-      final contentWarning =
-          j['contentWarning'] as String? ?? 'CONTENT_WARNING_SAFE';
-      final nsfw = j['nsfw'] == 1 ||
-          j['isNsfw'] == true ||
-          contentWarning == 'CONTENT_WARNING_NSFW' ||
-          contentWarning == 'CONTENT_WARNING_MIXED';
-
-      final baseUrl =
-          j['baseUrl'] as String? ??
-          (sources.isNotEmpty
-              ? (sources.first['baseUrl'] as String?) ??
-                    (sources.first['homeUrl'] as String?)
-              : null);
-      final iconUrl = j['resources'] is Map
-          ? (j['resources'] as Map)['iconUrl'] as String?
-          : (j['iconUrl'] as String?);
-
-      return ExtensionIndexEntry(
-        pkg: pkg,
-        name: name,
-        apkUrl: apk,
-        sourceCodeUrl: null,
-        sourceCodeLanguage: SourceCodeLanguage.mihon,
-        version: version,
-        lang: lang,
-        contentWarning: contentWarning,
-        isNsfw: nsfw,
-        baseUrl: baseUrl,
-        iconUrl: iconUrl,
-        apiUrl: apiUrl,
-        hasCloudflare: hasCloudflare,
-        itemType: itemType,
-        sources: sources,
-      );
-    }
-
-    // Mangayomi native (JS / Dart-eval) — id + sourceCodeUrl, no package/apk.
-    if (hasSourceCodeUrl || (hasId && !hasPackageName)) {
-      final pkg = j['id']?.toString() ?? '';
-      final name = (j['name'] as String?) ?? (pkg.isEmpty ? 'Unknown' : pkg);
-      final isNsfw = j['isNsfw'] == true || j['nsfw'] == 1;
-      return ExtensionIndexEntry(
-        pkg: pkg,
-        name: name,
-        apkUrl: '',
-        sourceCodeUrl: j['sourceCodeUrl'] as String?,
-        sourceCodeLanguage: parseSourceCodeLanguage(j['sourceCodeLanguage']),
-        version: j['version'] as String? ?? '0',
-        lang: j['lang'] as String? ?? 'en',
-        contentWarning:
-            isNsfw ? 'CONTENT_WARNING_NSFW' : 'CONTENT_WARNING_SAFE',
-        isNsfw: isNsfw,
-        baseUrl: j['baseUrl'] as String?,
-        iconUrl: j['iconUrl'] as String?,
-        apiUrl: apiUrl,
-        hasCloudflare: hasCloudflare,
-        itemType: itemType,
-        sources: sources,
-      );
-    }
-
-    // Fallback: treat as Mihon-like with whatever fields exist.
-    final pkg = j['packageName'] as String? ?? j['pkg'] as String? ?? '';
-    return ExtensionIndexEntry(
-      pkg: pkg,
-      name: j['name'] as String? ?? (pkg.isEmpty ? 'Unknown' : pkg),
-      apkUrl: j['apk'] as String? ?? '',
-      sourceCodeUrl: null,
-      sourceCodeLanguage: SourceCodeLanguage.mihon,
-      version: j['versionName'] as String? ?? j['version'] as String? ?? '0',
-      lang: j['lang'] as String? ?? 'en',
-      contentWarning: j['contentWarning'] as String? ?? 'CONTENT_WARNING_SAFE',
-      isNsfw: false,
-      baseUrl: j['baseUrl'] as String?,
-      iconUrl: j['iconUrl'] as String?,
-      apiUrl: apiUrl,
-      hasCloudflare: hasCloudflare,
-      itemType: itemType,
-      sources: sources,
-    );
   }
 }
 
@@ -298,26 +61,27 @@ class ExtensionManager {
     required String url,
     String? kind,
   }) async {
+    final normalizedUrl = normalizeExtensionIndexUrl(url);
     var resolvedKind = kind;
     if (resolvedKind == null || !ExtensionRepoKind.isKnown(resolvedKind)) {
-      resolvedKind = await _detectRepoKind(url);
+      resolvedKind = await _detectRepoKind(normalizedUrl);
     }
 
     String? signingKey;
     if (resolvedKind == ExtensionRepoKind.javascript) {
       // Mangayomi JS indexes have no Mihon repo.json signing key — try/ignore.
       try {
-        signingKey = await _fetchSigningKeyForIndex(url);
+        signingKey = await _fetchSigningKeyForIndex(normalizedUrl);
       } catch (_) {
         signingKey = null;
       }
     } else {
-      signingKey = await _fetchSigningKeyForIndex(url);
+      signingKey = await _fetchSigningKeyForIndex(normalizedUrl);
     }
 
     final repo = ExtensionRepo(
       name: name,
-      url: url,
+      url: normalizedUrl,
       signingKey: signingKey,
       kind: resolvedKind,
     );
@@ -328,9 +92,8 @@ class ExtensionManager {
   /// Inspect the first index entries to classify mihon vs javascript.
   Future<String> _detectRepoKind(String indexUrl) async {
     try {
-      final res = await _http.get(Uri.parse(indexUrl));
-      if (res.statusCode != 200) return ExtensionRepoKind.mihon;
-      final entries = await Isolate.run(() => _parseIndexBody(res.body));
+      final url = normalizeExtensionIndexUrl(indexUrl);
+      final entries = await _fetchIndexEntries(url);
       if (entries.isEmpty) return ExtensionRepoKind.mihon;
       // Sample a few rows in case the first is an outlier.
       final sample = entries.take(5);
@@ -372,7 +135,7 @@ class ExtensionManager {
     _trust.updateRepoFingerprints(await listRepos());
   }
 
-  /// Derive Mihon `repo.json` URL from an `index.json` / `index.min.json` URL.
+  /// Derive Mihon `repo.json` URL from an index / `.pb` URL.
   static String repoJsonUrlForIndex(String indexUrl) {
     var u = indexUrl.trim();
     while (u.endsWith('/')) {
@@ -385,6 +148,9 @@ class ExtensionManager {
     if (u.endsWith('/index.json')) {
       return '${u.substring(0, u.length - '/index.json'.length)}/repo.json';
     }
+    if (u.endsWith('/index.pb')) {
+      return '${u.substring(0, u.length - '/index.pb'.length)}/repo.json';
+    }
     return '$u/repo.json';
   }
 
@@ -392,16 +158,41 @@ class ExtensionManager {
     final repoJson = repoJsonUrlForIndex(indexUrl);
     try {
       final res = await _http.get(Uri.parse(repoJson));
+      if (res.statusCode == 200) {
+        final decoded = await Isolate.run(
+          () => decodeExtensionIndexBytes(res.bodyBytes, sourceUrl: repoJson),
+        );
+        if (decoded.signingKey != null && decoded.signingKey!.isNotEmpty) {
+          return decoded.signingKey;
+        }
+        // Legacy repo.json that only has meta — also try nested meta parse.
+        try {
+          final raw = jsonDecode(res.body);
+          if (raw is Map) {
+            final meta = raw['meta'];
+            if (meta is Map && meta['signingKeyFingerprint'] is String) {
+              return (meta['signingKeyFingerprint'] as String)
+                  .trim()
+                  .toLowerCase();
+            }
+            if (raw['signingKey'] is String) {
+              return (raw['signingKey'] as String).trim().toLowerCase();
+            }
+          }
+        } catch (_) {}
+      }
+    } catch (_) {}
+
+    // Direct Index (.pb / index.json) may embed signingKey.
+    try {
+      final url = normalizeExtensionIndexUrl(indexUrl);
+      if (url.endsWith('/repo.json')) return null;
+      final res = await _http.get(Uri.parse(url));
       if (res.statusCode != 200) return null;
-      final decoded = jsonDecode(res.body);
-      if (decoded is! Map) return null;
-      final meta = decoded['meta'];
-      if (meta is Map && meta['signingKeyFingerprint'] is String) {
-        return (meta['signingKeyFingerprint'] as String).trim().toLowerCase();
-      }
-      if (decoded['signingKey'] is String) {
-        return (decoded['signingKey'] as String).trim().toLowerCase();
-      }
+      final decoded = await Isolate.run(
+        () => decodeExtensionIndexBytes(res.bodyBytes, sourceUrl: url),
+      );
+      return decoded.signingKey;
     } catch (_) {}
     return null;
   }
@@ -435,13 +226,79 @@ class ExtensionManager {
   }
 
   Future<List<ExtensionIndexEntry>> fetchIndex(ExtensionRepo repo) async {
-    final res = await _http.get(Uri.parse(repo.url));
-    if (res.statusCode != 200) {
-      throw HttpException('Repo returned ${res.statusCode}: ${repo.url}');
+    final url = normalizeExtensionIndexUrl(repo.url);
+    if (url != repo.url) {
+      // Persist the corrected raw URL so future fetches don't hit HTML pages.
+      await _repos.extensions.insertExtensionRepo(repo.copyWith(url: url));
     }
-    // Keiyoushi index is ~500KB / 1.3k entries — parse off the UI isolate so
-    // mid-range Android devices don't freeze (or black-screen) during fetch.
-    return Isolate.run(() => _parseIndexBody(res.body));
+    return _fetchIndexEntries(url);
+  }
+
+  /// Fetch + decode an extension catalog, following Mihon's `index_v2` /
+  /// `extensionListUrl` redirects. Accepts `.pb` (gzipped protobuf), v2 JSON,
+  /// legacy `index.min.json`, and `repo.json`.
+  Future<List<ExtensionIndexEntry>> _fetchIndexEntries(
+    String url, {
+    int depth = 0,
+  }) async {
+    if (depth > 4) {
+      throw const FormatException(
+        'Extension index redirected too many times (index_v2 / extensionListUrl)',
+      );
+    }
+    final normalized = normalizeExtensionIndexUrl(url);
+
+    // Prefer sibling repo.json → index_v2 (.pb) when the user still has a
+    // legacy JSON URL (same migration path as Mihon).
+    if (depth == 0 &&
+        (normalized.endsWith('/index.min.json') ||
+            normalized.endsWith('/index.json'))) {
+      try {
+        final repoJson = repoJsonUrlForIndex(normalized);
+        final metaRes = await _http.get(Uri.parse(repoJson));
+        if (metaRes.statusCode == 200) {
+          final meta = await Isolate.run(
+            () => decodeExtensionIndexBytes(
+              metaRes.bodyBytes,
+              sourceUrl: repoJson,
+            ),
+          );
+          final v2 = meta.indexV2Url?.trim();
+          if (v2 != null && v2.isNotEmpty) {
+            return _fetchIndexEntries(v2, depth: depth + 1);
+          }
+        }
+      } catch (_) {
+        // Fall through to the original JSON URL.
+      }
+    }
+
+    final res = await _http.get(Uri.parse(normalized));
+    if (res.statusCode != 200) {
+      throw HttpException('Repo returned ${res.statusCode}: $normalized');
+    }
+
+    final decoded = await Isolate.run(
+      () => decodeExtensionIndexBytes(res.bodyBytes, sourceUrl: normalized),
+    );
+
+    // Legacy repo.json → prefer index_v2 (.pb), else sibling index.min.json.
+    if (decoded.isLegacyRepoMeta) {
+      final v2 = decoded.indexV2Url?.trim();
+      if (v2 != null && v2.isNotEmpty) {
+        return _fetchIndexEntries(v2, depth: depth + 1);
+      }
+      final base = normalized.replaceFirst(RegExp(r'/repo\.json$'), '');
+      return _fetchIndexEntries('$base/index.min.json', depth: depth + 1);
+    }
+
+    // Index points at a separate ExtensionList body.
+    final listUrl = decoded.extensionListUrl?.trim();
+    if ((decoded.entries.isEmpty) && listUrl != null && listUrl.isNotEmpty) {
+      return _fetchIndexEntries(listUrl, depth: depth + 1);
+    }
+
+    return decoded.entries;
   }
 
   Future<ExtensionSource> install(
@@ -714,7 +571,8 @@ class ExtensionManager {
     final installed = await listInstalled();
     for (final s in installed) {
       if (s.apkPath == src.apkPath) {
-        await _repos.extensions.deleteExtensionSource(s.id);
+        // Must use sourceId (bridge/hex key). Model.id is often Mihon nativeId.
+        await _repos.extensions.deleteExtensionSource(s.sourceId);
       }
     }
     try {
@@ -1278,30 +1136,44 @@ class ExtensionManager {
   }
 }
 
-/// Top-level so [Isolate.run] can invoke it without capturing the manager.
-List<ExtensionIndexEntry> _parseIndexBody(String body) {
-  final decoded = jsonDecode(body);
-  if (decoded is List) {
-    return decoded
-        .cast<Map>()
-        .map((e) => ExtensionIndexEntry.fromJson(Map<String, dynamic>.from(e)))
-        .toList(growable: false);
+/// Rewrite common GitHub *web* URLs to raw content URLs so fetches return
+/// JSON/protobuf instead of an HTML page (`<!DOCTYPE html>` → FormatException).
+String normalizeExtensionIndexUrl(String url) {
+  var u = url.trim();
+  while (u.endsWith('/') && u.length > 1) {
+    u = u.substring(0, u.length - 1);
   }
-  if (decoded is Map) {
-    final extList = decoded['extensionList'];
-    if (extList is Map) {
-      final exts = extList['extensions'];
-      if (exts is List) {
-        return exts
-            .cast<Map>()
-            .map(
-              (e) => ExtensionIndexEntry.fromJson(Map<String, dynamic>.from(e)),
-            )
-            .toList(growable: false);
-      }
-    }
+
+  // github.com/org/repo/blob/branch/path → raw.githubusercontent.com/...
+  final blob = RegExp(
+    r'^https?://(?:www\.)?github\.com/([^/]+)/([^/]+)/blob/([^/]+)/(.*)$',
+    caseSensitive: false,
+  ).firstMatch(u);
+  if (blob != null) {
+    return 'https://raw.githubusercontent.com/'
+        '${blob[1]}/${blob[2]}/${blob[3]}/${blob[4]}';
   }
-  throw FormatException(
-    'Repo JSON is not a recognized format — got ${decoded.runtimeType}',
-  );
+
+  // github.com/org/repo/raw/branch/path → raw.githubusercontent.com/...
+  final rawPath = RegExp(
+    r'^https?://(?:www\.)?github\.com/([^/]+)/([^/]+)/raw/([^/]+)/(.*)$',
+    caseSensitive: false,
+  ).firstMatch(u);
+  if (rawPath != null) {
+    return 'https://raw.githubusercontent.com/'
+        '${rawPath[1]}/${rawPath[2]}/${rawPath[3]}/${rawPath[4]}';
+  }
+
+  // github.com/org/repo/repo/index.(min.)json|pb (missing "raw") — Keiyoushi.
+  final repoDir = RegExp(
+    r'^https?://(?:www\.)?github\.com/([^/]+)/([^/]+)/repo/'
+    r'(index(?:\.min)?\.(?:json|pb)|repo\.json)$',
+    caseSensitive: false,
+  ).firstMatch(u);
+  if (repoDir != null) {
+    return 'https://raw.githubusercontent.com/'
+        '${repoDir[1]}/${repoDir[2]}/repo/${repoDir[3]}';
+  }
+
+  return u;
 }

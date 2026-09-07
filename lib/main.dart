@@ -22,6 +22,7 @@ import 'core/services/http/m_client.dart';
 import 'core/services/keiyoushi_service.dart';
 import 'core/services/notification_service.dart';
 import 'core/services/stats_service.dart';
+import 'core/services/user_profile.dart';
 import 'src/rust/frb_generated.dart';
 import 'theme/theme_provider.dart';
 
@@ -100,6 +101,11 @@ void main() {
         await container.read(themeProvider.notifier).init();
       } catch (e) {
         debugPrint('theme init skipped: $e');
+      }
+      try {
+        await container.read(userProfileProvider.notifier).load();
+      } catch (e) {
+        debugPrint('user profile init skipped: $e');
       }
       try {
         await container.read(libraryProvider.notifier).init();

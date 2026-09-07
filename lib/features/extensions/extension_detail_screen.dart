@@ -7,9 +7,23 @@ import '../../core/services/source_webview_bridge.dart';
 import '../../core/utils/custom_extended_image_provider.dart';
 import '../../core/utils/language.dart';
 import '../../theme/app_theme.dart';
+import '../../theme/tokens/app_motion.dart';
+import '../../widgets/dialog_sheet.dart';
+import '../../widgets/page_transitions.dart';
+import '../../widgets/screen_chrome.dart';
 import 'extension_client_settings_screen.dart';
 import 'js_source_preferences_screen.dart';
 import 'source_browse_screen.dart';
+
+Route<T> _scaleFadeRoute<T>(Widget page) {
+  return PageRouteBuilder<T>(
+    transitionDuration: AppMotion.page,
+    reverseTransitionDuration: AppMotion.base,
+    pageBuilder: (_, animation, secondaryAnimation) => page,
+    transitionsBuilder: (context, animation, secondaryAnimation, child) =>
+        scaleFadePageTransition(animation: animation, child: child),
+  );
+}
 
 /// Extract the package name from an installed extension's on-disk APK path,
 /// where the file is stored as `{extensionsDir}/{pkg}.apk`.
@@ -39,175 +53,161 @@ class ExtensionDetailScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     final c = context.colors;
     final hasApk = source.apkPath.isNotEmpty;
-    return Scaffold(
-      backgroundColor: c.bg,
-      appBar: AppBar(
-        backgroundColor: c.bg,
-        title: Text('Extension Detail', style: TextStyle(color: c.textPrimary)),
-        iconTheme: IconThemeData(color: c.textPrimary),
-        actions: [
-          if (source.baseUrl != null && source.baseUrl!.isNotEmpty)
+    return ScreenBackdrop(
+      child: Scaffold(
+        backgroundColor: Colors.transparent,
+        appBar: AppBar(
+          backgroundColor: c.bg,
+          surfaceTintColor: Colors.transparent,
+          foregroundColor: c.textPrimary,
+          title: Text(
+            'Extension Detail',
+            style: TextStyle(color: c.textPrimary),
+          ),
+          iconTheme: IconThemeData(color: c.textPrimary),
+          actions: [
+            if (source.baseUrl != null && source.baseUrl!.isNotEmpty)
+              IconButton(
+                tooltip: 'Open website',
+                icon: Icon(Icons.public, color: c.accent),
+                onPressed: () async {
+                  try {
+                    await SourceWebViewBridge.open(
+                      url: source.baseUrl!,
+                      sourceId: source.sourceId,
+                      title: source.name,
+                    );
+                  } catch (e) {
+                    if (!context.mounted) return;
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(content: Text('WebView failed: $e')),
+                    );
+                  }
+                },
+              ),
             IconButton(
-              tooltip: 'Open website',
-              icon: Icon(Icons.public, color: c.accent),
-              onPressed: () async {
-                try {
-                  await SourceWebViewBridge.open(
-                    url: source.baseUrl!,
-                    sourceId: source.sourceId,
-                    title: source.name,
-                  );
-                } catch (e) {
-                  if (!context.mounted) return;
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(content: Text('WebView failed: $e')),
-                  );
-                }
+              tooltip: 'Client settings',
+              icon: Icon(Icons.settings_outlined, color: c.textPrimary),
+              onPressed: () {
+                Navigator.push(
+                  context,
+                  _scaleFadeRoute(
+                    ExtensionClientSettingsScreen(source: source),
+                  ),
+                );
               },
             ),
-          IconButton(
-            tooltip: 'Client settings',
-            icon: Icon(Icons.settings_outlined, color: c.textPrimary),
-            onPressed: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (_) =>
-                      ExtensionClientSettingsScreen(source: source),
-                ),
-              );
-            },
-          ),
-        ],
-      ),
-      body: SingleChildScrollView(
-        child: Column(
-          children: [
-            const SizedBox(height: 20),
-            // Icon — JS sources use stored iconUrl (no APK pkg); Mihon uses pkg cache.
-            Container(
-              decoration: BoxDecoration(
-                color: c.surfaceMuted,
-                borderRadius: BorderRadius.circular(10),
-              ),
-              child: _LargePkgExtensionIcon(
-                pkg: _extractPkgFromApkPath(source.apkPath),
-                colors: c,
-                iconUrl: source.iconUrl,
-              ),
-            ),
-            const SizedBox(height: 12),
-            // Name
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              child: Text(
-                source.name,
-                style: TextStyle(
-                  color: c.textPrimary,
-                  fontSize: 23,
-                  fontWeight: FontWeight.bold,
-                ),
-                textAlign: TextAlign.center,
-              ),
-            ),
-            const SizedBox(height: 12),
-            // Info cards: Version + Language
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              child: Container(
-                padding: const EdgeInsets.all(20),
+          ],
+        ),
+        body: SingleChildScrollView(
+          child: Column(
+            children: [
+              const SizedBox(height: 20),
+              // Icon — JS sources use stored iconUrl (no APK pkg); Mihon uses pkg cache.
+              Container(
                 decoration: BoxDecoration(
-                  color: c.accent.withAlpha(51),
+                  color: c.surfaceMuted,
                   borderRadius: BorderRadius.circular(10),
                 ),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    _infoCard(c, source.version, 'Version'),
-                    _infoCard(c, completeLanguageName(source.lang), 'Language'),
-                  ],
+                child: _LargePkgExtensionIcon(
+                  pkg: _extractPkgFromApkPath(source.apkPath),
+                  colors: c,
+                  iconUrl: source.iconUrl,
                 ),
               ),
-            ),
-            // Base URL
-            if (source.baseUrl != null && source.baseUrl!.isNotEmpty)
+              const SizedBox(height: 12),
+              // Name
               Padding(
-                padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                child: Text(
+                  source.name,
+                  style: TextStyle(
+                    color: c.textPrimary,
+                    fontSize: 23,
+                    fontWeight: FontWeight.bold,
+                  ),
+                  textAlign: TextAlign.center,
+                ),
+              ),
+              const SizedBox(height: 12),
+              // Info cards: Version + Language
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16),
                 child: Container(
-                  padding: const EdgeInsets.all(14),
+                  padding: const EdgeInsets.all(20),
                   decoration: BoxDecoration(
-                    color: c.surfaceMuted,
+                    color: c.accent.withAlpha(51),
                     borderRadius: BorderRadius.circular(10),
                   ),
                   child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      Icon(Icons.link, size: 16, color: c.textTertiary),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: Text(
-                          source.baseUrl!,
-                          style: TextStyle(
-                            color: c.textSecondary,
-                            fontSize: 12,
-                          ),
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
-                        ),
+                      _infoCard(c, source.version, 'Version'),
+                      _infoCard(
+                        c,
+                        completeLanguageName(source.lang),
+                        'Language',
                       ),
                     ],
                   ),
                 ),
               ),
-            if (source.versionLast != null) ...[
-              const SizedBox(height: 16),
-              // Browse button
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16),
-                child: SizedBox(
-                  width: double.infinity,
-                  child: OutlinedButton.icon(
-                    onPressed: () => Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) => SourceBrowseScreen(
-                          sourceId: source.sourceId,
-                          sourceName: source.name,
-                          baseUrl: source.baseUrl,
+              // Base URL
+              if (source.baseUrl != null && source.baseUrl!.isNotEmpty)
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+                  child: Container(
+                    padding: const EdgeInsets.all(14),
+                    decoration: BoxDecoration(
+                      color: c.surfaceMuted,
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Row(
+                      children: [
+                        Icon(Icons.link, size: 16, color: c.textTertiary),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            source.baseUrl!,
+                            style: TextStyle(
+                              color: c.textSecondary,
+                              fontSize: 12,
+                            ),
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              if (source.versionLast != null) ...[
+                const SizedBox(height: 16),
+                // Browse button
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  child: SizedBox(
+                    width: double.infinity,
+                    child: OutlinedButton.icon(
+                      onPressed: () => Navigator.push(
+                        context,
+                        _scaleFadeRoute(
+                          SourceBrowseScreen(
+                            sourceId: source.sourceId,
+                            sourceName: source.name,
+                            baseUrl: source.baseUrl,
+                          ),
                         ),
                       ),
-                    ),
-                    icon: Icon(Icons.explore_outlined, color: c.accent),
-                    label: Text(
-                      'Browse ${source.name}',
-                      style: TextStyle(color: c.accent),
-                    ),
-                  ),
-                ),
-              ),
-            ],
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
-              child: SizedBox(
-                width: double.infinity,
-                child: OutlinedButton.icon(
-                  onPressed: () {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) =>
-                            ExtensionClientSettingsScreen(source: source),
+                      icon: Icon(Icons.explore_outlined, color: c.accent),
+                      label: Text(
+                        'Browse ${source.name}',
+                        style: TextStyle(color: c.accent),
                       ),
-                    );
-                  },
-                  icon: Icon(Icons.settings_outlined, color: c.accent),
-                  label: Text(
-                    'Client settings',
-                    style: TextStyle(color: c.accent),
+                    ),
                   ),
                 ),
-              ),
-            ),
-            if (source.isJs)
+              ],
               Padding(
                 padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
                 child: SizedBox(
@@ -216,83 +216,105 @@ class ExtensionDetailScreen extends StatelessWidget {
                     onPressed: () {
                       Navigator.push(
                         context,
-                        MaterialPageRoute(
-                          builder: (_) =>
-                              JsSourcePreferencesScreen(source: source),
+                        _scaleFadeRoute(
+                          ExtensionClientSettingsScreen(source: source),
                         ),
                       );
                     },
-                    icon: Icon(Icons.tune_rounded, color: c.accent),
+                    icon: Icon(Icons.settings_outlined, color: c.accent),
                     label: Text(
-                      'Source settings',
+                      'Client settings',
                       style: TextStyle(color: c.accent),
                     ),
                   ),
                 ),
-              )
-            else if (hasApk)
-              FutureBuilder<bool>(
-                future: SourcePreferencesBridge.isConfigurable(
-                  sourceId: source.sourceId,
-                  apkPath: source.apkPath,
-                ),
-                builder: (context, snap) {
-                  if (snap.data != true) return const SizedBox.shrink();
-                  return Padding(
-                    padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
-                    child: SizedBox(
-                      width: double.infinity,
-                      child: OutlinedButton.icon(
-                        onPressed: () async {
-                          try {
-                            await SourcePreferencesBridge.open(
-                              sourceId: source.sourceId,
-                              apkPath: source.apkPath,
-                              title: source.name,
-                            );
-                          } catch (e) {
-                            if (!context.mounted) return;
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(
-                                content: Text('Could not open settings: $e'),
-                              ),
-                            );
-                          }
-                        },
-                        icon: Icon(Icons.tune_rounded, color: c.accent),
-                        label: Text(
-                          'Source settings',
-                          style: TextStyle(color: c.accent),
-                        ),
+              ),
+              if (source.isJs)
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
+                  child: SizedBox(
+                    width: double.infinity,
+                    child: OutlinedButton.icon(
+                      onPressed: () {
+                        Navigator.push(
+                          context,
+                          _scaleFadeRoute(
+                            JsSourcePreferencesScreen(source: source),
+                          ),
+                        );
+                      },
+                      icon: Icon(Icons.tune_rounded, color: c.accent),
+                      label: Text(
+                        'Source settings',
+                        style: TextStyle(color: c.accent),
                       ),
                     ),
-                  );
-                },
-              ),
-            const SizedBox(height: 16),
-            // Uninstall button
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              child: SizedBox(
-                width: double.infinity,
-                child: OutlinedButton.icon(
-                  onPressed: () => _confirmUninstall(context),
-                  style: OutlinedButton.styleFrom(
-                    side: BorderSide(color: Colors.redAccent.withAlpha(128)),
                   ),
-                  icon: const Icon(
-                    Icons.delete_outline,
-                    color: Colors.redAccent,
+                )
+              else if (hasApk)
+                FutureBuilder<bool>(
+                  future: SourcePreferencesBridge.isConfigurable(
+                    sourceId: source.sourceId,
+                    apkPath: source.apkPath,
                   ),
-                  label: const Text(
-                    'Unload',
-                    style: TextStyle(color: Colors.redAccent),
+                  builder: (context, snap) {
+                    if (snap.data != true) return const SizedBox.shrink();
+                    return Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
+                      child: SizedBox(
+                        width: double.infinity,
+                        child: OutlinedButton.icon(
+                          onPressed: () async {
+                            try {
+                              await SourcePreferencesBridge.open(
+                                sourceId: source.sourceId,
+                                apkPath: source.apkPath,
+                                title: source.name,
+                              );
+                            } catch (e) {
+                              if (!context.mounted) return;
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(
+                                  content: Text('Could not open settings: $e'),
+                                ),
+                              );
+                            }
+                          },
+                          icon: Icon(Icons.tune_rounded, color: c.accent),
+                          label: Text(
+                            'Source settings',
+                            style: TextStyle(color: c.accent),
+                          ),
+                        ),
+                      ),
+                    );
+                  },
+                ),
+              const SizedBox(height: 16),
+              // Uninstall button
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                child: SizedBox(
+                  width: double.infinity,
+                  child: OutlinedButton.icon(
+                    onPressed: () => _confirmUninstall(context),
+                    style: OutlinedButton.styleFrom(
+                      side: BorderSide(color: Colors.redAccent.withAlpha(128)),
+                    ),
+                    icon: const Icon(
+                      Icons.delete_outline,
+                      color: Colors.redAccent,
+                    ),
+                    label: const Text(
+                      'Unload',
+                      style: TextStyle(color: Colors.redAccent),
+                    ),
                   ),
                 ),
               ),
-            ),
-            const SizedBox(height: 32),
-          ],
+              const SizedBox(height: 32),
+            ],
+          ),
         ),
       ),
     );
@@ -317,33 +339,27 @@ class ExtensionDetailScreen extends StatelessWidget {
 
   void _confirmUninstall(BuildContext context) {
     final c = context.colors;
-    showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: c.surface,
-        title: Text(source.name, style: TextStyle(color: c.textPrimary)),
-        content: Text(
+    StashDialog.show<void>(
+      context,
+      title: source.name,
+      content:
           'Unload ${source.name}? This will remove all sources sharing its APK.',
-          style: TextStyle(color: c.textSecondary),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: Text('Cancel', style: TextStyle(color: c.textSecondary)),
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: Text('Cancel', style: TextStyle(color: c.textSecondary)),
-          ),
-          TextButton(
-            onPressed: () {
-              Navigator.pop(ctx);
-              Navigator.pop(context);
-              onUninstall();
-            },
-            child: Text('OK', style: TextStyle(color: Colors.redAccent)),
-          ),
-        ],
-      ),
+        TextButton(
+          onPressed: () {
+            Navigator.pop(context);
+            Navigator.pop(context);
+            onUninstall();
+          },
+          child: const Text('OK', style: TextStyle(color: Colors.redAccent)),
+        ),
+      ],
     );
   }
-
 }
 
 /// Large (140×140) variant of the pkg-resolving icon widget for the detail
