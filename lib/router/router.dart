@@ -291,7 +291,16 @@ final GoRouter appRouter = GoRouter(
       path: '/extensions',
       name: Routes.extensions,
       parentNavigatorKey: rootNavigatorKey,
-      builder: (context, state) => const ExtensionsScreen(),
+      builder: (context, state) {
+        final extra = state.extra;
+        var tab = 0;
+        if (extra is int) {
+          tab = extra;
+        } else if (extra is Map && extra['tab'] is int) {
+          tab = extra['tab'] as int;
+        }
+        return ExtensionsScreen(initialTabIndex: tab);
+      },
     ),
     GoRoute(
       path: '/sources',

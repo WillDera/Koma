@@ -49,7 +49,10 @@ Route<T> _scaleFadeRoute<T>(Widget page) {
 }
 
 class ExtensionsScreen extends ConsumerStatefulWidget {
-  const ExtensionsScreen({super.key});
+  const ExtensionsScreen({super.key, this.initialTabIndex = 0});
+
+  /// 0 = Loaded, 1 = Available, 2 = Repos.
+  final int initialTabIndex;
 
   @override
   ConsumerState<ExtensionsScreen> createState() => _ExtensionsScreenState();
@@ -88,11 +91,12 @@ class _ExtensionsScreenState extends ConsumerState<ExtensionsScreen>
   @override
   void initState() {
     super.initState();
-    _tabs = TabController(length: 3, vsync: this);
+    final initial = widget.initialTabIndex.clamp(0, 2);
+    _tabs = TabController(length: 3, vsync: this, initialIndex: initial);
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) {
-        unawaited(_catalog.ensureBootstrapped());
-      }
+      if (!mounted) return;
+      unawaited(_catalog.ensureBootstrapped());
+      if (initial == 1) unawaited(_fetchAllIndexes());
     });
   }
 

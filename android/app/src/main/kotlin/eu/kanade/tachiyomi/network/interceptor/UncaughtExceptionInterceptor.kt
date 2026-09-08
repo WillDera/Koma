@@ -16,12 +16,12 @@ class UncaughtExceptionInterceptor : Interceptor {
     override fun intercept(chain: Interceptor.Chain): Response {
         return try {
             chain.proceed(chain.request())
-        } catch (e: Exception) {
-            if (e is IOException) {
-                throw e
-            } else {
-                throw IOException(e)
-            }
+        } catch (e: IOException) {
+            throw e
+        } catch (t: Throwable) {
+            // Catch Error as well as Exception — extension classpath misses
+            // (NoClassDefFoundError) must not take down the process.
+            throw IOException(t)
         }
     }
 }

@@ -48,9 +48,99 @@
             <intent-filter>
                 <action android:name="android.intent.action.SEARCH" />
             </intent-filter>
+            <!-- Open-with: ebooks, CBZ, backups, extension indexes -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="content" />
+                <data android:scheme="file" />
+                <data android:mimeType="application/epub+zip" />
+                <data android:mimeType="application/pdf" />
+                <data android:mimeType="text/plain" />
+                <data android:mimeType="text/markdown" />
+                <data android:mimeType="text/x-markdown" />
+                <data android:mimeType="application/x-cbz" />
+                <data android:mimeType="application/vnd.comicbook+zip" />
+                <data android:mimeType="application/x-cbr" />
+                <data android:mimeType="application/vnd.comicbook-rar" />
+                <data android:mimeType="application/zip" />
+                <data android:mimeType="application/x-protobuf" />
+                <data android:mimeType="application/json" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="content" android:host="*" android:mimeType="*/*" android:pathPattern=".*\\.epub" />
+                <data android:scheme="content" android:host="*" android:mimeType="*/*" android:pathPattern=".*\\.pdf" />
+                <data android:scheme="content" android:host="*" android:mimeType="*/*" android:pathPattern=".*\\.txt" />
+                <data android:scheme="content" android:host="*" android:mimeType="*/*" android:pathPattern=".*\\.md" />
+                <data android:scheme="content" android:host="*" android:mimeType="*/*" android:pathPattern=".*\\.cbz" />
+                <data android:scheme="content" android:host="*" android:mimeType="*/*" android:pathPattern=".*\\.cbr" />
+                <data android:scheme="content" android:host="*" android:mimeType="*/*" android:pathPattern=".*\\.pb" />
+                <data android:scheme="content" android:host="*" android:mimeType="*/*" android:pathPattern=".*\\.json" />
+                <data android:scheme="content" android:host="*" android:mimeType="*/*" android:pathPattern=".*index\\.json" />
+                <data android:scheme="content" android:host="*" android:mimeType="*/*" android:pathPattern=".*\\.tachibk" />
+                <data android:scheme="content" android:host="*" android:mimeType="*/*" android:pathPattern=".*\\.backup" />
+                <data android:scheme="file" android:host="*" android:pathPattern=".*\\.epub" />
+                <data android:scheme="file" android:host="*" android:pathPattern=".*\\.pdf" />
+                <data android:scheme="file" android:host="*" android:pathPattern=".*\\.txt" />
+                <data android:scheme="file" android:host="*" android:pathPattern=".*\\.md" />
+                <data android:scheme="file" android:host="*" android:pathPattern=".*\\.cbz" />
+                <data android:scheme="file" android:host="*" android:pathPattern=".*\\.cbr" />
+                <data android:scheme="file" android:host="*" android:pathPattern=".*\\.pb" />
+                <data android:scheme="file" android:host="*" android:pathPattern=".*\\.json" />
+                <data android:scheme="file" android:host="*" android:pathPattern=".*\\.tachibk" />
+                <data android:scheme="file" android:host="*" android:pathPattern=".*\\.backup" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.SEND" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="application/epub+zip" />
+                <data android:mimeType="application/pdf" />
+                <data android:mimeType="text/plain" />
+                <data android:mimeType="text/markdown" />
+                <data android:mimeType="application/zip" />
+                <data android:mimeType="application/json" />
+                <data android:mimeType="application/x-cbz" />
+                <data android:mimeType="application/vnd.comicbook+zip" />
+            </intent-filter>
+            <!-- Mangayomi Install buttons (e.g. wotaku.wiki/ext/mangayomi) -->
+            <intent-filter android:label="Add extension repository">
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="mangayomi" android:host="add-repo" />
+            </intent-filter>
+            <!-- Koma-branded deep link (same query shape as mangayomi) -->
+            <intent-filter android:label="Add extension repository">
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="koma" android:host="add-repo" />
+            </intent-filter>
+            <!-- Mihon / Tachiyomi Install buttons -->
+            <intent-filter android:label="Add extension repository">
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="tachiyomi" android:host="add-repo" />
+            </intent-filter>
+            <intent-filter android:label="Add extension repository">
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="mihon" android:host="add-repo" />
+                <data android:scheme="mihon" android:host="extension-store" />
+            </intent-filter>
             <meta-data
                 android:name="android.app.searchable"
                 android:resource="@xml/searchable" />
+            <!-- Handle deep links ourselves (Flutter embedding deeplink off). -->
+            <meta-data
+                android:name="flutter_deeplinking_enabled"
+                android:value="false" />
         </activity>
         <activity
             android:name=".SourcePreferencesActivity"

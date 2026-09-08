@@ -244,7 +244,7 @@ class AppTheme {
       pageTransitionsTheme: PageTransitionsTheme(
         builders: {
           for (final platform in TargetPlatform.values)
-            platform: const ScaleFadeTransition(),
+            platform: const SmoothSlideTransition(),
         },
       ),
       splashFactory: InkSparkle.splashFactory,

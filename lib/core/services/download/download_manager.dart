@@ -371,8 +371,9 @@ class DownloadManager extends ChangeNotifier {
       if (isJs) {
         ok = await _downloadOneJs(download, abort);
       } else {
+        final sourceId = await _ensureDalvikSourceLoaded(download.sourceId);
         final result = await _keiyoushi.downloadChapters(
-          sourceId: download.sourceId,
+          sourceId: sourceId,
           mangaUrl: download.mangaUrl,
           chapters: [
             {
@@ -449,6 +450,34 @@ class DownloadManager extends ChangeNotifier {
     if (repos == null) return false;
     final ext = await findInstalledExtension(repos, sourceId);
     return ext?.isJs ?? false;
+  }
+
+  /// Resolve hex/Mihon id and load the APK into Dalvik before download.
+  /// Cold downloads (and WorkManager) otherwise hit "Source not loaded".
+  Future<String> _ensureDalvikSourceLoaded(String sourceId) async {
+    final repos = _repos;
+    if (repos == null) return sourceId;
+    final ext = await findInstalledExtension(repos, sourceId);
+    if (ext == null) return sourceId;
+    if (ext.isJs || ext.isDart) {
+      return ext.sourceId.isNotEmpty ? ext.sourceId : sourceId;
+    }
+    if (ext.apkPath.isEmpty || !File(ext.apkPath).existsSync()) {
+      throw Exception('Extension APK missing for ${ext.name}');
+    }
+    // Prefer Mihon numeric id when picking among SourceFactory siblings.
+    final preferred = ext.id.isNotEmpty ? ext.id : sourceId;
+    final desc = await _keiyoushi.loadExtension(
+      apkPath: ext.apkPath,
+      className: ext.className.isEmpty ? null : ext.className,
+      preferredSourceId: preferred,
+    );
+    final loadedSid = (desc['sourceId'] as String?)?.trim();
+    if (loadedSid != null && loadedSid.isNotEmpty) return loadedSid;
+    // Fall back to Mihon id — Dalvik now aliases both keys.
+    final mihonId = (desc['id'] as String?)?.trim();
+    if (mihonId != null && mihonId.isNotEmpty) return mihonId;
+    return ext.sourceId.isNotEmpty ? ext.sourceId : sourceId;
   }
 
   /// JS path: dispatch getPageList + HTTP-save JPGs under the Mihon layout.

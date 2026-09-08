@@ -42,6 +42,7 @@ mixin class ChapterReaderSettingsMixin {
       saturation: overrides.saturation,
       tintColor: overrides.tintColor,
       tintOpacity: overrides.tintOpacity,
+      sepiaPanels: overrides.sepiaPanels,
     );
   }
 

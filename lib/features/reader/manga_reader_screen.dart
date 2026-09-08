@@ -23,6 +23,8 @@ import '../../core/services/download_prefs.dart';
 import '../../core/services/extension_manager.dart';
 import '../../core/services/extension_source_resolve.dart';
 import '../../core/services/keiyoushi_service.dart';
+import '../../core/services/local_cbz_pages.dart';
+import '../../core/services/local_cbz_source.dart';
 import '../../core/services/media_export_service.dart';
 import '../../core/utils/custom_extended_image_provider.dart';
 import '../../eval/dispatch_service.dart';
@@ -30,7 +32,10 @@ import '../../eval/models/m_chapter.dart';
 import '../../eval/models/m_source.dart';
 import '../../features/snippets/bookmarks_provider.dart';
 import '../../router/router.dart';
+import '../../theme/theme_provider.dart';
+import '../../theme/tokens/app_colors.dart';
 import '../../widgets/dialog_sheet.dart';
+import 'managers/manga_page_session_cache.dart';
 import 'mixins/reader_memory_management.dart';
 import 'models/page_data.dart';
 import 'reader_settings_sheet.dart';
@@ -83,6 +88,7 @@ class _MangaReaderScreenState extends ConsumerState<MangaReaderScreen>
   final ValueNotifier<int> _currentPageNotifier = ValueNotifier<int>(0);
   final ValueNotifier<bool> _showToolbar = ValueNotifier<bool>(false);
   bool _showNavigationOverlay = false;
+  bool _didShowNavigationOverlay = false;
   bool _isBookmarked = false;
   final List<TransformationController> _zoomCtrls = [];
   Timer? _saveTimer;
@@ -167,6 +173,7 @@ class _MangaReaderScreenState extends ConsumerState<MangaReaderScreen>
     _leftReader = true;
     _loadSession++;
     _isNextChapterPreloading = false;
+    _cacheLoadedPages();
     _saveTimer?.cancel();
     _saveTimer = null;
     _stopReadingTimer();
@@ -185,6 +192,28 @@ class _MangaReaderScreenState extends ConsumerState<MangaReaderScreen>
     _zoomCtrls.clear();
     disposePreloadManager();
     super.dispose();
+  }
+
+  /// Persist resolved page paths so reopening this chapter skips network work.
+  void _cacheLoadedPages() {
+    if (_pages.isEmpty) return;
+    final sourceIds = <String>{widget.sourceId};
+    final resolved = _mSource?.id;
+    if (resolved != null && resolved.isNotEmpty) {
+      sourceIds.add(resolved);
+    }
+    final byChapter = <String, List<PageData>>{};
+    for (final page in _pages) {
+      if (page.isTransitionPage) continue;
+      final ch = page.chapter;
+      if (ch == null) continue;
+      byChapter.putIfAbsent(ch.url, () => []).add(page);
+    }
+    for (final sourceId in sourceIds) {
+      for (final entry in byChapter.entries) {
+        MangaPageSessionCache.store(sourceId, entry.key, entry.value);
+      }
+    }
   }
 
   void _applySystemUI() {
@@ -293,6 +322,41 @@ class _MangaReaderScreenState extends ConsumerState<MangaReaderScreen>
     if (!_isLive(session)) return const [];
     final sourceId = await _resolveSourceId();
     if (!_isLive(session)) return const [];
+
+    // Local CBZ / folder chapters — never hit Dalvik or extension page lists.
+    if (LocalCbzSource.isLocal(sourceId) ||
+        LocalCbzSource.isLocal(widget.sourceId)) {
+      try {
+        final local = await LocalCbzPages.resolvePages(chapter.url);
+        if (!_isLive(session)) return const [];
+        if (local.isNotEmpty) {
+          if (!chapter.isDownloaded && chapter.id > 0 && _repos != null) {
+            unawaited(
+              _repos!.manga.markMangaChapterDownloaded(chapter.id, true),
+            );
+          }
+          final pages = local.asMap().entries.map((e) {
+            final path = _normalizeLocalPath(local[e.key]);
+            return PageData.page(
+              mangaPage: MangaPage(
+                index: e.key,
+                imageUrl: path,
+                localPath: path,
+                chapterUrl: chapter.url,
+              ),
+              chapter: chapter,
+              pageIndex: e.key,
+            )..localPath = path;
+          }).toList();
+          MangaPageSessionCache.store(sourceId, chapter.url, pages);
+          return pages;
+        }
+      } catch (_) {
+        // Fall through to empty / error handling below.
+      }
+      return const [];
+    }
+
     final source = _mSource ??
         await resolveExtensionMSource(
           ref.read(repositoriesProvider),
@@ -342,6 +406,14 @@ class _MangaReaderScreenState extends ConsumerState<MangaReaderScreen>
       }
     } catch (_) {
       // Fall through to network page list.
+    }
+
+    if (!_isLive(session)) return const [];
+    final cached = MangaPageSessionCache.lookup(sourceId, chapter.url);
+    if (cached != null && cached.isNotEmpty) {
+      return [
+        for (var i = 0; i < cached.length; i++) cached[i]..pageIndex = i,
+      ];
     }
 
     if (!_isLive(session)) return const [];
@@ -564,7 +636,10 @@ class _MangaReaderScreenState extends ConsumerState<MangaReaderScreen>
 
   Future<void> _initProgress() async {
     if (_currentChapter == null || _pages.isEmpty) return;
-    _showNavigationOverlay = true;
+    if (!_didShowNavigationOverlay) {
+      _didShowNavigationOverlay = true;
+      if (mounted) setState(() => _showNavigationOverlay = true);
+    }
 
     // A bookmark deep link outranks stored progress — restoring last-read too
     // would queue a second post-frame jump that lands afterwards and wins.
@@ -1235,18 +1310,25 @@ class _MangaReaderScreenState extends ConsumerState<MangaReaderScreen>
 
   @override
   Widget build(BuildContext context) {
+    final theme = ref.watch(themeProvider);
+    final sepia = theme.sepiaMode;
+    final sepiaOnPanels = sepia && _settings.sepiaPanels;
+    final readerBg = sepiaOnPanels ? AppColors.sepiaBg : Colors.black;
+
     if (_loading) {
       return Scaffold(
-        backgroundColor: Colors.black,
-        body: const Center(
-          child: CircularProgressIndicator(color: Colors.white),
+        backgroundColor: readerBg,
+        body: Center(
+          child: CircularProgressIndicator(
+            color: sepia ? AppColors.sepiaAccent : Colors.white,
+          ),
         ),
       );
     }
 
     if (_error != null) {
       return Scaffold(
-        backgroundColor: Colors.black,
+        backgroundColor: readerBg,
         body: Center(
           child: Padding(
             padding: const EdgeInsets.all(32),
@@ -1255,7 +1337,9 @@ class _MangaReaderScreenState extends ConsumerState<MangaReaderScreen>
               children: [
                 Text(
                   _error!,
-                  style: const TextStyle(color: Colors.redAccent),
+                  style: TextStyle(
+                    color: sepia ? AppColors.sepiaAccent : Colors.redAccent,
+                  ),
                   textAlign: TextAlign.center,
                 ),
                 const SizedBox(height: 16),
@@ -1295,7 +1379,7 @@ class _MangaReaderScreenState extends ConsumerState<MangaReaderScreen>
         });
       },
       child: Scaffold(
-        backgroundColor: Colors.black,
+        backgroundColor: readerBg,
         body: Builder(
           builder: (context) {
             final props = _viewProps();
@@ -1309,6 +1393,7 @@ class _MangaReaderScreenState extends ConsumerState<MangaReaderScreen>
                     saturation: _settings.saturation,
                     tint: _settings.tintColor,
                     tintOpacity: _settings.tintOpacity,
+                    paperMultiply: sepiaOnPanels ? AppColors.sepiaBg : null,
                     child: isContinuous
                         ? MangaImageViewWebtoon(
                             props: props,

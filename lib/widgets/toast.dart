@@ -14,7 +14,48 @@ class StashToast {
     VoidCallback? onAction,
     Duration duration = const Duration(seconds: 2),
   }) {
-    final overlay = Overlay.of(context, rootOverlay: true);
+    final overlay = Overlay.maybeOf(context, rootOverlay: true);
+    if (overlay == null) return;
+    _insert(
+      overlay,
+      message: message,
+      icon: icon,
+      actionLabel: actionLabel,
+      onAction: onAction,
+      duration: duration,
+    );
+  }
+
+  /// Shows a toast using a [NavigatorState]'s overlay — safe when the only
+  /// available [BuildContext] is the navigator key itself (no Overlay ancestor).
+  static void showOnNavigator(
+    NavigatorState? navigator, {
+    required String message,
+    IconData? icon,
+    String? actionLabel,
+    VoidCallback? onAction,
+    Duration duration = const Duration(seconds: 2),
+  }) {
+    final overlay = navigator?.overlay;
+    if (overlay == null) return;
+    _insert(
+      overlay,
+      message: message,
+      icon: icon,
+      actionLabel: actionLabel,
+      onAction: onAction,
+      duration: duration,
+    );
+  }
+
+  static void _insert(
+    OverlayState overlay, {
+    required String message,
+    IconData? icon,
+    String? actionLabel,
+    VoidCallback? onAction,
+    required Duration duration,
+  }) {
     late OverlayEntry entry;
     entry = OverlayEntry(
       builder: (ctx) => _ToastWidget(
@@ -23,7 +64,9 @@ class StashToast {
         actionLabel: actionLabel,
         onAction: onAction,
         duration: duration,
-        onDismiss: () => entry.remove(),
+        onDismiss: () {
+          if (entry.mounted) entry.remove();
+        },
       ),
     );
     overlay.insert(entry);

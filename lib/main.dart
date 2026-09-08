@@ -16,6 +16,8 @@ import 'core/services/app_storage.dart';
 import 'core/services/background_task.dart';
 import 'core/services/extension_install_listener.dart';
 import 'core/services/extension_manager.dart';
+import 'core/services/extension_repo_deep_link_listener.dart';
+import 'core/services/file_open_intent_listener.dart';
 import 'core/services/source_pref_store.dart';
 import 'core/services/search_intent_listener.dart';
 import 'core/services/http/m_client.dart';
@@ -93,6 +95,8 @@ void main() {
           extensionManagerProvider.overrideWithValue(extensionManager),
         ],
       );
+      FileOpenIntentListener.init(container);
+      ExtensionRepoDeepLinkListener.init(container);
 
       // Initialize Notifiers that need SharedPreferences loaded before
       // first paint. The Notifier instances are created by the container

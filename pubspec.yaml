@@ -1,7 +1,7 @@
 name: koma
 description: "A hybrid reader + knowledge snippet manager."
 publish_to: 'none'
-version: 2.48.2+385
+version: 2.49.0+386
 
 environment:
   sdk: ^3.12.2
@@ -87,6 +87,7 @@ dependencies:
   annas_archive_api: ^1.2.0
   share_plus: ^12.0.2
   real_page_flip: ^2.2.9
+  koni_archive: ^0.9.0
 dev_dependencies:
   flutter_test:
     sdk: flutter
@@ -112,10 +113,16 @@ flutter:
   assets:
     - app_icons/
 
-flutter_icons:
+# Adaptive icons need a separate FG/BG. Using a pre-rounded PNG alone makes
+# Android pad a small square onto a white circle on many launchers.
+flutter_launcher_icons:
   android: "launcher_icon"
-  image_path: "app_icons/hon.png"
+  image_path: "app_icons/hon_sb.png"
   min_sdk_android: 21
+  # adaptive_icon_background: "#161720"
+  # adaptive_icon_foreground: "app_icons/hon_adaptive_fg.png"
+  # # Artwork already has safe margins; default 16% inset shrinks 本 too much.
+  # adaptive_icon_foreground_inset: 0
 
 # Regenerate native splash assets (one-off; not a runtime dependency):
 #   dart pub add --dev flutter_native_splash && dart run flutter_native_splash:create && dart pub remove flutter_native_splash
