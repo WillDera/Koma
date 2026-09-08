@@ -57,7 +57,7 @@ class _MigrateBatchScreenState extends ConsumerState<MigrateBatchScreen> {
         backgroundColor: Colors.transparent,
         appBar: AppBar(
           title: const Text('Batch migrate'),
-          backgroundColor: const Color(0xFF0F0F0F),
+          backgroundColor: c.bg,
           surfaceTintColor: Colors.transparent,
           elevation: 0,
           foregroundColor: c.textPrimary,

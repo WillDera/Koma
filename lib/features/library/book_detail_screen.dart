@@ -40,7 +40,7 @@ class BookDetailScreen extends ConsumerWidget {
     return Scaffold(
       backgroundColor: c.bg,
       appBar: AppBar(
-        backgroundColor: const Color(0xFF0F0F0F),
+        backgroundColor: c.bg,
         surfaceTintColor: Colors.transparent,
         foregroundColor: c.textPrimary,
         elevation: 0,
@@ -388,7 +388,7 @@ class _StickyReadBar extends StatelessWidget {
     final c = context.colors;
     final bottom = MediaQuery.of(context).padding.bottom;
     return Material(
-      color: const Color(0xFF0F0F0F),
+      color: c.bg,
       child: Padding(
         padding: EdgeInsets.fromLTRB(16, 10, 16, 10 + bottom),
         child: SizedBox(
