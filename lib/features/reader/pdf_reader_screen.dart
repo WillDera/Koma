@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -6,6 +7,7 @@ import 'package:pdfrx/pdfrx.dart';
 
 import '../../core/models/book.dart';
 import '../../core/providers.dart';
+import '../../core/services/storage_path_rewrite.dart';
 import '../../theme/app_theme.dart';
 
 /// Read-only PDF viewer for library books ([Book.fileExtension] == pdf).
@@ -72,25 +74,23 @@ class _PdfReaderScreenState extends ConsumerState<PdfReaderScreen> {
         backgroundColor: c.bg,
         appBar: pdfAppBar(),
         body: Center(
-          child: Text('Could not open PDF: $e', style: TextStyle(color: c.textSecondary)),
+          child: Padding(
+            padding: const EdgeInsets.all(24),
+            child: Text(
+              e is _PdfMissingFileException
+                  ? e.message
+                  : 'Could not open PDF: $e',
+              textAlign: TextAlign.center,
+              style: TextStyle(color: c.textSecondary),
+            ),
+          ),
         ),
       ),
-      data: (book) {
-        final path = book.filePath;
-        if (path == null || path.isEmpty) {
-          return Scaffold(
-            backgroundColor: c.bg,
-            appBar: pdfAppBar(),
-            body: Center(
-              child: Text(
-                'PDF file path missing',
-                style: TextStyle(color: c.textSecondary),
-              ),
-            ),
-          );
-        }
-
-        final initialPage = (widget.initialPage ?? book.currentChapterIndex).clamp(
+      data: (opened) {
+        final book = opened.book;
+        final path = opened.resolvedPath;
+        final initialPage =
+            (widget.initialPage ?? book.currentChapterIndex).clamp(
           0,
           book.totalChapters > 0 ? book.totalChapters - 1 : 0,
         );
@@ -115,6 +115,9 @@ class _PdfReaderScreenState extends ConsumerState<PdfReaderScreen> {
                 if (page == null) return;
                 _scheduleSave(page - 1);
               },
+              errorBannerBuilder: (context, error, stackTrace, documentRef) {
+                return _PdfLoadError(message: _friendlyPdfError(error));
+              },
             ),
           ),
         );
@@ -123,11 +126,82 @@ class _PdfReaderScreenState extends ConsumerState<PdfReaderScreen> {
   }
 }
 
-final _pdfBookProvider = FutureProvider.autoDispose.family<Book, int>(
-  (ref, bookId) async {
-    final repos = ref.read(repositoriesProvider);
-    final book = await repos.books.getBook(bookId);
-    if (book == null) throw StateError('Book $bookId not found');
-    return book;
-  },
-);
+String _friendlyPdfError(Object error) {
+  final text = error.toString();
+  if (text.contains('FPDF_ERR_FILE') || text.contains('ERR_FILE')) {
+    return 'PDF file is missing or unreadable. Re-import the book, or check '
+        'that your data folder still contains the downloads.';
+  }
+  if (text.contains('FPDF_ERR_PASSWORD') || text.contains('password')) {
+    return 'This PDF is password-protected and cannot be opened yet.';
+  }
+  return 'Could not open this PDF.\n$text';
+}
+
+class _PdfLoadError extends StatelessWidget {
+  const _PdfLoadError({required this.message});
+
+  final String message;
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.colors;
+    return ColoredBox(
+      color: c.bg,
+      child: Center(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Text(
+            message,
+            textAlign: TextAlign.center,
+            style: TextStyle(color: c.textSecondary, height: 1.35),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _PdfOpenedBook {
+  const _PdfOpenedBook({required this.book, required this.resolvedPath});
+
+  final Book book;
+  final String resolvedPath;
+}
+
+class _PdfMissingFileException implements Exception {
+  _PdfMissingFileException(this.message);
+  final String message;
+
+  @override
+  String toString() => message;
+}
+
+final _pdfBookProvider =
+    FutureProvider.autoDispose.family<_PdfOpenedBook, int>((ref, bookId) async {
+  final repos = ref.read(repositoriesProvider);
+  final book = await repos.books.getBook(bookId);
+  if (book == null) throw StateError('Book $bookId not found');
+
+  final stored = book.filePath?.trim() ?? '';
+  if (stored.isEmpty) {
+    throw _PdfMissingFileException('PDF file path missing');
+  }
+
+  var path = stored;
+  if (!await File(path).exists()) {
+    final remapped = await StoragePathRewrite.remapIfMissing(path);
+    if (remapped == null) {
+      throw _PdfMissingFileException(
+        'PDF file is missing on disk. Re-import the book from Files, or check '
+        'your data folder.',
+      );
+    }
+    path = remapped;
+    if (path != stored) {
+      await repos.books.updateBook(book.copyWith(filePath: path));
+    }
+  }
+
+  return _PdfOpenedBook(book: book, resolvedPath: path);
+});

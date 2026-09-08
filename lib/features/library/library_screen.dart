@@ -1117,14 +1117,15 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> with RouteAware {
       );
       if (result == null || result.files.isEmpty) return;
       if (!context.mounted) return;
-      final filePath = result.files.single.path!;
+      final pickedPath = result.files.single.path!;
+      final ebookSvc = EbookService();
+      final filePath = await ebookSvc.persistImportCopy(pickedPath);
       final showMobiLoader = _isMobiFile(filePath);
       if (showMobiLoader && mounted) {
         setState(() => _importingFile = true);
       }
       final repos = ref.read(repositoriesProvider);
       final ln = ref.read(libraryProvider.notifier);
-      final ebookSvc = EbookService();
       final parsed = await ebookSvc.parse(filePath);
       if (parsed == null) throw Exception('Unsupported format');
       if (!context.mounted) return;
