@@ -944,7 +944,7 @@ class _MangaDetailScreenState extends ConsumerState<MangaDetailScreen> {
                   Text(
                     'Filter',
                     style: TextStyle(
-                      color: Colors.white,
+                      color: context.colors.textPrimary,
                       fontSize: 18,
                       fontWeight: FontWeight.bold,
                     ),
@@ -2945,7 +2945,7 @@ class _HeroSection extends ConsumerWidget {
                   Colors.black.withValues(alpha: 0.55),
                   Colors.black.withValues(alpha: 0.15),
                   Colors.black.withValues(alpha: 0.75),
-                  const Color(0xFF0F0F0F),
+                  c.bg,
                 ],
                 stops: const [0.0, 0.35, 0.75, 1.0],
               ),
@@ -3070,7 +3070,7 @@ class _KenjiDetailButtonGroup extends StatelessWidget {
   Widget build(BuildContext context) {
     final bottom = MediaQuery.of(context).padding.bottom;
     return Material(
-      color: const Color(0xFF0F0F0F),
+      color: c.bg,
       child: Padding(
         padding: EdgeInsets.fromLTRB(16, 10, 16, 10 + bottom),
         child: SizedBox(
@@ -3185,8 +3185,9 @@ class _KenjiBarButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final bg = filled ? accent : (muted ?? const Color(0xFF1A1A1A));
-    final color = filled ? onAccent : (fg ?? Colors.white);
+    final theme = context.colors;
+    final bg = filled ? accent : (muted ?? theme.surfaceMuted);
+    final color = filled ? onAccent : (fg ?? theme.textPrimary);
     final child = Container(
       height: 56,
       alignment: Alignment.center,

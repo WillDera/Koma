@@ -136,7 +136,7 @@ class _MigrateSearchScreenState extends ConsumerState<MigrateSearchScreen> {
             child: Scaffold(
               backgroundColor: Colors.transparent,
               appBar: AppBar(
-                backgroundColor: const Color(0xFF0F0F0F),
+                backgroundColor: c.bg,
                 surfaceTintColor: Colors.transparent,
                 elevation: 0,
                 foregroundColor: c.textPrimary,

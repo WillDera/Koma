@@ -41,13 +41,13 @@ import '../../widgets/import_sheet.dart';
 import '../../widgets/library_book_card.dart';
 import '../../widgets/library_group_stack_card.dart';
 import '../../widgets/library_header.dart';
+import '../../widgets/library_layout_sheet.dart';
 import '../../widgets/loading_skeleton.dart';
 import '../../widgets/media_rail.dart';
 import '../../widgets/one_hand_spacer.dart';
 import '../../widgets/premium_button.dart';
 import '../../widgets/screen_chrome.dart';
 import '../../widgets/catalog_cover_card.dart';
-import '../../widgets/segmented_control.dart';
 import '../../widgets/toast.dart';
 import '../../core/repositories/manga_repository.dart' show InProgressManga;
 import 'ebook_export_flow.dart';
@@ -789,13 +789,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> with RouteAware {
   // ── Layout sheet ────────────────────────────────────────────────────
 
   void _showLayoutSheet() {
-    showModalBottomSheet<void>(
-      context: context,
-      backgroundColor: Colors.transparent,
-      isScrollControlled: true,
-      useSafeArea: true,
-      builder: (context) => const _LibraryLayoutSheet(),
-    );
+    LibraryLayoutSheet.show(context);
   }
 
   // ── Filter / sort sheet ─────────────────────────────────────────────
@@ -1447,103 +1441,6 @@ class _ContinueItem {
   final InProgressManga? manga;
 }
 
-class _LibraryLayoutSheet extends ConsumerWidget {
-  const _LibraryLayoutSheet();
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final c = context.colors;
-    final library = ref.watch(libraryProvider);
-    final ln = ref.read(libraryProvider.notifier);
-    const sheetBg = Color(0xFF0F0F0F);
-    final bottomClearance =
-        72.0 + MediaQuery.paddingOf(context).bottom + 20;
-    return Container(
-      padding: EdgeInsets.fromLTRB(20, 10, 20, bottomClearance),
-      decoration: BoxDecoration(
-        color: sheetBg,
-        borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
-        border: Border(top: BorderSide(color: c.border, width: 0.5)),
-      ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Center(
-            child: Container(
-              width: 36,
-              height: 4,
-              decoration: BoxDecoration(
-                color: c.textTertiary,
-                borderRadius: AppSpacing.brPill,
-              ),
-            ),
-          ),
-          const SizedBox(height: 12),
-          Row(
-            children: [
-              Expanded(
-                child: Text(
-                  'Library layout',
-                  style: TextStyle(
-                    color: c.textPrimary,
-                    fontSize: 18,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-              ),
-              IconButtonRound(
-                icon: Icons.close_rounded,
-                size: 36,
-                variant: IconButtonVariant.filled,
-                backgroundColor: c.surfaceMuted,
-                iconColor: c.textSecondary,
-                tooltip: 'Close',
-                onPressed: () => Navigator.pop(context),
-              ),
-            ],
-          ),
-          const SizedBox(height: 16),
-          Text(
-            'Columns',
-            style: TextStyle(
-              color: c.textPrimary,
-              fontSize: 14,
-              fontWeight: FontWeight.w500,
-            ),
-          ),
-          const SizedBox(height: 10),
-          SegmentedControl<int>(
-            segments: const {2: '2 cols', 3: '3 cols'},
-            value: library.gridColumns,
-            onChanged: ln.setGridColumns,
-          ),
-          const SizedBox(height: 16),
-          Text(
-            'Card style',
-            style: TextStyle(
-              color: c.textPrimary,
-              fontSize: 14,
-              fontWeight: FontWeight.w500,
-            ),
-          ),
-          const SizedBox(height: 10),
-          SegmentedControl<LibraryCardVariant>(
-            segments: const {
-              LibraryCardVariant.grid: 'Grid',
-              LibraryCardVariant.list: 'List',
-              LibraryCardVariant.compact: 'Compact',
-              LibraryCardVariant.overlay: 'Overlay',
-            },
-            value: library.cardVariant,
-            onChanged: ln.setCardVariant,
-          ),
-        ],
-      ),
-    );
-  }
-}
-
 /// Owns its [TextEditingController] so cancel/create don't dispose it while
 /// the dialog route is still animating out.
 class _CreateGroupNameDialog extends StatefulWidget {
@@ -1626,7 +1523,6 @@ class _LibraryFilterSheet extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final c = context.colors;
-    const sheetBg = Color(0xFF0F0F0F);
     // Sheet sits in the tab navigator while [AppBottomNav] stays visible
     // (extendBody shell) — clear the 72px bar + system inset.
     final bottomClearance =
@@ -1634,7 +1530,7 @@ class _LibraryFilterSheet extends StatelessWidget {
     return Container(
       padding: EdgeInsets.fromLTRB(20, 10, 20, bottomClearance),
       decoration: BoxDecoration(
-        color: sheetBg,
+        color: c.surface,
         borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
         border: Border(top: BorderSide(color: c.border, width: 0.5)),
       ),

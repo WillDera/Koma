@@ -29,6 +29,7 @@ import '../../widgets/horizontal_tab_swipe.dart';
 import '../../widgets/icon_button_round.dart';
 import '../../widgets/library_book_card.dart';
 import '../../widgets/library_header.dart';
+import '../../widgets/library_layout_sheet.dart';
 import '../../widgets/media_rail.dart';
 import '../../widgets/one_hand_spacer.dart';
 import '../../widgets/screen_chrome.dart';
@@ -243,12 +244,11 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
 
   void _clearSearch() {
     _ctrl.clear();
-    _unfocusSearch();
     ref.read(globalSearchProvider.notifier).search('');
     ref.read(discoverMetadataProvider.notifier).clearQueue();
     setState(() {
       _results = [];
-      _loaded = false;
+      // Keep _loaded so we stay on the Books|Manga search chrome.
     });
   }
 
@@ -550,6 +550,14 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
                     subtitle: subtitle,
                     actions: [
                       IconButtonRound(
+                        iconData: AppIcons.grid,
+                        size: 38,
+                        variant: IconButtonVariant.tonal,
+                        iconColor: c.textSecondary,
+                        tooltip: 'Layout',
+                        onPressed: () => LibraryLayoutSheet.show(context),
+                      ),
+                      IconButtonRound(
                         iconData: AppIcons.filter,
                         size: 38,
                         variant: IconButtonVariant.tonal,
@@ -604,35 +612,12 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
                 SliverToBoxAdapter(
                   child: Padding(
                     padding: const EdgeInsets.fromLTRB(20, 0, 20, 12),
-                    child: Row(
-                      children: [
-                        Text(
-                          '${_results.length} result${_results.length == 1 ? '' : 's'}',
-                          style: TextStyle(
-                            color: c.textTertiary,
-                            fontSize: 12,
-                          ),
-                        ),
-                        const Spacer(),
-                        AnimatedPress(
-                          onTap: () =>
-                              ref.read(libraryProvider.notifier).toggleLayout(),
-                          child: Container(
-                            width: 42,
-                            height: 42,
-                            decoration: BoxDecoration(
-                              color: c.surfaceMuted,
-                              borderRadius: AppSpacing.brMd,
-                              border: Border.all(color: c.border, width: 0.5),
-                            ),
-                            child: Icon(
-                              gridView ? Icons.view_list : Icons.grid_view,
-                              size: 19,
-                              color: c.textSecondary,
-                            ),
-                          ),
-                        ),
-                      ],
+                    child: Text(
+                      '${_results.length} result${_results.length == 1 ? '' : 's'}',
+                      style: TextStyle(
+                        color: c.textTertiary,
+                        fontSize: 12,
+                      ),
                     ),
                   ),
                 ),
