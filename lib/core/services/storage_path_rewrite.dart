@@ -12,11 +12,12 @@ import 'app_storage.dart';
 
 /// Rewrites absolute filesystem paths stored in Isar after a data-folder move.
 ///
-/// Ebook covers ([Book.coverPath]), inline `file://` chapter media, and manga
-/// custom covers are written as absolute paths at import time. Moving the
-/// storage root relocates the files but leaves those strings pointing at the
-/// old location — remapping them restores covers (Mihon avoids this by hashing
-/// URLs at runtime; we keep absolute paths and rewrite on migrate).
+/// Ebook covers ([Book.coverPath]), source files ([Book.filePath]), inline
+/// `file://` chapter media, and manga custom covers are written as absolute
+/// paths at import time. Moving the storage root relocates the files but
+/// leaves those strings pointing at the old location — remapping them
+/// restores covers and PDF/ebook files (Mihon avoids this by hashing URLs at
+/// runtime; we keep absolute paths and rewrite on migrate).
 class StoragePathRewrite {
   StoragePathRewrite._();
 
@@ -89,14 +90,32 @@ class StoragePathRewrite {
       final books = await isar.books.where().findAll();
       final dirtyBooks = <Book>[];
       for (final book in books) {
-        final path = book.coverPath;
-        if (path == null || path.isEmpty) continue;
-        if (await File(path).exists()) continue;
-        final next = _remapKnownFolder(path, documents: documents, support: support);
-        if (next != null && next != path && await File(next).exists()) {
-          book.coverPath = next;
-          dirtyBooks.add(book);
+        var dirty = false;
+        final cover = book.coverPath;
+        if (cover != null && cover.isNotEmpty && !await File(cover).exists()) {
+          final next = _remapKnownFolder(
+            cover,
+            documents: documents,
+            support: support,
+          );
+          if (next != null && next != cover && await File(next).exists()) {
+            book.coverPath = next;
+            dirty = true;
+          }
         }
+        final file = book.filePath;
+        if (file != null && file.isNotEmpty && !await File(file).exists()) {
+          final next = _remapKnownFolder(
+            file,
+            documents: documents,
+            support: support,
+          );
+          if (next != null && next != file && await File(next).exists()) {
+            book.filePath = next;
+            dirty = true;
+          }
+        }
+        if (dirty) dirtyBooks.add(book);
       }
       if (dirtyBooks.isNotEmpty) {
         await isar.books.putAll(dirtyBooks);
@@ -175,13 +194,24 @@ class StoragePathRewrite {
     final books = await isar.books.where().findAll();
     final dirty = <Book>[];
     for (final book in books) {
-      final path = book.coverPath;
-      if (path == null || path.isEmpty) continue;
-      final next = mapPath(path);
-      if (next != path) {
-        book.coverPath = next;
-        dirty.add(book);
+      var changed = false;
+      final cover = book.coverPath;
+      if (cover != null && cover.isNotEmpty) {
+        final next = mapPath(cover);
+        if (next != cover) {
+          book.coverPath = next;
+          changed = true;
+        }
       }
+      final file = book.filePath;
+      if (file != null && file.isNotEmpty) {
+        final next = mapPath(file);
+        if (next != file) {
+          book.filePath = next;
+          changed = true;
+        }
+      }
+      if (changed) dirty.add(book);
     }
     if (dirty.isNotEmpty) await isar.books.putAll(dirty);
   }
@@ -273,7 +303,7 @@ class StoragePathRewrite {
     return out;
   }
 
-  /// Maps `/…/covers/x`, `/…/ebook_media/…`, `/…/manga_covers/…` onto the
+  /// Maps `/…/covers/x`, `/…/downloads/…`, `/…/ebook_media/…`, etc. onto the
   /// current documents/support roots.
   static String? _remapKnownFolder(
     String stored, {
@@ -283,7 +313,13 @@ class StoragePathRewrite {
     final path = stored.startsWith('file:')
         ? Uri.parse(stored).toFilePath()
         : stored;
-    const docFolders = ['covers', 'ebook_media', 'thumbnails', 'updates'];
+    const docFolders = [
+      'covers',
+      'downloads',
+      'ebook_media',
+      'thumbnails',
+      'updates',
+    ];
     for (final folder in docFolders) {
       final marker = '/$folder/';
       final i = path.indexOf(marker);
@@ -304,6 +340,23 @@ class StoragePathRewrite {
     return null;
   }
 
+  /// Public remap for a single on-disk book/media path (e.g. PDF reader).
+  static Future<String?> remapIfMissing(String stored) async {
+    if (stored.isEmpty) return null;
+    if (await File(stored).exists()) return stored;
+    final documents = (await AppStorage.documents()).path;
+    final support = (await AppStorage.support()).path;
+    final next = _remapKnownFolder(
+      stored,
+      documents: documents,
+      support: support,
+    );
+    if (next != null && next != stored && await File(next).exists()) {
+      return next;
+    }
+    return null;
+  }
+
   static String _remapEmbeddedPaths(
     String html, {
     required String documents,
@@ -311,7 +364,7 @@ class StoragePathRewrite {
   }) {
     return html.replaceAllMapped(
       RegExp(
-        r'''(file://)?(/[^"'\s]+/(?:covers|ebook_media|thumbnails|manga_covers|manga)/[^"'\s]+)''',
+        r'''(file://)?(/[^"'\s]+/(?:covers|downloads|ebook_media|thumbnails|manga_covers|manga)/[^"'\s]+)''',
       ),
       (m) {
         final hadFile = m.group(1) != null;

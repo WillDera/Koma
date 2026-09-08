@@ -13,6 +13,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../../core/models/manga.dart';
 import '../../core/models/manga_chapter.dart';
 import '../../core/providers.dart';
+import '../../core/services/chapter_auto_delete.dart';
 import '../../core/services/download/chapter_download.dart';
 import '../../core/services/download/download_manager.dart';
 import '../../core/services/extension_source_resolve.dart';
@@ -1488,14 +1489,13 @@ class _MangaDetailScreenState extends ConsumerState<MangaDetailScreen> {
     if (chapterUrls.isEmpty) return;
     try {
       final repos = ref.read(repositoriesProvider);
-      final ext = await findInstalledExtension(repos, widget.sourceId);
-      if (ext == null || !ext.isJs) {
-        await _keiyoushi.deleteChapters(
-          sourceId: widget.sourceId,
-          mangaUrl: widget.url,
-          chapterUrls: chapterUrls,
-        );
-      }
+      await ChapterAutoDelete.deleteChapterFiles(
+        keiyoushi: _keiyoushi,
+        repos: repos,
+        sourceId: widget.sourceId,
+        mangaUrl: widget.url,
+        chapterUrls: chapterUrls,
+      );
       if (!mounted) return;
       await _clearLocalDownloadFlags(chapterUrls);
       if (!mounted) return;
@@ -2610,19 +2610,22 @@ class _HeaderState extends State<_Header> {
     return Container(
       height: 38,
       padding: const EdgeInsets.symmetric(horizontal: 16),
-      alignment: Alignment.center,
       decoration: BoxDecoration(
         color: widget.c.surfaceMuted,
         borderRadius: AppSpacing.brPill,
       ),
-      child: Text(
-        '${_genreEmoji(g)}$g',
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
-        style: TextStyle(
-          color: widget.c.textSecondary,
-          fontSize: 13,
-          fontWeight: FontWeight.w500,
+      // widthFactor keeps the chip intrinsic — Container.alignment would
+      // expand to the Wrap's max width (full row).
+      child: Center(
+        widthFactor: 1,
+        child: Text(
+          '${_genreEmoji(g)}$g',
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: TextStyle(
+            color: widget.c.textSecondary,
+            fontSize: 13,
+          ),
         ),
       ),
     );

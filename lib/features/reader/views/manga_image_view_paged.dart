@@ -131,7 +131,13 @@ class MangaImageViewPaged extends StatelessWidget {
         resolvedFilePath: resolvedFilePath,
         preloadData: page,
         cropBorders: settings.cropBorders,
-        fit: BoxFit.contain,
+        // Book mode: start fit-to-screen (fill the half-spread cell). Pinch
+        // can still zoom out to contain. Double-tap toggles fit-to-screen.
+        fit: bookMode ? null : BoxFit.contain,
+        minimumScaleType: ScaleType.centerInside,
+        initialScaleType: bookMode ? ScaleType.centerCrop : null,
+        doubleTapScaleType:
+            settings.disableDoubleTap ? null : ScaleType.centerCrop,
         panEnabled: !settings.disableDoubleTap || !settings.disableZoomOut,
         zoomEnabled: !settings.disableZoomOut,
         doubleTapZoomScale: settings.disableDoubleTap ? 1.0 : null,

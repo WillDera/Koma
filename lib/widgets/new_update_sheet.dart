@@ -38,7 +38,12 @@ class _NewUpdateSheetState extends ConsumerState<NewUpdateSheet> {
   @override
   void initState() {
     super.initState();
-    ref.read(appUpdateProvider.notifier).offerUpdate(widget.release);
+    // offerUpdate notifies AppUpdateManager → Riverpod state; cannot run
+    // while this sheet is still mounting.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      ref.read(appUpdateProvider.notifier).offerUpdate(widget.release);
+    });
   }
 
   Future<void> _onAccept() async {

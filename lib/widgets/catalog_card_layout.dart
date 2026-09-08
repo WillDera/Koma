@@ -4,7 +4,7 @@ import '../theme/tokens/app_spacing.dart';
 import 'library_book_card.dart';
 
 /// Shared geometry for cover grids — keeps Library / Discover / Global Search
-/// / Source Browse aligned with Appearance → grid columns + card variant.
+/// / Source Browse aligned with Library layout sheet columns + card variant.
 abstract final class CatalogCardLayout {
   /// List style is a shelf mode; inside a grid cell fall back to comfortable.
   static LibraryCardVariant gridVariant(LibraryCardVariant variant) =>

@@ -9,6 +9,7 @@ import '../repositories/manga_repository.dart';
 import '../repositories/repositories.dart';
 import '../utils/chapter_recognition.dart';
 import '../../eval/dispatch_service.dart';
+import 'chapter_auto_delete.dart';
 import 'extension_source_resolve.dart';
 import 'keiyoushi_service.dart';
 
@@ -341,18 +342,13 @@ class MigrateMangaUseCase {
     ];
     if (urls.isEmpty) return;
 
-    final ext = await findInstalledExtension(_repos, current.sourceId);
-    if (ext == null || !ext.isJs) {
-      try {
-        await _keiyoushi.deleteChapters(
-          sourceId: current.sourceId,
-          mangaUrl: current.url,
-          chapterUrls: urls,
-        );
-      } catch (_) {
-        // Native delete can fail for missing dirs — still clear flags.
-      }
-    }
+    await ChapterAutoDelete.deleteChapterFiles(
+      keiyoushi: _keiyoushi,
+      repos: _repos,
+      sourceId: current.sourceId,
+      mangaUrl: current.url,
+      chapterUrls: urls,
+    );
 
     final cleared = [
       for (final c in chapters)

@@ -1,3 +1,8 @@
+import 'dart:io';
+
+import 'package:path/path.dart' as p;
+
+import 'app_storage.dart';
 import 'epub_service.dart';
 import 'fb2_service.dart';
 import 'txt_service.dart';
@@ -24,5 +29,29 @@ class EbookService {
       default:
         return null;
     }
+  }
+
+  /// Copies a picker / share path into `{documents}/downloads/` so the library
+  /// keeps a durable file (Android cache paths and storage moves are unreliable).
+  ///
+  /// Returns [sourcePath] unchanged when it already lives under downloads.
+  Future<String> persistImportCopy(String sourcePath) async {
+    final docs = await AppStorage.documents();
+    final downloads = Directory(p.join(docs.path, 'downloads'));
+    final normalized = p.normalize(File(sourcePath).absolute.path);
+    final downloadsRoot = p.normalize(downloads.absolute.path);
+    if (normalized == downloadsRoot ||
+        p.isWithin(downloadsRoot, normalized)) {
+      return normalized;
+    }
+
+    await downloads.create(recursive: true);
+    final ext = p.extension(sourcePath);
+    final dest = p.join(
+      downloads.path,
+      '${DateTime.now().millisecondsSinceEpoch}$ext',
+    );
+    await File(sourcePath).copy(dest);
+    return dest;
   }
 }

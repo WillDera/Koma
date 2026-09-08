@@ -47,6 +47,7 @@ import '../../widgets/one_hand_spacer.dart';
 import '../../widgets/premium_button.dart';
 import '../../widgets/screen_chrome.dart';
 import '../../widgets/catalog_cover_card.dart';
+import '../../widgets/segmented_control.dart';
 import '../../widgets/toast.dart';
 import '../../core/repositories/manga_repository.dart' show InProgressManga;
 import 'ebook_export_flow.dart';
@@ -73,8 +74,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> with RouteAware {
   };
   int? _selectedCategoryId;
   final Map<int, String?> _mangaThumbnails = {};
-  List<Book> _continueBooks = const [];
-  List<InProgressManga> _continueManga = const [];
+  List<_ContinueItem> _continueItems = const [];
 
   _LibrarySection get _section =>
       _viewAllSection ?? _LibrarySection.books;
@@ -116,10 +116,16 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> with RouteAware {
         repos.manga.getInProgressManga(),
       ]);
       if (!mounted) return;
-      setState(() {
-        _continueBooks = results[0] as List<Book>;
-        _continueManga = results[1] as List<InProgressManga>;
-      });
+      final books = results[0] as List<Book>;
+      final mangas = results[1] as List<InProgressManga>;
+      final epoch = DateTime.fromMillisecondsSinceEpoch(0);
+      final merged = <_ContinueItem>[
+        for (final b in books)
+          _ContinueItem.book(b, b.updatedAt),
+        for (final m in mangas)
+          _ContinueItem.manga(m, m.lastReadAt ?? epoch),
+      ]..sort((a, b) => b.lastReadAt.compareTo(a.lastReadAt));
+      setState(() => _continueItems = merged);
     } catch (_) {
       // Continue rail is best-effort.
     }
@@ -424,7 +430,6 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> with RouteAware {
                 key: const ValueKey('manga-shelf'),
                 mangas: _visibleMangas(provider),
                 groups: _visibleMangaGroups(provider),
-                gridView: provider.isGridView,
                 provider: provider,
                 notifier: ref.read(libraryProvider.notifier),
                 extensionNames: provider.extensionNames,
@@ -458,7 +463,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> with RouteAware {
       if (seen.add(g.id)) uniqueGroups.add(g);
     }
 
-    final continueCount = _continueBooks.length + _continueManga.length;
+    final continueCount = _continueItems.length;
     final slivers = <Widget>[];
 
     if (continueCount > 0) {
@@ -470,8 +475,9 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> with RouteAware {
             height: 200,
             itemCount: continueCount,
             itemBuilder: (context, i) {
-              if (i < _continueBooks.length) {
-                final book = _continueBooks[i];
+              final item = _continueItems[i];
+              final book = item.book;
+              if (book != null) {
                 return MediaRailCover(
                   width: 118,
                   child: StaggeredFadeScale(
@@ -486,7 +492,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> with RouteAware {
                   ),
                 );
               }
-              final row = _continueManga[i - _continueBooks.length];
+              final row = item.manga!;
               final manga = row.manga;
               return MediaRailCover(
                 width: 118,
@@ -740,6 +746,13 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> with RouteAware {
           tooltip: 'Search library',
           onPressed: () => context.pushNamed(Routes.search),
         ),
+        IconButtonRound(
+          iconData: AppIcons.grid,
+          size: 44,
+          variant: IconButtonVariant.plain,
+          tooltip: 'Library layout',
+          onPressed: _showLayoutSheet,
+        ),
         Stack(
           clipBehavior: Clip.none,
           children: [
@@ -769,14 +782,19 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> with RouteAware {
               ),
           ],
         ),
-        IconButtonRound(
-          icon: Icons.folder_outlined,
-          size: 44,
-          variant: IconButtonVariant.plain,
-          tooltip: 'Collections',
-          onPressed: () => context.pushNamed(Routes.collections),
-        ),
       ],
+    );
+  }
+
+  // ── Layout sheet ────────────────────────────────────────────────────
+
+  void _showLayoutSheet() {
+    showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      useSafeArea: true,
+      builder: (context) => const _LibraryLayoutSheet(),
     );
   }
 
@@ -1098,14 +1116,15 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> with RouteAware {
       );
       if (result == null || result.files.isEmpty) return;
       if (!context.mounted) return;
-      final filePath = result.files.single.path!;
+      final pickedPath = result.files.single.path!;
+      final ebookSvc = EbookService();
+      final filePath = await ebookSvc.persistImportCopy(pickedPath);
       final showMobiLoader = _isMobiFile(filePath);
       if (showMobiLoader && mounted) {
         setState(() => _importingFile = true);
       }
       final repos = ref.read(repositoriesProvider);
       final ln = ref.read(libraryProvider.notifier);
-      final ebookSvc = EbookService();
       final parsed = await ebookSvc.parse(filePath);
       if (parsed == null) throw Exception('Unsupported format');
       if (!context.mounted) return;
@@ -1408,6 +1427,122 @@ enum _LibrarySort { alphabetical, author, progress }
 enum _LibraryFilter { unread, newlyAdded }
 
 enum _FilterMode { none, include, exclude }
+
+/// Unified Continue reading entry — books and manga sorted by [lastReadAt].
+class _ContinueItem {
+  const _ContinueItem._({
+    required this.lastReadAt,
+    this.book,
+    this.manga,
+  });
+
+  factory _ContinueItem.book(Book book, DateTime lastReadAt) =>
+      _ContinueItem._(lastReadAt: lastReadAt, book: book);
+
+  factory _ContinueItem.manga(InProgressManga manga, DateTime lastReadAt) =>
+      _ContinueItem._(lastReadAt: lastReadAt, manga: manga);
+
+  final DateTime lastReadAt;
+  final Book? book;
+  final InProgressManga? manga;
+}
+
+class _LibraryLayoutSheet extends ConsumerWidget {
+  const _LibraryLayoutSheet();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final c = context.colors;
+    final library = ref.watch(libraryProvider);
+    final ln = ref.read(libraryProvider.notifier);
+    const sheetBg = Color(0xFF0F0F0F);
+    final bottomClearance =
+        72.0 + MediaQuery.paddingOf(context).bottom + 20;
+    return Container(
+      padding: EdgeInsets.fromLTRB(20, 10, 20, bottomClearance),
+      decoration: BoxDecoration(
+        color: sheetBg,
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+        border: Border(top: BorderSide(color: c.border, width: 0.5)),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Center(
+            child: Container(
+              width: 36,
+              height: 4,
+              decoration: BoxDecoration(
+                color: c.textTertiary,
+                borderRadius: AppSpacing.brPill,
+              ),
+            ),
+          ),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  'Library layout',
+                  style: TextStyle(
+                    color: c.textPrimary,
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ),
+              IconButtonRound(
+                icon: Icons.close_rounded,
+                size: 36,
+                variant: IconButtonVariant.filled,
+                backgroundColor: c.surfaceMuted,
+                iconColor: c.textSecondary,
+                tooltip: 'Close',
+                onPressed: () => Navigator.pop(context),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          Text(
+            'Columns',
+            style: TextStyle(
+              color: c.textPrimary,
+              fontSize: 14,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+          const SizedBox(height: 10),
+          SegmentedControl<int>(
+            segments: const {2: '2 cols', 3: '3 cols'},
+            value: library.gridColumns,
+            onChanged: ln.setGridColumns,
+          ),
+          const SizedBox(height: 16),
+          Text(
+            'Card style',
+            style: TextStyle(
+              color: c.textPrimary,
+              fontSize: 14,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+          const SizedBox(height: 10),
+          SegmentedControl<LibraryCardVariant>(
+            segments: const {
+              LibraryCardVariant.grid: 'Grid',
+              LibraryCardVariant.list: 'List',
+              LibraryCardVariant.compact: 'Compact',
+              LibraryCardVariant.overlay: 'Overlay',
+            },
+            value: library.cardVariant,
+            onChanged: ln.setCardVariant,
+          ),
+        ],
+      ),
+    );
+  }
+}
 
 /// Owns its [TextEditingController] so cancel/create don't dispose it while
 /// the dialog route is still animating out.
@@ -1846,8 +1981,10 @@ class _BookShelf extends StatelessWidget {
     }
     final sw = Stopwatch()..start();
     late final Widget result;
-    if (provider.isGridView) {
-      final variant = CatalogCardLayout.gridVariant(provider.cardVariant);
+    // Card style is the source of truth (layout sheet). List style uses a
+    // vertical shelf; everything else uses the column grid.
+    if (provider.cardVariant != LibraryCardVariant.list) {
+      final variant = provider.cardVariant;
       result = SliverPadding(
         padding: CatalogCardLayout.paddingFor(variant),
         sliver: SliverGrid(
@@ -1866,7 +2003,7 @@ class _BookShelf extends StatelessWidget {
       );
       BenchmarkLogger.log(
         'book_shelf_build',
-        'variant=${variant.name} count=$_total elapsed=${sw.elapsedMicroseconds}us',
+        'variant=${variant.name} cols=${provider.gridColumns} count=$_total elapsed=${sw.elapsedMicroseconds}us',
       );
       return result;
     }
@@ -1967,7 +2104,6 @@ class _BookShelf extends StatelessWidget {
 class _MangaShelf extends StatelessWidget {
   final List<Manga> mangas;
   final List<LibraryGroupInfo> groups;
-  final bool gridView;
   final LibraryState provider;
   final LibraryNotifier notifier;
   final ValueChanged<Manga> onOpen;
@@ -1980,7 +2116,6 @@ class _MangaShelf extends StatelessWidget {
     super.key,
     required this.mangas,
     required this.groups,
-    required this.gridView,
     required this.provider,
     required this.notifier,
     required this.onOpen,
@@ -2009,8 +2144,8 @@ class _MangaShelf extends StatelessWidget {
     }
     final sw = Stopwatch()..start();
     late final Widget result;
-    if (gridView) {
-      final variant = CatalogCardLayout.gridVariant(provider.cardVariant);
+    if (provider.cardVariant != LibraryCardVariant.list) {
+      final variant = provider.cardVariant;
       result = SliverPadding(
         padding: CatalogCardLayout.paddingFor(variant),
         sliver: SliverGrid(
@@ -2028,7 +2163,7 @@ class _MangaShelf extends StatelessWidget {
       );
       BenchmarkLogger.log(
         'manga_shelf_build',
-        'variant=grid count=$_total elapsed=${sw.elapsedMicroseconds}us',
+        'variant=${variant.name} cols=${provider.gridColumns} count=$_total elapsed=${sw.elapsedMicroseconds}us',
       );
       return result;
     }
