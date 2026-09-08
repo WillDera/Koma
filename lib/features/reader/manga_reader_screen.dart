@@ -211,16 +211,9 @@ class _MangaReaderScreenState extends ConsumerState<MangaReaderScreen>
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
   }
 
-  /// Applies [ReaderSettings.rotationMode], forcing landscape when book mode
-  /// is on so double-page spreads are usable.
+  /// Applies [ReaderSettings.rotationMode]. Book mode follows the same
+  /// rotation preference so spreads work in portrait and landscape.
   void _applyOrientation() {
-    if (_settings.bookMode) {
-      SystemChrome.setPreferredOrientations(const [
-        DeviceOrientation.landscapeLeft,
-        DeviceOrientation.landscapeRight,
-      ]);
-      return;
-    }
     switch (_settings.rotationMode) {
       case RotationMode.portrait:
         SystemChrome.setPreferredOrientations(const [

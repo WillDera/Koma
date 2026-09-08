@@ -331,8 +331,13 @@ class SubsamplingScaleImageView extends StatefulWidget {
   /// If null, [minimumScaleType] is used.
   final BoxFit? fit;
 
-  /// Fit mode for the initial minimum scale (alternative to [fit]).
+  /// Fit mode for the zoom-out / minimum scale (alternative to [fit]).
   final ScaleType minimumScaleType;
+
+  /// Scale used when the image first opens. Defaults to [minimumScaleType]
+  /// (or [fit]). Use [ScaleType.centerCrop] to start fit-to-screen while still
+  /// allowing pinch-zoom out to [minimumScaleType].
+  final ScaleType? initialScaleType;
 
   /// Mode for limiting panning to the edges.
   final PanLimit panLimit;
@@ -347,8 +352,13 @@ class SubsamplingScaleImageView extends StatefulWidget {
 
   // ── Double tap ────────────────────────────────────────────────────────────────
 
-  /// Target double-tap scale. null = 2.5× minimum scale.
+  /// Target double-tap scale. null = [doubleTapScaleType] or fit-to-screen.
   final double? doubleTapZoomScale;
+
+  /// Double-tap zoom-in target as a [ScaleType] (e.g. [ScaleType.centerCrop]
+  /// for fit-to-screen). Ignored when [doubleTapZoomScale] is set.
+  final ScaleType? doubleTapScaleType;
+
   final Duration doubleTapZoomDuration;
 
   // ── Visual rendering ─────────────────────────────────────────────────────────────
@@ -404,10 +414,12 @@ class SubsamplingScaleImageView extends StatefulWidget {
     this.srcRect,
     this.fit,
     this.minimumScaleType = ScaleType.centerInside,
+    this.initialScaleType,
     this.panLimit = PanLimit.inside,
     this.maxScale,
     this.minScale,
     this.doubleTapZoomScale,
+    this.doubleTapScaleType,
     this.doubleTapZoomDuration = const Duration(milliseconds: 300),
     this.color,
     this.colorBlendMode,
@@ -532,6 +544,8 @@ class _SubsamplingScaleImageViewState extends State<SubsamplingScaleImageView>
     final cropChanged = widget.cropBorders != oldWidget.cropBorders;
     final scaleTypeChanged =
         widget.minimumScaleType != oldWidget.minimumScaleType ||
+        widget.initialScaleType != oldWidget.initialScaleType ||
+        widget.doubleTapScaleType != oldWidget.doubleTapScaleType ||
         widget.fit != oldWidget.fit;
 
     if (imageChanged || cropChanged) {
@@ -966,7 +980,8 @@ class _SubsamplingScaleImageViewState extends State<SubsamplingScaleImageView>
     final effWidth = transformer.effectiveSWidth.toDouble();
     final effHeight = transformer.effectiveSHeight.toDouble();
 
-    _scale = _calcMinScaleForType(effWidth, effHeight);
+    final initialType = widget.initialScaleType ?? _effectiveScaleType;
+    _scale = _scaleForType(effWidth, effHeight, initialType);
 
     final double tx = (_viewSize.width - (effWidth * _scale)) / 2;
     final double ty = (_viewSize.height - (effHeight * _scale)) / 2;
@@ -1012,11 +1027,11 @@ class _SubsamplingScaleImageViewState extends State<SubsamplingScaleImageView>
     return widget.minimumScaleType;
   }
 
-  double _calcMinScaleForType(double effWidth, double effHeight) {
+  double _scaleForType(double effWidth, double effHeight, ScaleType type) {
     final double scaleX = _viewSize.width / effWidth;
     final double scaleY = _viewSize.height / effHeight;
 
-    switch (_effectiveScaleType) {
+    switch (type) {
       case ScaleType.centerInside:
         return min(scaleX, scaleY);
       case ScaleType.centerCrop:
@@ -1034,6 +1049,9 @@ class _SubsamplingScaleImageViewState extends State<SubsamplingScaleImageView>
     }
   }
 
+  double _calcMinScaleForType(double effWidth, double effHeight) =>
+      _scaleForType(effWidth, effHeight, _effectiveScaleType);
+
   double _getMinScale() {
     final transformer = CoordinateTransformer(
       scale: 1.0,
@@ -1045,6 +1063,21 @@ class _SubsamplingScaleImageViewState extends State<SubsamplingScaleImageView>
     return _calcMinScaleForType(
       transformer.effectiveSWidth.toDouble(),
       transformer.effectiveSHeight.toDouble(),
+    );
+  }
+
+  double _fitScreenScale() {
+    final transformer = CoordinateTransformer(
+      scale: 1.0,
+      vTranslate: ui.Offset.zero,
+      rotation: widget.rotation,
+      sWidth: _sWidth,
+      sHeight: _sHeight,
+    );
+    return _scaleForType(
+      transformer.effectiveSWidth.toDouble(),
+      transformer.effectiveSHeight.toDouble(),
+      ScaleType.centerCrop,
     );
   }
 
@@ -1355,24 +1388,43 @@ class _SubsamplingScaleImageViewState extends State<SubsamplingScaleImageView>
     if (!_isInitialized) return;
 
     final double minScale = _getMinScale();
-    final double dtScale = widget.doubleTapZoomScale ?? (minScale * 2.5);
-    final double clampedDtScale = min(_getMaxScale(), dtScale);
-    final double targetScale = (_scale > minScale * 1.5)
-        ? minScale
-        : clampedDtScale;
+    final transformer = CoordinateTransformer(
+      scale: 1.0,
+      vTranslate: ui.Offset.zero,
+      rotation: widget.rotation,
+      sWidth: _sWidth,
+      sHeight: _sHeight,
+    );
+    final effWidth = transformer.effectiveSWidth.toDouble();
+    final effHeight = transformer.effectiveSHeight.toDouble();
+
+    final double dtScale;
+    if (widget.doubleTapZoomScale != null) {
+      dtScale = widget.doubleTapZoomScale!;
+    } else if (widget.doubleTapScaleType != null) {
+      dtScale = _scaleForType(effWidth, effHeight, widget.doubleTapScaleType!);
+    } else {
+      // Zoom in to fit-to-screen (fill the view).
+      dtScale = _fitScreenScale();
+    }
+    final double clampedDtScale = min(_getMaxScale(), max(minScale, dtScale));
+    // Toggle: zoomed past min → back to min; otherwise zoom in to fit-screen.
+    final double targetScale =
+        (_scale > minScale * 1.5) ? minScale : clampedDtScale;
 
     if (widget.quickScaleEnabled) {
       _isQuickScaling = true;
       _quickScaleLastY = details.localPosition.dy;
       _quickScaleLastDistance = -1;
-      final transformer = CoordinateTransformer(
+      final liveTransformer = CoordinateTransformer(
         scale: _scale,
         vTranslate: _vTranslate,
         rotation: widget.rotation,
         sWidth: _sWidth,
         sHeight: _sHeight,
       );
-      _quickScaleSCenter = transformer.vCoordToSCoord(details.localPosition);
+      _quickScaleSCenter =
+          liveTransformer.vCoordToSCoord(details.localPosition);
     }
 
     final ui.Offset tapPosition = details.localPosition;

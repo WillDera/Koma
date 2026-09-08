@@ -92,8 +92,45 @@ Widget scaleFadePageTransition({
   return FadeTransition(
     opacity: curved,
     child: ScaleTransition(
-      scale: Tween<double>(begin: 0.92, end: 1.0).animate(curved),
+      scale: Tween<double>(begin: 0.96, end: 1.0).animate(curved),
       child: child,
+    ),
+  );
+}
+
+/// Soft horizontal slide + fade for You / Settings destinations.
+Widget smoothSlidePageTransition({
+  required Animation<double> animation,
+  required Animation<double> secondaryAnimation,
+  required Widget child,
+}) {
+  final curved = CurvedAnimation(
+    parent: animation,
+    curve: AppMotion.decelerate,
+    reverseCurve: AppMotion.accelerate,
+  );
+  final secondary = CurvedAnimation(
+    parent: secondaryAnimation,
+    curve: AppMotion.standard,
+    reverseCurve: AppMotion.accelerate,
+  );
+  return SlideTransition(
+    position: Tween<Offset>(
+      begin: const Offset(0.08, 0),
+      end: Offset.zero,
+    ).animate(curved),
+    child: FadeTransition(
+      opacity: curved,
+      child: SlideTransition(
+        position: Tween<Offset>(
+          begin: Offset.zero,
+          end: const Offset(-0.04, 0),
+        ).animate(secondary),
+        child: FadeTransition(
+          opacity: Tween<double>(begin: 1, end: 0.92).animate(secondary),
+          child: child,
+        ),
+      ),
     ),
   );
 }

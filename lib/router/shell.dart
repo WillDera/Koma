@@ -11,6 +11,7 @@ import '../theme/theme_provider.dart';
 import '../widgets/app_update_gate.dart';
 import '../widgets/glass_pill_nav.dart';
 import '../widgets/nav_drawer.dart';
+import '../widgets/stats_popup.dart';
 
 /// The bottom-nav shell. Wraps go_router's [StatefulNavigationShell]
 /// (an IndexedStack of the five tab branches, each with its own Navigator
@@ -98,6 +99,10 @@ class MainShell extends ConsumerWidget {
             items: _navItems,
             currentIndex: navigationShell.currentIndex,
             onTap: _onTap,
+            onLongPress: (index) {
+              if (!_navItems[index].profileTab) return;
+              showStatsPopup(context);
+            },
             profileInitials: initials,
             profileImage: profileImage,
           ),

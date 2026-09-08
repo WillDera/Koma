@@ -74,8 +74,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> with RouteAware {
   };
   int? _selectedCategoryId;
   final Map<int, String?> _mangaThumbnails = {};
-  List<Book> _continueBooks = const [];
-  List<InProgressManga> _continueManga = const [];
+  List<_ContinueItem> _continueItems = const [];
 
   _LibrarySection get _section =>
       _viewAllSection ?? _LibrarySection.books;
@@ -117,10 +116,16 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> with RouteAware {
         repos.manga.getInProgressManga(),
       ]);
       if (!mounted) return;
-      setState(() {
-        _continueBooks = results[0] as List<Book>;
-        _continueManga = results[1] as List<InProgressManga>;
-      });
+      final books = results[0] as List<Book>;
+      final mangas = results[1] as List<InProgressManga>;
+      final epoch = DateTime.fromMillisecondsSinceEpoch(0);
+      final merged = <_ContinueItem>[
+        for (final b in books)
+          _ContinueItem.book(b, b.updatedAt),
+        for (final m in mangas)
+          _ContinueItem.manga(m, m.lastReadAt ?? epoch),
+      ]..sort((a, b) => b.lastReadAt.compareTo(a.lastReadAt));
+      setState(() => _continueItems = merged);
     } catch (_) {
       // Continue rail is best-effort.
     }
@@ -458,7 +463,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> with RouteAware {
       if (seen.add(g.id)) uniqueGroups.add(g);
     }
 
-    final continueCount = _continueBooks.length + _continueManga.length;
+    final continueCount = _continueItems.length;
     final slivers = <Widget>[];
 
     if (continueCount > 0) {
@@ -470,8 +475,9 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> with RouteAware {
             height: 200,
             itemCount: continueCount,
             itemBuilder: (context, i) {
-              if (i < _continueBooks.length) {
-                final book = _continueBooks[i];
+              final item = _continueItems[i];
+              final book = item.book;
+              if (book != null) {
                 return MediaRailCover(
                   width: 118,
                   child: StaggeredFadeScale(
@@ -486,7 +492,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> with RouteAware {
                   ),
                 );
               }
-              final row = _continueManga[i - _continueBooks.length];
+              final row = item.manga!;
               final manga = row.manga;
               return MediaRailCover(
                 width: 118,
@@ -775,13 +781,6 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> with RouteAware {
                 ),
               ),
           ],
-        ),
-        IconButtonRound(
-          icon: Icons.folder_outlined,
-          size: 44,
-          variant: IconButtonVariant.plain,
-          tooltip: 'Collections',
-          onPressed: () => context.pushNamed(Routes.collections),
         ),
       ],
     );
@@ -1428,6 +1427,25 @@ enum _LibrarySort { alphabetical, author, progress }
 enum _LibraryFilter { unread, newlyAdded }
 
 enum _FilterMode { none, include, exclude }
+
+/// Unified Continue reading entry — books and manga sorted by [lastReadAt].
+class _ContinueItem {
+  const _ContinueItem._({
+    required this.lastReadAt,
+    this.book,
+    this.manga,
+  });
+
+  factory _ContinueItem.book(Book book, DateTime lastReadAt) =>
+      _ContinueItem._(lastReadAt: lastReadAt, book: book);
+
+  factory _ContinueItem.manga(InProgressManga manga, DateTime lastReadAt) =>
+      _ContinueItem._(lastReadAt: lastReadAt, manga: manga);
+
+  final DateTime lastReadAt;
+  final Book? book;
+  final InProgressManga? manga;
+}
 
 class _LibraryLayoutSheet extends ConsumerWidget {
   const _LibraryLayoutSheet();

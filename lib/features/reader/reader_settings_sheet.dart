@@ -319,7 +319,7 @@ class _ReadingTab extends StatelessWidget {
               SettingsRow(
                 icon: Icons.menu_book_outlined,
                 title: 'Book mode',
-                subtitle: 'Two pages per spread (locks landscape)',
+                subtitle: 'Two pages per spread (portrait & landscape)',
                 trailing: Switch(
                   value: settings.bookMode,
                   activeThumbColor: c.accent,

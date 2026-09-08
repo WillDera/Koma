@@ -27,6 +27,7 @@ class AppBottomNav extends StatelessWidget {
   final List<NavItem> items;
   final int currentIndex;
   final ValueChanged<int> onTap;
+  final ValueChanged<int>? onLongPress;
   final String? profileInitials;
   final ImageProvider? profileImage;
 
@@ -35,6 +36,7 @@ class AppBottomNav extends StatelessWidget {
     required this.items,
     required this.currentIndex,
     required this.onTap,
+    this.onLongPress,
     this.profileInitials,
     this.profileImage,
   });
@@ -61,6 +63,9 @@ class AppBottomNav extends StatelessWidget {
                   child: GestureDetector(
                     behavior: HitTestBehavior.opaque,
                     onTap: () => onTap(i),
+                    onLongPress: onLongPress == null
+                        ? null
+                        : () => onLongPress!(i),
                     child: AnimatedContainer(
                       duration: AppMotion.base,
                       curve: Curves.easeOutBack,
