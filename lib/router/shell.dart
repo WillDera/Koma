@@ -76,22 +76,36 @@ class MainShell extends ConsumerWidget {
           loading: () => '',
           error: (_, _) => '',
         );
+    final onLibrary = navigationShell.currentIndex == 0;
     return AppUpdateGate(
-      child: Scaffold(
-        extendBody: true,
-        backgroundColor: theme.bgColor,
-        body: navigationShell,
-        bottomNavigationBar: AppBottomNav(
-          items: _navItems,
-          currentIndex: navigationShell.currentIndex,
-          onTap: _onTap,
-          profileInitials: initials,
-          profileImage: profileImage,
-        ),
-        drawer: NavDrawer(
-          currentIndex: navigationShell.currentIndex,
-          onTap: _onTap,
-          version: version,
+      // Tab roots (Updates / History / Explore / You) have nothing to pop, so
+      // the system back gesture would finish the Activity. Send those to
+      // Library instead; Library root still exits as usual. Detail routes
+      // pushed above the shell keep normal pop behavior.
+      child: PopScope(
+        canPop: onLibrary,
+        onPopInvokedWithResult: (didPop, _) {
+          if (didPop) return;
+          if (navigationShell.currentIndex != 0) {
+            navigationShell.goBranch(0);
+          }
+        },
+        child: Scaffold(
+          extendBody: true,
+          backgroundColor: theme.bgColor,
+          body: navigationShell,
+          bottomNavigationBar: AppBottomNav(
+            items: _navItems,
+            currentIndex: navigationShell.currentIndex,
+            onTap: _onTap,
+            profileInitials: initials,
+            profileImage: profileImage,
+          ),
+          drawer: NavDrawer(
+            currentIndex: navigationShell.currentIndex,
+            onTap: _onTap,
+            version: version,
+          ),
         ),
       ),
     );

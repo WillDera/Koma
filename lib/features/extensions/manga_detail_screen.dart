@@ -2610,19 +2610,22 @@ class _HeaderState extends State<_Header> {
     return Container(
       height: 38,
       padding: const EdgeInsets.symmetric(horizontal: 16),
-      alignment: Alignment.center,
       decoration: BoxDecoration(
         color: widget.c.surfaceMuted,
         borderRadius: AppSpacing.brPill,
       ),
-      child: Text(
-        '${_genreEmoji(g)}$g',
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
-        style: TextStyle(
-          color: widget.c.textSecondary,
-          fontSize: 13,
-          fontWeight: FontWeight.w500,
+      // widthFactor keeps the chip intrinsic — Container.alignment would
+      // expand to the Wrap's max width (full row).
+      child: Center(
+        widthFactor: 1,
+        child: Text(
+          '${_genreEmoji(g)}$g',
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: TextStyle(
+            color: widget.c.textSecondary,
+            fontSize: 13,
+          ),
         ),
       ),
     );
