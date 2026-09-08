@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:extended_image/extended_image.dart';
 import 'package:flutter/material.dart';
 
@@ -12,6 +14,26 @@ import 'custom_extended_image_provider.dart';
 ///
 /// Faithful copy of mangayomi's [_coverMaxBytes] (lib/utils/cached_network.dart).
 const int _coverMaxBytes = 200 << 10;
+
+bool isLocalCoverPath(String url) {
+  final t = url.trim();
+  if (t.isEmpty) return false;
+  if (t.startsWith('http://') || t.startsWith('https://')) return false;
+  if (t.startsWith('file://')) return true;
+  return t.startsWith('/') || t.contains(r'\');
+}
+
+String localCoverFsPath(String url) {
+  final t = url.trim();
+  if (t.startsWith('file://')) {
+    return Uri.parse(t).toFilePath();
+  }
+  return t;
+}
+
+bool _isLocalCoverPath(String url) => isLocalCoverPath(url);
+
+String _localCoverFsPath(String url) => localCoverFsPath(url);
 
 /// Returns an [ImageProvider] for a manga cover URL that decodes at thumbnail
 /// resolution rather than the source resolution.
@@ -37,6 +59,10 @@ ImageProvider coverProvider(
   bool cache = true,
   Duration? cacheMaxAge,
 }) {
+  if (_isLocalCoverPath(url)) {
+    final path = _localCoverFsPath(url);
+    return FileImage(File(path));
+  }
   return ExtendedResizeImage(
     CustomExtendedNetworkImageProvider(
       url,

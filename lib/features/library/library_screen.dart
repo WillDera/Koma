@@ -20,8 +20,12 @@ import '../../core/services/cache_service.dart';
 import '../../core/services/ebook_media_store.dart';
 import '../../core/services/ebook_service.dart';
 import '../../core/services/koma_package_store.dart';
+import '../../core/services/local_cbz_prefs.dart';
+import '../../core/services/local_cbz_scanner.dart';
 import '../../core/services/metadata_enrichment_service.dart';
+import '../../core/services/android_storage_access.dart';
 import '../../core/services/user_profile.dart';
+import '../../widgets/toast.dart';
 import '../../core/services/web_scraper_service.dart';
 import '../../core/utils/benchmark_logger.dart';
 import '../../core/utils/image_cache.dart';
@@ -48,7 +52,6 @@ import '../../widgets/one_hand_spacer.dart';
 import '../../widgets/premium_button.dart';
 import '../../widgets/screen_chrome.dart';
 import '../../widgets/catalog_cover_card.dart';
-import '../../widgets/toast.dart';
 import '../../core/repositories/manga_repository.dart' show InProgressManga;
 import 'ebook_export_flow.dart';
 import 'library_group_modal.dart';
@@ -117,7 +120,11 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> with RouteAware {
       ]);
       if (!mounted) return;
       final books = results[0] as List<Book>;
-      final mangas = results[1] as List<InProgressManga>;
+      // Drop manga that were removed from the library (row may still exist
+      // with chapter history until the user clears history / deletes).
+      final mangas = (results[1] as List<InProgressManga>)
+          .where((m) => m.manga.inLibrary)
+          .toList(growable: false);
       final epoch = DateTime.fromMillisecondsSinceEpoch(0);
       final merged = <_ContinueItem>[
         for (final b in books)
@@ -178,60 +185,69 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> with RouteAware {
     final leftHanded = ref.watch(themeProvider).handMode == HandMode.left;
     final navClearance = MediaQuery.paddingOf(context).bottom + 84;
     final provider = ref.watch(libraryProvider);
-    return ScreenBackdrop(
-      child: Stack(
-        children: [
-          SafeArea(bottom: false, child: _body(context, provider)),
-          if (!provider.loading &&
-              !provider.selectionMode &&
-              (provider.books.isNotEmpty || provider.mangas.isNotEmpty))
-            Positioned(
-              left: leftHanded ? 20 : null,
-              right: leftHanded ? null : 20,
-              bottom: navClearance,
-              child: _AethelgardFab(
-                iconData: AppIcons.add,
-                onPressed: () => _showImportOptions(context),
+    // View-all is in-tab UI (not a route). Shell allows Library root to exit,
+    // so intercept system/back-swipe here and return to rails instead.
+    return PopScope(
+      canPop: _viewAllSection == null,
+      onPopInvokedWithResult: (didPop, _) {
+        if (didPop) return;
+        if (_viewAllSection != null) _backToRails();
+      },
+      child: ScreenBackdrop(
+        child: Stack(
+          children: [
+            SafeArea(bottom: false, child: _body(context, provider)),
+            if (!provider.loading &&
+                !provider.selectionMode &&
+                (provider.books.isNotEmpty || provider.mangas.isNotEmpty))
+              Positioned(
+                left: leftHanded ? 20 : null,
+                right: leftHanded ? null : 20,
+                bottom: navClearance,
+                child: _AethelgardFab(
+                  iconData: AppIcons.add,
+                  onPressed: () => _showImportOptions(context),
+                ),
               ),
-            ),
-          if (_importingFile)
-            Positioned.fill(
-              child: AbsorbPointer(
-                child: ColoredBox(
-                  color: Colors.black38,
-                  child: Center(
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 20,
-                        vertical: 18,
-                      ),
-                      decoration: BoxDecoration(
-                        color: context.colors.surface,
-                        borderRadius: BorderRadius.circular(18),
-                      ),
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          CircularProgressIndicator(
-                            color: context.colors.accent,
-                          ),
-                          const SizedBox(height: 14),
-                          Text(
-                            'Preparing MOBI...',
-                            style: TextStyle(
-                              color: context.colors.textPrimary,
-                              fontSize: 14,
-                              fontWeight: FontWeight.w600,
+            if (_importingFile)
+              Positioned.fill(
+                child: AbsorbPointer(
+                  child: ColoredBox(
+                    color: Colors.black38,
+                    child: Center(
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 20,
+                          vertical: 18,
+                        ),
+                        decoration: BoxDecoration(
+                          color: context.colors.surface,
+                          borderRadius: BorderRadius.circular(18),
+                        ),
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            CircularProgressIndicator(
+                              color: context.colors.accent,
                             ),
-                          ),
-                        ],
+                            const SizedBox(height: 14),
+                            Text(
+                              'Preparing MOBI...',
+                              style: TextStyle(
+                                color: context.colors.textPrimary,
+                                fontSize: 14,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
                     ),
                   ),
                 ),
               ),
-            ),
-        ],
+          ],
+        ),
       ),
     );
   }
@@ -359,6 +375,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> with RouteAware {
       color: context.colors.accent,
       backgroundColor: context.colors.surface,
       onRefresh: () async {
+        await _scanLocalCbzQuietly();
         await ref.read(libraryProvider.notifier).loadBooks();
         await _loadContinue();
         await _loadThumbnails();
@@ -636,6 +653,13 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> with RouteAware {
     final thumb = _mangaThumbnails[manga.id];
     if (thumb != null && thumb.isNotEmpty && File(thumb).existsSync()) {
       return FileImage(File(thumb));
+    }
+    final url = manga.imageUrl?.trim();
+    if (url != null &&
+        url.isNotEmpty &&
+        !url.startsWith('http') &&
+        File(url).existsSync()) {
+      return FileImage(File(url));
     }
     return null;
   }
@@ -1054,6 +1078,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> with RouteAware {
     );
     if (confirmed == true) {
       await ref.read(libraryProvider.notifier).deleteSelected();
+      if (mounted) await _loadContinue();
     }
   }
 
@@ -1066,6 +1091,12 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> with RouteAware {
           title: 'Import file',
           subtitle: 'EPUB, PDF, TXT, or Markdown',
           onTap: () => _importFile(context),
+        ),
+        ImportOption(
+          icon: Icons.folder_zip_outlined,
+          title: 'Import CBZ folder',
+          subtitle: 'One series folder = one manga with chapters',
+          onTap: () => _importCbzFolder(context),
         ),
         ImportOption(
           icon: Icons.link,
@@ -1081,6 +1112,80 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> with RouteAware {
         ),
       ],
     );
+  }
+
+  Future<void> _scanLocalCbzQuietly() async {
+    final path = await LocalCbzPrefs.folderPath();
+    if (path == null) return;
+    try {
+      await LocalCbzScanner(ref.read(repositoriesProvider)).scanFolder(path);
+    } catch (_) {}
+  }
+
+  Future<void> _importCbzFolder(BuildContext context) async {
+    try {
+      if (AndroidStorageAccess.needsAllFilesAccess('/storage/emulated/0') &&
+          !await AndroidStorageAccess.hasAllFilesAccess()) {
+        await AndroidStorageAccess.requestAllFilesAccess();
+        if (!context.mounted) return;
+        StashToast.show(
+          context,
+          message: 'Grant All files access, then try again',
+          icon: Icons.info_outline,
+        );
+        return;
+      }
+      final picked = await FilePicker.getDirectoryPath(
+        dialogTitle: 'Choose local manga folder',
+      );
+      if (picked == null || !context.mounted) return;
+      if (AndroidStorageAccess.needsAllFilesAccess(picked) &&
+          !await AndroidStorageAccess.hasAllFilesAccess()) {
+        if (!context.mounted) return;
+        StashToast.show(
+          context,
+          message:
+              'Android blocked this folder. Grant All files access, then try again.',
+          icon: Icons.error_outline,
+        );
+        return;
+      }
+
+      await LocalCbzPrefs.setFolderPath(picked);
+      if (!context.mounted) return;
+      StashToast.show(context, message: 'Scanning CBZ folder…');
+
+      final result = await LocalCbzScanner(
+        ref.read(repositoriesProvider),
+      ).scanFolder(picked, forceInLibrary: true);
+      await ref.read(libraryProvider.notifier).loadBooks();
+      if (!context.mounted) return;
+
+      if (!result.ok) {
+        StashToast.show(
+          context,
+          message: result.error ?? 'Scan failed',
+          icon: Icons.error_outline,
+        );
+        return;
+      }
+      StashToast.show(
+        context,
+        message: result.seriesUpserted == 0
+            ? 'No CBZ series found'
+            : 'Added ${result.seriesUpserted} series'
+                '${result.chaptersAdded > 0 ? ', ${result.chaptersAdded} new chapters' : ''}',
+        icon: Icons.check_circle_outline,
+      );
+    } catch (e) {
+      if (context.mounted) {
+        StashToast.show(
+          context,
+          message: 'Import failed: $e',
+          icon: Icons.error_outline,
+        );
+      }
+    }
   }
 
   // ── File / web import ───────────────────────────────────────────────

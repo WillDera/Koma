@@ -1,16 +1,20 @@
 import 'dart:typed_data';
+
 import 'package:flutter/material.dart';
 
 /// A color filter overlay for manga pages.
 ///
-/// Wraps [ColorFiltered] with a [ColorMatrix] and exposes sliders for
-/// brightness, contrast, saturation, and a tint color with opacity.
+/// Supports brightness / contrast / saturation, an optional wash tint,
+/// and sepia paper multiply when the app theme is sepia.
 class ColorFilterWidget extends StatelessWidget {
   final double brightness;
   final double contrast;
   final double saturation;
   final Color? tint;
   final double tintOpacity;
+  /// When set, multiplies page pixels by this color so white paper becomes
+  /// the tint (e.g. app sepia bg) while black ink stays dark.
+  final Color? paperMultiply;
   final Widget child;
 
   const ColorFilterWidget({
@@ -20,33 +24,51 @@ class ColorFilterWidget extends StatelessWidget {
     required this.saturation,
     this.tint,
     this.tintOpacity = 0.0,
+    this.paperMultiply,
     required this.child,
   });
 
   @override
   Widget build(BuildContext context) {
     final hasTint = tint != null && tintOpacity > 0;
+    final hasPaper = paperMultiply != null;
     // Identity filter (default brightness/contrast/saturation, no tint) —
     // skip ColorFiltered so page tiles aren't forced through an extra layer.
     final isIdentity =
-        brightness == 1.0 && contrast == 1.0 && saturation == 1.0 && !hasTint;
+        brightness == 1.0 &&
+        contrast == 1.0 &&
+        saturation == 1.0 &&
+        !hasTint &&
+        !hasPaper;
     if (isIdentity) return child;
 
-    final matrix = _buildColorMatrix();
-    final filter = ColorFilter.matrix(matrix);
-    final tintFilter = hasTint
-        ? ColorFilter.mode(
-            tint!.withValues(alpha: tintOpacity),
-            BlendMode.srcOver,
-          )
-        : null;
+    Widget result = child;
 
-    return ColorFiltered(
-      colorFilter: filter,
-      child: tintFilter != null
-          ? ColorFiltered(colorFilter: tintFilter, child: child)
-          : child,
-    );
+    if (brightness != 1.0 || contrast != 1.0 || saturation != 1.0) {
+      result = ColorFiltered(
+        colorFilter: ColorFilter.matrix(_buildColorMatrix()),
+        child: result,
+      );
+    }
+
+    if (hasTint) {
+      result = ColorFiltered(
+        colorFilter: ColorFilter.mode(
+          tint!.withValues(alpha: tintOpacity),
+          BlendMode.srcOver,
+        ),
+        child: result,
+      );
+    }
+
+    if (hasPaper) {
+      result = ColorFiltered(
+        colorFilter: ColorFilter.mode(paperMultiply!, BlendMode.multiply),
+        child: result,
+      );
+    }
+
+    return result;
   }
 
   Float64List _buildColorMatrix() {

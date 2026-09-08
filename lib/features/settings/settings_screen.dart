@@ -27,10 +27,13 @@ import '../../core/services/download_prefs.dart';
 import '../../core/services/http/http_prefs.dart';
 import '../../core/services/http/m_client.dart';
 import '../../core/services/library_update_prefs.dart';
+import '../../core/services/local_cbz_prefs.dart';
+import '../../core/services/local_cbz_scanner.dart';
 import '../../core/services/annas_archive_prefs.dart';
 import '../../core/services/metadata_enrichment_service.dart';
 import '../../core/services/user_profile.dart';
 import '../../router/router.dart';
+import '../snippets/snippets_screen.dart';
 import 'custom_font_ui.dart';
 import 'open_source_licenses_sheet.dart';
 import '../../theme/app_theme.dart';
@@ -49,7 +52,6 @@ import '../../widgets/screen_chrome.dart';
 import '../../widgets/segmented_control.dart';
 import '../../widgets/settings_section.dart';
 import '../../widgets/toast.dart';
-
 class SettingsScreen extends StatelessWidget {
   const SettingsScreen({super.key});
 
@@ -177,7 +179,9 @@ class _SettingsHub extends StatelessWidget {
             iconColor: AppColors.figmaAmber,
             title: 'Snippets',
             subtitle: 'Highlights and bookmarks',
-            onTap: () => context.pushNamed(Routes.snippets),
+            onTap: () => Navigator.of(context, rootNavigator: true).push(
+              smoothSlideRoute(const SnippetsScreen()),
+            ),
           ),
         ),
         row(
@@ -243,8 +247,8 @@ class _SettingsHub extends StatelessWidget {
     // has its own nested Navigator under the StatefulShellRoute).
     Navigator.of(context, rootNavigator: true).push(
       PageRouteBuilder<void>(
-        transitionDuration: AppMotion.page,
-        reverseTransitionDuration: AppMotion.page,
+        transitionDuration: AppMotion.base,
+        reverseTransitionDuration: AppMotion.fast,
         pageBuilder: (_, animation, secondaryAnimation) =>
             _SettingsDestinationScreen(title: title, child: child),
         transitionsBuilder: (context, animation, secondaryAnimation, child) =>
@@ -1887,6 +1891,16 @@ class _StorageSection extends ConsumerStatefulWidget {
 
 class _StorageSectionState extends ConsumerState<_StorageSection> {
   bool _picking = false;
+  bool _pickingCbz = false;
+  String? _cbzFolder;
+
+  @override
+  void initState() {
+    super.initState();
+    LocalCbzPrefs.folderPath().then((path) {
+      if (mounted) setState(() => _cbzFolder = path);
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -1900,7 +1914,10 @@ class _StorageSectionState extends ConsumerState<_StorageSection> {
           'Downloaded ebooks, manga chapters, covers, fonts, '
           'and the library database are stored here. Changing the folder '
           'moves Koma’s library files. On Android 11+, shared folders '
-          '(like /storage/emulated/0/koma) need All files access.',
+          '(like /storage/emulated/0/koma) need All files access.\n\n'
+          'Local manga uses a folder of CBZ files (one series folder → one '
+          'title with many chapters), not a single zip. Point this at the '
+          'parent of series folders, or at a series folder itself.',
       children: [
         SettingsRow(
           icon: Icons.folder_outlined,
@@ -1924,8 +1941,119 @@ class _StorageSectionState extends ConsumerState<_StorageSection> {
             subtitle: 'Move data back to internal storage',
             onTap: _clearFolder,
           ),
+        SettingsRow(
+          icon: Icons.folder_zip_outlined,
+          iconColor: amber,
+          title: 'Local manga folder',
+          subtitle: _cbzFolder ?? 'Not set — import CBZ/CBR series',
+          trailing: _pickingCbz
+              ? const SizedBox(
+                  width: 18,
+                  height: 18,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              : const Icon(Icons.chevron_right),
+          onTap: _pickingCbz ? null : _pickCbzFolder,
+        ),
+        if (_cbzFolder != null) ...[
+          SettingsRow(
+            icon: Icons.refresh,
+            iconColor: amber,
+            title: 'Rescan local manga',
+            subtitle: 'Add new CBZ chapters from the folder',
+            onTap: _rescanCbzFolder,
+          ),
+          SettingsRow(
+            icon: Icons.link_off,
+            iconColor: amber,
+            title: 'Clear local manga folder',
+            subtitle: 'Stop scanning (library entries stay)',
+            onTap: _clearCbzFolder,
+          ),
+        ],
       ],
     );
+  }
+
+  Future<void> _pickCbzFolder() async {
+    setState(() => _pickingCbz = true);
+    try {
+      if (!await _ensureSharedStorageAccess()) return;
+      final picked = await FilePicker.getDirectoryPath(
+        dialogTitle: 'Choose local manga folder',
+      );
+      if (picked == null || !mounted) return;
+      if (AndroidStorageAccess.needsAllFilesAccess(picked) &&
+          !await AndroidStorageAccess.hasAllFilesAccess()) {
+        if (mounted) {
+          StashToast.show(
+            context,
+            message:
+                'Android blocked this folder. Grant All files access, then try again.',
+            icon: Icons.error_outline,
+          );
+        }
+        return;
+      }
+      await LocalCbzPrefs.setFolderPath(picked);
+      final result = await LocalCbzScanner(
+        ref.read(repositoriesProvider),
+      ).scanFolder(picked);
+      if (!mounted) return;
+      setState(() => _cbzFolder = picked);
+      StashToast.show(
+        context,
+        message: result.ok
+            ? (result.seriesUpserted == 0
+                ? 'Folder set — no CBZ series found'
+                : 'Folder set — ${result.seriesUpserted} series')
+            : (result.error ?? 'Scan failed'),
+        icon: result.ok ? Icons.check_circle_outline : Icons.error_outline,
+      );
+    } catch (e) {
+      if (mounted) {
+        StashToast.show(
+          context,
+          message: _folderError(e),
+          icon: Icons.error_outline,
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _pickingCbz = false);
+    }
+  }
+
+  Future<void> _rescanCbzFolder() async {
+    final path = _cbzFolder;
+    if (path == null) return;
+    try {
+      final result = await LocalCbzScanner(
+        ref.read(repositoriesProvider),
+      ).scanFolder(path);
+      if (!mounted) return;
+      StashToast.show(
+        context,
+        message: result.ok
+            ? (result.chaptersAdded == 0
+                ? 'No new chapters'
+                : 'Added ${result.chaptersAdded} chapters')
+            : (result.error ?? 'Scan failed'),
+        icon: result.ok ? Icons.check_circle_outline : Icons.error_outline,
+      );
+    } catch (e) {
+      if (mounted) {
+        StashToast.show(
+          context,
+          message: '$e',
+          icon: Icons.error_outline,
+        );
+      }
+    }
+  }
+
+  Future<void> _clearCbzFolder() async {
+    await LocalCbzPrefs.setFolderPath(null);
+    if (mounted) setState(() => _cbzFolder = null);
   }
 
   Future<void> _pickFolder() async {

@@ -101,6 +101,10 @@ dependencies {
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-guava:1.11.0")
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.11.0")
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json-okio:1.11.0")
+    // Keiyoushi / Mihon extensions often pull protobuf codecs (e.g. ProtoBuf).
+    // Missing this from the host APK → NoClassDefFoundError on OkHttp threads
+    // and a process-killing crash.
+    implementation("org.jetbrains.kotlinx:kotlinx-serialization-protobuf:1.11.0")
     // RxJava 1 — source-api uses rx.Observable for deprecated fetch* methods
     implementation("io.reactivex:rxjava:1.3.8")
     // AndroidX Preference — needed by ConfigurableSource + prefs Activity

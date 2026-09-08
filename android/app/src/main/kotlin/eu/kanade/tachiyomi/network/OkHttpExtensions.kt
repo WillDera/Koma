@@ -10,15 +10,30 @@ import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 
 fun Call.asObservable(): Observable<Response> = Observable.create { subscriber ->
+    // Deliver callbacks safely: RxJava 1 treats Errors (e.g. NoClassDefFoundError
+    // from extension code in .map) as fatal and rethrows them onto the OkHttp
+    // dispatcher, which kills the whole app process.
     enqueue(
         object : Callback {
             override fun onResponse(call: Call, response: Response) {
-                subscriber.onNext(response)
-                subscriber.onCompleted()
+                try {
+                    if (!subscriber.isUnsubscribed) {
+                        subscriber.onNext(response)
+                    }
+                    if (!subscriber.isUnsubscribed) {
+                        subscriber.onCompleted()
+                    }
+                } catch (t: Throwable) {
+                    if (!subscriber.isUnsubscribed) {
+                        subscriber.onError(t.toNonFatal())
+                    }
+                }
             }
 
             override fun onFailure(call: Call, e: IOException) {
-                subscriber.onError(e)
+                if (!subscriber.isUnsubscribed) {
+                    subscriber.onError(e)
+                }
             }
         },
     )
@@ -55,3 +70,11 @@ suspend fun Call.awaitSuccess(): Response {
 }
 
 class HttpException(val code: Int) : IllegalStateException("HTTP error $code")
+
+/**
+ * RxJava 1's [rx.exceptions.Exceptions.throwIfFatal] rethrows Errors onto the
+ * calling thread. Wrap them so extension ClassNotFound / linkage failures
+ * surface as Observable errors instead of process death.
+ */
+private fun Throwable.toNonFatal(): Throwable =
+    if (this is Exception) this else Exception(this)

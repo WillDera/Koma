@@ -3,6 +3,12 @@ import 'package:flutter/material.dart';
 import '../../../theme/app_theme.dart';
 import '../../../widgets/animated_press.dart';
 
+/// Kenji manga reader chrome sits on dark pills regardless of app theme.
+/// Always paint bright glyphs so light/sepia themes don't go dark-on-dark.
+const Color _readerChromeBg = Color(0xFF1A1A1A);
+const Color _readerChromeFg = Color(0xFFEFEFF0);
+const Color _readerChromeFgMuted = Color(0xFFC7C6CA);
+
 /// Kenji-style manga top chrome: circular back + title pill + circle actions
 /// (matches [ReaderBottomBar]).
 class ReaderAppBar extends StatelessWidget {
@@ -54,7 +60,7 @@ class ReaderAppBar extends StatelessWidget {
                 child: Container(
                   height: 52,
                   decoration: BoxDecoration(
-                    color: const Color(0xFF1A1A1A),
+                    color: _readerChromeBg,
                     borderRadius: BorderRadius.circular(26),
                   ),
                   padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -66,8 +72,8 @@ class ReaderAppBar extends StatelessWidget {
                       if (title != null && title.isNotEmpty)
                         Text(
                           title,
-                          style: TextStyle(
-                            color: c.textPrimary,
+                          style: const TextStyle(
+                            color: _readerChromeFg,
                             fontSize: 13,
                             fontWeight: FontWeight.w600,
                           ),
@@ -78,8 +84,8 @@ class ReaderAppBar extends StatelessWidget {
                         chapterName,
                         style: TextStyle(
                           color: title != null && title.isNotEmpty
-                              ? c.textTertiary
-                              : c.textPrimary,
+                              ? _readerChromeFgMuted
+                              : _readerChromeFg,
                           fontSize: title != null && title.isNotEmpty
                               ? 11
                               : 13,
@@ -102,6 +108,8 @@ class ReaderAppBar extends StatelessWidget {
                   : Icons.bookmark_border_outlined,
               onTap: onBookmarkToggle,
               accent: isBookmarked,
+              accentColor: c.accent,
+              onAccentColor: c.onAccent,
             ),
             const SizedBox(width: 8),
             _CircleBtn(
@@ -119,28 +127,33 @@ class _CircleBtn extends StatelessWidget {
   final IconData icon;
   final VoidCallback onTap;
   final bool accent;
+  final Color? accentColor;
+  final Color? onAccentColor;
 
   const _CircleBtn({
     required this.icon,
     required this.onTap,
     this.accent = false,
+    this.accentColor,
+    this.onAccentColor,
   });
 
   @override
   Widget build(BuildContext context) {
-    final c = context.colors;
     return AnimatedPress(
       onTap: onTap,
       child: Container(
         width: 48,
         height: 48,
         decoration: BoxDecoration(
-          color: accent ? c.accent : const Color(0xFF1A1A1A),
+          color: accent ? (accentColor ?? _readerChromeBg) : _readerChromeBg,
           shape: BoxShape.circle,
         ),
         child: Icon(
           icon,
-          color: accent ? c.onAccent : c.textPrimary,
+          color: accent
+              ? (onAccentColor ?? _readerChromeFg)
+              : _readerChromeFg,
           size: 22,
         ),
       ),

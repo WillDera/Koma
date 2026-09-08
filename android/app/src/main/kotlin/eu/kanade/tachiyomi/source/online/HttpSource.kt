@@ -64,7 +64,7 @@ abstract class HttpSource : CatalogueSource {
     override fun fetchPopularManga(page: Int): Observable<MangasPage> {
         return client.newCall(popularMangaRequest(page))
             .asObservableSuccess()
-            .map { response -> popularMangaParse(response) }
+            .map { response -> safeParse { popularMangaParse(response) } }
     }
 
     @Deprecated("Override the request/parse methods directly")
@@ -82,7 +82,7 @@ abstract class HttpSource : CatalogueSource {
     ): Observable<MangasPage> {
         return client.newCall(searchMangaRequest(page, query, filters))
             .asObservableSuccess()
-            .map { response -> searchMangaParse(response) }
+            .map { response -> safeParse { searchMangaParse(response) } }
     }
 
     @Deprecated("Override the request/parse methods directly")
@@ -100,7 +100,7 @@ abstract class HttpSource : CatalogueSource {
     override fun fetchLatestUpdates(page: Int): Observable<MangasPage> {
         return client.newCall(latestUpdatesRequest(page))
             .asObservableSuccess()
-            .map { response -> latestUpdatesParse(response) }
+            .map { response -> safeParse { latestUpdatesParse(response) } }
     }
 
     @Deprecated("Override the request/parse methods directly")
@@ -115,7 +115,9 @@ abstract class HttpSource : CatalogueSource {
         return client.newCall(mangaDetailsRequest(manga))
             .asObservableSuccess()
             .map { response ->
-                mangaDetailsParse(response).apply { initialized = true }
+                safeParse {
+                    mangaDetailsParse(response).apply { initialized = true }
+                }
             }
     }
 
@@ -133,7 +135,7 @@ abstract class HttpSource : CatalogueSource {
     override fun fetchChapterList(manga: SManga): Observable<List<SChapter>> {
         return client.newCall(chapterListRequest(manga))
             .asObservableSuccess()
-            .map { response -> chapterListParse(response) }
+            .map { response -> safeParse { chapterListParse(response) } }
     }
 
     @Deprecated("Override the request/parse methods directly")
@@ -150,7 +152,7 @@ abstract class HttpSource : CatalogueSource {
     override fun fetchPageList(chapter: SChapter): Observable<List<Page>> {
         return client.newCall(pageListRequest(chapter))
             .asObservableSuccess()
-            .map { response -> pageListParse(response) }
+            .map { response -> safeParse { pageListParse(response) } }
     }
 
     @Deprecated("Override the request/parse methods directly")
@@ -166,7 +168,7 @@ abstract class HttpSource : CatalogueSource {
     open fun fetchImageUrl(page: Page): Observable<String> {
         return client.newCall(imageUrlRequest(page))
             .asObservableSuccess()
-            .map { imageUrlParse(it) }
+            .map { safeParse { imageUrlParse(it) } }
     }
 
     @Suppress("DEPRECATION")
@@ -227,4 +229,19 @@ abstract class HttpSource : CatalogueSource {
 
     @Deprecated("All modifications should be done when constructing the chapter")
     open fun prepareNewChapter(chapter: SChapter, manga: SManga) {}
+}
+
+/**
+ * Extension parse code can throw Errors (NoClassDefFoundError for missing host
+ * libs). RxJava 1 treats those as fatal and kills the OkHttp thread — wrap as
+ * Exception so callers get a normal Observable error / Dart failure instead.
+ */
+private inline fun <T> safeParse(block: () -> T): T {
+    return try {
+        block()
+    } catch (e: Exception) {
+        throw e
+    } catch (t: Throwable) {
+        throw Exception(t)
+    }
 }

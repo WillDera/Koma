@@ -6,6 +6,12 @@ import 'package:flutter/material.dart';
 import '../../../theme/app_theme.dart';
 import '../../../widgets/animated_press.dart';
 
+/// Kenji manga reader chrome sits on dark pills regardless of app theme.
+/// Always paint bright glyphs so light/sepia themes don't go dark-on-dark.
+const Color _readerChromeBg = Color(0xFF1A1A1A);
+const Color _readerChromeFg = Color(0xFFEFEFF0);
+const Color _readerChromeFgMuted = Color(0xFFC7C6CA);
+
 /// Kenji-style manga bottom chrome: pill page scrubber + circular controls.
 class ReaderBottomBar extends StatelessWidget {
   final ValueListenable<int> pageListenable;
@@ -66,7 +72,7 @@ class ReaderBottomBar extends StatelessWidget {
                         child: Container(
                           height: 52,
                           decoration: BoxDecoration(
-                            color: const Color(0xFF1A1A1A),
+                            color: _readerChromeBg,
                             borderRadius: BorderRadius.circular(26),
                           ),
                           padding: const EdgeInsets.symmetric(horizontal: 8),
@@ -82,8 +88,8 @@ class ReaderBottomBar extends StatelessWidget {
                                 child: Text(
                                   '${page + 1}',
                                   textAlign: TextAlign.center,
-                                  style: TextStyle(
-                                    color: c.textPrimary,
+                                  style: const TextStyle(
+                                    color: _readerChromeFg,
                                     fontSize: 12,
                                     fontWeight: FontWeight.w700,
                                   ),
@@ -101,8 +107,8 @@ class ReaderBottomBar extends StatelessWidget {
                                       overlayRadius: 14,
                                     ),
                                     activeTrackColor: c.accent,
-                                    inactiveTrackColor: c.border,
-                                    thumbColor: c.textPrimary,
+                                    inactiveTrackColor: const Color(0xFF3A3A42),
+                                    thumbColor: _readerChromeFg,
                                     overlayColor: c.accent.withValues(
                                       alpha: 0.2,
                                     ),
@@ -124,10 +130,10 @@ class ReaderBottomBar extends StatelessWidget {
                                 child: Text(
                                   '$totalPages',
                                   textAlign: TextAlign.center,
-                                  style: TextStyle(
-                                    color: c.textTertiary,
+                                  style: const TextStyle(
+                                    color: _readerChromeFg,
                                     fontSize: 12,
-                                    fontWeight: FontWeight.w500,
+                                    fontWeight: FontWeight.w700,
                                   ),
                                 ),
                               ),
@@ -146,6 +152,8 @@ class ReaderBottomBar extends StatelessWidget {
                         enabled: page < totalPages - 1,
                         onTap: () => onPageChanged(page + 1),
                         filled: true,
+                        accentColor: c.accent,
+                        onAccentColor: c.onAccent,
                       ),
                     ],
                   );
@@ -180,21 +188,28 @@ class _CircleBtn extends StatelessWidget {
   final bool enabled;
   final VoidCallback onTap;
   final bool filled;
+  final Color? accentColor;
+  final Color? onAccentColor;
 
   const _CircleBtn({
     required this.icon,
     required this.enabled,
     required this.onTap,
     this.filled = false,
+    this.accentColor,
+    this.onAccentColor,
   });
 
   @override
   Widget build(BuildContext context) {
-    final c = context.colors;
-    final bg = filled && enabled ? c.accent : const Color(0xFF1A1A1A);
+    final bg = filled && enabled
+        ? (accentColor ?? _readerChromeBg)
+        : _readerChromeBg;
     final fg = filled && enabled
-        ? c.onAccent
-        : (enabled ? c.textPrimary : c.textTertiary.withValues(alpha: 0.4));
+        ? (onAccentColor ?? _readerChromeFg)
+        : (enabled
+            ? _readerChromeFg
+            : _readerChromeFgMuted.withValues(alpha: 0.4));
     return AnimatedPress(
       onTap: enabled ? onTap : null,
       child: Container(
@@ -219,7 +234,7 @@ class _MiniIcon extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return IconButton(
-      icon: Icon(icon, color: context.colors.textSecondary, size: 20),
+      icon: Icon(icon, color: _readerChromeFgMuted, size: 20),
       onPressed: onTap,
       padding: EdgeInsets.zero,
       constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
@@ -240,12 +255,11 @@ class _FloatAction extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final c = context.colors;
     return Material(
-      color: const Color(0xFF1A1A1A),
+      color: _readerChromeBg,
       shape: const CircleBorder(),
       child: IconButton(
-        icon: Icon(icon, color: c.textSecondary, size: 22),
+        icon: Icon(icon, color: _readerChromeFgMuted, size: 22),
         onPressed: onPressed,
         tooltip: tooltip,
       ),

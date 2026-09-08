@@ -31,16 +31,24 @@ class MainActivity : FlutterActivity() {
 
     private var searchChannel: MethodChannel? = null
     private var initialSearchQuery: String? = null
+    private var openFileChannel: MethodChannel? = null
+    private var initialOpenFilePath: String? = null
+    private var deepLinkChannel: MethodChannel? = null
+    private var initialDeepLink: String? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         captureSearchIntent(intent)
+        captureDeepLinkIntent(intent)
+        captureOpenFileIntent(intent)
     }
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
         captureSearchIntent(intent)
+        captureDeepLinkIntent(intent)
+        captureOpenFileIntent(intent)
     }
 
     private fun captureSearchIntent(intent: Intent?) {
@@ -51,6 +59,102 @@ class MainActivity : FlutterActivity() {
             searchChannel?.invokeMethod("onSearchIntent", query)
         } else {
             initialSearchQuery = query
+        }
+    }
+
+    private fun isRepoDeepLink(uri: Uri?): Boolean {
+        if (uri == null) return false
+        val scheme = uri.scheme?.lowercase().orEmpty()
+        val host = uri.host?.lowercase().orEmpty()
+        return when (scheme) {
+            "mangayomi", "koma", "tachiyomi" -> host == "add-repo"
+            "mihon" -> host == "add-repo" || host == "extension-store"
+            else -> false
+        }
+    }
+
+    private fun captureDeepLinkIntent(intent: Intent?) {
+        if (intent?.action != Intent.ACTION_VIEW) return
+        val uri = intent.data ?: return
+        if (!isRepoDeepLink(uri)) return
+        val link = uri.toString()
+        if (deepLinkChannel != null) {
+            deepLinkChannel?.invokeMethod("onDeepLink", link)
+        } else {
+            initialDeepLink = link
+        }
+    }
+
+    private fun captureOpenFileIntent(intent: Intent?) {
+        if (intent == null) return
+        val uri: Uri? = when (intent.action) {
+            Intent.ACTION_VIEW -> intent.data
+            Intent.ACTION_SEND -> if (Build.VERSION.SDK_INT >= 33) {
+                intent.getParcelableExtra(Intent.EXTRA_STREAM, Uri::class.java)
+            } else {
+                @Suppress("DEPRECATION")
+                intent.getParcelableExtra(Intent.EXTRA_STREAM)
+            }
+            else -> null
+        }
+        if (uri == null) return
+        // Repo deep links are handled separately — not content files.
+        if (isRepoDeepLink(uri)) return
+        val scheme = uri.scheme?.lowercase().orEmpty()
+        if (scheme != "content" && scheme != "file") return
+        Thread {
+            try {
+                val path = copyUriToCache(uri)
+                runOnUiThread {
+                    if (openFileChannel != null) {
+                        openFileChannel?.invokeMethod("onOpenFile", path)
+                    } else {
+                        initialOpenFilePath = path
+                    }
+                }
+            } catch (e: Throwable) {
+                Log.e("OpenFile", "Failed to open $uri", e)
+            }
+        }.start()
+    }
+
+    private fun copyUriToCache(uri: Uri): String {
+        val nameHint = uri.lastPathSegment?.substringAfterLast('/') ?: "import"
+        val ext = guessExtension(uri, nameHint)
+        val safeBase = nameHint
+            .substringBeforeLast('.')
+            .replace(Regex("[^A-Za-z0-9._-]"), "_")
+            .ifBlank { "import" }
+            .take(64)
+        val out = File(cacheDir, "open_intents/${safeBase}_${System.currentTimeMillis()}$ext")
+        out.parentFile?.mkdirs()
+        contentResolver.openInputStream(uri)?.use { input ->
+            FileOutputStream(out).use { output -> input.copyTo(output) }
+        } ?: throw IllegalStateException("Cannot open $uri")
+        return out.absolutePath
+    }
+
+    private fun guessExtension(uri: Uri, nameHint: String): String {
+        val fromName = nameHint.substringAfterLast('.', missingDelimiterValue = "")
+            .lowercase()
+        if (fromName in setOf(
+                "epub", "pdf", "txt", "md", "cbz", "cbr", "pb", "json",
+                "tachibk", "backup", "mobi", "azw", "azw3", "fb2",
+            )
+        ) {
+            return ".$fromName"
+        }
+        val mime = contentResolver.getType(uri)?.lowercase().orEmpty()
+        return when {
+            mime.contains("epub") -> ".epub"
+            mime.contains("pdf") -> ".pdf"
+            mime.contains("markdown") -> ".md"
+            mime.contains("cbz") || mime.contains("comicbook+zip") -> ".cbz"
+            mime.contains("cbr") || mime.contains("comicbook-rar") -> ".cbr"
+            mime.contains("json") -> ".json"
+            mime.contains("protobuf") -> ".pb"
+            mime.startsWith("text/") -> ".txt"
+            else -> ""
         }
     }
 
@@ -80,6 +184,44 @@ class MainActivity : FlutterActivity() {
             initialSearchQuery?.let { q ->
                 initialSearchQuery = null
                 channel.invokeMethod("onSearchIntent", q)
+            }
+        }
+        openFileChannel = MethodChannel(
+            flutterEngine.dartExecutor.binaryMessenger,
+            "com.koma.koma/open_file",
+        ).also { channel ->
+            channel.setMethodCallHandler { call, result ->
+                when (call.method) {
+                    "getInitialOpenFile" -> {
+                        val path = initialOpenFilePath
+                        initialOpenFilePath = null
+                        result.success(path)
+                    }
+                    else -> result.notImplemented()
+                }
+            }
+            initialOpenFilePath?.let { path ->
+                initialOpenFilePath = null
+                channel.invokeMethod("onOpenFile", path)
+            }
+        }
+        deepLinkChannel = MethodChannel(
+            flutterEngine.dartExecutor.binaryMessenger,
+            "com.koma.koma/deep_link",
+        ).also { channel ->
+            channel.setMethodCallHandler { call, result ->
+                when (call.method) {
+                    "getInitialDeepLink" -> {
+                        val link = initialDeepLink
+                        initialDeepLink = null
+                        result.success(link)
+                    }
+                    else -> result.notImplemented()
+                }
+            }
+            initialDeepLink?.let { link ->
+                initialDeepLink = null
+                channel.invokeMethod("onDeepLink", link)
             }
         }
         MethodChannel(

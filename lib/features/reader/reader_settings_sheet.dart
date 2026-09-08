@@ -54,6 +54,8 @@ class ReaderSettings {
   double saturation;
   Color? tintColor;
   double tintOpacity;
+  /// When app Appearance is sepia, warm the manga page paper to match.
+  bool sepiaPanels;
 
   ReaderSettings({
     this.readingMode = ReadingMode.defaultL2R,
@@ -76,6 +78,7 @@ class ReaderSettings {
     this.saturation = 1.0,
     this.tintColor,
     this.tintOpacity = 0.0,
+    this.sepiaPanels = true,
   });
 
   ReaderSettings copyWith({
@@ -99,6 +102,7 @@ class ReaderSettings {
     double? saturation,
     Color? tintColor,
     double? tintOpacity,
+    bool? sepiaPanels,
   }) {
     return ReaderSettings(
       readingMode: readingMode ?? this.readingMode,
@@ -122,6 +126,7 @@ class ReaderSettings {
       saturation: saturation ?? this.saturation,
       tintColor: tintColor ?? this.tintColor,
       tintOpacity: tintOpacity ?? this.tintOpacity,
+      sepiaPanels: sepiaPanels ?? this.sepiaPanels,
     );
   }
 
@@ -151,6 +156,7 @@ class ReaderSettings {
     'saturation': saturation,
     'tintColor': tintColor?.toARGB32(),
     'tintOpacity': tintOpacity,
+    'sepiaPanels': sepiaPanels ? 1 : 0,
   };
 
   factory ReaderSettings.fromJson(Map<String, dynamic> json) {
@@ -194,6 +200,8 @@ class ReaderSettings {
           ? Color(json['tintColor'] as int)
           : null,
       tintOpacity: (json['tintOpacity'] as num?)?.toDouble() ?? 0.0,
+      // Default on so existing installs keep the warm paper look.
+      sepiaPanels: (json['sepiaPanels'] as int? ?? 1) == 1,
     );
   }
 }
@@ -319,7 +327,8 @@ class _ReadingTab extends StatelessWidget {
               SettingsRow(
                 icon: Icons.menu_book_outlined,
                 title: 'Book mode',
-                subtitle: 'Two pages per spread (portrait & landscape)',
+                subtitle:
+                    'Two pages per spread — starts zoomed out; double-tap to fit',
                 trailing: Switch(
                   value: settings.bookMode,
                   activeThumbColor: c.accent,
@@ -429,6 +438,18 @@ class _DisplayTab extends StatelessWidget {
                   onChanged: (v) => onChanged(
                     settings.copyWith(animatePageTransition: v),
                   ),
+                ),
+              ),
+              _rowDivider(c),
+              SettingsRow(
+                icon: Icons.tonality_outlined,
+                title: 'Sepia on panels',
+                subtitle: 'Warm page paper when app theme is sepia',
+                trailing: Switch(
+                  value: settings.sepiaPanels,
+                  activeThumbColor: c.accent,
+                  onChanged: (v) =>
+                      onChanged(settings.copyWith(sepiaPanels: v)),
                 ),
               ),
             ],

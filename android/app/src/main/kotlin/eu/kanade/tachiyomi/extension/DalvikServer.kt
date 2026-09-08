@@ -86,6 +86,9 @@ class DalvikServer(
 
     private val loadedExtensions = mutableMapOf<String, LoadedExtension>()
     private val loadedApkPaths = mutableMapOf<String, File>()
+    /** HttpSources from the most recent SourceFactory load (cleared after aliasing). */
+    @Volatile
+    private var lastFactorySiblings: List<HttpSource> = emptyList()
     private val extensionsCacheDir: File by lazy {
         File(context.cacheDir, "dex-extensions").also { it.mkdirs() }
     }
@@ -199,6 +202,7 @@ class DalvikServer(
     private fun handleLoadExtension(root: JsonObject): String {
         val apkPath = root.str("apkPath") ?: return errorJson("missing apkPath")
         val className = root.str("className")
+        val preferredSourceId = root.str("preferredSourceId") ?: root.str("id")
         val apkFile = File(apkPath)
         if (!apkFile.exists()) return errorJson("apk not found: $apkPath")
 
@@ -213,30 +217,57 @@ class DalvikServer(
             cachedApk.setReadOnly()
         }
         loadedApkPaths[sourceId] = cachedApk
+        lastFactorySiblings = emptyList()
 
         val source = try {
-            loadSource(cachedApk)
+            loadSource(cachedApk, preferredSourceId = preferredSourceId)
         } catch (e: Throwable) {
             Log.e(TAG, "loadExtension: failed", e)
             cachedApk.delete()
             loadedApkPaths.remove(sourceId)
+            lastFactorySiblings = emptyList()
             return errorJson("loadExtension failed: ${e.message}")
         }
         if (source !is HttpSource) {
+            lastFactorySiblings = emptyList()
             return errorJson("not HttpSource: ${source.javaClass.name}")
         }
 
-        loadedExtensions[sourceId] = LoadedExtension(
+        val loaded = LoadedExtension(
             sourceId = sourceId,
             source = source,
             apkPath = cachedApk.absolutePath,
             loadedAt = System.currentTimeMillis(),
         )
-        Log.d(TAG, "loadExtension: cached sourceId=$sourceId name=${source.name}")
+        // Primary key = hash of apk path (stable across process).
+        loadedExtensions[sourceId] = loaded
+        // Alias by Mihon numeric Source.id so downloads that only know that
+        // id (library / backup rows) resolve without a second round-trip.
+        val mihonId = source.id.toString()
+        if (mihonId.isNotBlank() && mihonId != sourceId) {
+            loadedExtensions[mihonId] = loaded
+        }
+        // Alias every SourceFactory sibling under its own Mihon id.
+        for (sibling in lastFactorySiblings) {
+            val sid = sibling.id.toString()
+            if (sid.isBlank() || sid == sourceId || sid == mihonId) continue
+            loadedExtensions[sid] = LoadedExtension(
+                sourceId = sourceId,
+                source = sibling,
+                apkPath = cachedApk.absolutePath,
+                loadedAt = loaded.loadedAt,
+            )
+        }
+        lastFactorySiblings = emptyList()
+        Log.d(
+            TAG,
+            "loadExtension: cached sourceId=$sourceId mihonId=$mihonId name=${source.name}" +
+                (if (className != null) " className=$className" else ""),
+        )
 
         return json.encodeToString(buildJsonObject {
             put("sourceId", sourceId)
-            put("id", source.id.toString())
+            put("id", mihonId)
             put("name", source.name)
             put("lang", source.lang)
             put("baseUrl", source.baseUrl)
@@ -247,12 +278,22 @@ class DalvikServer(
     private fun handleUnloadExtension(root: JsonObject): String {
         val sourceId = root.str("sourceId") ?: return errorJson("missing sourceId")
         val removed = loadedExtensions.remove(sourceId)
-        loadedApkPaths.remove(sourceId)?.delete()
-        Log.d(TAG, "unloadExtension: sourceId=$sourceId removed=${removed != null}")
+            ?: loadedExtensions.values.firstOrNull {
+                it.sourceId == sourceId || it.source.id.toString() == sourceId
+            }
+        var unloaded = false
+        if (removed != null) {
+            unloaded = true
+            loadedExtensions.entries.removeAll {
+                it.value === removed || it.value.sourceId == removed.sourceId
+            }
+            loadedApkPaths.remove(removed.sourceId)?.delete()
+        }
+        Log.d(TAG, "unloadExtension: sourceId=$sourceId removed=$unloaded")
         return json.encodeToString(
             buildJsonObject {
                 put("sourceId", sourceId)
-                put("unloaded", removed != null)
+                put("unloaded", unloaded)
             }
         )
     }
@@ -321,10 +362,10 @@ class DalvikServer(
         throw IllegalArgumentException("missing sourceId or data")
     }
 
-    private fun loadSource(apkFile: File): Source {
+    private fun loadSource(apkFile: File, preferredSourceId: String? = null): Source {
         val apkPath = apkFile.absolutePath
         val className = resolveExtensionClass(apkFile)
-        Log.d(TAG, "loadSource: apkPath=$apkPath className=$className")
+        Log.d(TAG, "loadSource: apkPath=$apkPath className=$className preferredSourceId=$preferredSourceId")
 
         val resolvedClassName = if (className.startsWith(".")) {
             val pkg = context.packageManager.getPackageArchiveInfo(apkPath, 0)?.packageName
@@ -398,8 +439,22 @@ class DalvikServer(
             is SourceFactory -> {
                 val sources = instance.createSources()
                 if (sources.isEmpty()) throw IllegalArgumentException("SourceFactory returned empty list")
-                Log.d(TAG, "SourceFactory returned ${sources.size} sources, first=${sources.first().javaClass.name}")
-                sources.first()
+                val preferred = preferredSourceId?.trim().orEmpty()
+                val chosen = if (preferred.isNotEmpty()) {
+                    sources.firstOrNull { it.id.toString() == preferred }
+                } else {
+                    null
+                }
+                val picked = chosen ?: sources.first()
+                Log.d(
+                    TAG,
+                    "SourceFactory returned ${sources.size} sources, " +
+                        "picked=${picked.javaClass.name} id=${picked.id}" +
+                        (if (chosen != null) " (preferred match)" else " (default first)"),
+                )
+                // Stash siblings so handleLoadExtension can alias them by Mihon id.
+                lastFactorySiblings = sources.filterIsInstance<HttpSource>()
+                picked
             }
             is Source -> {
                 Log.d(TAG, "Instance is Source directly")

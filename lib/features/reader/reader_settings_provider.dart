@@ -35,249 +35,34 @@ class ReaderSettingsNotifier extends Notifier<ReaderSettings> {
   }
 
   void setReadingMode(ReadingMode mode) =>
-      update(state.copyWithReadingMode(mode));
+      update(state.copyWith(readingMode: mode));
   void setRotationMode(RotationMode mode) =>
-      update(state.copyWithRotationMode(mode));
-  void setTapZones(TapZoneMode mode) => update(state.copyWithTapZones(mode));
-  void setSidePadding(double v) => update(state.copyWithSidePadding(v));
-  void setCropBorders(bool v) => update(state.copyWithCropBorders(v));
-  void setBookMode(bool v) => update(state.copyWithBookMode(v));
-  void setBrightness(double v) => update(state.copyWithBrightness(v));
-  void setContrast(double v) => update(state.copyWithContrast(v));
-  void setSaturation(double v) => update(state.copyWithSaturation(v));
-  void setTint(Color? c, double o) => update(state.copyWithTint(c, o));
+      update(state.copyWith(rotationMode: mode));
+  void setTapZones(TapZoneMode mode) => update(state.copyWith(tapZones: mode));
+  void setSidePadding(double v) => update(state.copyWith(sidePadding: v));
+  void setCropBorders(bool v) => update(state.copyWith(cropBorders: v));
+  void setBookMode(bool v) => update(state.copyWith(bookMode: v));
+  void setBrightness(double v) => update(state.copyWith(brightness: v));
+  void setContrast(double v) => update(state.copyWith(contrast: v));
+  void setSaturation(double v) => update(state.copyWith(saturation: v));
+  void setTint(Color? c, double o) =>
+      update(state.copyWith(tintColor: c, tintOpacity: o));
+  void setSepiaPanels(bool v) => update(state.copyWith(sepiaPanels: v));
 }
 
 extension CopyWithReaderSettings on ReaderSettings {
-  ReaderSettings copyWithReadingMode(ReadingMode r) => ReaderSettings(
-    readingMode: r,
-    rotationMode: rotationMode,
-    tapZones: tapZones,
-    sidePadding: sidePadding,
-    cropBorders: cropBorders,
-    bookMode: bookMode,
-    disableDoubleTap: disableDoubleTap,
-    disableZoomOut: disableZoomOut,
-    showPageNumber: showPageNumber,
-    showPageNavigator: showPageNavigator,
-    fullscreen: fullscreen,
-    keepScreenOn: keepScreenOn,
-    showActionsOnLongTap: showActionsOnLongTap,
-    animatePageTransition: animatePageTransition,
-    progressBarPlacement: progressBarPlacement,
-    brightness: brightness,
-    contrast: contrast,
-    saturation: saturation,
-    tintColor: tintColor,
-    tintOpacity: tintOpacity,
-  );
-
-  ReaderSettings copyWithRotationMode(RotationMode r) => ReaderSettings(
-    readingMode: readingMode,
-    rotationMode: r,
-    tapZones: tapZones,
-    sidePadding: sidePadding,
-    cropBorders: cropBorders,
-    bookMode: bookMode,
-    disableDoubleTap: disableDoubleTap,
-    disableZoomOut: disableZoomOut,
-    showPageNumber: showPageNumber,
-    showPageNavigator: showPageNavigator,
-    fullscreen: fullscreen,
-    keepScreenOn: keepScreenOn,
-    showActionsOnLongTap: showActionsOnLongTap,
-    animatePageTransition: animatePageTransition,
-    progressBarPlacement: progressBarPlacement,
-    brightness: brightness,
-    contrast: contrast,
-    saturation: saturation,
-    tintColor: tintColor,
-    tintOpacity: tintOpacity,
-  );
-
-  ReaderSettings copyWithTapZones(TapZoneMode t) => ReaderSettings(
-    readingMode: readingMode,
-    rotationMode: rotationMode,
-    tapZones: t,
-    sidePadding: sidePadding,
-    cropBorders: cropBorders,
-    bookMode: bookMode,
-    disableDoubleTap: disableDoubleTap,
-    disableZoomOut: disableZoomOut,
-    showPageNumber: showPageNumber,
-    showPageNavigator: showPageNavigator,
-    fullscreen: fullscreen,
-    keepScreenOn: keepScreenOn,
-    showActionsOnLongTap: showActionsOnLongTap,
-    animatePageTransition: animatePageTransition,
-    progressBarPlacement: progressBarPlacement,
-    brightness: brightness,
-    contrast: contrast,
-    saturation: saturation,
-    tintColor: tintColor,
-    tintOpacity: tintOpacity,
-  );
-
-  ReaderSettings copyWithSidePadding(double s) => ReaderSettings(
-    readingMode: readingMode,
-    rotationMode: rotationMode,
-    tapZones: tapZones,
-    sidePadding: s,
-    cropBorders: cropBorders,
-    bookMode: bookMode,
-    disableDoubleTap: disableDoubleTap,
-    disableZoomOut: disableZoomOut,
-    showPageNumber: showPageNumber,
-    showPageNavigator: showPageNavigator,
-    fullscreen: fullscreen,
-    keepScreenOn: keepScreenOn,
-    showActionsOnLongTap: showActionsOnLongTap,
-    animatePageTransition: animatePageTransition,
-    progressBarPlacement: progressBarPlacement,
-    brightness: brightness,
-    contrast: contrast,
-    saturation: saturation,
-    tintColor: tintColor,
-    tintOpacity: tintOpacity,
-  );
-
-  ReaderSettings copyWithCropBorders(bool v) => ReaderSettings(
-    readingMode: readingMode,
-    rotationMode: rotationMode,
-    tapZones: tapZones,
-    sidePadding: sidePadding,
-    cropBorders: v,
-    bookMode: bookMode,
-    disableDoubleTap: disableDoubleTap,
-    disableZoomOut: disableZoomOut,
-    showPageNumber: showPageNumber,
-    showPageNavigator: showPageNavigator,
-    fullscreen: fullscreen,
-    keepScreenOn: keepScreenOn,
-    showActionsOnLongTap: showActionsOnLongTap,
-    animatePageTransition: animatePageTransition,
-    progressBarPlacement: progressBarPlacement,
-    brightness: brightness,
-    contrast: contrast,
-    saturation: saturation,
-    tintColor: tintColor,
-    tintOpacity: tintOpacity,
-  );
-
-  ReaderSettings copyWithBookMode(bool v) => ReaderSettings(
-    readingMode: readingMode,
-    rotationMode: rotationMode,
-    tapZones: tapZones,
-    sidePadding: sidePadding,
-    cropBorders: cropBorders,
-    bookMode: v,
-    disableDoubleTap: disableDoubleTap,
-    disableZoomOut: disableZoomOut,
-    showPageNumber: showPageNumber,
-    showPageNavigator: showPageNavigator,
-    fullscreen: fullscreen,
-    keepScreenOn: keepScreenOn,
-    showActionsOnLongTap: showActionsOnLongTap,
-    animatePageTransition: animatePageTransition,
-    progressBarPlacement: progressBarPlacement,
-    brightness: brightness,
-    contrast: contrast,
-    saturation: saturation,
-    tintColor: tintColor,
-    tintOpacity: tintOpacity,
-  );
-
-  ReaderSettings copyWithBrightness(double v) => ReaderSettings(
-    readingMode: readingMode,
-    rotationMode: rotationMode,
-    tapZones: tapZones,
-    sidePadding: sidePadding,
-    cropBorders: cropBorders,
-    bookMode: bookMode,
-    disableDoubleTap: disableDoubleTap,
-    disableZoomOut: disableZoomOut,
-    showPageNumber: showPageNumber,
-    showPageNavigator: showPageNavigator,
-    fullscreen: fullscreen,
-    keepScreenOn: keepScreenOn,
-    showActionsOnLongTap: showActionsOnLongTap,
-    animatePageTransition: animatePageTransition,
-    progressBarPlacement: progressBarPlacement,
-    brightness: v,
-    contrast: contrast,
-    saturation: saturation,
-    tintColor: tintColor,
-    tintOpacity: tintOpacity,
-  );
-
-  ReaderSettings copyWithContrast(double v) => ReaderSettings(
-    readingMode: readingMode,
-    rotationMode: rotationMode,
-    tapZones: tapZones,
-    sidePadding: sidePadding,
-    cropBorders: cropBorders,
-    bookMode: bookMode,
-    disableDoubleTap: disableDoubleTap,
-    disableZoomOut: disableZoomOut,
-    showPageNumber: showPageNumber,
-    showPageNavigator: showPageNavigator,
-    fullscreen: fullscreen,
-    keepScreenOn: keepScreenOn,
-    showActionsOnLongTap: showActionsOnLongTap,
-    animatePageTransition: animatePageTransition,
-    progressBarPlacement: progressBarPlacement,
-    brightness: brightness,
-    contrast: v,
-    saturation: saturation,
-    tintColor: tintColor,
-    tintOpacity: tintOpacity,
-  );
-
-  ReaderSettings copyWithSaturation(double v) => ReaderSettings(
-    readingMode: readingMode,
-    rotationMode: rotationMode,
-    tapZones: tapZones,
-    sidePadding: sidePadding,
-    cropBorders: cropBorders,
-    bookMode: bookMode,
-    disableDoubleTap: disableDoubleTap,
-    disableZoomOut: disableZoomOut,
-    showPageNumber: showPageNumber,
-    showPageNavigator: showPageNavigator,
-    fullscreen: fullscreen,
-    keepScreenOn: keepScreenOn,
-    showActionsOnLongTap: showActionsOnLongTap,
-    animatePageTransition: animatePageTransition,
-    progressBarPlacement: progressBarPlacement,
-    brightness: brightness,
-    contrast: contrast,
-    saturation: v,
-    tintColor: tintColor,
-    tintOpacity: tintOpacity,
-  );
-
-  ReaderSettings copyWithTint(Color? c, double o) => ReaderSettings(
-    readingMode: readingMode,
-    rotationMode: rotationMode,
-    tapZones: tapZones,
-    sidePadding: sidePadding,
-    cropBorders: cropBorders,
-    bookMode: bookMode,
-    disableDoubleTap: disableDoubleTap,
-    disableZoomOut: disableZoomOut,
-    showPageNumber: showPageNumber,
-    showPageNavigator: showPageNavigator,
-    fullscreen: fullscreen,
-    keepScreenOn: keepScreenOn,
-    showActionsOnLongTap: showActionsOnLongTap,
-    animatePageTransition: animatePageTransition,
-    progressBarPlacement: progressBarPlacement,
-    brightness: brightness,
-    contrast: contrast,
-    saturation: saturation,
-    tintColor: c,
-    tintOpacity: o,
-  );
+  ReaderSettings copyWithReadingMode(ReadingMode r) => copyWith(readingMode: r);
+  ReaderSettings copyWithRotationMode(RotationMode r) =>
+      copyWith(rotationMode: r);
+  ReaderSettings copyWithTapZones(TapZoneMode t) => copyWith(tapZones: t);
+  ReaderSettings copyWithSidePadding(double s) => copyWith(sidePadding: s);
+  ReaderSettings copyWithCropBorders(bool v) => copyWith(cropBorders: v);
+  ReaderSettings copyWithBookMode(bool v) => copyWith(bookMode: v);
+  ReaderSettings copyWithBrightness(double v) => copyWith(brightness: v);
+  ReaderSettings copyWithContrast(double v) => copyWith(contrast: v);
+  ReaderSettings copyWithSaturation(double v) => copyWith(saturation: v);
+  ReaderSettings copyWithTint(Color? c, double o) =>
+      copyWith(tintColor: c, tintOpacity: o);
 }
 
 final readerSettingsProvider =

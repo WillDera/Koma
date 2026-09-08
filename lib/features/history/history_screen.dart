@@ -147,6 +147,7 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> with RouteAware {
     if (confirmed != true) return;
     final repos = ref.read(repositoriesProvider);
     await repos.books.clearProgress(book.id);
+    ref.read(historyRevisionProvider.notifier).bump();
     await _load();
   }
 
@@ -172,6 +173,7 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> with RouteAware {
     if (confirmed != true) return;
     final repos = ref.read(repositoriesProvider);
     await repos.manga.clearMangaChapterHistory(mangaRow.manga.id);
+    ref.read(historyRevisionProvider.notifier).bump();
     await _load();
   }
 
@@ -202,6 +204,7 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> with RouteAware {
     for (final row in List<InProgressManga>.from(_mangaRows)) {
       await repos.manga.clearMangaChapterHistory(row.manga.id);
     }
+    ref.read(historyRevisionProvider.notifier).bump();
     await _load();
   }
 

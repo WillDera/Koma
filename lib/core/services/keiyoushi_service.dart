@@ -123,11 +123,15 @@ class KeiyoushiService {
   Future<Map<String, dynamic>> loadExtension({
     required String apkPath,
     String? className,
+    /// Mihon numeric [Source.id] — used to pick the right entry from a
+    /// multi-source APK (SourceFactory) and to alias the load cache.
+    String? preferredSourceId,
   }) async {
     final body = <String, dynamic>{
       'method': 'loadExtension',
       'apkPath': apkPath,
       'className': ?className,
+      'preferredSourceId': ?preferredSourceId,
     };
     return _postChecked(body);
   }

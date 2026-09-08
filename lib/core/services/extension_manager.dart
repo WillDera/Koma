@@ -512,6 +512,11 @@ class ExtensionManager {
     final desc = await _keiyoushi.loadExtension(
       apkPath: apkPath,
       className: entry.className,
+      preferredSourceId: entry.sources.isNotEmpty
+          ? '${entry.sources.first['id'] ?? ''}'.trim().isEmpty
+              ? null
+              : '${entry.sources.first['id']}'
+          : null,
     );
     final nativeId = (desc['id'] as String?) ?? '';
     final sourceId = (desc['sourceId'] as String?) ?? '';
@@ -724,6 +729,7 @@ class ExtensionManager {
     final desc = await _keiyoushi.loadExtension(
       apkPath: newApkPath,
       className: entry.className,
+      preferredSourceId: src.id.isNotEmpty ? src.id : null,
     );
     final newSourceId = (desc['sourceId'] as String?) ?? '';
     final nativeId = (desc['id'] as String?) ?? '';
@@ -981,6 +987,7 @@ class ExtensionManager {
                 await _keiyoushi.loadExtension(
                   apkPath: apkPath,
                   className: src.className.isEmpty ? null : src.className,
+                  preferredSourceId: src.id.isNotEmpty ? src.id : null,
                 );
               } catch (_) {}
               next = next.copyWith(isActive: true);
@@ -1026,6 +1033,7 @@ class ExtensionManager {
         await _keiyoushi.loadExtension(
           apkPath: src.apkPath,
           className: src.className.isEmpty ? null : src.className,
+          preferredSourceId: src.id.isNotEmpty ? src.id : null,
         );
       } catch (_) {}
       await _repos.extensions.insertExtensionSource(
@@ -1075,6 +1083,7 @@ class ExtensionManager {
         final desc = await _keiyoushi.loadExtension(
           apkPath: src.apkPath,
           className: src.className.isEmpty ? null : src.className,
+          preferredSourceId: src.id.isNotEmpty ? src.id : null,
         );
         final nativeId = (desc['id'] as String?) ?? '';
         final newSourceId = (desc['sourceId'] as String?) ?? '';

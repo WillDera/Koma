@@ -18,6 +18,8 @@ import '../../core/services/download/chapter_download.dart';
 import '../../core/services/download/download_manager.dart';
 import '../../core/services/extension_source_resolve.dart';
 import '../../core/services/keiyoushi_service.dart';
+import '../../core/services/local_cbz_prefs.dart';
+import '../../core/services/local_cbz_source.dart';
 import '../../eval/dispatch_service.dart';
 import '../../eval/models/m_chapter.dart';
 import '../../core/services/source_webview_bridge.dart';
@@ -34,6 +36,8 @@ import '../../widgets/dialog_sheet.dart';
 import '../../widgets/icon_button_round.dart';
 import '../../widgets/page_transitions.dart';
 import '../../widgets/screen_chrome.dart';
+import '../../widgets/toast.dart';
+import '../library/cbz_export_flow.dart';
 import 'manga_detail_providers.dart';
 import 'migrate_search_screen.dart';
 
@@ -367,6 +371,11 @@ class _MangaDetailScreenState extends ConsumerState<MangaDetailScreen> {
       })
       ..setMangaId(m.id)
       ..setInLibrary(m.inLibrary, m.id);
+    if (LocalCbzSource.isLocal(m.sourceId)) {
+      notifier
+        ..setSourceName(LocalCbzSource.displayName)
+        ..setOfflineMode(true);
+    }
     // Do not clear loading here — [_refreshFromSource] clears it after fetch
     // or when cached chapters mean the network refresh is skipped.
 
@@ -477,6 +486,15 @@ class _MangaDetailScreenState extends ConsumerState<MangaDetailScreen> {
   /// reactively via [_syncManga] / [_syncChapters].
   Future<void> _refreshFromSource({int? gen}) async {
     final expectedGen = gen ?? _loadGen;
+    if (LocalCbzSource.isLocal(widget.sourceId)) {
+      if (mounted && expectedGen == _loadGen && _isCurrentBinding) {
+        ref.read(mangaDetailProvider.notifier)
+          ..setSourceName(LocalCbzSource.displayName)
+          ..setOfflineMode(true)
+          ..setLoading(false);
+      }
+      return;
+    }
     // Mirrors mangayomi's updateMangaDetailProvider: if chapters already
     // exist in Isar (cached), skip the network fetch. The Isar reactive
     // streams already have the data.
@@ -800,6 +818,9 @@ class _MangaDetailScreenState extends ConsumerState<MangaDetailScreen> {
       }
       await repos.manga.setMangaInLibrary(_mangaId!, true);
       final m = await repos.manga.getMangaById(_mangaId!);
+      if (m != null && LocalCbzSource.isLocal(m.sourceId)) {
+        await LocalCbzPrefs.includeSeriesUrl(m.url);
+      }
       if (m != null && m.sourceId == widget.sourceId && m.url == widget.url) {
         final d = ref.read(mangaDetailProvider).details;
         await repos.manga.updateManga(
@@ -894,10 +915,18 @@ class _MangaDetailScreenState extends ConsumerState<MangaDetailScreen> {
   Future<void> _removeFromLibrary() async {
     if (_mangaId == null) return;
     final repos = ref.read(repositoriesProvider);
+    final manga = await repos.manga.getMangaById(_mangaId!);
     await repos.manga.setMangaInLibrary(_mangaId!, false);
+    if (manga != null && LocalCbzSource.isLocal(manga.sourceId)) {
+      await LocalCbzPrefs.excludeSeriesUrl(manga.url);
+      // Drop read markers so Continue reading can't resurrect this title
+      // if a later scan brings the series back after an explicit re-import.
+      await repos.manga.clearMangaChapterHistory(_mangaId!);
+    }
     if (mounted) {
       setState(() => _inLibrary = false);
       ref.read(libraryProvider.notifier).loadBooks();
+      ref.read(historyRevisionProvider.notifier).bump();
     }
     if (!mounted) return;
     ScaffoldMessenger.of(
@@ -1439,6 +1468,134 @@ class _MangaDetailScreenState extends ConsumerState<MangaDetailScreen> {
     return urls.toList();
   }
 
+  List<MangaChapter> _exportableChapters() {
+    final detail = ref.read(mangaDetailProvider);
+    final mangaId = _mangaId ?? 0;
+    final title = _preferTitle(
+      detail.details?['title'] as String?,
+      widget.title,
+    );
+    final urls = {
+      for (final u in _downloadedChapterUrls()) _normalizeUrl(u),
+    };
+    if (LocalCbzSource.isLocal(widget.sourceId)) {
+      // Local series: every chapter path is already on disk.
+      return [
+        for (var i = 0; i < detail.chapters.length; i++)
+          MangaChapter.withRecognition(
+            id: 0,
+            mangaId: mangaId,
+            mangaTitle: title,
+            name: detail.chapters[i]['name'] as String? ?? 'Chapter ${i + 1}',
+            url: detail.chapters[i]['url'] as String? ?? '',
+            index: i,
+            isDownloaded: true,
+          ),
+      ].where((c) => c.url.isNotEmpty).toList();
+    }
+    return [
+      for (var i = 0; i < detail.chapters.length; i++)
+        if (urls.contains(
+          _normalizeUrl(detail.chapters[i]['url'] as String? ?? ''),
+        ))
+          MangaChapter.withRecognition(
+            id: 0,
+            mangaId: mangaId,
+            mangaTitle: title,
+            name: detail.chapters[i]['name'] as String? ?? 'Chapter ${i + 1}',
+            url: detail.chapters[i]['url'] as String? ?? '',
+            index: i,
+            isDownloaded: true,
+          ),
+    ];
+  }
+
+  Future<void> _exportAsCbz() async {
+    var chapters = _exportableChapters();
+    // Prefer DB chapter rows so urls match the keys used when files were saved.
+    final mangaId = _mangaId;
+    Manga? dbManga;
+    if (mangaId != null) {
+      final repos = ref.read(repositoriesProvider);
+      dbManga = await repos.manga.getMangaById(mangaId);
+      if (!LocalCbzSource.isLocal(widget.sourceId)) {
+        final dbChapters = await repos.manga.getMangaChapters(mangaId);
+        final downloaded = dbChapters.where((c) => c.isDownloaded).toList();
+        if (downloaded.isNotEmpty) {
+          chapters = downloaded;
+        }
+      }
+    }
+    if (!mounted) return;
+    if (chapters.isEmpty) {
+      StashToast.show(
+        context,
+        message: 'No chapters available to export',
+        icon: Icons.info_outline,
+      );
+      return;
+    }
+    final detail = ref.read(mangaDetailProvider);
+    final d = detail.details ?? const <String, dynamic>{};
+    final genres = _genresFromDetail(d, fallback: dbManga?.genres ?? const []);
+    final manga = Manga(
+      id: _mangaId ?? 0,
+      name: _preferTitle(
+        d['title'] as String?,
+        dbManga?.name ?? widget.title,
+      ),
+      url: widget.url,
+      imageUrl: (d['thumbnail_url'] as String?)?.trim().isNotEmpty == true
+          ? d['thumbnail_url'] as String?
+          : (dbManga?.customCoverPath ?? dbManga?.imageUrl),
+      author: (d['author'] as String?)?.trim().isNotEmpty == true
+          ? (d['author'] as String?)
+          : dbManga?.author,
+      artist: (d['artist'] as String?)?.trim().isNotEmpty == true
+          ? (d['artist'] as String?)
+          : dbManga?.artist,
+      description: (d['description'] as String?)?.trim().isNotEmpty == true
+          ? (d['description'] as String?)
+          : dbManga?.description,
+      status: asInt(d['status']) ?? dbManga?.status ?? 0,
+      genres: genres,
+      sourceId: widget.sourceId,
+      inLibrary: _inLibrary,
+      memo: widget.memo ?? d['memo'] as String? ?? dbManga?.memo,
+      customCoverPath: dbManga?.customCoverPath,
+    );
+    if (!mounted) return;
+    await exportMangaChaptersAsCbz(
+      context,
+      manga: manga,
+      chapters: chapters,
+      keiyoushi: _keiyoushi,
+      resolveSourceId: (id) =>
+          ref.read(extensionManagerProvider).resolveSourceId(id),
+    );
+  }
+
+  static List<String> _genresFromDetail(
+    Map<String, dynamic> details, {
+    List<String> fallback = const [],
+  }) {
+    final raw = details['genre'] ?? details['genres'] ?? details['tags'];
+    if (raw is List) {
+      final list = [
+        for (final e in raw)
+          if ('$e'.trim().isNotEmpty) '$e'.trim(),
+      ];
+      if (list.isNotEmpty) return list;
+    } else if (raw is String && raw.trim().isNotEmpty) {
+      return raw
+          .split(',')
+          .map((g) => g.trim())
+          .where((g) => g.isNotEmpty)
+          .toList();
+    }
+    return List<String>.from(fallback);
+  }
+
   Future<void> _clearLocalDownloadFlags(List<String> chapterUrls) async {
     if (_mangaId == null || chapterUrls.isEmpty) return;
     final repos = ref.read(repositoriesProvider);
@@ -1694,7 +1851,10 @@ class _MangaDetailScreenState extends ConsumerState<MangaDetailScreen> {
         if (!detail.offlineMode) await _showDownloadDialog();
       case 'delete_downloads':
         await _confirmDeleteAllDownloads();
+      case 'export_cbz':
+        await _exportAsCbz();
       case 'webview':
+        if (LocalCbzSource.isLocal(widget.sourceId)) return;
         try {
           await SourceWebViewBridge.open(
             url: widget.url,
@@ -1711,6 +1871,7 @@ class _MangaDetailScreenState extends ConsumerState<MangaDetailScreen> {
       case 'notes':
         await _editNotes();
       case 'migrate':
+        if (LocalCbzSource.isLocal(widget.sourceId)) return;
         final mangaId = _mangaId;
         if (mangaId == null) return;
         final title = _preferTitle(
@@ -1936,26 +2097,36 @@ class _MangaDetailScreenState extends ConsumerState<MangaDetailScreen> {
                           value: 'sort',
                           child: Text('Sort chapters'),
                         ),
-                        if (!detail.offlineMode)
+                        if (!detail.offlineMode &&
+                            !LocalCbzSource.isLocal(widget.sourceId))
                           const PopupMenuItem(
                             value: 'download',
                             child: Text('Download chapters'),
                           ),
-                        if (_downloadedChapterUrls().isNotEmpty)
+                        if (_downloadedChapterUrls().isNotEmpty &&
+                            !LocalCbzSource.isLocal(widget.sourceId))
                           const PopupMenuItem(
                             value: 'delete_downloads',
                             child: Text('Delete downloads'),
                           ),
-                        const PopupMenuItem(
-                          value: 'webview',
-                          child: Text('Open in WebView'),
-                        ),
+                        if (_exportableChapters().isNotEmpty)
+                          const PopupMenuItem(
+                            value: 'export_cbz',
+                            child: Text('Export as CBZ'),
+                          ),
+                        if (!LocalCbzSource.isLocal(widget.sourceId))
+                          const PopupMenuItem(
+                            value: 'webview',
+                            child: Text('Open in WebView'),
+                          ),
                         if (_inLibrary && _mangaId != null)
                           const PopupMenuItem(
                             value: 'notes',
                             child: Text('Notes'),
                           ),
-                        if (_inLibrary && _mangaId != null)
+                        if (_inLibrary &&
+                            _mangaId != null &&
+                            !LocalCbzSource.isLocal(widget.sourceId))
                           const PopupMenuItem(
                             value: 'migrate',
                             child: Text('Migrate'),

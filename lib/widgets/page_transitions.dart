@@ -98,7 +98,9 @@ Widget scaleFadePageTransition({
   );
 }
 
-/// Soft horizontal slide + fade for You / Settings destinations.
+/// Horizontal slide for You / Settings destinations and imperative pushes.
+///
+/// Enters from the right; outgoing page shifts slightly left (parallax).
 Widget smoothSlidePageTransition({
   required Animation<double> animation,
   required Animation<double> secondaryAnimation,
@@ -116,21 +118,15 @@ Widget smoothSlidePageTransition({
   );
   return SlideTransition(
     position: Tween<Offset>(
-      begin: const Offset(0.08, 0),
+      begin: const Offset(1.0, 0.0),
       end: Offset.zero,
     ).animate(curved),
-    child: FadeTransition(
-      opacity: curved,
-      child: SlideTransition(
-        position: Tween<Offset>(
-          begin: Offset.zero,
-          end: const Offset(-0.04, 0),
-        ).animate(secondary),
-        child: FadeTransition(
-          opacity: Tween<double>(begin: 1, end: 0.92).animate(secondary),
-          child: child,
-        ),
-      ),
+    child: SlideTransition(
+      position: Tween<Offset>(
+        begin: Offset.zero,
+        end: const Offset(-0.3, 0.0),
+      ).animate(secondary),
+      child: child,
     ),
   );
 }
@@ -143,5 +139,20 @@ Route<T> scaleFadeRoute<T>(Widget page) {
     pageBuilder: (_, animation, secondaryAnimation) => page,
     transitionsBuilder: (context, animation, secondaryAnimation, child) =>
         scaleFadePageTransition(animation: animation, child: child),
+  );
+}
+
+/// Fast horizontal slide [PageRouteBuilder] (You hub, snippets, etc.).
+Route<T> smoothSlideRoute<T>(Widget page) {
+  return PageRouteBuilder<T>(
+    transitionDuration: AppMotion.base,
+    reverseTransitionDuration: AppMotion.fast,
+    pageBuilder: (_, animation, secondaryAnimation) => page,
+    transitionsBuilder: (context, animation, secondaryAnimation, child) =>
+        smoothSlidePageTransition(
+          animation: animation,
+          secondaryAnimation: secondaryAnimation,
+          child: child,
+        ),
   );
 }

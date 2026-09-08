@@ -19,6 +19,8 @@ import '../../core/services/background_task.dart';
 import '../../core/services/library_update_auto_download.dart';
 import '../../core/services/library_update_prefs.dart';
 import '../../core/services/library_update_service.dart';
+import '../../core/services/local_cbz_prefs.dart';
+import '../../core/services/local_cbz_source.dart';
 import '../../core/services/notification_service.dart';
 import '../../widgets/library_book_card.dart';
 
@@ -176,7 +178,9 @@ class LibraryNotifier extends Notifier<LibraryState> {
       final categories = await repos.categories.getCategories();
       final groups = await repos.groups.getAllGroups();
       final newChapters = await repos.manga.countNewChaptersByManga();
-      final extNames = <String, String>{};
+      final extNames = <String, String>{
+        LocalCbzSource.sourceId: LocalCbzSource.displayName,
+      };
       final extensions = await repos.extensions.getInstalledExtensions();
       for (final ext in extensions) {
         if (ext.name.isEmpty) continue;
@@ -212,11 +216,13 @@ class LibraryNotifier extends Notifier<LibraryState> {
     final ids = Set<String>.from(state.selectedIds)..remove('b:$id');
     state = state.copyWith(selectedIds: ids);
     await loadBooks();
+    ref.read(historyRevisionProvider.notifier).bump();
   }
 
   Future<void> deleteManga(int id) async {
     final repos = ref.read(repositoriesProvider);
-    final manga = state.mangas.firstWhereOrNull((m) => m.id == id);
+    final manga = state.mangas.firstWhereOrNull((m) => m.id == id) ??
+        await repos.manga.getMangaById(id);
     if (manga != null) {
       try {
         final supportDir = await AppStorage.support();
@@ -239,6 +245,9 @@ class LibraryNotifier extends Notifier<LibraryState> {
           await thumbFile.delete();
         }
       } catch (_) {}
+      if (LocalCbzSource.isLocal(manga.sourceId)) {
+        await LocalCbzPrefs.excludeSeriesUrl(manga.url);
+      }
     }
     await repos.groups.removeItemEverywhere(kind: 'manga', itemId: id);
     await repos.manga.deleteMangaChapters(id);
@@ -246,6 +255,7 @@ class LibraryNotifier extends Notifier<LibraryState> {
     final ids = Set<String>.from(state.selectedIds)..remove('m:$id');
     state = state.copyWith(selectedIds: ids);
     await loadBooks();
+    ref.read(historyRevisionProvider.notifier).bump();
   }
 
   void toggleSelection(String key) {
@@ -295,7 +305,8 @@ class LibraryNotifier extends Notifier<LibraryState> {
         await repos.books.deleteBook(id);
       } else if (key.startsWith('m:')) {
         final id = int.parse(key.substring(2));
-        final manga = state.mangas.firstWhereOrNull((m) => m.id == id);
+        final manga = state.mangas.firstWhereOrNull((m) => m.id == id) ??
+            await repos.manga.getMangaById(id);
         if (manga != null) {
           try {
             final supportDir = await AppStorage.support();
@@ -318,14 +329,18 @@ class LibraryNotifier extends Notifier<LibraryState> {
               await thumbFile.delete();
             }
           } catch (_) {}
-          await repos.groups.removeItemEverywhere(kind: 'manga', itemId: id);
-          await repos.manga.deleteMangaChapters(id);
-          await repos.manga.deleteManga(id);
+          if (LocalCbzSource.isLocal(manga.sourceId)) {
+            await LocalCbzPrefs.excludeSeriesUrl(manga.url);
+          }
         }
+        await repos.groups.removeItemEverywhere(kind: 'manga', itemId: id);
+        await repos.manga.deleteMangaChapters(id);
+        await repos.manga.deleteManga(id);
       }
     }
     state = state.copyWith(selectedIds: {}, selectionMode: false);
     await loadBooks();
+    ref.read(historyRevisionProvider.notifier).bump();
   }
 
   Future<int> createGroupFromSelection(String name) async {
