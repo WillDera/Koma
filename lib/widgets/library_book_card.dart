@@ -8,7 +8,7 @@ import 'animated_press.dart';
 import 'book_cover.dart';
 import 'progress_ring.dart';
 
-enum LibraryCardVariant { grid, list, compact, overlay }
+enum LibraryCardVariant { grid, list, compact, overlay, coverOnly }
 
 class LibraryBookCard extends StatelessWidget {
   final Book book;
@@ -34,7 +34,10 @@ class LibraryBookCard extends StatelessWidget {
   Widget build(BuildContext context) {
     if (variant == LibraryCardVariant.list) return _list(context);
     if (variant == LibraryCardVariant.compact) return _compact(context);
-    if (variant == LibraryCardVariant.overlay) return _overlay(context);
+    if (variant == LibraryCardVariant.overlay ||
+        variant == LibraryCardVariant.coverOnly) {
+      return _overlay(context, showTitle: variant != LibraryCardVariant.coverOnly);
+    }
     return _grid(context);
   }
 
@@ -277,8 +280,8 @@ class LibraryBookCard extends StatelessWidget {
     );
   }
 
-  /// Cover-only with title gradient (Mihon CoverOnlyGrid).
-  Widget _overlay(BuildContext context) {
+  /// Cover with optional title gradient. [showTitle] false = Mihon cover-only.
+  Widget _overlay(BuildContext context, {bool showTitle = true}) {
     final c = context.colors;
     return AnimatedPress(
       onTap: onTap,
@@ -295,43 +298,45 @@ class LibraryBookCard extends StatelessWidget {
               borderRadius: BorderRadius.zero,
               expand: true,
             ),
-            const DecoratedBox(
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  begin: Alignment.bottomCenter,
-                  end: Alignment.topCenter,
-                  colors: [
-                    Color(0xBF000000),
-                    Color(0x59000000),
-                    Color(0x00000000),
-                  ],
-                  stops: [0.0, 0.35, 1.0],
+            if (showTitle)
+              const DecoratedBox(
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.bottomCenter,
+                    end: Alignment.topCenter,
+                    colors: [
+                      Color(0xBF000000),
+                      Color(0x59000000),
+                      Color(0x00000000),
+                    ],
+                    stops: [0.0, 0.35, 1.0],
+                  ),
                 ),
               ),
-            ),
-            Positioned(
-              left: 8,
-              right: 8,
-              bottom: 8,
-              child: Text(
-                book.title,
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  color: Colors.white,
-                  fontSize: 13,
-                  fontWeight: FontWeight.w600,
-                  height: 1.3,
-                  shadows: const [
-                    Shadow(
-                      blurRadius: 4,
-                      color: Colors.black54,
-                      offset: Offset(0, 1),
-                    ),
-                  ],
+            if (showTitle)
+              Positioned(
+                left: 8,
+                right: 8,
+                bottom: 8,
+                child: Text(
+                  book.title,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                    height: 1.3,
+                    shadows: const [
+                      Shadow(
+                        blurRadius: 4,
+                        color: Colors.black54,
+                        offset: Offset(0, 1),
+                      ),
+                    ],
+                  ),
                 ),
               ),
-            ),
             if (selectionMode)
               Positioned(
                 top: 8,

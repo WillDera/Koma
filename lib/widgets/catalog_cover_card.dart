@@ -59,6 +59,8 @@ class CatalogCoverCard extends StatelessWidget {
         return _compact(context);
       case LibraryCardVariant.overlay:
         return _overlay(context);
+      case LibraryCardVariant.coverOnly:
+        return _overlay(context, showTitle: false);
       case LibraryCardVariant.grid:
         return _grid(context);
     }
@@ -290,7 +292,7 @@ class CatalogCoverCard extends StatelessWidget {
     );
   }
 
-  Widget _overlay(BuildContext context) {
+  Widget _overlay(BuildContext context, {bool showTitle = true}) {
     final c = context.colors;
     final chip = _badgeChip();
     final metaPills = _coverMetaPills();
@@ -304,48 +306,54 @@ class CatalogCoverCard extends StatelessWidget {
           fit: StackFit.expand,
           children: [
             _coverImage(c),
-            const DecoratedBox(
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  begin: Alignment.bottomCenter,
-                  end: Alignment.topCenter,
-                  colors: [
-                    Color(0xBF000000),
-                    Color(0x59000000),
-                    Color(0x00000000),
-                  ],
-                  stops: [0.0, 0.35, 1.0],
+            if (showTitle)
+              const DecoratedBox(
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.bottomCenter,
+                    end: Alignment.topCenter,
+                    colors: [
+                      Color(0xBF000000),
+                      Color(0x59000000),
+                      Color(0x00000000),
+                    ],
+                    stops: [0.0, 0.35, 1.0],
+                  ),
                 ),
               ),
-            ),
             if (chip != null) Positioned(top: 6, left: 6, child: chip),
             if (heart != null)
               Positioned(top: 6, right: 6, child: heart),
             if (metaPills != null)
-              Positioned(bottom: 36, left: 6, child: metaPills),
-            Positioned(
-              left: 8,
-              right: 8,
-              bottom: 8,
-              child: Text(
-                title,
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontSize: 12,
-                  fontWeight: FontWeight.w600,
-                  height: 1.3,
-                  shadows: [
-                    Shadow(
-                      blurRadius: 4,
-                      color: Colors.black54,
-                      offset: Offset(0, 1),
-                    ),
-                  ],
+              Positioned(
+                bottom: showTitle ? 36 : 8,
+                left: 6,
+                child: metaPills,
+              ),
+            if (showTitle)
+              Positioned(
+                left: 8,
+                right: 8,
+                bottom: 8,
+                child: Text(
+                  title,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                    height: 1.3,
+                    shadows: [
+                      Shadow(
+                        blurRadius: 4,
+                        color: Colors.black54,
+                        offset: Offset(0, 1),
+                      ),
+                    ],
+                  ),
                 ),
               ),
-            ),
             if (_busy)
               Positioned(
                 left: 0,
@@ -353,7 +361,7 @@ class CatalogCoverCard extends StatelessWidget {
                 bottom: 0,
                 child: ThinProgressBar(
                   progress: downloadProgress ?? 0,
-                  height: 3,
+                  height: 2,
                   trackColor: Colors.white24,
                 ),
               ),

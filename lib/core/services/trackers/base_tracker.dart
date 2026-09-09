@@ -20,6 +20,20 @@ class TrackSearchResult {
   });
 }
 
+/// One page of tracker catalog recommendations / suggestions.
+class TrackerRecPage {
+  const TrackerRecPage({
+    required this.items,
+    required this.reachedEnd,
+  });
+
+  final List<TrackSearchResult> items;
+
+  /// True when the upstream API has no further pages (not merely “no manga
+  /// on this mixed anime/manga page”).
+  final bool reachedEnd;
+}
+
 abstract class BaseTracker {
   int get syncId;
   String get name;

@@ -126,6 +126,51 @@ class MyAnimeListTracker extends BaseTracker {
     );
   }
 
+  Future<TrackerRecPage> recommendations({
+    int limit = 24,
+    int offset = 0,
+  }) async {
+    final token = await _accessToken();
+    if (token == null) {
+      return const TrackerRecPage(items: [], reachedEnd: true);
+    }
+    final uri = Uri.parse('$_api/manga/suggestions').replace(
+      queryParameters: {
+        'limit': '$limit',
+        'offset': '$offset',
+        'fields': 'id,title,main_picture,synopsis,num_chapters',
+      },
+    );
+    final res = await http.get(
+      uri,
+      headers: {'Authorization': 'Bearer $token'},
+    );
+    if (res.statusCode < 200 || res.statusCode >= 300) {
+      return const TrackerRecPage(items: [], reachedEnd: true);
+    }
+    final body = jsonDecode(res.body) as Map<String, dynamic>;
+    final data = body['data'] as List<dynamic>? ?? const [];
+    final items = [
+      for (final row in data)
+        if (row is Map<String, dynamic>)
+          TrackSearchResult(
+            mediaId: (row['node']?['id'] as num?)?.toInt() ?? 0,
+            title: row['node']?['title'] as String? ?? '',
+            coverUrl: row['node']?['main_picture']?['large'] as String? ??
+                row['node']?['main_picture']?['medium'] as String?,
+            summary: row['node']?['synopsis'] as String?,
+            totalChapters: (row['node']?['num_chapters'] as num?)?.toInt(),
+            trackingUrl: row['node']?['id'] != null
+                ? 'https://myanimelist.net/manga/${row['node']['id']}'
+                : null,
+          ),
+    ].where((e) => e.mediaId != 0 && e.title.isNotEmpty).toList();
+    return TrackerRecPage(
+      items: items,
+      reachedEnd: data.isEmpty || data.length < limit,
+    );
+  }
+
   @override
   Future<List<TrackSearchResult>> search(String query) async {
     final token = await _accessToken();

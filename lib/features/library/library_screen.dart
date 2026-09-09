@@ -2310,7 +2310,10 @@ class _MangaShelf extends StatelessWidget {
       selectionMode: provider.selectionMode,
       extensionName: extensionNames[manga.sourceId] ?? manga.sourceId,
       showSourcePills: showSourcePills,
+      showUnreadBadge: provider.showUnreadBadge,
+      showContinueButton: provider.showContinueButton,
       variant: variant,
+      onContinue: () => onOpen(manga),
       onTap: () => provider.selectionMode
           ? notifier.toggleSelection('m:${manga.id}')
           : onOpen(manga),
@@ -2374,6 +2377,9 @@ class _MangaLibraryCard extends ConsumerWidget {
   final bool showSourcePills;
   final LibraryCardVariant variant;
   final int newChapterCount;
+  final bool showUnreadBadge;
+  final bool showContinueButton;
+  final VoidCallback? onContinue;
 
   const _MangaLibraryCard({
     required this.manga,
@@ -2386,13 +2392,17 @@ class _MangaLibraryCard extends ConsumerWidget {
     this.showSourcePills = true,
     this.variant = LibraryCardVariant.grid,
     this.newChapterCount = 0,
+    this.showUnreadBadge = true,
+    this.showContinueButton = false,
+    this.onContinue,
   });
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final c = context.colors;
     final headers = ref.watch(sourceImageHeadersProvider(manga.sourceId)).value;
-    if (variant == LibraryCardVariant.overlay) {
+    final coverOnly = variant == LibraryCardVariant.coverOnly;
+    if (variant == LibraryCardVariant.overlay || coverOnly) {
       return AnimatedPress(
         onTap: onTap,
         onLongPress: onLongPress,
@@ -2421,22 +2431,23 @@ class _MangaLibraryCard extends ConsumerWidget {
                         )
                       : _placeholder(c),
                 ),
-                Positioned.fill(
-                  child: DecoratedBox(
-                    decoration: BoxDecoration(
-                      gradient: LinearGradient(
-                        begin: Alignment.bottomCenter,
-                        end: Alignment.topCenter,
-                        colors: [
-                          Colors.black.withValues(alpha: 0.75),
-                          Colors.black.withValues(alpha: 0.35),
-                          Colors.transparent,
-                        ],
-                        stops: const [0.0, 0.35, 1.0],
+                if (!coverOnly)
+                  Positioned.fill(
+                    child: DecoratedBox(
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          begin: Alignment.bottomCenter,
+                          end: Alignment.topCenter,
+                          colors: [
+                            Colors.black.withValues(alpha: 0.75),
+                            Colors.black.withValues(alpha: 0.35),
+                            Colors.transparent,
+                          ],
+                          stops: const [0.0, 0.35, 1.0],
+                        ),
                       ),
                     ),
                   ),
-                ),
                 if (showSourcePills)
                   Positioned(
                     top: 6,
@@ -2460,11 +2471,20 @@ class _MangaLibraryCard extends ConsumerWidget {
                       ),
                     ),
                   ),
-                if (newChapterCount > 0)
+                if (showUnreadBadge && newChapterCount > 0)
                   Positioned(
                     top: 6,
                     right: 6,
                     child: _NewChapterBadge(count: newChapterCount),
+                  ),
+                if (showContinueButton &&
+                    newChapterCount > 0 &&
+                    onContinue != null &&
+                    !selectionMode)
+                  Positioned(
+                    right: 8,
+                    bottom: 8,
+                    child: _ContinueFab(onTap: onContinue!),
                   ),
                 if (selectionMode)
                   Positioned(
@@ -2486,29 +2506,30 @@ class _MangaLibraryCard extends ConsumerWidget {
                           : null,
                     ),
                   ),
-                Positioned(
-                  left: 8,
-                  right: 8,
-                  bottom: 8,
-                  child: Text(
-                    manga.name,
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontSize: 12,
-                      fontWeight: FontWeight.w600,
-                      height: 1.3,
-                      shadows: const [
-                        Shadow(
-                          blurRadius: 4,
-                          color: Colors.black54,
-                          offset: Offset(0, 1),
-                        ),
-                      ],
+                if (!coverOnly)
+                  Positioned(
+                    left: 8,
+                    right: showContinueButton && newChapterCount > 0 ? 48 : 8,
+                    bottom: 8,
+                    child: Text(
+                      manga.name,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                        height: 1.3,
+                        shadows: const [
+                          Shadow(
+                            blurRadius: 4,
+                            color: Colors.black54,
+                            offset: Offset(0, 1),
+                          ),
+                        ],
+                      ),
                     ),
                   ),
-                ),
               ],
             ),
           ),
@@ -2567,32 +2588,41 @@ class _MangaLibraryCard extends ConsumerWidget {
                         ),
                       ),
                     ),
-                  if (newChapterCount > 0)
-                    Positioned(
-                      top: 6,
-                      right: 6,
-                      child: _NewChapterBadge(count: newChapterCount),
-                    ),
-                  if (selectionMode)
-                    Positioned(
-                      top: 8,
-                      right: 8,
-                      child: AnimatedContainer(
-                        duration: const Duration(milliseconds: 180),
-                        width: 24,
-                        height: 24,
-                        decoration: BoxDecoration(
-                          color: selected
-                              ? c.accent
-                              : Colors.black.withValues(alpha: 0.4),
-                          shape: BoxShape.circle,
-                          border: Border.all(color: Colors.white, width: 1.5),
-                        ),
-                        child: selected
-                            ? Icon(Icons.check, size: 14, color: c.onAccent)
-                            : null,
+                if (showUnreadBadge && newChapterCount > 0)
+                  Positioned(
+                    top: 6,
+                    right: 6,
+                    child: _NewChapterBadge(count: newChapterCount),
+                  ),
+                if (showContinueButton &&
+                    newChapterCount > 0 &&
+                    onContinue != null &&
+                    !selectionMode)
+                  Positioned(
+                    right: 8,
+                    bottom: 8,
+                    child: _ContinueFab(onTap: onContinue!),
+                  ),
+                if (selectionMode)
+                  Positioned(
+                    top: 8,
+                    right: 8,
+                    child: AnimatedContainer(
+                      duration: const Duration(milliseconds: 180),
+                      width: 24,
+                      height: 24,
+                      decoration: BoxDecoration(
+                        color: selected
+                            ? c.accent
+                            : Colors.black.withValues(alpha: 0.4),
+                        shape: BoxShape.circle,
+                        border: Border.all(color: Colors.white, width: 1.5),
                       ),
+                      child: selected
+                          ? Icon(Icons.check, size: 14, color: c.onAccent)
+                          : null,
                     ),
+                  ),
                 ],
               ),
             ),
@@ -2807,6 +2837,30 @@ class _MangaLibraryRow extends ConsumerWidget {
 
 /// Accent "N" pill shown on library manga cards when a poll has discovered
 /// chapters that haven't been opened yet.
+class _ContinueFab extends StatelessWidget {
+  const _ContinueFab({required this.onTap});
+
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.colors;
+    return Material(
+      color: c.accent,
+      shape: const CircleBorder(),
+      elevation: 2,
+      child: InkWell(
+        customBorder: const CircleBorder(),
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.all(8),
+          child: Icon(Icons.play_arrow_rounded, size: 18, color: c.onAccent),
+        ),
+      ),
+    );
+  }
+}
+
 class _NewChapterBadge extends StatelessWidget {
   final int count;
   final bool small;

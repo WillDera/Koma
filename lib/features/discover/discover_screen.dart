@@ -11,13 +11,16 @@ import '../../core/models/manga.dart';
 import '../../core/models/source.dart';
 import '../../core/providers.dart';
 import '../../core/services/local_manga_recs_service.dart';
+import '../../core/services/personalized_catalog_picks_service.dart';
 import '../../core/services/discover_metadata_cache.dart';
+import '../../core/services/trackers/base_tracker.dart';
 import '../../core/services/metadata_enrichment_service.dart';
 import '../../core/services/source_service.dart';
 import '../../core/utils/image_cache.dart';
 import '../../core/utils/image_headers.dart';
 import '../../router/book_navigation.dart';
 import '../../router/router.dart';
+import '../../router/shell.dart';
 import '../../theme/app_icons.dart';
 import '../../theme/app_theme.dart';
 import '../../theme/tokens/app_spacing.dart';
@@ -60,23 +63,40 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
   List<Source> _sources = [];
   String? _sourceSubtitle;
   BecauseYouReadRec? _becauseYouRead;
+  PersonalizedCatalogPicks? _trackerPicks;
+  bool _viewingAllPicks = false;
+  bool _picksLoadingMore = false;
 
   @override
   void initState() {
     super.initState();
+    _scrollCtrl.addListener(_onDiscoverScroll);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _loadSources();
       _loadBecauseYouRead();
+      _loadTrackerPicks();
     });
   }
 
   @override
   void dispose() {
     _idleUnfocus?.cancel();
+    _scrollCtrl.removeListener(_onDiscoverScroll);
     _searchFocus.dispose();
     _ctrl.dispose();
     _scrollCtrl.dispose();
     super.dispose();
+  }
+
+  void _onDiscoverScroll() {
+    if (!_viewingAllPicks || _picksLoadingMore) return;
+    final picks = _trackerPicks;
+    if (picks == null || !picks.hasMore) return;
+    if (!_scrollCtrl.hasClients) return;
+    final pos = _scrollCtrl.position;
+    if (pos.pixels >= pos.maxScrollExtent - 320) {
+      _loadMoreTrackerPicks();
+    }
   }
 
   void _setSection(_DiscoverSection section) {
@@ -129,6 +149,80 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
       if (!mounted) return;
       setState(() => _becauseYouRead = null);
     }
+  }
+
+  Future<void> _loadTrackerPicks() async {
+    try {
+      final picks = await PersonalizedCatalogPicksService(
+        ref.read(repositoriesProvider),
+      ).load(limit: PersonalizedCatalogPicksService.defaultPageSize);
+      if (!mounted) return;
+      setState(() => _trackerPicks = picks);
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _trackerPicks = null);
+    }
+  }
+
+  Future<void> _loadMoreTrackerPicks() async {
+    final current = _trackerPicks;
+    if (current == null || !current.hasMore || _picksLoadingMore) return;
+    setState(() => _picksLoadingMore = true);
+    try {
+      final next = await PersonalizedCatalogPicksService(
+        ref.read(repositoriesProvider),
+      ).loadMore(current);
+      if (!mounted) return;
+      setState(() {
+        _trackerPicks = next;
+        _picksLoadingMore = false;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _picksLoadingMore = false);
+    }
+  }
+
+  void _openTrackerPicksViewAll() {
+    setState(() => _viewingAllPicks = true);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || !_scrollCtrl.hasClients) return;
+      final picks = _trackerPicks;
+      if (picks == null || !picks.hasMore) return;
+      // Short first page may not scroll — prefetch the next batch.
+      if (_scrollCtrl.position.maxScrollExtent < 80) {
+        _loadMoreTrackerPicks();
+      }
+    });
+  }
+
+  void _closeTrackerPicksViewAll() {
+    setState(() => _viewingAllPicks = false);
+  }
+
+  void _openTrackerPick(TrackSearchResult hit) {
+    // Stay on Explore: pushing Global Search above the shell makes the next
+    // system/back gesture hit MainShell's tab PopScope and jump to Library.
+    _ctrl.text = hit.title;
+    setState(() {
+      _section = _DiscoverSection.manga;
+      _viewingAllPicks = false;
+    });
+    _search();
+  }
+
+  void _exitSearchToIdle() {
+    _idleUnfocus?.cancel();
+    _searchFocus.unfocus();
+    _ctrl.clear();
+    ref.read(globalSearchProvider.notifier).search('');
+    ref.read(discoverMetadataProvider.notifier).clearQueue();
+    setState(() {
+      _results = [];
+      _loaded = false;
+      _searching = false;
+      _viewingAllPicks = false;
+    });
   }
 
   void _openSourcePicker() {
@@ -239,6 +333,7 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
       _searching = true;
       _loaded = true;
       _results = [];
+      _viewingAllPicks = false;
       // Keep the Books/Manga tab the user started the search from.
     });
     ref.read(discoverMetadataProvider.notifier).clearQueue();
@@ -536,10 +631,30 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
         : (_section == _DiscoverSection.manga
             ? 'Manga extensions'
             : (_sourceSubtitle ?? 'Find books from your sources'));
+    // Keep back on Explore for view-all / search; only idle rails defer to
+    // MainShell (which switches to Library).
+    final interceptBack = _viewingAllPicks || !showIdle;
+    final claimed = ref.read(shellBackInterceptorProvider);
+    if (claimed != interceptBack) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        ref.read(shellBackInterceptorProvider.notifier).set(interceptBack);
+      });
+    }
 
-    return ScreenBackdrop(
+    return PopScope(
+      canPop: !interceptBack,
+      onPopInvokedWithResult: (didPop, _) {
+        if (didPop) return;
+        if (_viewingAllPicks) {
+          _closeTrackerPicksViewAll();
+          return;
+        }
+        if (!showIdle) _exitSearchToIdle();
+      },
+      child: ScreenBackdrop(
       child: AnnotatedRegion<SystemUiOverlayStyle>(
-        value: idleHasHero
+        value: idleHasHero && !_viewingAllPicks
             ? SystemUiOverlayStyle.light.copyWith(
                 statusBarColor: Colors.transparent,
               )
@@ -554,13 +669,13 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
         ),
         // Bleed the recommendation cover under the status bar on idle.
         child: SafeArea(
-          top: !idleHasHero,
+          top: !idleHasHero || _viewingAllPicks,
           bottom: false,
           child: CustomScrollView(
             controller: _scrollCtrl,
             physics: const AlwaysScrollableScrollPhysics(),
             slivers: [
-              if (!idleHasHero) ...[
+              if (!idleHasHero || _viewingAllPicks) ...[
                 const SliverToBoxAdapter(child: OneHandSpacer()),
                 SliverToBoxAdapter(
                   child: LibraryHeader(
@@ -587,7 +702,9 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
                   ),
                 ),
               ],
-              if (showIdle)
+              if (showIdle && _viewingAllPicks)
+                ..._trackerPicksViewAllSlivers(context, library)
+              else if (showIdle)
                 ..._idleChromeSlivers(
                   context,
                   library,
@@ -669,6 +786,7 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
           ],
         ),
         ),
+      ),
       ),
       ),
     );
@@ -820,6 +938,89 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
       return;
     }
     if (manga != null) _openManga(manga);
+  }
+
+  List<Widget> _trackerPicksViewAllSlivers(
+    BuildContext context,
+    LibraryState library,
+  ) {
+    final picks = _trackerPicks;
+    if (picks == null || picks.items.isEmpty) {
+      return [
+        SliverToBoxAdapter(
+          child: MediaRailViewAllBar(
+            title: 'Picks for you',
+            onBack: _closeTrackerPicksViewAll,
+          ),
+        ),
+        const SliverToBoxAdapter(
+          child: MediaRailEmptyHint(message: 'No picks available right now.'),
+        ),
+      ];
+    }
+
+    final variant = CatalogCardLayout.gridVariant(library.cardVariant);
+    final c = context.colors;
+    return [
+      SliverToBoxAdapter(
+        child: MediaRailViewAllBar(
+          title: 'Picks for you',
+          countLabel:
+              '${picks.items.length} from ${picks.sourceName}'
+              '${picks.hasMore ? ' · scroll for more' : ''}',
+          onBack: _closeTrackerPicksViewAll,
+        ),
+      ),
+      SliverPadding(
+        padding: CatalogCardLayout.paddingFor(variant),
+        sliver: SliverGrid(
+          gridDelegate: CatalogCardLayout.gridDelegate(
+            columns: library.gridColumns,
+            variant: variant,
+          ),
+          delegate: SliverChildBuilderDelegate(
+            (context, i) {
+              final hit = picks.items[i];
+              return StaggeredFadeScale(
+                index: i,
+                child: CatalogCoverCard(
+                  title: hit.title,
+                  subtitle: picks.sourceName,
+                  imageUrl: hit.coverUrl,
+                  variant: variant,
+                  onTap: () => _openTrackerPick(hit),
+                ),
+              );
+            },
+            childCount: picks.items.length,
+          ),
+        ),
+      ),
+      if (_picksLoadingMore || picks.hasMore)
+        SliverToBoxAdapter(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(20, 16, 20, 8),
+            child: Center(
+              child: _picksLoadingMore
+                  ? SizedBox(
+                      width: 22,
+                      height: 22,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: c.accent,
+                      ),
+                    )
+                  : Text(
+                      'Scroll for more picks',
+                      style: TextStyle(
+                        color: c.textTertiary,
+                        fontSize: 12,
+                      ),
+                    ),
+            ),
+          ),
+        ),
+    ];
   }
 
   List<Widget> _idleChromeSlivers(
@@ -994,6 +1195,38 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
                     imageUrl: manga.imageUrl,
                     variant: LibraryCardVariant.grid,
                     onTap: () => _openManga(manga),
+                  ),
+                ),
+              );
+            },
+          ),
+        ),
+      );
+    }
+
+    final trackerPicks = _trackerPicks;
+    if (trackerPicks != null && trackerPicks.items.isNotEmpty) {
+      final preview = trackerPicks.items
+          .take(PersonalizedCatalogPicksService.defaultPageSize)
+          .toList();
+      slivers.add(
+        SliverToBoxAdapter(
+          child: MediaRail(
+            title: 'Picks for you',
+            subtitle: trackerPicks.sourceName,
+            onViewAll: _openTrackerPicksViewAll,
+            itemCount: preview.length,
+            itemBuilder: (context, i) {
+              final hit = preview[i];
+              return MediaRailCover(
+                child: StaggeredFadeScale(
+                  index: i + 1,
+                  child: CatalogCoverCard(
+                    title: hit.title,
+                    subtitle: trackerPicks.sourceName,
+                    imageUrl: hit.coverUrl,
+                    variant: LibraryCardVariant.grid,
+                    onTap: () => _openTrackerPick(hit),
                   ),
                 ),
               );
