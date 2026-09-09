@@ -16,6 +16,7 @@ import '../../widgets/empty_state.dart';
 import '../../widgets/icon_button_round.dart';
 import '../../widgets/one_hand_spacer.dart';
 import '../../widgets/screen_chrome.dart';
+import 'updates_calendar_screen.dart';
 
 /// Kenji-style “Your Updates” feed — unopened library chapters + refresh.
 class UpdatesScreen extends ConsumerWidget {
@@ -90,6 +91,12 @@ class UpdatesScreen extends ConsumerWidget {
                           ),
                         ),
                       ),
+                      IconButtonRound(
+                        icon: Icons.calendar_month_outlined,
+                        tooltip: 'Release calendar',
+                        onPressed: () => UpdatesCalendarScreen.open(context),
+                      ),
+                      const SizedBox(width: 8),
                       Material(
                         color: c.surfaceMuted,
                         borderRadius: BorderRadius.circular(64),

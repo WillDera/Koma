@@ -93,6 +93,8 @@ class SettingsSection extends StatelessWidget {
 /// icon tile tinted with [iconColor], 14px/w500 title, 11px muted subtitle.
 class SettingsRow extends StatelessWidget {
   final IconData? icon;
+  /// Optional custom leading (e.g. brand mark). Takes precedence over [icon].
+  final Widget? leading;
   final String title;
   final String? subtitle;
   final Widget? trailing;
@@ -103,6 +105,7 @@ class SettingsRow extends StatelessWidget {
   const SettingsRow({
     super.key,
     this.icon,
+    this.leading,
     required this.title,
     this.subtitle,
     this.trailing,
@@ -119,20 +122,25 @@ class SettingsRow extends StatelessWidget {
         ? const Color(0xFFC44C4C)
         : (iconColor ?? c.accent);
 
+    final leadingWidget = leading ??
+        (icon == null
+            ? null
+            : Container(
+                width: 36,
+                height: 36,
+                decoration: BoxDecoration(
+                  color: tint.withValues(alpha: 0.13),
+                  borderRadius: AppSpacing.brMd,
+                ),
+                child: Icon(icon, size: 18, color: tint),
+              ));
+
     final row = Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
       child: Row(
         children: [
-          if (icon != null) ...[
-            Container(
-              width: 36,
-              height: 36,
-              decoration: BoxDecoration(
-                color: tint.withValues(alpha: 0.13),
-                borderRadius: AppSpacing.brMd,
-              ),
-              child: Icon(icon, size: 18, color: tint),
-            ),
+          if (leadingWidget != null) ...[
+            leadingWidget,
             const SizedBox(width: 12),
           ],
           Expanded(

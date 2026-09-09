@@ -3,6 +3,8 @@ import 'dart:ui' show FontFeature;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../core/models/manga.dart';
+import '../core/models/reading_stat.dart';
 import '../core/providers.dart';
 import '../theme/app_theme.dart';
 import '../theme/tokens/app_colors.dart';
@@ -36,6 +38,10 @@ class _LibraryStatsPanelState extends ConsumerState<LibraryStatsPanel> {
   int _completed = 0;
   int _totalBooks = 0;
   int _totalManga = 0;
+  int _chaptersRead = 0;
+  int _mangaCompleted = 0;
+  int _totalReadingMinutes = 0;
+  int _monthReadingMinutes = 0;
   List<int> _minutesPerDay = List.filled(7, 0);
   int _streak = 0;
   bool _loading = true;
@@ -52,6 +58,8 @@ class _LibraryStatsPanelState extends ConsumerState<LibraryStatsPanel> {
   Future<void> _load() async {
     final repos = ref.read(repositoriesProvider);
     final statsSvc = ref.read(statsServiceProvider);
+    final now = DateTime.now();
+    final monthStart = DateTime(now.year, now.month, 1);
     final results = await Future.wait([
       repos.books.getGenreCounts(),
       repos.books.getExtensionCounts(),
@@ -59,14 +67,46 @@ class _LibraryStatsPanelState extends ConsumerState<LibraryStatsPanel> {
       repos.books.getBooks(),
       repos.manga.getMangasInLibrary(),
       statsSvc.getWeeklyStreak(),
+      statsSvc.getStats(DateTime(2000, 1, 1), now),
+      statsSvc.getStats(monthStart, now),
     ]);
     if (!mounted) return;
+
+    final mangas = results[4] as List<Manga>;
+    final allStats = results[6] as List<ReadingStat>;
+    final monthStats = results[7] as List<ReadingStat>;
+
+    final mangaGenres = <String, int>{};
+    var chaptersRead = 0;
+    var mangaCompleted = 0;
+    for (final manga in mangas) {
+      for (final g in manga.genres) {
+        final key = g.trim();
+        if (key.isEmpty) continue;
+        mangaGenres[key] = (mangaGenres[key] ?? 0) + 1;
+      }
+      if (manga.status == 2) mangaCompleted++;
+      final chapters = await repos.manga.getMangaChapters(manga.id);
+      chaptersRead += chapters.where((c) => c.isRead).length;
+    }
+
+    final bookGenres = Map<String, int>.from(results[0] as Map<String, int>);
+    for (final e in mangaGenres.entries) {
+      bookGenres[e.key] = (bookGenres[e.key] ?? 0) + e.value;
+    }
+
     setState(() {
-      _genres = results[0] as Map<String, int>;
+      _genres = bookGenres;
       _formats = results[1] as Map<String, int>;
       _completed = results[2] as int;
       _totalBooks = (results[3] as List).length;
-      _totalManga = (results[4] as List).length;
+      _totalManga = mangas.length;
+      _chaptersRead = chaptersRead;
+      _mangaCompleted = mangaCompleted;
+      _totalReadingMinutes =
+          allStats.fold<int>(0, (s, r) => s + r.readingTimeSeconds) ~/ 60;
+      _monthReadingMinutes =
+          monthStats.fold<int>(0, (s, r) => s + r.readingTimeSeconds) ~/ 60;
       final streak =
           results[5] as ({List<int> minutesPerDay, int currentStreak});
       _minutesPerDay = streak.minutesPerDay;
@@ -101,10 +141,16 @@ class _LibraryStatsPanelState extends ConsumerState<LibraryStatsPanel> {
           currentStreak: _streak,
           onTap: _openCalendar,
         ),
+        _StatsReadingTimeRow(
+          totalMinutes: _totalReadingMinutes,
+          monthMinutes: _monthReadingMinutes,
+          chaptersRead: _chaptersRead,
+        ),
         _StatsLibraryBreakdown(
           completed: _completed,
           totalBooks: _totalBooks,
           totalManga: _totalManga,
+          mangaCompleted: _mangaCompleted,
           formats: _formats,
           genres: _genres,
         ),
@@ -122,11 +168,75 @@ class _LibraryStatsPanelState extends ConsumerState<LibraryStatsPanel> {
   }
 }
 
+class _StatsReadingTimeRow extends StatelessWidget {
+  const _StatsReadingTimeRow({
+    required this.totalMinutes,
+    required this.monthMinutes,
+    required this.chaptersRead,
+  });
+
+  final int totalMinutes;
+  final int monthMinutes;
+  final int chaptersRead;
+
+  String _fmt(int minutes) {
+    if (minutes < 60) return '${minutes}m';
+    final h = minutes ~/ 60;
+    final m = minutes % 60;
+    if (m == 0) return '${h}h';
+    return '${h}h ${m}m';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.colors;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+      child: Container(
+        padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
+        decoration: BoxDecoration(
+          color: c.surfaceMuted,
+          borderRadius: AppSpacing.brXl,
+          border: Border.all(color: c.border.withValues(alpha: 0.7), width: 0.5),
+        ),
+        child: Row(
+          children: [
+            Expanded(
+              child: _StatsMetricTile(
+                label: 'All time',
+                value: _fmt(totalMinutes),
+                icon: Icons.hourglass_bottom_rounded,
+              ),
+            ),
+            _StatsMetricDivider(color: c.border),
+            Expanded(
+              child: _StatsMetricTile(
+                label: 'This month',
+                value: _fmt(monthMinutes),
+                icon: Icons.calendar_today_outlined,
+              ),
+            ),
+            _StatsMetricDivider(color: c.border),
+            Expanded(
+              child: _StatsMetricTile(
+                label: 'Chapters',
+                value: '$chaptersRead',
+                icon: Icons.menu_book_outlined,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 class _StatsLibraryBreakdown extends StatelessWidget {
   const _StatsLibraryBreakdown({
     required this.completed,
     required this.totalBooks,
     required this.totalManga,
+    required this.mangaCompleted,
     required this.formats,
     required this.genres,
   });
@@ -134,6 +244,7 @@ class _StatsLibraryBreakdown extends StatelessWidget {
   final int completed;
   final int totalBooks;
   final int totalManga;
+  final int mangaCompleted;
   final Map<String, int> formats;
   final Map<String, int> genres;
 
@@ -156,7 +267,7 @@ class _StatsLibraryBreakdown extends StatelessWidget {
               children: [
                 Expanded(
                   child: _StatsMetricTile(
-                    label: 'Completed',
+                    label: 'Books done',
                     value: '$completed',
                     icon: Icons.check_circle_outline_rounded,
                   ),
@@ -181,6 +292,13 @@ class _StatsLibraryBreakdown extends StatelessWidget {
                 ],
               ],
             ),
+            if (totalManga > 0) ...[
+              const SizedBox(height: 14),
+              Text(
+                'Manga completed: $mangaCompleted of $totalManga',
+                style: TextStyle(color: c.textSecondary, fontSize: 12),
+              ),
+            ],
             const SizedBox(height: 16),
             _StatsBreakdownGroup(
               title: 'Formats',
@@ -191,7 +309,7 @@ class _StatsLibraryBreakdown extends StatelessWidget {
             _StatsBreakdownGroup(
               title: 'Genres',
               items: genres,
-              emptyHint: 'Run metadata enrichment to see genres',
+              emptyHint: 'Add manga or enrich book metadata for genres',
             ),
           ],
         ),

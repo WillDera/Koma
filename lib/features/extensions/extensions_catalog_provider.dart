@@ -130,11 +130,11 @@ class ExtensionsCatalogNotifier extends Notifier<ExtensionsCatalogState> {
   }
 
   /// Soft refresh installed list without wiping available indexes.
+  ///
+  /// Does not run [ExtensionManager.reconcileTrust] — Trust on one sideload
+  /// must not mass-activate every inactive APK that matches a repo signing key.
   Future<void> refreshInstalled() async {
     try {
-      try {
-        await _mgr.reconcileTrust();
-      } catch (_) {}
       final repos = await _mgr.listRepos();
       final installed = await _mgr.listInstalled();
       final pkgs = installedPkgsOf(installed);

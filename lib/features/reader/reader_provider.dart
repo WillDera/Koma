@@ -6,6 +6,7 @@ import '../../core/models/book.dart';
 import '../../core/models/chapter.dart';
 import '../../core/providers.dart';
 import '../../core/services/koma_package_store.dart';
+import '../../core/services/security_prefs.dart';
 import '../../features/reader/html/kir_model.dart';
 import '../../features/reader/scene/scene_chrome.dart';
 
@@ -253,6 +254,7 @@ class ReaderNotifier extends Notifier<ReaderState> {
   Future<void> _updateBookProgress() async {
     final book = state.book;
     if (book == null || state.chapters.isEmpty) return;
+    if (ref.read(incognitoProvider)) return;
     final progress = (state.currentIndex + 1) / state.chapters.length;
     final updatedBook = book.copyWith(
       progress: progress,

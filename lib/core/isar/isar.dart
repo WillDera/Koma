@@ -23,6 +23,8 @@ import 'collections/snippet_collection.dart';
 import 'collections/source.dart';
 import 'collections/source_pref_value.dart';
 import 'collections/tag.dart';
+import 'collections/track.dart';
+import 'collections/track_preference.dart';
 import 'collections/web_cache.dart';
 
 export 'collections/book.dart';
@@ -45,6 +47,8 @@ export 'collections/snippet_collection.dart';
 export 'collections/source.dart';
 export 'collections/source_pref_value.dart';
 export 'collections/tag.dart';
+export 'collections/track.dart';
+export 'collections/track_preference.dart';
 export 'collections/web_cache.dart';
 
 /// Schema list passed to [Isar.open]. Order is significant for Isar's
@@ -73,6 +77,8 @@ const List<CollectionSchema<dynamic>> komaIsarSchemas = [
   LibraryGroupSchema,
   LibraryGroupMemberSchema,
   SourcePrefValueSchema,
+  TrackSchema,
+  TrackPreferenceSchema,
 ];
 
 /// Open (or create) the Koma Isar instance in the app documents dir.

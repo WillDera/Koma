@@ -7,6 +7,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:share_plus/share_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../core/app_version.dart';
@@ -33,9 +34,13 @@ import '../../core/services/annas_archive_prefs.dart';
 import '../../core/services/metadata_enrichment_service.dart';
 import '../../core/services/user_profile.dart';
 import '../../router/router.dart';
+import '../reader/reader_settings_provider.dart';
+import '../reader/reader_settings_sheet.dart' show ReadingMode;
 import '../snippets/snippets_screen.dart';
 import 'custom_font_ui.dart';
 import 'open_source_licenses_sheet.dart';
+import 'security_settings_page.dart';
+import 'tracking_settings_page.dart';
 import '../../theme/app_theme.dart';
 import '../../theme/theme_provider.dart';
 import '../../theme/tokens/app_colors.dart';
@@ -219,6 +224,17 @@ class _SettingsHub extends StatelessWidget {
         row(
           5,
           SettingsRow(
+            icon: Icons.shield_outlined,
+            iconColor: AppColors.figmaViolet,
+            title: 'Security',
+            subtitle: 'Incognito, app lock, secure screen',
+            onTap: () =>
+                _open(context, 'Security', const SecuritySettingsPage()),
+          ),
+        ),
+        row(
+          6,
+          SettingsRow(
             icon: Icons.layers_outlined,
             iconColor: AppColors.figmaCyan,
             title: 'Sources',
@@ -228,7 +244,18 @@ class _SettingsHub extends StatelessWidget {
           ),
         ),
         row(
-          6,
+          7,
+          SettingsRow(
+            icon: Icons.track_changes_rounded,
+            iconColor: AppColors.figmaGreen,
+            title: 'Tracking',
+            subtitle: 'MAL, AniList, MangaUpdates',
+            onTap: () =>
+                _open(context, 'Tracking', const TrackingSettingsPage()),
+          ),
+        ),
+        row(
+          8,
           SettingsRow(
             icon: Icons.info_outline_rounded,
             iconColor: const Color(0xFF8888A0),
@@ -1199,6 +1226,15 @@ class _TypographySection extends ConsumerWidget {
           padding: _pad,
           children: [
             SettingsRow(
+              icon: Icons.auto_stories_outlined,
+              iconColor: green,
+              title: 'Default manga reading mode',
+              subtitle:
+                  '${_mangaReadingModeLabel(ref.watch(readerSettingsProvider).readingMode)} · unread titles',
+              trailing: const Icon(Icons.chevron_right, size: 18),
+              onTap: () => _showMangaReadingModePicker(context, ref),
+            ),
+            SettingsRow(
               icon: Icons.bolt,
               iconColor: green,
               title: 'Bionic reading',
@@ -1220,6 +1256,79 @@ class _TypographySection extends ConsumerWidget {
           ],
         ),
       ],
+    );
+  }
+
+  String _mangaReadingModeLabel(ReadingMode mode) => switch (mode) {
+        ReadingMode.defaultL2R => 'Left to right',
+        ReadingMode.rightToLeft => 'Right to left',
+        ReadingMode.webtoon => 'Webtoon',
+        ReadingMode.longStrip => 'Long strip',
+        ReadingMode.longStripWithGaps => 'Strip + gaps',
+      };
+
+  void _showMangaReadingModePicker(BuildContext context, WidgetRef ref) {
+    final current = ref.read(readerSettingsProvider).readingMode;
+    final c = context.colors;
+    final options = const [
+      (ReadingMode.defaultL2R, 'Left to right', Icons.swipe_right_outlined),
+      (ReadingMode.rightToLeft, 'Right to left', Icons.swipe_left_outlined),
+      (ReadingMode.webtoon, 'Webtoon', Icons.view_day_outlined),
+      (ReadingMode.longStrip, 'Long strip', Icons.view_agenda_outlined),
+      (
+        ReadingMode.longStripWithGaps,
+        'Strip + gaps',
+        Icons.view_stream_outlined,
+      ),
+    ];
+    StashSheet.show<void>(
+      context,
+      title: 'Default manga reading mode',
+      subtitle: 'Used when a series has no per-title override.',
+      initialChildSize: 0.55,
+      maxChildSize: 0.75,
+      child: ListView(
+        padding: const EdgeInsets.fromLTRB(20, 8, 20, 32),
+        children: [
+          for (final o in options) ...[
+            AnimatedPress(
+              onTap: () {
+                ref.read(readerSettingsProvider.notifier).setReadingMode(o.$1);
+                Navigator.pop(context);
+              },
+              child: Container(
+                margin: const EdgeInsets.only(bottom: 8),
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: current == o.$1 ? c.accentMuted : c.surface,
+                  borderRadius: AppSpacing.brLg,
+                  border: Border.all(
+                    color: current == o.$1 ? c.accent : c.border,
+                    width: current == o.$1 ? 1.2 : 0.5,
+                  ),
+                ),
+                child: Row(
+                  children: [
+                    Icon(o.$3, color: c.textPrimary),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Text(
+                        o.$2,
+                        style: TextStyle(
+                          color: c.textPrimary,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                    if (current == o.$1)
+                      Icon(Icons.check_rounded, color: c.accent),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ],
+      ),
     );
   }
 
@@ -2237,6 +2346,7 @@ class _DataSection extends ConsumerStatefulWidget {
 class _DataSectionState extends ConsumerState<_DataSection> {
   bool _importing = false;
   bool _exporting = false;
+  bool _exportingList = false;
 
   @override
   Widget build(BuildContext context) {
@@ -2268,6 +2378,24 @@ class _DataSectionState extends ConsumerState<_DataSection> {
           onTap: _exporting ? null : _export,
         ),
         SettingsRow(
+          icon: Icons.list_alt_outlined,
+          iconColor: amber,
+          title: 'Export manga list',
+          subtitle: 'CSV of titles, progress, genres, and sources',
+          trailing: _exportingList
+              ? const SizedBox(
+                  width: 18,
+                  height: 18,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              : _TintedActionChip(
+                  label: 'CSV',
+                  icon: Icons.ios_share_outlined,
+                  color: amber,
+                ),
+          onTap: _exportingList ? null : _exportMangaList,
+        ),
+        SettingsRow(
           icon: Icons.file_download_outlined,
           iconColor: violet,
           title: 'Import',
@@ -2287,6 +2415,48 @@ class _DataSectionState extends ConsumerState<_DataSection> {
         ),
       ],
     );
+  }
+
+  Future<void> _exportMangaList() async {
+    setState(() => _exportingList = true);
+    try {
+      final repos = ref.read(repositoriesProvider);
+      final svc = ExportService(repos);
+      final csv = await svc.exportMangaListCsv();
+      final stamp = DateTime.now()
+          .toIso8601String()
+          .replaceAll(':', '-')
+          .split('.')
+          .first;
+      final fileName = 'koma_manga_list_$stamp.csv';
+      final dir = Directory('${(await AppStorage.documents()).path}/exports');
+      if (!await dir.exists()) await dir.create(recursive: true);
+      final file = File('${dir.path}/$fileName');
+      await file.writeAsString(csv);
+      await SharePlus.instance.share(
+        ShareParams(
+          files: [XFile(file.path, mimeType: 'text/csv')],
+          subject: 'Koma manga list',
+        ),
+      );
+      if (mounted) {
+        StashToast.show(
+          context,
+          message: 'Manga list ready to share',
+          icon: Icons.check,
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        StashToast.show(
+          context,
+          message: 'List export failed: $e',
+          icon: Icons.error_outline,
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _exportingList = false);
+    }
   }
 
   Future<void> _export() async {

@@ -843,9 +843,10 @@ class _InstalledTab extends StatelessWidget {
       byApk.putIfAbsent(key, () => s);
     }
     final unique = byApk.values.toList();
-    final untrusted = unique
-        .where((s) => s.isUntrusted || (!s.isActive && s.apkPath.isNotEmpty))
-        .toList();
+    // Only true Untrusted (inactive + signing metadata). Do not list every
+    // inactive APK — repo-signed inactives would all activate on the next
+    // reconcileTrust after trusting a single sideload.
+    final untrusted = unique.where((s) => s.isUntrusted).toList();
     final active = unique.where((s) => s.isActive).toList();
     final updates = active.where((s) => s.isUpdateAvailable).toList();
 

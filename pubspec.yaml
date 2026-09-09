@@ -1,7 +1,7 @@
 name: koma
 description: "A hybrid reader + knowledge snippet manager."
 publish_to: 'none'
-version: 2.49.0+386
+version: 2.50.0+387
 
 environment:
   sdk: ^3.12.2
@@ -88,6 +88,9 @@ dependencies:
   share_plus: ^12.0.2
   real_page_flip: ^2.2.9
   koni_archive: ^0.9.0
+  local_auth: ^2.3.0
+  flutter_web_auth_2: ^4.1.0
+  flutter_svg: ^2.2.0
 dev_dependencies:
   flutter_test:
     sdk: flutter
@@ -112,6 +115,7 @@ flutter:
   uses-material-design: true
   assets:
     - app_icons/
+    - assets/trackers/
 
 # Adaptive icons need a separate FG/BG. Using a pre-rounded PNG alone makes
 # Android pad a small square onto a white circle on many launchers.

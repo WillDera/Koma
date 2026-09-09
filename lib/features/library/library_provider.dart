@@ -214,7 +214,7 @@ class LibraryNotifier extends Notifier<LibraryState> {
     await repos.groups.removeItemEverywhere(kind: 'book', itemId: id);
     await repos.books.deleteBook(id);
     final ids = Set<String>.from(state.selectedIds)..remove('b:$id');
-    state = state.copyWith(selectedIds: ids);
+    state = state.copyWith(selectedIds: ids, selectionMode: ids.isNotEmpty);
     await loadBooks();
     ref.read(historyRevisionProvider.notifier).bump();
   }
@@ -253,7 +253,7 @@ class LibraryNotifier extends Notifier<LibraryState> {
     await repos.manga.deleteMangaChapters(id);
     await repos.manga.deleteManga(id);
     final ids = Set<String>.from(state.selectedIds)..remove('m:$id');
-    state = state.copyWith(selectedIds: ids);
+    state = state.copyWith(selectedIds: ids, selectionMode: ids.isNotEmpty);
     await loadBooks();
     ref.read(historyRevisionProvider.notifier).bump();
   }
