@@ -12,30 +12,38 @@ abstract final class CatalogCardLayout {
 
   static EdgeInsetsGeometry paddingFor(LibraryCardVariant variant) {
     final v = gridVariant(variant);
-    final tight =
-        v == LibraryCardVariant.compact || v == LibraryCardVariant.overlay;
-    // Kenji Library: 24px horizontal inset; compact/overlay stay tighter.
+    final tight = v == LibraryCardVariant.compact ||
+        v == LibraryCardVariant.overlay ||
+        v == LibraryCardVariant.coverOnly;
     return EdgeInsets.symmetric(horizontal: tight ? 12 : 24);
   }
 
   static double mainAxisSpacing(LibraryCardVariant variant) {
     final v = gridVariant(variant);
-    if (v == LibraryCardVariant.overlay) return 8;
+    if (v == LibraryCardVariant.overlay ||
+        v == LibraryCardVariant.coverOnly) {
+      return 8;
+    }
     if (v == LibraryCardVariant.compact) return 10;
-    // Kenji collection rows: 16.
     return 16;
   }
 
   static double crossAxisSpacing(LibraryCardVariant variant) {
     final v = gridVariant(variant);
-    if (v == LibraryCardVariant.overlay) return 8;
+    if (v == LibraryCardVariant.overlay ||
+        v == LibraryCardVariant.coverOnly) {
+      return 8;
+    }
     if (v == LibraryCardVariant.compact) return 10;
     return 14;
   }
 
   static double childAspectRatio(LibraryCardVariant variant) {
     final v = gridVariant(variant);
-    if (v == LibraryCardVariant.overlay) return AppSpacing.coverAspectRatio;
+    if (v == LibraryCardVariant.overlay ||
+        v == LibraryCardVariant.coverOnly) {
+      return AppSpacing.coverAspectRatio;
+    }
     if (v == LibraryCardVariant.compact) return 0.70;
     // Kenji cover ~123×178 + title line ≈ 0.60.
     return 0.60;

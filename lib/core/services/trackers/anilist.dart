@@ -163,6 +163,74 @@ class AnilistTracker extends BaseTracker {
     return body;
   }
 
+  Future<TrackerRecPage> recommendations({
+    int limit = 24,
+    int page = 1,
+  }) async {
+    final token = await _accessToken();
+    if (token == null) {
+      return const TrackerRecPage(items: [], reachedEnd: true);
+    }
+    final body = await _gql(
+      token,
+      r'''
+        query ($page: Int, $perPage: Int) {
+          Page(page: $page, perPage: $perPage) {
+            pageInfo { hasNextPage }
+            recommendations(sort: RATING_DESC, onList: false) {
+              mediaRecommendation {
+                id
+                type
+                title { userPreferred romaji english }
+                coverImage { large medium }
+                siteUrl
+                chapters
+              }
+            }
+          }
+        }
+      ''',
+      variables: {'page': page, 'perPage': limit},
+    );
+    final pageData = body['data']?['Page'] as Map<String, dynamic>?;
+    final pageInfo = pageData?['pageInfo'] as Map<String, dynamic>?;
+    final hasNext = pageInfo?['hasNextPage'] as bool? ?? false;
+    final rows = pageData?['recommendations'] as List<dynamic>? ?? const [];
+    final out = <TrackSearchResult>[];
+    final seen = <int>{};
+    for (final row in rows) {
+      if (row is! Map<String, dynamic>) continue;
+      final media = row['mediaRecommendation'] as Map<String, dynamic>?;
+      if (media == null) continue;
+      if ((media['type'] as String?) != 'MANGA') continue;
+      final id = (media['id'] as num?)?.toInt() ?? 0;
+      if (id == 0 || !seen.add(id)) continue;
+      final titleMap = media['title'] as Map<String, dynamic>? ?? const {};
+      final title = (titleMap['userPreferred'] as String?)?.trim().isNotEmpty ==
+              true
+          ? titleMap['userPreferred'] as String
+          : (titleMap['english'] as String?)?.trim().isNotEmpty == true
+          ? titleMap['english'] as String
+          : (titleMap['romaji'] as String? ?? '');
+      if (title.isEmpty) continue;
+      final cover = media['coverImage'] as Map<String, dynamic>?;
+      out.add(
+        TrackSearchResult(
+          mediaId: id,
+          title: title,
+          coverUrl: cover?['large'] as String? ?? cover?['medium'] as String?,
+          totalChapters: (media['chapters'] as num?)?.toInt(),
+          trackingUrl: media['siteUrl'] as String?,
+        ),
+      );
+    }
+    return TrackerRecPage(
+      items: out,
+      // Empty raw page or no further pages — not “zero manga on this page”.
+      reachedEnd: rows.isEmpty || !hasNext,
+    );
+  }
+
   @override
   Future<List<TrackSearchResult>> search(String query) async {
     final token = await _accessToken();

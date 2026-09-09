@@ -39,6 +39,8 @@ class LibraryState {
     this.gridColumns = 2,
     this.cardVariant = LibraryCardVariant.grid,
     this.showSourcePills = true,
+    this.showUnreadBadge = true,
+    this.showContinueButton = false,
     this.extensionNames = const {},
     this.newChapters = const {},
   });
@@ -55,6 +57,8 @@ class LibraryState {
   final int gridColumns;
   final LibraryCardVariant cardVariant;
   final bool showSourcePills;
+  final bool showUnreadBadge;
+  final bool showContinueButton;
   final Map<String, String> extensionNames;
 
   /// mangaId → count of unopened (new) chapters. Populated by loadBooks.
@@ -81,6 +85,8 @@ class LibraryState {
     int? gridColumns,
     LibraryCardVariant? cardVariant,
     bool? showSourcePills,
+    bool? showUnreadBadge,
+    bool? showContinueButton,
     Map<String, String>? extensionNames,
     Map<int, int>? newChapters,
   }) {
@@ -97,6 +103,8 @@ class LibraryState {
       gridColumns: gridColumns ?? this.gridColumns,
       cardVariant: cardVariant ?? this.cardVariant,
       showSourcePills: showSourcePills ?? this.showSourcePills,
+      showUnreadBadge: showUnreadBadge ?? this.showUnreadBadge,
+      showContinueButton: showContinueButton ?? this.showContinueButton,
       extensionNames: extensionNames ?? this.extensionNames,
       newChapters: newChapters ?? this.newChapters,
     );
@@ -106,6 +114,8 @@ class LibraryState {
 class LibraryNotifier extends Notifier<LibraryState> {
   static const _keyIsGridView = 'library_is_grid_view';
   static const _keyShowSourcePills = 'library_show_source_pills';
+  static const _keyShowUnreadBadge = 'library_show_unread_badge';
+  static const _keyShowContinueButton = 'library_show_continue_button';
   static const _keyGridColumns = 'library_grid_columns';
   static const _keyCardVariant = 'library_card_variant';
 
@@ -131,7 +141,9 @@ class LibraryNotifier extends Notifier<LibraryState> {
     state = state.copyWith(
       isGridView: isGrid,
       showSourcePills: prefs.getBool(_keyShowSourcePills) ?? true,
-      gridColumns: prefs.getInt(_keyGridColumns) ?? 2,
+      showUnreadBadge: prefs.getBool(_keyShowUnreadBadge) ?? true,
+      showContinueButton: prefs.getBool(_keyShowContinueButton) ?? false,
+      gridColumns: (prefs.getInt(_keyGridColumns) ?? 2).clamp(2, 5),
       cardVariant: variant,
     );
     // Prefetch so Library isn't empty on first paint after splash.
@@ -152,8 +164,22 @@ class LibraryNotifier extends Notifier<LibraryState> {
     );
   }
 
+  void setShowUnreadBadge(bool value) {
+    state = state.copyWith(showUnreadBadge: value);
+    SharedPreferences.getInstance().then(
+      (prefs) => prefs.setBool(_keyShowUnreadBadge, value),
+    );
+  }
+
+  void setShowContinueButton(bool value) {
+    state = state.copyWith(showContinueButton: value);
+    SharedPreferences.getInstance().then(
+      (prefs) => prefs.setBool(_keyShowContinueButton, value),
+    );
+  }
+
   void setGridColumns(int value) {
-    final clamped = value.clamp(2, 3);
+    final clamped = value.clamp(2, 5);
     state = state.copyWith(gridColumns: clamped);
     SharedPreferences.getInstance().then(
       (prefs) => prefs.setInt(_keyGridColumns, clamped),

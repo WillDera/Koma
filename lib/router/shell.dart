@@ -15,6 +15,22 @@ import '../widgets/glass_pill_nav.dart';
 import '../widgets/nav_drawer.dart';
 import '../widgets/stats_popup.dart';
 
+/// When true, Explore is consuming system back for in-tab history (view-all /
+/// search). [MainShell] must not also jump to Library — nested [PopScope]s with
+/// `canPop: false` all receive the same pop attempt.
+class ShellBackInterceptor extends Notifier<bool> {
+  @override
+  bool build() => false;
+
+  void set(bool value) {
+    if (state == value) return;
+    state = value;
+  }
+}
+
+final shellBackInterceptorProvider =
+    NotifierProvider<ShellBackInterceptor, bool>(ShellBackInterceptor.new);
+
 /// The bottom-nav shell. Wraps go_router's [StatefulNavigationShell]
 /// (an IndexedStack of the five tab branches, each with its own Navigator
 /// and preserved state) and renders the [AppBottomNav] under it.
@@ -81,12 +97,17 @@ class MainShell extends ConsumerWidget {
         );
     final onLibrary = navigationShell.currentIndex == 0;
     final incognito = ref.watch(incognitoProvider);
+    final tabConsumesBack = ref.watch(shellBackInterceptorProvider);
     final c = context.colors;
     return AppUpdateGate(
       child: PopScope(
         canPop: onLibrary,
         onPopInvokedWithResult: (didPop, _) {
           if (didPop) return;
+          // Explore (and similar) may consume back for in-tab history. Only
+          // honor that while that branch is actually showing — IndexedStack
+          // keeps other tabs alive with a stale interceptor flag.
+          if (navigationShell.currentIndex == 3 && tabConsumesBack) return;
           if (navigationShell.currentIndex != 0) {
             navigationShell.goBranch(0);
           }
