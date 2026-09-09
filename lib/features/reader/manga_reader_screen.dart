@@ -674,12 +674,10 @@ class _MangaReaderScreenState extends ConsumerState<MangaReaderScreen>
       if (!mounted) return;
       if (_isContinuousMode) {
         if (_itemScrollCtrl.isAttached) {
-          if (animate) {
+          if (animate && _settings.animatePageTransition) {
             _itemScrollCtrl.scrollTo(
               index: clamped,
-              duration: Duration(
-                milliseconds: _settings.animatePageTransition ? 250 : 0,
-              ),
+              duration: const Duration(milliseconds: 250),
               curve: Curves.easeOut,
             );
           } else {
@@ -785,7 +783,9 @@ class _MangaReaderScreenState extends ConsumerState<MangaReaderScreen>
 
   void _onPageChanged(int flatIndex) {
     if (flatIndex >= _pages.length) return;
-    HapticFeedback.selectionClick();
+    if (_settings.hapticFeedback) {
+      HapticFeedback.selectionClick();
+    }
     _currentPageNotifier.value = flatIndex;
 
     final page = _pages[flatIndex];
@@ -815,27 +815,34 @@ class _MangaReaderScreenState extends ConsumerState<MangaReaderScreen>
 
   void _goToPage(int flatIndex) {
     if (_pages.isEmpty) return;
-    HapticFeedback.lightImpact();
+    if (_settings.hapticFeedback) {
+      HapticFeedback.lightImpact();
+    }
     final clamped = flatIndex.clamp(0, _pages.length - 1);
+    final animate = _settings.animatePageTransition;
     if (_isContinuousMode) {
       if (_itemScrollCtrl.isAttached) {
-        _itemScrollCtrl.scrollTo(
-          index: clamped,
-          duration: Duration(
-            milliseconds: _settings.animatePageTransition ? 250 : 0,
-          ),
-          curve: Curves.easeOut,
-        );
+        if (animate) {
+          _itemScrollCtrl.scrollTo(
+            index: clamped,
+            duration: const Duration(milliseconds: 250),
+            curve: Curves.easeOut,
+          );
+        } else {
+          _itemScrollCtrl.jumpTo(index: clamped);
+        }
       }
     } else if (_pageCtrl.hasClients) {
       final pageIndex = _isBookModeActive ? clamped ~/ 2 : clamped;
-      _pageCtrl.animateToPage(
-        pageIndex,
-        duration: Duration(
-          milliseconds: _settings.animatePageTransition ? 250 : 0,
-        ),
-        curve: Curves.easeOut,
-      );
+      if (animate) {
+        _pageCtrl.animateToPage(
+          pageIndex,
+          duration: const Duration(milliseconds: 250),
+          curve: Curves.easeOut,
+        );
+      } else {
+        _pageCtrl.jumpToPage(pageIndex);
+      }
     }
     _schedulePageSave(clamped);
   }

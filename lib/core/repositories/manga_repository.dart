@@ -42,6 +42,26 @@ class MangaRepository {
     return row == null ? null : await _toModelWithExtras(row);
   }
 
+  /// Case-insensitive title match (for backup dedupe — avoids twin library titles).
+  Future<Manga?> findMangaByNameIgnoreCase(String name) async {
+    final needle = name.trim().toLowerCase();
+    if (needle.isEmpty) return null;
+    // Prefer an in-library row when several share the same title.
+    final library = await _isar.mangas.filter().inLibraryEqualTo(true).findAll();
+    for (final row in library) {
+      if (row.name.trim().toLowerCase() == needle) {
+        return await _toModelWithExtras(row);
+      }
+    }
+    final all = await _isar.mangas.where().findAll();
+    for (final row in all) {
+      if (row.name.trim().toLowerCase() == needle) {
+        return await _toModelWithExtras(row);
+      }
+    }
+    return null;
+  }
+
   Future<Manga?> getMangaById(int id) async {
     final row = await _isar.mangas.get(id);
     return row == null ? null : await _toModelWithExtras(row);

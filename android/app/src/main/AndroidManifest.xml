@@ -66,6 +66,9 @@
                 <data android:mimeType="application/vnd.comicbook-rar" />
                 <data android:mimeType="application/zip" />
                 <data android:mimeType="application/x-protobuf" />
+                <data android:mimeType="application/gzip" />
+                <data android:mimeType="application/x-gzip" />
+                <data android:mimeType="application/octet-stream" />
                 <data android:mimeType="application/json" />
             </intent-filter>
             <intent-filter>
@@ -82,7 +85,10 @@
                 <data android:scheme="content" android:host="*" android:mimeType="*/*" android:pathPattern=".*\\.json" />
                 <data android:scheme="content" android:host="*" android:mimeType="*/*" android:pathPattern=".*index\\.json" />
                 <data android:scheme="content" android:host="*" android:mimeType="*/*" android:pathPattern=".*\\.tachibk" />
+                <data android:scheme="content" android:host="*" android:mimeType="*/*" android:pathPattern=".*\\.tachibak" />
                 <data android:scheme="content" android:host="*" android:mimeType="*/*" android:pathPattern=".*\\.backup" />
+                <data android:scheme="content" android:host="*" android:mimeType="*/*" android:pathPattern=".*\\..*\\.tachibk" />
+                <data android:scheme="content" android:host="*" android:mimeType="*/*" android:pathPattern=".*\\..*\\.tachibak" />
                 <data android:scheme="file" android:host="*" android:pathPattern=".*\\.epub" />
                 <data android:scheme="file" android:host="*" android:pathPattern=".*\\.pdf" />
                 <data android:scheme="file" android:host="*" android:pathPattern=".*\\.txt" />
@@ -92,7 +98,10 @@
                 <data android:scheme="file" android:host="*" android:pathPattern=".*\\.pb" />
                 <data android:scheme="file" android:host="*" android:pathPattern=".*\\.json" />
                 <data android:scheme="file" android:host="*" android:pathPattern=".*\\.tachibk" />
+                <data android:scheme="file" android:host="*" android:pathPattern=".*\\.tachibak" />
                 <data android:scheme="file" android:host="*" android:pathPattern=".*\\.backup" />
+                <data android:scheme="file" android:host="*" android:pathPattern=".*\\..*\\.tachibk" />
+                <data android:scheme="file" android:host="*" android:pathPattern=".*\\..*\\.tachibak" />
             </intent-filter>
             <intent-filter>
                 <action android:name="android.intent.action.SEND" />

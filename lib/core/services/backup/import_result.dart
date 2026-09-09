@@ -11,6 +11,7 @@ class ImportResult {
   final int categoriesImported;
   final int reposImported;
   final int cookiesImported;
+  final int extensionsInstalled;
   final List<String> missingSources;
   final int skippedAnime;
   final int skippedNovels;
@@ -29,6 +30,7 @@ class ImportResult {
     this.categoriesImported = 0,
     this.reposImported = 0,
     this.cookiesImported = 0,
+    this.extensionsInstalled = 0,
     this.missingSources = const [],
     this.skippedAnime = 0,
     this.skippedNovels = 0,
@@ -89,6 +91,11 @@ class ImportResult {
     if (reposImported > 0) {
       parts.add(
         '$reposImported repo${reposImported == 1 ? '' : 's'}',
+      );
+    }
+    if (extensionsInstalled > 0) {
+      parts.add(
+        '$extensionsInstalled extension${extensionsInstalled == 1 ? '' : 's'} installed',
       );
     }
     var text = parts.isEmpty ? 'Nothing to import' : 'Imported: ${parts.join(', ')}';

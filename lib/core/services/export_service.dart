@@ -17,13 +17,21 @@ import 'backup/backup_importer.dart';
 import 'backup/import_result.dart';
 import 'backup/mangayomi_backup_decoder.dart';
 import 'backup/mihon_backup_decoder.dart';
+import 'extension_manager.dart';
 
 export 'backup/import_result.dart';
 
 class ExportService {
   final Repositories _repos;
+  final ExtensionManager? _extensionManager;
 
-  ExportService(this._repos);
+  ExportService(this._repos, {ExtensionManager? extensionManager})
+      : _extensionManager = extensionManager;
+
+  BackupImporter get _foreignImporter => BackupImporter(
+        _repos,
+        extensionManager: _extensionManager,
+      );
 
   Future<String> exportToJson() async {
     final books = await _repos.books.getBooks();
@@ -84,10 +92,10 @@ class ExportService {
     switch (sniff.kind) {
       case BackupKind.mihon:
         final foreign = decodeMihonBackup(bytes);
-        return BackupImporter(_repos).importForeign(foreign);
+        return _foreignImporter.importForeign(foreign);
       case BackupKind.mangayomi:
         final foreign = decodeMangayomiBackup(bytes);
-        return BackupImporter(_repos).importForeign(foreign);
+        return _foreignImporter.importForeign(foreign);
       case BackupKind.komaJson:
         return importFromJson(utf8.decode(bytes));
       case BackupKind.unknown:
@@ -97,7 +105,7 @@ class ExportService {
         } catch (_) {
           try {
             final foreign = decodeMihonBackup(bytes);
-            return BackupImporter(_repos).importForeign(foreign);
+            return _foreignImporter.importForeign(foreign);
           } catch (e) {
             throw FormatException(
               'Unrecognized backup. Use a Koma .json, Mihon .tachibk, '
@@ -297,24 +305,36 @@ class ExportService {
         categoriesImported++;
       }
 
+      final seenTitles = <String, int>{};
       for (final raw in mangaJson) {
         final manga = Manga.fromJson(raw as Map<String, dynamic>);
         final catIds = [
           for (final id in manga.categoryIds)
             if (oldCatToNew[id] != null) oldCatToNew[id]!,
         ];
-        final existing = await _repos.manga.getMangaByKey(
+        var existing = await _repos.manga.getMangaByKey(
           manga.sourceId,
           manga.url,
         );
+        existing ??= await _repos.manga.findMangaByNameIgnoreCase(manga.name);
+        final titleKey = manga.name.trim().toLowerCase();
+        if (existing == null &&
+            titleKey.isNotEmpty &&
+            seenTitles.containsKey(titleKey)) {
+          existing = await _repos.manga.getMangaById(seenTitles[titleKey]!);
+        }
         if (existing == null) {
           final newId = await _repos.manga.insertManga(
             manga.copyWith(id: 0, categoryIds: catIds),
           );
           oldToNewMangaId[manga.id] = newId;
+          if (titleKey.isNotEmpty) seenTitles[titleKey] = newId;
           mangaImported++;
         } else {
           oldToNewMangaId[manga.id] = existing.id;
+          if (titleKey.isNotEmpty) {
+            seenTitles.putIfAbsent(titleKey, () => existing!.id);
+          }
           await _repos.manga.updateManga(
             existing.copyWith(
               inLibrary: existing.inLibrary || manga.inLibrary,

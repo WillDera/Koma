@@ -65,9 +65,14 @@ class FileOpenIntentListener {
         await _importCbz(container, path);
         return;
       }
-      if (lower.endsWith('.tachibk') || lower.endsWith('.backup')) {
+      if (lower.endsWith('.tachibk') ||
+          lower.endsWith('.tachibak') ||
+          lower.endsWith('.backup')) {
         final repos = container.read(repositoriesProvider);
-        await ExportService(repos).importBytes(
+        await ExportService(
+          repos,
+          extensionManager: container.read(extensionManagerProvider),
+        ).importBytes(
           await file.readAsBytes(),
           filename: p.basename(path),
         );
@@ -85,7 +90,10 @@ class FileOpenIntentListener {
             head.contains('"manga"') ||
             head.contains('exported_at')) {
           final repos = container.read(repositoriesProvider);
-          await ExportService(repos).importBytes(
+          await ExportService(
+            repos,
+            extensionManager: container.read(extensionManagerProvider),
+          ).importBytes(
             bytes,
             filename: p.basename(path),
           );

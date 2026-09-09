@@ -4,15 +4,46 @@ import '../../models/extension_source.dart';
 import '../../models/library_category.dart';
 import '../../models/manga_chapter.dart';
 import '../../repositories/repositories.dart';
+import '../extension_manager.dart';
 import 'foreign_backup.dart';
 import 'import_result.dart';
 
 class BackupImporter {
-  BackupImporter(this._repos);
+  BackupImporter(this._repos, {ExtensionManager? extensionManager})
+      : _extensionManager = extensionManager;
   final Repositories _repos;
+  final ExtensionManager? _extensionManager;
 
   Future<ImportResult> importForeign(ForeignLibraryBackup backup) async {
-    final installed = await _repos.extensions.getInstalledExtensions();
+    // Repos first so indexes are available for extension auto-install.
+    var reposImported = 0;
+    for (final repo in backup.repos) {
+      if (repo.url.isEmpty) continue;
+      await _repos.extensions.insertExtensionRepo(repo);
+      reposImported++;
+    }
+
+    for (final ext in backup.jsExtensions) {
+      final have = await _repos.extensions.getBySourceId(ext.sourceId);
+      if (have == null) {
+        final byName = await _installedByName(ext.name);
+        if (byName == null) {
+          await _repos.extensions.insertExtensionSource(ext);
+        }
+      }
+    }
+
+    final neededNames = <String>{
+      for (final label in backup.sourceLabels)
+        if (label.trim().isNotEmpty) label.trim(),
+      for (final entry in backup.manga)
+        if (entry.sourceName != null && entry.sourceName!.trim().isNotEmpty)
+          entry.sourceName!.trim(),
+    };
+    final extensionsInstalled =
+        await _installMissingExtensionsByName(neededNames);
+
+    var installed = await _repos.extensions.getInstalledExtensions();
 
     final oldCatIdToNew = <int, int>{};
     final orderToNew = <int, int>{};
@@ -20,7 +51,12 @@ class BackupImporter {
     for (final cat in backup.categories) {
       if (cat.name.trim().isEmpty) continue;
       final newId = await _repos.categories.upsertByName(
-        LibraryCategory(id: 0, name: cat.name, order: cat.order, flags: cat.flags),
+        LibraryCategory(
+          id: 0,
+          name: cat.name,
+          order: cat.order,
+          flags: cat.flags,
+        ),
       );
       if (cat.id != 0) oldCatIdToNew[cat.id] = newId;
       orderToNew[cat.order] = newId;
@@ -32,8 +68,12 @@ class BackupImporter {
     var chaptersImported = 0;
     final missing = <String>{};
     final seenMissingNames = <String>{};
+    // Track titles imported in this pass so duplicates inside one backup
+    // also collapse onto the first row.
+    final seenTitles = <String, int>{};
 
     for (final entry in backup.manga) {
+      installed = await _repos.extensions.getInstalledExtensions();
       final resolved = _resolveSourceId(
         installed,
         entry.backupSourceId,
@@ -62,6 +102,14 @@ class BackupImporter {
         entry.backupSourceId,
         incoming.url,
       );
+      // Prefer library title match (case-insensitive) over inserting a twin.
+      existing ??= await _repos.manga.findMangaByNameIgnoreCase(incoming.name);
+      final titleKey = incoming.name.trim().toLowerCase();
+      if (existing == null &&
+          titleKey.isNotEmpty &&
+          seenTitles.containsKey(titleKey)) {
+        existing = await _repos.manga.getMangaById(seenTitles[titleKey]!);
+      }
 
       int mangaId;
       if (existing == null) {
@@ -85,15 +133,9 @@ class BackupImporter {
         await _repos.manga.updateManga(merged);
         mangaSkipped++;
       }
+      if (titleKey.isNotEmpty) seenTitles.putIfAbsent(titleKey, () => mangaId);
 
       chaptersImported += await _mergeChapters(mangaId, entry.chapters);
-    }
-
-    var reposImported = 0;
-    for (final repo in backup.repos) {
-      if (repo.url.isEmpty) continue;
-      await _repos.extensions.insertExtensionRepo(repo);
-      reposImported++;
     }
 
     var cookiesImported = 0;
@@ -101,13 +143,6 @@ class BackupImporter {
       if (cookie.host.isEmpty) continue;
       await _repos.cookies.setCookie(cookie.host, cookie.cookie);
       cookiesImported++;
-    }
-
-    for (final ext in backup.jsExtensions) {
-      final have = await _repos.extensions.getBySourceId(ext.sourceId);
-      if (have == null) {
-        await _repos.extensions.insertExtensionSource(ext);
-      }
     }
 
     if (backup.showNsfw || backup.novelFontSize != null) {
@@ -137,7 +172,98 @@ class BackupImporter {
       skippedAnime: backup.skippedAnime,
       skippedNovels: backup.skippedNovels,
       version: 0,
+      extensionsInstalled: extensionsInstalled,
     );
+  }
+
+  /// Walk every configured repo index and install catalog entries whose name
+  /// exactly matches (case-insensitive) a missing backup source. Stops at the
+  /// first successful install per name; never installs a second copy.
+  Future<int> _installMissingExtensionsByName(Set<String> neededNames) async {
+    final mgr = _extensionManager;
+    if (mgr == null || neededNames.isEmpty) return 0;
+
+    var installed = await _repos.extensions.getInstalledExtensions();
+    final installedNames = <String>{
+      for (final e in installed)
+        if (e.name.trim().isNotEmpty) e.name.trim().toLowerCase(),
+    };
+
+    final pending = <String>[
+      for (final n in neededNames)
+        if (n.trim().isNotEmpty &&
+            !installedNames.contains(n.trim().toLowerCase()))
+          n.trim(),
+    ];
+    if (pending.isEmpty) return 0;
+
+    // Prefer enabled repos, then any others the user still has configured.
+    final repos = await mgr.listRepos();
+    if (repos.isEmpty) return 0;
+    final ordered = [
+      ...repos.where((r) => r.enabled),
+      ...repos.where((r) => !r.enabled),
+    ];
+
+    final indexByRepo = <String, List<ExtensionIndexEntry>>{};
+    var installedCount = 0;
+
+    for (final name in pending) {
+      final needle = name.toLowerCase();
+      if (installedNames.contains(needle)) continue;
+
+      for (final repo in ordered) {
+        List<ExtensionIndexEntry> entries;
+        try {
+          entries = indexByRepo[repo.url] ??= await mgr.fetchIndex(repo);
+        } catch (_) {
+          continue;
+        }
+        ExtensionIndexEntry? match;
+        for (final e in entries) {
+          if (e.name.trim().toLowerCase() == needle) {
+            match = e;
+            break;
+          }
+        }
+        if (match == null) continue;
+
+        // Skip if this pkg/source is already installed under another name.
+        final already = installed.any(
+          (i) =>
+              i.sourceId == match!.pkg ||
+              i.id == match.pkg ||
+              (match.className != null &&
+                  match.className!.isNotEmpty &&
+                  i.className == match.className),
+        );
+        if (already) {
+          installedNames.add(needle);
+          break;
+        }
+
+        try {
+          await mgr.install(match, repoUrl: repo.url);
+          installedNames.add(needle);
+          installedCount++;
+          installed = await _repos.extensions.getInstalledExtensions();
+          break; // next needed name
+        } catch (_) {
+          // Try the next repo for this name.
+        }
+      }
+    }
+    return installedCount;
+  }
+
+  Future<ExtensionSource?> _installedByName(String name) async {
+    final needle = name.trim().toLowerCase();
+    if (needle.isEmpty) return null;
+    final installed = await _repos.extensions.getInstalledExtensions();
+    for (final e in installed) {
+      if (e.name.trim().toLowerCase() == needle) return e;
+    }
+    return null;
   }
 
   Future<int> _mergeChapters(
@@ -195,8 +321,11 @@ class BackupImporter {
       }
     }
     if (name != null && name.isNotEmpty) {
-      final matches = installed.where((e) => e.name == name).toList();
-      if (matches.length == 1) return matches.first.sourceId;
+      final needle = name.trim().toLowerCase();
+      final matches = installed
+          .where((e) => e.name.trim().toLowerCase() == needle)
+          .toList();
+      if (matches.isNotEmpty) return matches.first.sourceId;
     }
     return backupId;
   }
