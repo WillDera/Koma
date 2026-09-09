@@ -21,6 +21,7 @@ class MigrationFlags {
     this.categories = true,
     this.notes = true,
     this.customCover = true,
+    this.tracks = true,
   });
 
   final bool chapters;
@@ -28,6 +29,9 @@ class MigrationFlags {
   final bool categories;
   final bool notes;
   final bool customCover;
+
+  /// Rebind MAL / AniList / MangaUpdates rows onto the target title.
+  final bool tracks;
 }
 
 /// Port of Mihon's [MigrateMangaUseCase] for the flags Koma supports today.
@@ -182,6 +186,10 @@ class MigrateMangaUseCase {
       flags: flags,
     );
 
+    if (flags.tracks) {
+      await _transferTracks(currentId: current.id, targetId: target.id);
+    }
+
     if (flags.removeDownloads) {
       await _removeDownloads(current);
     }
@@ -212,6 +220,52 @@ class MigrateMangaUseCase {
 
     final refreshed = await _manga.getMangaById(target.id);
     return refreshed ?? target.copyWith(inLibrary: true);
+  }
+
+  /// Mihon-style track migrate: rebind each row onto [targetId] (same remote
+  /// media / library ids + progress). Non-enhanced trackers (MAL / AniList /
+  /// MangaUpdates) just move the local link; remote lists are unchanged.
+  Future<void> _transferTracks({
+    required int currentId,
+    required int targetId,
+  }) async {
+    final tracks = await _repos.tracks.getTracksForManga(currentId);
+    if (tracks.isEmpty) return;
+
+    for (final track in tracks) {
+      final syncId = track.syncId;
+      if (syncId == null) continue;
+
+      final onTarget = await _repos.tracks.getTrack(targetId, syncId);
+      if (onTarget != null) {
+        final srcProgress = track.lastChapterRead ?? 0;
+        final dstProgress = onTarget.lastChapterRead ?? 0;
+        if (srcProgress > dstProgress) {
+          onTarget.lastChapterRead = srcProgress;
+        }
+        if ((onTarget.totalChapter ?? 0) <= 0 &&
+            (track.totalChapter ?? 0) > 0) {
+          onTarget.totalChapter = track.totalChapter;
+        }
+        if ((onTarget.score ?? 0) <= 0 && (track.score ?? 0) > 0) {
+          onTarget.score = track.score;
+        }
+        onTarget.status = track.status;
+        onTarget.title ??= track.title;
+        onTarget.trackingUrl ??= track.trackingUrl;
+        onTarget.mediaId ??= track.mediaId;
+        onTarget.libraryId ??= track.libraryId;
+        onTarget.startedReadingDate ??= track.startedReadingDate;
+        onTarget.finishedReadingDate ??= track.finishedReadingDate;
+        await _repos.tracks.upsertTrack(onTarget);
+        final oldId = track.id;
+        if (oldId != null) await _repos.tracks.deleteTrack(oldId);
+      } else {
+        // Keep the same Isar id so this is a move, matching Mihon.
+        track.mangaId = targetId;
+        await _repos.tracks.upsertTrack(track);
+      }
+    }
   }
 
   Future<void> _transferExtras({

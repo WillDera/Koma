@@ -138,7 +138,7 @@ final updateMangaDetailProvider =
       }
     });
 
-enum ChapterFilter { downloaded, read, unread }
+enum ChapterFilter { downloaded, read, unread, bookmarked }
 
 enum FilterMode { ignore, include, exclude }
 
@@ -299,10 +299,15 @@ class MangaDetailNotifier extends Notifier<MangaDetailState> {
     await prefs.setInt(_keySortMode, m.index);
   }
 
-  void setFilterMode(ChapterFilter f, FilterMode m) {
+  Future<void> setFilterMode(ChapterFilter f, FilterMode m) async {
     final modes = Map<ChapterFilter, FilterMode>.from(state.filterModes)
       ..[f] = m;
     state = state.copyWith(filterModes: modes);
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(
+      _keyFilterModes,
+      jsonEncode({for (final e in modes.entries) e.key.name: e.value.index}),
+    );
   }
 
   void setDetails(Map<String, dynamic>? d) =>
@@ -327,6 +332,7 @@ class MangaDetailNotifier extends Notifier<MangaDetailState> {
         ..remove('last_page_read')
         ..remove('is_downloaded')
         ..remove('is_opened')
+        ..remove('is_bookmarked')
         ..remove('read_at');
       if (local != null) cleaned.addAll(local);
       return cleaned;

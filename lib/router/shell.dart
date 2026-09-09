@@ -5,8 +5,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../core/app_version.dart';
+import '../core/services/security_prefs.dart';
 import '../core/services/user_profile.dart';
 import '../theme/app_icons.dart';
+import '../theme/app_theme.dart';
 import '../theme/theme_provider.dart';
 import '../widgets/app_update_gate.dart';
 import '../widgets/glass_pill_nav.dart';
@@ -78,11 +80,9 @@ class MainShell extends ConsumerWidget {
           error: (_, _) => '',
         );
     final onLibrary = navigationShell.currentIndex == 0;
+    final incognito = ref.watch(incognitoProvider);
+    final c = context.colors;
     return AppUpdateGate(
-      // Tab roots (Updates / History / Explore / You) have nothing to pop, so
-      // the system back gesture would finish the Activity. Send those to
-      // Library instead; Library root still exits as usual. Detail routes
-      // pushed above the shell keep normal pop behavior.
       child: PopScope(
         canPop: onLibrary,
         onPopInvokedWithResult: (didPop, _) {
@@ -94,7 +94,48 @@ class MainShell extends ConsumerWidget {
         child: Scaffold(
           extendBody: true,
           backgroundColor: theme.bgColor,
-          body: navigationShell,
+          body: Column(
+            children: [
+              if (incognito)
+                Material(
+                  color: c.accent.withValues(alpha: 0.15),
+                  child: SafeArea(
+                    bottom: false,
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 16,
+                        vertical: 8,
+                      ),
+                      child: Row(
+                        children: [
+                          Icon(Icons.visibility_off, size: 16, color: c.accent),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              'Incognito — history and progress are not saved',
+                              style: TextStyle(
+                                color: c.textPrimary,
+                                fontSize: 12,
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                          ),
+                          TextButton(
+                            onPressed: () =>
+                                ref.read(incognitoProvider.notifier).set(false),
+                            child: Text(
+                              'Turn off',
+                              style: TextStyle(color: c.accent, fontSize: 12),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              Expanded(child: navigationShell),
+            ],
+          ),
           bottomNavigationBar: AppBottomNav(
             items: _navItems,
             currentIndex: navigationShell.currentIndex,

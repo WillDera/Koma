@@ -58,6 +58,10 @@ class ReaderSettings {
   double tintOpacity;
   /// When app Appearance is sepia, warm the manga page paper to match.
   bool sepiaPanels;
+  /// Auto-scroll continuous (webtoon / long strip) modes.
+  bool autoScroll;
+  /// Pages advanced per tick interval; higher = faster.
+  double autoScrollSpeed;
 
   ReaderSettings({
     this.readingMode = ReadingMode.defaultL2R,
@@ -82,6 +86,8 @@ class ReaderSettings {
     this.tintColor,
     this.tintOpacity = 0.0,
     this.sepiaPanels = true,
+    this.autoScroll = false,
+    this.autoScrollSpeed = 1.0,
   });
 
   ReaderSettings copyWith({
@@ -107,6 +113,8 @@ class ReaderSettings {
     Color? tintColor,
     double? tintOpacity,
     bool? sepiaPanels,
+    bool? autoScroll,
+    double? autoScrollSpeed,
   }) {
     return ReaderSettings(
       readingMode: readingMode ?? this.readingMode,
@@ -132,6 +140,8 @@ class ReaderSettings {
       tintColor: tintColor ?? this.tintColor,
       tintOpacity: tintOpacity ?? this.tintOpacity,
       sepiaPanels: sepiaPanels ?? this.sepiaPanels,
+      autoScroll: autoScroll ?? this.autoScroll,
+      autoScrollSpeed: autoScrollSpeed ?? this.autoScrollSpeed,
     );
   }
 
@@ -163,6 +173,8 @@ class ReaderSettings {
     'tintColor': tintColor?.toARGB32(),
     'tintOpacity': tintOpacity,
     'sepiaPanels': sepiaPanels ? 1 : 0,
+    'autoScroll': autoScroll ? 1 : 0,
+    'autoScrollSpeed': autoScrollSpeed,
   };
 
   factory ReaderSettings.fromJson(Map<String, dynamic> json) {
@@ -182,8 +194,11 @@ class ReaderSettings {
         _ => TapZoneMode.leftMiddleRight,
       };
     }
+    final modeIdx = json['readingMode'] as int? ?? 0;
     return ReaderSettings(
-      readingMode: ReadingMode.values[json['readingMode'] as int? ?? 0],
+      readingMode: modeIdx >= 0 && modeIdx < ReadingMode.values.length
+          ? ReadingMode.values[modeIdx]
+          : ReadingMode.defaultL2R,
       rotationMode: RotationMode.values[json['rotationMode'] as int? ?? 1],
       tapZones: tapZones,
       sidePadding: (json['sidePadding'] as num?)?.toDouble() ?? 0.0,
@@ -209,18 +224,57 @@ class ReaderSettings {
       tintOpacity: (json['tintOpacity'] as num?)?.toDouble() ?? 0.0,
       // Default on so existing installs keep the warm paper look.
       sepiaPanels: (json['sepiaPanels'] as int? ?? 1) == 1,
+      autoScroll: (json['autoScroll'] as int? ?? 0) == 1,
+      autoScrollSpeed: (json['autoScrollSpeed'] as num?)?.toDouble() ?? 1.0,
     );
+  }
+}
+
+/// Mihon viewer flag bitfield (READING_MODE_*).
+class ViewerFlags {
+  static const mask = 0x7;
+  static const ltr = 1;
+  static const rtl = 2;
+  static const vertical = 3;
+  static const webtoon = 4;
+  static const continuousVertical = 5;
+
+  static ReadingMode? readingModeFromFlags(int flags) {
+    final mode = flags & mask;
+    return switch (mode) {
+      ltr => ReadingMode.defaultL2R,
+      rtl => ReadingMode.rightToLeft,
+      vertical => ReadingMode.longStrip,
+      webtoon => ReadingMode.webtoon,
+      continuousVertical => ReadingMode.longStripWithGaps,
+      _ => null,
+    };
+  }
+
+  static int flagsForReadingMode(ReadingMode mode, int existing) {
+    final cleared = existing & ~mask;
+    final bit = switch (mode) {
+      ReadingMode.defaultL2R => ltr,
+      ReadingMode.rightToLeft => rtl,
+      ReadingMode.webtoon => webtoon,
+      ReadingMode.longStrip => vertical,
+      ReadingMode.longStripWithGaps => continuousVertical,
+    };
+    return cleared | bit;
   }
 }
 
 class ReaderSettingsSheet extends StatefulWidget {
   final ReaderSettings settings;
   final ValueChanged<ReaderSettings> onChanged;
+  /// True when reading mode is persisted on MangaExtras.viewerFlags.
+  final bool seriesReadingModeSaved;
 
   const ReaderSettingsSheet({
     super.key,
     required this.settings,
     required this.onChanged,
+    this.seriesReadingModeSaved = false,
   });
 
   @override
@@ -263,7 +317,11 @@ class _ReaderSettingsSheetState extends State<ReaderSettingsSheet> {
             child: ColoredBox(
               color: c.bg,
               child: _tab == 0
-                  ? _ReadingTab(settings: _s, onChanged: _update)
+                  ? _ReadingTab(
+                      settings: _s,
+                      onChanged: _update,
+                      seriesReadingModeSaved: widget.seriesReadingModeSaved,
+                    )
                   : _DisplayTab(settings: _s, onChanged: _update),
             ),
           ),
@@ -276,21 +334,23 @@ class _ReaderSettingsSheetState extends State<ReaderSettingsSheet> {
 class _ReadingTab extends StatelessWidget {
   final ReaderSettings settings;
   final ValueChanged<ReaderSettings> onChanged;
+  final bool seriesReadingModeSaved;
 
-  const _ReadingTab({required this.settings, required this.onChanged});
-
-  ReadingMode get _effectiveMode {
-    final m = settings.readingMode;
-    if (m == ReadingMode.longStrip || m == ReadingMode.longStripWithGaps) {
-      return ReadingMode.webtoon;
-    }
-    return m;
-  }
+  const _ReadingTab({
+    required this.settings,
+    required this.onChanged,
+    required this.seriesReadingModeSaved,
+  });
 
   TapZoneMode get _effectiveZones =>
       settings.tapZones == TapZoneMode.leftTopRightBottom
       ? TapZoneMode.leftRight
       : settings.tapZones;
+
+  bool get _isContinuous =>
+      settings.readingMode == ReadingMode.webtoon ||
+      settings.readingMode == ReadingMode.longStrip ||
+      settings.readingMode == ReadingMode.longStripWithGaps;
 
   @override
   Widget build(BuildContext context) {
@@ -300,15 +360,32 @@ class _ReadingTab extends StatelessWidget {
       children: [
         _SectionLabel('Reading direction'),
         const SizedBox(height: 8),
-        SegmentedControl<ReadingMode>(
-          segments: const {
-            ReadingMode.defaultL2R: 'L→R',
-            ReadingMode.rightToLeft: 'R→L',
-            ReadingMode.webtoon: 'Webtoon',
-          },
-          value: _effectiveMode,
-          onChanged: (mode) => onChanged(settings.copyWith(readingMode: mode)),
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: [
+            for (final entry in const {
+              ReadingMode.defaultL2R: 'L→R',
+              ReadingMode.rightToLeft: 'R→L',
+              ReadingMode.webtoon: 'Webtoon',
+              ReadingMode.longStrip: 'Long strip',
+              ReadingMode.longStripWithGaps: 'Strip + gaps',
+            }.entries)
+              ChoiceChip(
+                label: Text(entry.value),
+                selected: settings.readingMode == entry.key,
+                onSelected: (_) =>
+                    onChanged(settings.copyWith(readingMode: entry.key)),
+              ),
+          ],
         ),
+        if (seriesReadingModeSaved) ...[
+          const SizedBox(height: 8),
+          Text(
+            'Saved for this series',
+            style: TextStyle(color: c.accent, fontSize: 12),
+          ),
+        ],
         const SizedBox(height: 24),
         _SectionLabel('Tap zones'),
         const SizedBox(height: 8),
@@ -358,6 +435,50 @@ class _ReadingTab extends StatelessWidget {
                       onChanged(settings.copyWith(cropBorders: v)),
                 ),
               ),
+              if (_isContinuous) ...[
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  child: Divider(height: 1, thickness: 0.5, color: c.border),
+                ),
+                SettingsRow(
+                  icon: Icons.swipe_vertical_rounded,
+                  title: 'Auto-scroll',
+                  subtitle: 'Advance continuously in strip modes',
+                  trailing: Switch(
+                    value: settings.autoScroll,
+                    activeThumbColor: c.accent,
+                    onChanged: (v) =>
+                        onChanged(settings.copyWith(autoScroll: v)),
+                  ),
+                ),
+                if (settings.autoScroll)
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+                    child: Row(
+                      children: [
+                        Text(
+                          'Speed',
+                          style: TextStyle(
+                            color: c.textSecondary,
+                            fontSize: 13,
+                          ),
+                        ),
+                        Expanded(
+                          child: Slider(
+                            value: settings.autoScrollSpeed.clamp(0.25, 4.0),
+                            min: 0.25,
+                            max: 4.0,
+                            divisions: 15,
+                            label: settings.autoScrollSpeed.toStringAsFixed(2),
+                            onChanged: (v) => onChanged(
+                              settings.copyWith(autoScrollSpeed: v),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+              ],
             ],
           ),
         ),

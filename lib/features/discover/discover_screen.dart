@@ -10,6 +10,7 @@ import '../../core/models/book.dart';
 import '../../core/models/manga.dart';
 import '../../core/models/source.dart';
 import '../../core/providers.dart';
+import '../../core/services/local_manga_recs_service.dart';
 import '../../core/services/discover_metadata_cache.dart';
 import '../../core/services/metadata_enrichment_service.dart';
 import '../../core/services/source_service.dart';
@@ -58,11 +59,15 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
   final Map<String, double> _downloading = {};
   List<Source> _sources = [];
   String? _sourceSubtitle;
+  BecauseYouReadRec? _becauseYouRead;
 
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) => _loadSources());
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _loadSources();
+      _loadBecauseYouRead();
+    });
   }
 
   @override
@@ -110,6 +115,19 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
     } catch (_) {
       if (!mounted) return;
       setState(() => _sourceSubtitle = 'Find books from your sources');
+    }
+  }
+
+  Future<void> _loadBecauseYouRead() async {
+    try {
+      final recs = await LocalMangaRecsService(
+        ref.read(repositoriesProvider),
+      ).load();
+      if (!mounted) return;
+      setState(() => _becauseYouRead = recs);
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _becauseYouRead = null);
     }
   }
 
@@ -921,6 +939,45 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
                 );
               }
               final manga = item.manga!;
+              final custom = manga.customCoverPath;
+              return MediaRailCover(
+                child: StaggeredFadeScale(
+                  index: i + 1,
+                  child: CatalogCoverCard(
+                    title: manga.name,
+                    subtitle: manga.author,
+                    imageProvider:
+                        custom != null &&
+                            custom.isNotEmpty &&
+                            File(custom).existsSync()
+                        ? FileImage(File(custom))
+                        : null,
+                    imageUrl: manga.imageUrl,
+                    variant: LibraryCardVariant.grid,
+                    onTap: () => _openManga(manga),
+                  ),
+                ),
+              );
+            },
+          ),
+        ),
+      );
+    }
+
+    final because = _becauseYouRead;
+    if (because != null && because.suggestions.isNotEmpty) {
+      final seedTitle = because.seed.name;
+      final shortSeed = seedTitle.length > 28
+          ? '${seedTitle.substring(0, 28)}…'
+          : seedTitle;
+      slivers.add(
+        SliverToBoxAdapter(
+          child: MediaRail(
+            title: 'Because you read',
+            subtitle: shortSeed,
+            itemCount: because.suggestions.length,
+            itemBuilder: (context, i) {
+              final manga = because.suggestions[i];
               final custom = manga.customCoverPath;
               return MediaRailCover(
                 child: StaggeredFadeScale(

@@ -161,6 +161,40 @@ class MainActivity : FlutterActivity() {
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
         DalvikRuntimeManager.initialize(applicationContext)
+        MethodChannel(
+            flutterEngine.dartExecutor.binaryMessenger,
+            "com.koma.koma/secure_screen",
+        ).setMethodCallHandler { call, result ->
+            when (call.method) {
+                "setSecureScreen" -> {
+                    val secure = when (val args = call.arguments) {
+                        is Boolean -> args
+                        is Map<*, *> -> args["secure"] as? Boolean ?: false
+                        else -> false
+                    }
+                    runOnUiThread {
+                        if (secure) {
+                            window.setFlags(
+                                android.view.WindowManager.LayoutParams.FLAG_SECURE,
+                                android.view.WindowManager.LayoutParams.FLAG_SECURE,
+                            )
+                        } else {
+                            window.clearFlags(
+                                android.view.WindowManager.LayoutParams.FLAG_SECURE,
+                            )
+                        }
+                        if (android.os.Build.VERSION.SDK_INT >=
+                            android.os.Build.VERSION_CODES.TIRAMISU
+                        ) {
+                            // Also block recent-task previews when secured.
+                            setRecentsScreenshotEnabled(!secure)
+                        }
+                    }
+                    result.success(null)
+                }
+                else -> result.notImplemented()
+            }
+        }
         StorageAccessChannel(this).register(
             MethodChannel(
                 flutterEngine.dartExecutor.binaryMessenger,

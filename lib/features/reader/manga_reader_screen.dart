@@ -19,6 +19,7 @@ import '../../core/models/manga_page.dart';
 import '../../core/providers.dart';
 import '../../core/repositories/repositories.dart';
 import '../../core/services/chapter_auto_delete.dart';
+import '../../core/services/download/download_manager.dart';
 import '../../core/services/download_prefs.dart';
 import '../../core/services/extension_manager.dart';
 import '../../core/services/extension_source_resolve.dart';
@@ -26,6 +27,9 @@ import '../../core/services/keiyoushi_service.dart';
 import '../../core/services/local_cbz_pages.dart';
 import '../../core/services/local_cbz_source.dart';
 import '../../core/services/media_export_service.dart';
+import '../../core/services/security_prefs.dart';
+import '../../core/services/stats_service.dart';
+import '../../core/services/trackers/track_chapter_use_case.dart';
 import '../../core/utils/custom_extended_image_provider.dart';
 import '../../eval/dispatch_service.dart';
 import '../../eval/models/m_chapter.dart';
@@ -76,6 +80,8 @@ class _MangaReaderScreenState extends ConsumerState<MangaReaderScreen>
     with WidgetsBindingObserver, ReaderMemoryManagement {
   late final KeiyoushiService _keiyoushi;
   late final ExtensionDispatchService _dispatch;
+  late final StatsService _stats;
+  DownloadManager? _downloadManager;
   MSource? _mSource;
   Repositories? _repos;
   ExtensionManager? _extensionManager;
@@ -111,6 +117,8 @@ class _MangaReaderScreenState extends ConsumerState<MangaReaderScreen>
   final int _pagePreloadAmount = 5;
 
   ReaderSettings _settings = ReaderSettings();
+  bool _seriesReadingModeSaved = false;
+  Timer? _autoScrollTimer;
 
   /// Bumped on dispose so late Futures from getPageList/preload abandon work.
   int _loadSession = 0;
@@ -130,6 +138,8 @@ class _MangaReaderScreenState extends ConsumerState<MangaReaderScreen>
     _dispatch = ref.read(extensionServiceProvider);
     _repos = ref.read(repositoriesProvider);
     _extensionManager = ref.read(extensionManagerProvider);
+    _stats = ref.read(statsServiceProvider);
+    _downloadManager = ref.read(downloadManagerProvider.notifier).manager;
     WidgetsBinding.instance.addObserver(this);
     _itemPositionsListener.itemPositions.addListener(_onWebtoonScroll);
     _initAsync();
@@ -176,6 +186,8 @@ class _MangaReaderScreenState extends ConsumerState<MangaReaderScreen>
     _cacheLoadedPages();
     _saveTimer?.cancel();
     _saveTimer = null;
+    _autoScrollTimer?.cancel();
+    _autoScrollTimer = null;
     _stopReadingTimer();
     _flushPageProgress();
     _restoreSystemUI();
@@ -614,15 +626,73 @@ class _MangaReaderScreenState extends ConsumerState<MangaReaderScreen>
   Future<void> _loadSettings() async {
     if (widget.mangaId == null) return;
     final prefs = await SharedPreferences.getInstance();
-    final raw = prefs.getString('reader_${widget.mangaId}');
-    if (raw != null && mounted) {
+    final mangaId = widget.mangaId!;
+
+    // Global defaults (Settings → Typography → Default manga reading mode).
+    var settings = ReaderSettings();
+    final globalRaw = prefs.getString('reader_settings');
+    if (globalRaw != null) {
       try {
-        _settings = ReaderSettings.fromJson(
-          json.decode(raw) as Map<String, dynamic>,
+        settings = ReaderSettings.fromJson(
+          json.decode(globalRaw) as Map<String, dynamic>,
         );
       } catch (_) {}
     }
-    if (mounted) _applySystemUI();
+    final globalMode = settings.readingMode;
+
+    // Per-manga prefs for brightness / crop / etc.
+    ReaderSettings? local;
+    final localRaw = prefs.getString('reader_$mangaId');
+    if (localRaw != null) {
+      try {
+        local = ReaderSettings.fromJson(
+          json.decode(localRaw) as Map<String, dynamic>,
+        );
+        settings = local.copyWith(readingMode: globalMode);
+      } catch (_) {}
+    }
+
+    var seriesSaved = false;
+    try {
+      final manga = await _repos?.manga.getMangaById(mangaId);
+      if (manga != null) {
+        final fromFlags = ViewerFlags.readingModeFromFlags(manga.viewerFlags);
+        if (fromFlags != null) {
+          // Explicit per-series override (reader sheet / Mihon backup).
+          settings = settings.copyWith(readingMode: fromFlags);
+          seriesSaved = true;
+        } else if (await _mangaIsInProgress(mangaId)) {
+          // Already reading this title: keep the last per-manga mode so a
+          // global default change does not yank mid-series. First in-progress
+          // open without local prefs still adopts the current global once.
+          if (local != null) {
+            settings = settings.copyWith(readingMode: local.readingMode);
+          }
+          await prefs.setString(
+            'reader_$mangaId',
+            json.encode(settings.toJson()),
+          );
+        } else {
+          // Unread / unopened: always the current global default.
+          settings = settings.copyWith(readingMode: globalMode);
+        }
+      }
+    } catch (_) {}
+
+    if (!mounted) return;
+    _settings = settings;
+    _seriesReadingModeSaved = seriesSaved;
+    _applySystemUI();
+    _syncAutoScroll();
+  }
+
+  /// True when any chapter was opened, read, or has page progress.
+  Future<bool> _mangaIsInProgress(int mangaId) async {
+    final chapters = await _repos?.manga.getMangaChapters(mangaId);
+    if (chapters == null || chapters.isEmpty) return false;
+    return chapters.any(
+      (c) => c.isRead || c.isOpened || c.lastPageRead > 0,
+    );
   }
 
   Future<void> _saveSettings() async {
@@ -632,6 +702,34 @@ class _MangaReaderScreenState extends ConsumerState<MangaReaderScreen>
       'reader_${widget.mangaId}',
       json.encode(_settings.toJson()),
     );
+  }
+
+  Future<void> _persistSeriesReadingMode(ReadingMode mode) async {
+    final mangaId = widget.mangaId;
+    if (mangaId == null || _repos == null) return;
+    final manga = await _repos!.manga.getMangaById(mangaId);
+    if (manga == null) return;
+    final flags = ViewerFlags.flagsForReadingMode(mode, manga.viewerFlags);
+    await _repos!.manga.updateMangaExtras(mangaId, viewerFlags: flags);
+    if (mounted) setState(() => _seriesReadingModeSaved = true);
+  }
+
+  void _syncAutoScroll() {
+    _autoScrollTimer?.cancel();
+    _autoScrollTimer = null;
+    if (!_settings.autoScroll || !_isContinuousMode) return;
+    final ms = (900 / _settings.autoScrollSpeed.clamp(0.25, 4.0)).round();
+    _autoScrollTimer = Timer.periodic(Duration(milliseconds: ms), (_) {
+      if (!mounted || !_isContinuousMode || !_settings.autoScroll) return;
+      if (!_itemScrollCtrl.isAttached) return;
+      final next = (_currentPageNotifier.value + 1).clamp(0, _pages.length - 1);
+      if (next == _currentPageNotifier.value) return;
+      _itemScrollCtrl.scrollTo(
+        index: next,
+        duration: Duration(milliseconds: (ms * 0.85).round()),
+        curve: Curves.linear,
+      );
+    });
   }
 
   Future<void> _initProgress() async {
@@ -685,7 +783,9 @@ class _MangaReaderScreenState extends ConsumerState<MangaReaderScreen>
           }
         }
       } else if (_pageCtrl.hasClients) {
-        final pageIndex = _isBookModeActive ? clamped ~/ 2 : clamped;
+        final pageIndex = _isBookModeActive
+            ? MangaImageViewPaged.spreadIndexForPage(_pages, clamped)
+            : clamped;
         if (animate && _settings.animatePageTransition) {
           _pageCtrl.animateToPage(
             pageIndex,
@@ -715,9 +815,7 @@ class _MangaReaderScreenState extends ConsumerState<MangaReaderScreen>
     if (_readingTimer != null) return;
     _readingTimer = Timer.periodic(const Duration(seconds: 30), (_) {
       _elapsedReadingSeconds += 30;
-      unawaited(
-        ref.read(statsServiceProvider).trackReading(widget.mangaId ?? 0, 30),
-      );
+      unawaited(_stats.trackReading(widget.mangaId ?? 0, 30));
     });
   }
 
@@ -726,9 +824,7 @@ class _MangaReaderScreenState extends ConsumerState<MangaReaderScreen>
     _readingTimer = null;
     final remainder = _elapsedReadingSeconds % 30;
     if (remainder > 0) {
-      unawaited(
-        ref.read(statsServiceProvider).trackReading(widget.mangaId ?? 0, remainder),
-      );
+      unawaited(_stats.trackReading(widget.mangaId ?? 0, remainder));
     }
     _elapsedReadingSeconds = 0;
   }
@@ -833,7 +929,9 @@ class _MangaReaderScreenState extends ConsumerState<MangaReaderScreen>
         }
       }
     } else if (_pageCtrl.hasClients) {
-      final pageIndex = _isBookModeActive ? clamped ~/ 2 : clamped;
+      final pageIndex = _isBookModeActive
+          ? MangaImageViewPaged.spreadIndexForPage(_pages, clamped)
+          : clamped;
       if (animate) {
         _pageCtrl.animateToPage(
           pageIndex,
@@ -870,6 +968,8 @@ class _MangaReaderScreenState extends ConsumerState<MangaReaderScreen>
   /// same as mangayomi's setPageIndex().
   Future<void> _saveProgress() async {
     if (_currentChapter == null || _repos == null) return;
+    // Prefer prefs over ref — dispose may call this after the element is gone.
+    if (await SecurityPrefs.isIncognito()) return;
     final flatIdx = _currentPageNotifier.value;
     if (flatIdx >= _pages.length) return;
     final page = _pages[flatIdx];
@@ -887,14 +987,23 @@ class _MangaReaderScreenState extends ConsumerState<MangaReaderScreen>
           .length;
       if (chPages > 0 && chapterRelativeIndex >= chPages - 1) {
         await _repos!.manga.markMangaChapterRead(chapterId);
+        final chNum = ch.chapterNumber;
+        unawaited(
+          TrackChapterUseCase(_repos!).invoke(
+            mangaId: ch.mangaId,
+            chapterNumber: chNum,
+            chapterName: ch.name,
+          ),
+        );
         if (await DownloadPrefs.isDeleteAfterReadEnabled()) {
           final manga = await _repos!.manga.getMangaById(ch.mangaId);
-          if (manga != null) {
+          final mgr = _downloadManager;
+          if (manga != null && mgr != null) {
             unawaited(
               ChapterAutoDelete(
                 repos: _repos!,
                 keiyoushi: _keiyoushi,
-                downloadManager: ref.read(downloadManagerProvider.notifier).manager,
+                downloadManager: mgr,
               ).deleteIfDownloaded(
                 mangaId: ch.mangaId,
                 chapterId: chapterId,
@@ -1117,11 +1226,14 @@ class _MangaReaderScreenState extends ConsumerState<MangaReaderScreen>
       maxChildSize: 0.9,
       child: ReaderSettingsSheet(
         settings: _settings,
+        seriesReadingModeSaved: _seriesReadingModeSaved,
         onChanged: (s) {
           final oldMode = _settings.readingMode;
           final oldBook = _settings.bookMode;
           final oldRotation = _settings.rotationMode;
           final oldKeepOn = _settings.keepScreenOn;
+          final oldAuto = _settings.autoScroll;
+          final oldSpeed = _settings.autoScrollSpeed;
           // Preserve the live page before the view swaps (webtoon ↔ paged
           // or book-mode toggle) so we can restore it after rebuild.
           final livePage = _currentPageNotifier.value;
@@ -1137,6 +1249,14 @@ class _MangaReaderScreenState extends ConsumerState<MangaReaderScreen>
           if (oldMode != s.readingMode || oldBook != s.bookMode) {
             _flushPageProgress();
             _jumpToFlatIndex(livePage, animate: false);
+          }
+          if (oldMode != s.readingMode) {
+            unawaited(_persistSeriesReadingMode(s.readingMode));
+          }
+          if (oldAuto != s.autoScroll ||
+              oldSpeed != s.autoScrollSpeed ||
+              oldMode != s.readingMode) {
+            _syncAutoScroll();
           }
         },
       ),

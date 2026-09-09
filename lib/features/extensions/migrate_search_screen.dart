@@ -102,6 +102,7 @@ class _MigrateSearchScreenState extends ConsumerState<MigrateSearchScreen> {
           categories: choice.categories,
           notes: choice.notes,
           customCover: choice.customCover,
+          tracks: choice.tracks,
         ),
       );
       if (!mounted) return;
@@ -187,6 +188,7 @@ class _MigrateChoice {
     required this.categories,
     required this.notes,
     required this.customCover,
+    required this.tracks,
   });
 
   final bool replace;
@@ -195,6 +197,7 @@ class _MigrateChoice {
   final bool categories;
   final bool notes;
   final bool customCover;
+  final bool tracks;
 }
 
 class _MigrateConfirmDialog extends StatefulWidget {
@@ -218,6 +221,7 @@ class _MigrateConfirmDialogState extends State<_MigrateConfirmDialog> {
   bool _categories = true;
   bool _notes = true;
   bool _customCover = true;
+  bool _tracks = true;
 
   @override
   Widget build(BuildContext context) {
@@ -291,6 +295,16 @@ class _MigrateConfirmDialogState extends State<_MigrateConfirmDialog> {
               value: _customCover,
               onChanged: (v) => setState(() => _customCover = v ?? true),
             ),
+            CheckboxListTile(
+              contentPadding: EdgeInsets.zero,
+              title: Text('Tracking', style: TextStyle(color: c.textPrimary)),
+              subtitle: Text(
+                'Move MAL / AniList / MangaUpdates links to the new title',
+                style: TextStyle(color: c.textTertiary, fontSize: 12),
+              ),
+              value: _tracks,
+              onChanged: (v) => setState(() => _tracks = v ?? true),
+            ),
           ],
         ),
       ),
@@ -309,6 +323,7 @@ class _MigrateConfirmDialogState extends State<_MigrateConfirmDialog> {
               categories: _categories,
               notes: _notes,
               customCover: _customCover,
+              tracks: _tracks,
             ),
           ),
           child: Text('Copy', style: TextStyle(color: c.accent)),
@@ -323,6 +338,7 @@ class _MigrateConfirmDialogState extends State<_MigrateConfirmDialog> {
               categories: _categories,
               notes: _notes,
               customCover: _customCover,
+              tracks: _tracks,
             ),
           ),
           child: Text('Migrate', style: TextStyle(color: c.accent)),

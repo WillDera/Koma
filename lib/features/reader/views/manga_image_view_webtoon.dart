@@ -28,7 +28,12 @@ class MangaImageViewWebtoon extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final pages = props.pages;
-    final isWebtoon = props.settings.readingMode == ReadingMode.webtoon;
+    final mode = props.settings.readingMode;
+    final isWebtoonLayout =
+        mode == ReadingMode.webtoon ||
+        mode == ReadingMode.longStrip ||
+        mode == ReadingMode.longStripWithGaps;
+    final gap = mode == ReadingMode.longStripWithGaps ? 6.0 : 0.0;
 
     return ScrollablePositionedList.builder(
       itemScrollController: itemScrollController,
@@ -47,16 +52,23 @@ class MangaImageViewWebtoon extends StatelessWidget {
             readerMode: props.settings.readingMode,
           );
         }
-        return KeyedSubtree(
+        Widget image = KeyedSubtree(
           key: ValueKey(
             'webtoon-$index-r${props.pageRetryTokens[index] ?? 0}',
           ),
           child: ReaderPageImage(
             page: page,
-            webtoon: isWebtoon,
+            webtoon: isWebtoonLayout,
             onRetry: () => props.onRetryPage(index),
           ),
         );
+        if (gap > 0) {
+          image = Padding(
+            padding: EdgeInsets.only(bottom: gap),
+            child: image,
+          );
+        }
+        return image;
       },
     );
   }

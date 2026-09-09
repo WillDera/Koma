@@ -50,6 +50,14 @@ class ExtensionRepoDeepLinkListener {
     final uri = Uri.tryParse(link);
     if (uri == null) return;
 
+    // OAuth redirects are consumed by flutter_web_auth_2; ignore here so we
+    // don't toast "No manga extension index".
+    final host = uri.host.toLowerCase();
+    if (uri.scheme.toLowerCase() == 'koma' &&
+        (host == 'anilist-auth' || host == 'mal-auth')) {
+      return;
+    }
+
     final offer = _parse(uri);
     if (offer == null || offer.indexUrls.isEmpty) {
       _toast('No manga extension index found in that link');

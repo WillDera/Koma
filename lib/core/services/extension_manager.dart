@@ -1023,12 +1023,18 @@ class ExtensionManager {
   }
 
   /// Trust an already-sideloaded Untrusted package and reactivate its sources.
+  ///
+  /// Only sources that share [sample]'s APK path are activated. Other untrusted
+  /// APKs stay inactive until trusted individually.
   Future<void> trustExistingPackage(ExtensionSource sample) async {
     if (sample.apkPath.isEmpty) return;
     final info = await _apkSignatures.inspect(sample.apkPath);
     await _trust.trust(info);
     final installed = await listInstalled();
-    for (final src in installed.where((s) => s.apkPath == sample.apkPath)) {
+    final peers = installed
+        .where((s) => s.apkPath == sample.apkPath && s.apkPath.isNotEmpty)
+        .toList(growable: false);
+    for (final src in peers) {
       try {
         await _keiyoushi.loadExtension(
           apkPath: src.apkPath,

@@ -22,6 +22,7 @@ import '../../core/services/ebook_service.dart';
 import '../../core/services/koma_package_store.dart';
 import '../../core/services/local_cbz_prefs.dart';
 import '../../core/services/local_cbz_scanner.dart';
+import '../../core/services/merge_manga_use_case.dart';
 import '../../core/services/metadata_enrichment_service.dart';
 import '../../core/services/android_storage_access.dart';
 import '../../core/services/user_profile.dart';
@@ -718,6 +719,17 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> with RouteAware {
             ),
             const SizedBox(width: 8),
           ],
+          if (_selectedMangaPair(provider) != null) ...[
+            IconButtonRound(
+              icon: Icons.merge_type_rounded,
+              size: 38,
+              variant: IconButtonVariant.tonal,
+              iconColor: c.accent,
+              tooltip: 'Merge duplicates',
+              onPressed: () => _mergeSelectedManga(context, provider),
+            ),
+            const SizedBox(width: 8),
+          ],
           IconButtonRound(
             icon: Icons.select_all_rounded,
             size: 38,
@@ -995,6 +1007,80 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> with RouteAware {
         message: '$e',
         icon: Icons.error_outline,
       );
+    }
+  }
+
+  /// Returns exactly two selected library manga, else null.
+  (Manga, Manga)? _selectedMangaPair(LibraryState provider) {
+    final ids = <int>[];
+    for (final key in provider.selectedIds) {
+      if (!key.startsWith('m:')) continue;
+      final id = int.tryParse(key.substring(2));
+      if (id != null) ids.add(id);
+    }
+    if (ids.length != 2) return null;
+    Manga? a;
+    Manga? b;
+    for (final m in provider.mangas) {
+      if (m.id == ids[0]) a = m;
+      if (m.id == ids[1]) b = m;
+    }
+    if (a == null || b == null) return null;
+    return (a, b);
+  }
+
+  Future<void> _mergeSelectedManga(
+    BuildContext context,
+    LibraryState provider,
+  ) async {
+    final pair = _selectedMangaPair(provider);
+    if (pair == null) return;
+    final keep = pair.$1;
+    final absorb = pair.$2;
+    final repos = ref.read(repositoriesProvider);
+    final merge = MergeMangaUseCase(repos);
+    final keepLabel = await merge.sourceLabel(keep);
+    final absorbLabel = await merge.sourceLabel(absorb);
+    if (!context.mounted) return;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Merge duplicates?'),
+        content: Text(
+          'Keep "${keep.name}" and absorb "${absorb.name}" '
+          '($absorbLabel). The duplicate leaves the library.\n\n'
+          'Keeping source: $keepLabel',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Merge'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !context.mounted) return;
+    try {
+      await merge.invoke(keep: keep, absorb: absorb);
+      if (!context.mounted) return;
+      ref.read(libraryProvider.notifier).clearSelection();
+      await ref.read(libraryProvider.notifier).loadBooks();
+      if (!context.mounted) return;
+      StashToast.show(
+        context,
+        message: 'Merged into "${keep.name}"',
+        icon: Icons.merge_type_rounded,
+      );
+    } on MergeValidationException catch (e) {
+      if (!context.mounted) return;
+      StashToast.show(context, message: e.message, icon: Icons.error_outline);
+    } catch (e) {
+      if (!context.mounted) return;
+      StashToast.show(context, message: '$e', icon: Icons.error_outline);
     }
   }
 

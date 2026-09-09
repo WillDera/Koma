@@ -311,9 +311,52 @@ class MangaRepository {
       final row = await _isar.mangaChapters.get(chapterId);
       if (row == null) return;
       row.isRead = true;
+      row.isOpened = true;
+      // Clear in-progress page so the list no longer shows "Page N".
+      row.lastPageRead = 0;
+      row.scrollPosition = 0;
       row.readAt = DateTime.now();
       await _isar.mangaChapters.put(row);
     });
+  }
+
+  /// Clears read flag; keeps [lastPageRead] / scroll so Continue can resume.
+  Future<void> markMangaChapterUnread(int chapterId) async {
+    await _isar.writeTxn(() async {
+      final row = await _isar.mangaChapters.get(chapterId);
+      if (row == null) return;
+      row.isRead = false;
+      row.readAt = null;
+      await _isar.mangaChapters.put(row);
+    });
+  }
+
+  Future<void> setMangaChapterBookmarked(int chapterId, bool value) async {
+    await _isar.writeTxn(() async {
+      final row = await _isar.mangaChapters.get(chapterId);
+      if (row == null) return;
+      row.isBookmarked = value;
+      await _isar.mangaChapters.put(row);
+    });
+  }
+
+  /// Library titles whose name matches [name] (case-insensitive), optionally
+  /// excluding one id — used by duplicate merge.
+  Future<List<Manga>> findLibraryMangaByNameIgnoreCase(
+    String name, {
+    int? excludeId,
+  }) async {
+    final needle = name.trim().toLowerCase();
+    if (needle.isEmpty) return const [];
+    final library = await _isar.mangas.filter().inLibraryEqualTo(true).findAll();
+    final out = <Manga>[];
+    for (final row in library) {
+      if (excludeId != null && row.id == excludeId) continue;
+      if (row.name.trim().toLowerCase() == needle) {
+        out.add(await _toModelWithExtras(row));
+      }
+    }
+    return out;
   }
 
   Future<MangaChapter?> getMangaChapterById(int chapterId) async {

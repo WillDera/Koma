@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -7,19 +8,24 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:http/http.dart' as http;
 import 'package:intl/intl.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../../core/services/app_storage.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../core/models/manga.dart';
 import '../../core/models/manga_chapter.dart';
 import '../../core/providers.dart';
+import '../../core/repositories/repositories.dart';
+import '../../core/isar/collections/track.dart';
 import '../../core/services/chapter_auto_delete.dart';
 import '../../core/services/download/chapter_download.dart';
 import '../../core/services/download/download_manager.dart';
 import '../../core/services/extension_source_resolve.dart';
 import '../../core/services/keiyoushi_service.dart';
+import '../../core/services/merge_manga_use_case.dart';
 import '../../core/services/local_cbz_prefs.dart';
 import '../../core/services/local_cbz_source.dart';
+import '../../core/services/trackers/track_chapter_use_case.dart';
 import '../../eval/dispatch_service.dart';
 import '../../eval/models/m_chapter.dart';
 import '../../core/services/source_webview_bridge.dart';
@@ -37,11 +43,13 @@ import '../../widgets/icon_button_round.dart';
 import '../../widgets/page_transitions.dart';
 import '../../widgets/screen_chrome.dart';
 import '../../widgets/toast.dart';
+import '../../widgets/tracker_brand_icon.dart';
 import '../library/cbz_export_flow.dart';
 import 'manga_detail_providers.dart';
 import 'migrate_search_screen.dart';
+import 'track_manga_screen.dart';
 
-enum _DownloadMode { all, unread, range }
+enum _DownloadMode { all, unread, range, next1, next5, next10 }
 
 /// Normalize a chapter URL for consistent key matching between DB and network.
 String _normalizeUrl(String url) => url.trim().replaceAll(RegExp(r'^/+'), '');
@@ -107,6 +115,7 @@ class _MangaDetailScreenState extends ConsumerState<MangaDetailScreen> {
   bool _inLibrary = false;
   bool _chapterSelectMode = false;
   final Set<String> _selectedChapterUrls = {};
+  List<Track> _linkedTracks = const [];
   String? _notes;
 
   /// Bumped on every [_init] so in-flight network/Isar work from a previous
@@ -356,6 +365,7 @@ class _MangaDetailScreenState extends ConsumerState<MangaDetailScreen> {
     _mangaId = m.id;
     _notes = m.notes;
     _inLibrary = m.inLibrary;
+    unawaited(_reloadLinkedTracks());
     final notifier = ref.read(mangaDetailProvider.notifier);
     notifier
       ..setDetails({
@@ -711,6 +721,7 @@ class _MangaDetailScreenState extends ConsumerState<MangaDetailScreen> {
       _mangaId = manga.id;
       _inLibrary = manga.inLibrary;
     });
+    unawaited(_reloadLinkedTracks());
   }
 
   /// Merges chapter progress from Isar stream into the display chapter maps.
@@ -721,17 +732,24 @@ class _MangaDetailScreenState extends ConsumerState<MangaDetailScreen> {
     final chMap = <String, Map<String, dynamic>>{};
     final downloadProgress = <String, String>{};
     for (final lc in chapters) {
-      chMap[lc.url] = {
+      final entry = <String, dynamic>{
+        'id': lc.id,
         'is_read': lc.isRead,
         'last_page_read': lc.lastPageRead,
         'is_downloaded': lc.isDownloaded,
         'is_opened': lc.isOpened,
+        'is_bookmarked': lc.isBookmarked,
         'read_at': lc.readAt?.toIso8601String(),
       };
+      // Index by both raw and normalized URL — remote rows and Isar can differ
+      // by trailing slash / scheme, and filters look up by display URL.
+      chMap[lc.url] = entry;
+      final norm = _normalizeUrl(lc.url);
+      if (norm.isNotEmpty && norm != lc.url) chMap[norm] = entry;
       if (lc.isDownloaded) downloadProgress[lc.url] = 'done';
     }
     final notifier = ref.read(mangaDetailProvider.notifier);
-    final existing = notifier.state.chapters;
+    final existing = ref.read(mangaDetailProvider).chapters;
     List<Map<String, dynamic>> merged;
     if (existing.isEmpty) {
       merged = chapters
@@ -742,10 +760,12 @@ class _MangaDetailScreenState extends ConsumerState<MangaDetailScreen> {
               'chapter_number': c.chapterNumber,
               'scanlator': c.scanlator,
               'date_upload': c.dateUpload,
+              'id': c.id,
               'is_read': c.isRead,
               'last_page_read': c.lastPageRead,
               'is_opened': c.isOpened,
               'is_downloaded': c.isDownloaded,
+              'is_bookmarked': c.isBookmarked,
               'memo': c.memo,
               if (c.readAt != null) 'read_at': c.readAt!.toIso8601String(),
             },
@@ -753,14 +773,17 @@ class _MangaDetailScreenState extends ConsumerState<MangaDetailScreen> {
           .toList();
     } else {
       merged = existing.map((ch) {
-        final local = chMap[_normalizeUrl(ch['url'] as String? ?? '')];
+        final url = ch['url'] as String? ?? '';
+        final local = chMap[url] ?? chMap[_normalizeUrl(url)];
         if (local == null) return ch;
         return {
           ...ch,
+          'id': local['id'],
           'is_read': local['is_read'],
           'last_page_read': local['last_page_read'],
           'is_downloaded': local['is_downloaded'],
           'is_opened': local['is_opened'],
+          'is_bookmarked': local['is_bookmarked'],
           'read_at': local['read_at'],
         };
       }).toList();
@@ -903,6 +926,7 @@ class _MangaDetailScreenState extends ConsumerState<MangaDetailScreen> {
         _inLibrary = true;
         _mangaId = id;
       });
+      unawaited(_reloadLinkedTracks());
       ref.read(mangaDetailProvider.notifier).setInLibrary(true, id);
       if (mounted) ref.read(libraryProvider.notifier).loadBooks();
     }
@@ -1024,6 +1048,23 @@ class _MangaDetailScreenState extends ConsumerState<MangaDetailScreen> {
                           .setFilterMode(ChapterFilter.unread, next);
                     },
                   ),
+                  ChapterFilterOption(
+                    icon: Icons.bookmark_outline_rounded,
+                    label: 'Bookmarked',
+                    mode:
+                        filters[ChapterFilter.bookmarked] ?? FilterMode.ignore,
+                    onTap: () {
+                      final next = _nextFilterMode(
+                        filters[ChapterFilter.bookmarked] ?? FilterMode.ignore,
+                      );
+                      setSheetState(
+                        () => filters[ChapterFilter.bookmarked] = next,
+                      );
+                      ref
+                          .read(mangaDetailProvider.notifier)
+                          .setFilterMode(ChapterFilter.bookmarked, next);
+                    },
+                  ),
                   const SizedBox(height: 16),
                 ],
               ),
@@ -1071,6 +1112,33 @@ class _MangaDetailScreenState extends ConsumerState<MangaDetailScreen> {
                 selected: selectedMode == _DownloadMode.unread,
                 onTap: () {
                   selectedMode = _DownloadMode.unread;
+                  setSheetState(() {});
+                },
+              ),
+              _DownloadOption(
+                icon: Icons.looks_one_outlined,
+                label: 'Next 1 unread',
+                selected: selectedMode == _DownloadMode.next1,
+                onTap: () {
+                  selectedMode = _DownloadMode.next1;
+                  setSheetState(() {});
+                },
+              ),
+              _DownloadOption(
+                icon: Icons.filter_5_outlined,
+                label: 'Next 5 unread',
+                selected: selectedMode == _DownloadMode.next5,
+                onTap: () {
+                  selectedMode = _DownloadMode.next5;
+                  setSheetState(() {});
+                },
+              ),
+              _DownloadOption(
+                icon: Icons.filter_9_plus_outlined,
+                label: 'Next 10 unread',
+                selected: selectedMode == _DownloadMode.next10,
+                onTap: () {
+                  selectedMode = _DownloadMode.next10;
                   setSheetState(() {});
                 },
               ),
@@ -1188,6 +1256,12 @@ class _MangaDetailScreenState extends ConsumerState<MangaDetailScreen> {
       await _downloadChapters(_DownloadMode.all);
     } else if (confirmed == _DownloadMode.unread) {
       await _downloadChapters(_DownloadMode.unread);
+    } else if (confirmed == _DownloadMode.next1) {
+      await _downloadChapters(_DownloadMode.next1);
+    } else if (confirmed == _DownloadMode.next5) {
+      await _downloadChapters(_DownloadMode.next5);
+    } else if (confirmed == _DownloadMode.next10) {
+      await _downloadChapters(_DownloadMode.next10);
     }
   }
 
@@ -1210,6 +1284,24 @@ class _MangaDetailScreenState extends ConsumerState<MangaDetailScreen> {
         final isRead = local?['is_read'] as bool? ?? false;
         return !isRead;
       }).toList();
+    } else if (mode == _DownloadMode.next1 ||
+        mode == _DownloadMode.next5 ||
+        mode == _DownloadMode.next10) {
+      final limit = switch (mode) {
+        _DownloadMode.next1 => 1,
+        _DownloadMode.next5 => 5,
+        _ => 10,
+      };
+      final ordered = _sortedChapters(List<Map<String, dynamic>>.from(chapters));
+      targets = ordered
+          .where((ch) {
+            final url = ch['url'] as String? ?? '';
+            final local = detail.localChapters[url];
+            final isRead = local?['is_read'] as bool? ?? false;
+            return !isRead;
+          })
+          .take(limit)
+          .toList();
     } else {
       final start = rangeStart ?? 1;
       final end = rangeEnd ?? start;
@@ -1318,16 +1410,113 @@ class _MangaDetailScreenState extends ConsumerState<MangaDetailScreen> {
     final mangaId = detail.mangaId;
     if (mangaId == null) return;
     final repos = ref.read(repositoriesProvider);
+    final title = _preferTitle(detail.details?['title'] as String?, widget.title);
     for (final ch in _selectedChapters()) {
-      final url = ch['url'] as String? ?? '';
-      if (url.isEmpty) continue;
-      final row = await repos.manga.getMangaChapterByUrl(mangaId, url);
-      if (row != null) await repos.manga.markMangaChapterRead(row.id);
+      await _markChapterMapRead(repos, mangaId, title, ch);
     }
+    await _refreshChaptersFromDb(mangaId);
+    await TrackChapterUseCase(repos).invoke(mangaId: mangaId);
+    if (!mounted) return;
     setState(() {
       _selectedChapterUrls.clear();
       _chapterSelectMode = false;
     });
+  }
+
+  /// Mihon-style: mark every chapter before [chapter] in [filteredChapters].
+  Future<void> _markPreviousAsRead(
+    Map<String, dynamic> chapter,
+    List<Map<String, dynamic>> filteredChapters,
+  ) async {
+    final detail = ref.read(mangaDetailProvider);
+    final mangaId = detail.mangaId;
+    if (mangaId == null) return;
+    final selectedUrl = chapter['url'] as String? ?? '';
+    if (selectedUrl.isEmpty) return;
+    final idx = filteredChapters.indexWhere(
+      (ch) => (ch['url'] as String? ?? '') == selectedUrl,
+    );
+    if (idx <= 0) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('No previous chapters to mark')),
+        );
+      }
+      return;
+    }
+    final repos = ref.read(repositoriesProvider);
+    final title = _preferTitle(detail.details?['title'] as String?, widget.title);
+    for (var i = 0; i < idx; i++) {
+      await _markChapterMapRead(repos, mangaId, title, filteredChapters[i]);
+    }
+    await _refreshChaptersFromDb(mangaId);
+    await TrackChapterUseCase(repos).invoke(mangaId: mangaId);
+    if (!mounted) return;
+    setState(() {
+      _selectedChapterUrls.clear();
+      _chapterSelectMode = false;
+    });
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('Marked $idx previous chapter(s) as read')),
+    );
+  }
+
+  /// Persist a display-row chapter as read (inserting the Isar row if missing).
+  Future<void> _markChapterMapRead(
+    Repositories repos,
+    int mangaId,
+    String mangaTitle,
+    Map<String, dynamic> ch,
+  ) async {
+    final url = ch['url'] as String? ?? '';
+    if (url.isEmpty) return;
+    var row = await repos.manga.getMangaChapterByUrl(mangaId, url);
+    if (row == null) {
+      final name = ch['name'] as String? ?? '';
+      final model = MangaChapter.withRecognition(
+        id: 0,
+        mangaId: mangaId,
+        mangaTitle: mangaTitle,
+        name: name,
+        url: url,
+        scanlator: ch['scanlator'] as String?,
+        dateUpload: asIntOr(ch['date_upload']),
+        index: asIntOr(ch['index']),
+        sourceChapterNumber: ch['chapter_number'] as num?,
+        memo: ch['memo'] as String?,
+      );
+      await repos.manga.insertMangaChapters(mangaId, [model]);
+      row = await repos.manga.getMangaChapterByUrl(mangaId, url);
+    }
+    if (row != null) {
+      await repos.manga.markMangaChapterRead(row.id);
+    }
+  }
+
+  Future<void> _refreshChaptersFromDb(int mangaId) async {
+    final chapters =
+        await ref.read(repositoriesProvider).manga.getMangaChapters(mangaId);
+    if (!mounted) return;
+    _applyChapters(chapters);
+  }
+
+  Future<void> _toggleChapterBookmark(Map<String, dynamic> ch) async {
+    final detail = ref.read(mangaDetailProvider);
+    final mangaId = detail.mangaId;
+    if (mangaId == null) return;
+    final url = ch['url'] as String? ?? '';
+    if (url.isEmpty) return;
+    final repos = ref.read(repositoriesProvider);
+    final row = await repos.manga.getMangaChapterByUrl(mangaId, url);
+    if (row == null) return;
+    final next = !row.isBookmarked;
+    await repos.manga.setMangaChapterBookmarked(row.id, next);
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(next ? 'Chapter bookmarked' : 'Bookmark removed'),
+      ),
+    );
   }
 
   Future<void> _bulkDownloadSelected() async {
@@ -1785,6 +1974,18 @@ class _MangaDetailScreenState extends ConsumerState<MangaDetailScreen> {
       if (existing != null) {
         await repos.manga.markMangaChapterOpened(existing.id);
       }
+      // Optimistic local update so the list dims immediately on return.
+      final notifier = ref.read(mangaDetailProvider.notifier);
+      final updatedChapters = detail.chapters.map((row) {
+        if ((row['url'] as String? ?? '') != url) return row;
+        return {...row, 'is_opened': true};
+      }).toList();
+      final local = Map<String, Map<String, dynamic>>.from(detail.localChapters);
+      final prev = Map<String, dynamic>.from(local[url] ?? const {});
+      local[url] = {...prev, 'is_opened': true};
+      notifier
+        ..setChapters(updatedChapters)
+        ..setLocalChapters(local);
     }
     if (!mounted) return;
     await context.pushNamed(
@@ -1810,9 +2011,11 @@ class _MangaDetailScreenState extends ConsumerState<MangaDetailScreen> {
           'last_page_read': lc.lastPageRead,
           'is_downloaded': lc.isDownloaded,
           'is_opened': lc.isOpened,
+          'is_bookmarked': lc.isBookmarked,
         };
       }
-      final merged = detail.chapters.map((row) {
+      final latest = ref.read(mangaDetailProvider);
+      final merged = latest.chapters.map((row) {
         final u = _normalizeUrl(row['url'] as String? ?? '');
         final local = chMapNorm[u];
         final cleaned = Map<String, dynamic>.from(row)
@@ -1820,6 +2023,7 @@ class _MangaDetailScreenState extends ConsumerState<MangaDetailScreen> {
           ..remove('last_page_read')
           ..remove('is_downloaded')
           ..remove('is_opened')
+          ..remove('is_bookmarked')
           ..remove('read_at');
         if (local != null) cleaned.addAll(local);
         return cleaned;
@@ -1899,6 +2103,215 @@ class _MangaDetailScreenState extends ConsumerState<MangaDetailScreen> {
             memo: target.memo,
           ),
         );
+      case 'merge':
+        await _mergeDuplicate();
+      case 'track':
+        await _openTrackSheet();
+    }
+  }
+
+  Future<void> _mergeDuplicate() async {
+    final mangaId = _mangaId;
+    if (mangaId == null) return;
+    final repos = ref.read(repositoriesProvider);
+    final keep = await repos.manga.getMangaById(mangaId);
+    if (keep == null || !mounted) return;
+
+    final library = await repos.manga.getMangasInLibrary();
+    final candidates = [
+      for (final d in library)
+        if (d.id != keep.id &&
+            (d.sourceId != keep.sourceId || d.url != keep.url) &&
+            MergeMangaUseCase.titlesLookCompatible(keep.name, d.name))
+          d,
+    ];
+    if (candidates.isEmpty) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('No library duplicates found')),
+      );
+      return;
+    }
+
+    Future<String> labelFor(Manga m) async =>
+        MergeMangaUseCase(repos).sourceLabel(m);
+
+    if (!mounted) return;
+    final absorb = await showModalBottomSheet<Manga>(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) {
+        final c = ctx.colors;
+        return Material(
+          color: c.surface,
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+          clipBehavior: Clip.antiAlias,
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Merge duplicate into this title',
+                  style: TextStyle(
+                    color: c.textPrimary,
+                    fontSize: 16,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  'Progress and chapters from the selected entry will be absorbed.',
+                  style: TextStyle(color: c.textSecondary, fontSize: 13),
+                ),
+                const SizedBox(height: 12),
+                ...candidates.map(
+                  (m) => FutureBuilder<String>(
+                    future: labelFor(m),
+                    builder: (context, snap) => ListTile(
+                      title: Text(m.name),
+                      subtitle: Text(snap.data ?? m.sourceId),
+                      onTap: () => Navigator.pop(ctx, m),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+    if (absorb == null || !mounted) return;
+
+    final absorbLabel = await MergeMangaUseCase(repos).sourceLabel(absorb);
+    if (!mounted) return;
+
+    final confirmed = await StashDialog.show<bool>(
+      context,
+      title: 'Merge duplicate?',
+      content:
+          'Keep "${keep.name}" and absorb "${absorb.name}" '
+          '($absorbLabel). The duplicate leaves the library.',
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context, false),
+          child: Text(
+            'Cancel',
+            style: TextStyle(color: context.colors.textSecondary),
+          ),
+        ),
+        FilledButton(
+          onPressed: () => Navigator.pop(context, true),
+          child: const Text('Merge'),
+        ),
+      ],
+    );
+    if (confirmed != true || !mounted) return;
+
+    try {
+      await MergeMangaUseCase(repos).invoke(keep: keep, absorb: absorb);
+      if (!mounted) return;
+      ref.read(libraryProvider.notifier).loadBooks();
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Merged duplicate')),
+      );
+    } on MergeValidationException catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(e.message)),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Merge failed: $e')),
+      );
+    }
+  }
+
+  Future<void> _openTrackSheet() async {
+    if (!mounted) return;
+    await Navigator.of(context).push(
+      scaleFadeRoute(TrackMangaScreen(mangaId: _mangaId!)),
+    );
+    await _reloadLinkedTracks();
+  }
+
+  Future<void> _reloadLinkedTracks() async {
+    final id = _mangaId;
+    if (id == null) {
+      if (mounted) setState(() => _linkedTracks = const []);
+      return;
+    }
+    final tracks =
+        await ref.read(repositoriesProvider).tracks.getTracksForManga(id);
+    if (!mounted) return;
+    setState(() => _linkedTracks = tracks);
+  }
+
+  Future<void> _openTrackingLinks() async {
+    final urls = [
+      for (final t in _linkedTracks)
+        if ((t.trackingUrl ?? '').trim().isNotEmpty) t.trackingUrl!.trim(),
+    ];
+    if (urls.isEmpty) {
+      await _openTrackSheet();
+      return;
+    }
+    if (urls.length == 1) {
+      final uri = Uri.tryParse(urls.first);
+      if (uri != null) {
+        await launchUrl(uri, mode: LaunchMode.externalApplication);
+      }
+      return;
+    }
+    if (!mounted) return;
+    final chosen = await showModalBottomSheet<String>(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) {
+        final c = ctx.colors;
+        return Material(
+          color: c.surface,
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+          clipBehavior: Clip.antiAlias,
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(8, 12, 8, 24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                for (final t in _linkedTracks)
+                  if ((t.trackingUrl ?? '').trim().isNotEmpty)
+                    ListTile(
+                      leading: TrackerBrandIcon(
+                        syncId: t.syncId ?? 0,
+                        size: 36,
+                      ),
+                      title: Text(t.title ?? 'Open tracker'),
+                      subtitle: Text(t.trackingUrl!),
+                      onTap: () => Navigator.pop(ctx, t.trackingUrl),
+                    ),
+                ListTile(
+                  leading: Icon(Icons.edit_outlined, color: c.textPrimary),
+                  title: const Text('Manage tracking'),
+                  onTap: () => Navigator.pop(ctx, '__manage__'),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+    if (!mounted) return;
+    if (chosen == '__manage__') {
+      await _openTrackSheet();
+      return;
+    }
+    if (chosen != null) {
+      final uri = Uri.tryParse(chosen);
+      if (uri != null) {
+        await launchUrl(uri, mode: LaunchMode.externalApplication);
+      }
     }
   }
 
@@ -1929,6 +2342,12 @@ class _MangaDetailScreenState extends ConsumerState<MangaDetailScreen> {
         modes[ChapterFilter.unread] == FilterMode.ignore ||
         (modes[ChapterFilter.unread] == FilterMode.include) == !isRead;
     if (!unreadMatch) return false;
+
+    final isBookmarked = local?['is_bookmarked'] as bool? ?? false;
+    final bookmarkedMatch =
+        modes[ChapterFilter.bookmarked] == FilterMode.ignore ||
+        (modes[ChapterFilter.bookmarked] == FilterMode.include) == isBookmarked;
+    if (!bookmarkedMatch) return false;
 
     return true;
   }
@@ -2036,12 +2455,15 @@ class _MangaDetailScreenState extends ConsumerState<MangaDetailScreen> {
         _hasContinueProgress(filteredChapters) ? 'Continue' : 'Read';
     final showBulkBar =
         _chapterSelectMode && _selectedChapterUrls.isNotEmpty;
+    final selectedOnly = showBulkBar ? _selectedChapters() : const <Map<String, dynamic>>[];
+    final singleSelected = selectedOnly.length == 1 ? selectedOnly.first : null;
 
     return Scaffold(
       backgroundColor: c.bg,
       bottomNavigationBar: _KenjiDetailButtonGroup(
         c: c,
         bulkMode: showBulkBar,
+        markPreviousMode: singleSelected != null,
         readLabel: readLabel,
         inLibrary: _inLibrary,
         onRead: continueCh == null ? null : () => _openChapter(continueCh),
@@ -2050,6 +2472,9 @@ class _MangaDetailScreenState extends ConsumerState<MangaDetailScreen> {
         onBulkMarkRead: _bulkMarkSelectedRead,
         onBulkDownload: detail.offlineMode ? null : _bulkDownloadSelected,
         onBulkDelete: _bulkDeleteSelectedDownloads,
+        onMarkPrevious: singleSelected == null
+            ? null
+            : () => _markPreviousAsRead(singleSelected, filteredChapters),
       ),
       body: detail.details != null
           ? CustomScrollView(
@@ -2068,6 +2493,10 @@ class _MangaDetailScreenState extends ConsumerState<MangaDetailScreen> {
                     onExpandedChanged: (v) =>
                         ref.read(mangaDetailProvider.notifier).setExpanded(v),
                     fallbackTitle: widget.title,
+                    isTracking: _linkedTracks.isNotEmpty,
+                    onTrackingTap: _linkedTracks.isEmpty
+                        ? null
+                        : _openTrackingLinks,
                     onBack: () {
                       if (context.canPop()) {
                         context.pop();
@@ -2131,6 +2560,18 @@ class _MangaDetailScreenState extends ConsumerState<MangaDetailScreen> {
                             value: 'migrate',
                             child: Text('Migrate'),
                           ),
+                        if (_inLibrary && _mangaId != null)
+                          const PopupMenuItem(
+                            value: 'merge',
+                            child: Text('Merge duplicate…'),
+                          ),
+                        if (_inLibrary && _mangaId != null)
+                          PopupMenuItem(
+                            value: 'track',
+                            child: Text(
+                              _linkedTracks.isEmpty ? 'Track' : 'Tracking',
+                            ),
+                          ),
                       ],
                     ),
                   ),
@@ -2189,7 +2630,7 @@ class _MangaDetailScreenState extends ConsumerState<MangaDetailScreen> {
                   ),
                 SliverToBoxAdapter(
                   child: Padding(
-                    padding: const EdgeInsets.fromLTRB(24, 8, 12, 8),
+                    padding: const EdgeInsets.fromLTRB(24, 8, 12, 0),
                     child: Row(
                       children: [
                         Text(
@@ -2313,34 +2754,108 @@ class _MangaDetailScreenState extends ConsumerState<MangaDetailScreen> {
                                       } else {
                                         _selectedChapterUrls.add(chapterUrl);
                                       }
+                                      if (_selectedChapterUrls.isEmpty) {
+                                        _chapterSelectMode = false;
+                                      }
                                     });
                                     return;
                                   }
                                   await _openChapter(ch);
                                 },
-                                onChapterLongPress: (ch) {
+                                onChapterLongPress: (ch) async {
                                   final chapterUrl =
                                       ch['url'] as String? ?? '';
                                   if (chapterUrl.isEmpty) return;
-                                  setState(() {
-                                    if (!_chapterSelectMode) {
-                                      _chapterSelectMode = true;
-                                      _selectedChapterUrls
-                                        ..clear()
-                                        ..add(chapterUrl);
-                                    } else if (_selectedChapterUrls.contains(
-                                      chapterUrl,
-                                    )) {
-                                      _selectedChapterUrls.remove(chapterUrl);
-                                    } else {
-                                      _selectedChapterUrls.add(chapterUrl);
-                                    }
-                                  });
+                                  final action =
+                                      await showModalBottomSheet<String>(
+                                    context: context,
+                                    backgroundColor: Colors.transparent,
+                                    builder: (ctx) {
+                                      final bookmarked =
+                                          ch['is_bookmarked'] as bool? ??
+                                              false;
+                                      return Material(
+                                        color: c.surface,
+                                        borderRadius:
+                                            const BorderRadius.vertical(
+                                          top: Radius.circular(20),
+                                        ),
+                                        clipBehavior: Clip.antiAlias,
+                                        child: Padding(
+                                          padding: const EdgeInsets.fromLTRB(
+                                            16,
+                                            12,
+                                            16,
+                                            24,
+                                          ),
+                                          child: Column(
+                                            mainAxisSize: MainAxisSize.min,
+                                            children: [
+                                              ListTile(
+                                                leading: Icon(
+                                                  bookmarked
+                                                      ? Icons.bookmark_remove_outlined
+                                                      : Icons.bookmark_add_outlined,
+                                                  color: c.textPrimary,
+                                                ),
+                                                title: Text(
+                                                  bookmarked
+                                                      ? 'Remove bookmark'
+                                                      : 'Bookmark chapter',
+                                                ),
+                                                onTap: () => Navigator.pop(
+                                                  ctx,
+                                                  'bookmark',
+                                                ),
+                                              ),
+                                              ListTile(
+                                                leading: Icon(
+                                                  Icons.checklist_rounded,
+                                                  color: c.textPrimary,
+                                                ),
+                                                title: const Text(
+                                                  'Select chapters',
+                                                ),
+                                                onTap: () => Navigator.pop(
+                                                  ctx,
+                                                  'select',
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                        ),
+                                      );
+                                    },
+                                  );
+                                  if (!mounted) return;
+                                  if (action == 'bookmark') {
+                                    await _toggleChapterBookmark(ch);
+                                  } else if (action == 'select') {
+                                    setState(() {
+                                      if (!_chapterSelectMode) {
+                                        _chapterSelectMode = true;
+                                        _selectedChapterUrls
+                                          ..clear()
+                                          ..add(chapterUrl);
+                                      } else if (_selectedChapterUrls
+                                          .contains(chapterUrl)) {
+                                        _selectedChapterUrls
+                                            .remove(chapterUrl);
+                                        if (_selectedChapterUrls.isEmpty) {
+                                          _chapterSelectMode = false;
+                                        }
+                                      } else {
+                                        _selectedChapterUrls.add(chapterUrl);
+                                      }
+                                    });
+                                  }
                                 },
                                 onDownloadTap: (ch) =>
                                     _downloadSingleChapter(ch),
                                 onDeleteTap: (ch) =>
                                     _confirmDeleteSingleChapter(ch),
+                                onBookmarkTap: (ch) =>
+                                    _toggleChapterBookmark(ch),
                               ),
                             );
                           },
@@ -2373,18 +2888,23 @@ class _MangaDetailScreenState extends ConsumerState<MangaDetailScreen> {
     void Function(Map<String, dynamic> ch)? onChapterLongPress,
     required void Function(Map<String, dynamic> ch)? onDownloadTap,
     required void Function(Map<String, dynamic> ch)? onDeleteTap,
+    void Function(Map<String, dynamic> ch)? onBookmarkTap,
     bool selectMode = false,
     bool selected = false,
   }) {
     final url = ch['url'] as String? ?? '';
     final isRead = ch['is_read'] as bool? ?? false;
+    final isOpened = ch['is_opened'] as bool? ?? false;
+    final isBookmarked = ch['is_bookmarked'] as bool? ?? false;
     final lastPageRead = asIntOr(ch['last_page_read']);
     final name = ch['name'] as String? ?? '';
     final scanlator = (ch['scanlator'] as String?)?.trim();
     final dateUpload = asIntOr(ch['date_upload']);
     final dlStatus = downloadProgress[url];
     final pageProg = _parsePageProgress(dlStatus);
-    final unread = !isRead;
+    // Opened OR fully read → dim + clear the "new" dot.
+    final seen = isOpened || isRead || lastPageRead > 0;
+    final unreadNew = !seen;
 
     final dateStr = dateUpload > 0
         ? DateFormat.yMMMd().format(
@@ -2419,7 +2939,7 @@ class _MangaDetailScreenState extends ConsumerState<MangaDetailScreen> {
                   size: 22,
                 ),
               )
-            else if (unread)
+            else if (unreadNew)
               Padding(
                 padding: const EdgeInsets.only(right: 10),
                 child: Container(
@@ -2442,9 +2962,9 @@ class _MangaDetailScreenState extends ConsumerState<MangaDetailScreen> {
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(
-                      color: isRead ? c.textTertiary : c.textPrimary,
+                      color: seen ? c.textTertiary : c.textPrimary,
                       fontSize: 15,
-                      fontWeight: unread ? FontWeight.w600 : FontWeight.w400,
+                      fontWeight: unreadNew ? FontWeight.w600 : FontWeight.w400,
                       height: 20 / 15,
                     ),
                   ),
@@ -2497,6 +3017,18 @@ class _MangaDetailScreenState extends ConsumerState<MangaDetailScreen> {
                 ],
               ),
             ),
+            // Bookmark: filled when set; outline otherwise so it's discoverable.
+            IconButtonRound(
+              icon: isBookmarked
+                  ? Icons.bookmark_rounded
+                  : Icons.bookmark_border_rounded,
+              size: 32,
+              iconColor: isBookmarked ? c.accent : c.textTertiary,
+              onPressed: onBookmarkTap == null
+                  ? null
+                  : () => onBookmarkTap(ch),
+            ),
+            const SizedBox(width: 8),
             if (dlStatus == 'done' || ch['is_downloaded'] == true)
               IconButtonRound(
                 icon: Icons.delete_outline,
@@ -2552,6 +3084,8 @@ class _Header extends StatefulWidget {
   final String fallbackTitle;
   final VoidCallback onBack;
   final Widget overflowButton;
+  final bool isTracking;
+  final VoidCallback? onTrackingTap;
 
   const _Header({
     required this.details,
@@ -2564,16 +3098,53 @@ class _Header extends StatefulWidget {
     this.releaseCycle = 'N/A',
     required this.expanded,
     required this.onExpandedChanged,
-    this.fallbackTitle = '',
+    required this.fallbackTitle,
     required this.onBack,
     required this.overflowButton,
+    this.isTracking = false,
+    this.onTrackingTap,
   });
 
   @override
   State<_Header> createState() => _HeaderState();
 }
 
-class _HeaderState extends State<_Header> {
+class _HeaderState extends State<_Header> with SingleTickerProviderStateMixin {
+  AnimationController? _pulse;
+
+  @override
+  void initState() {
+    super.initState();
+    _syncPulse(widget.isTracking);
+  }
+
+  @override
+  void didUpdateWidget(covariant _Header oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.isTracking != widget.isTracking) {
+      _syncPulse(widget.isTracking);
+    }
+  }
+
+  void _syncPulse(bool tracking) {
+    if (tracking) {
+      _pulse ??= AnimationController(
+        vsync: this,
+        duration: const Duration(milliseconds: 1400),
+      )..repeat(reverse: true);
+    } else {
+      _pulse?.stop();
+      _pulse?.dispose();
+      _pulse = null;
+    }
+  }
+
+  @override
+  void dispose() {
+    _pulse?.dispose();
+    super.dispose();
+  }
+
   Widget _buildStatusChip(int status, String label) {
     final (icon, chipColor) = switch (status) {
       1 => (Icons.auto_awesome_mosaic, widget.c.accent),
@@ -2582,11 +3153,14 @@ class _HeaderState extends State<_Header> {
       6 => (Icons.pause_circle, Colors.orange),
       _ => (Icons.help_outline, widget.c.textTertiary),
     };
-    return Container(
+    final chip = Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
       decoration: BoxDecoration(
         color: chipColor.withValues(alpha: 0.15),
         borderRadius: AppSpacing.brXs,
+        border: widget.isTracking
+            ? Border.all(color: chipColor.withValues(alpha: 0.55), width: 1)
+            : null,
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
@@ -2601,8 +3175,40 @@ class _HeaderState extends State<_Header> {
               fontWeight: FontWeight.w600,
             ),
           ),
+          if (widget.isTracking) ...[
+            const SizedBox(width: 4),
+            Icon(Icons.sync_alt_rounded, size: 11, color: chipColor),
+          ],
         ],
       ),
+    );
+
+    final tappable = widget.onTrackingTap == null
+        ? chip
+        : GestureDetector(onTap: widget.onTrackingTap, child: chip);
+
+    final pulse = _pulse;
+    if (!widget.isTracking || pulse == null) return tappable;
+
+    return AnimatedBuilder(
+      animation: pulse,
+      builder: (context, child) {
+        final t = pulse.value;
+        return Container(
+          decoration: BoxDecoration(
+            borderRadius: AppSpacing.brXs,
+            boxShadow: [
+              BoxShadow(
+                color: chipColor.withValues(alpha: 0.18 + 0.22 * t),
+                blurRadius: 6 + 8 * t,
+                spreadRadius: 0.5 + 1.5 * t,
+              ),
+            ],
+          ),
+          child: child,
+        );
+      },
+      child: tappable,
     );
   }
 
@@ -3215,6 +3821,7 @@ class _HeroSection extends ConsumerWidget {
 class _KenjiDetailButtonGroup extends StatelessWidget {
   final KomaColors c;
   final bool bulkMode;
+  final bool markPreviousMode;
   final String readLabel;
   final bool inLibrary;
   final VoidCallback? onRead;
@@ -3223,10 +3830,12 @@ class _KenjiDetailButtonGroup extends StatelessWidget {
   final VoidCallback onBulkMarkRead;
   final VoidCallback? onBulkDownload;
   final VoidCallback onBulkDelete;
+  final VoidCallback? onMarkPrevious;
 
   const _KenjiDetailButtonGroup({
     required this.c,
     required this.bulkMode,
+    this.markPreviousMode = false,
     required this.readLabel,
     required this.inLibrary,
     required this.onRead,
@@ -3235,6 +3844,7 @@ class _KenjiDetailButtonGroup extends StatelessWidget {
     required this.onBulkMarkRead,
     required this.onBulkDownload,
     required this.onBulkDelete,
+    this.onMarkPrevious,
   });
 
   @override
@@ -3247,7 +3857,46 @@ class _KenjiDetailButtonGroup extends StatelessWidget {
         child: SizedBox(
           height: 56,
           child: Row(
-            children: bulkMode
+            children: markPreviousMode
+                ? [
+                    Expanded(
+                      child: _KenjiBarButton(
+                        label: 'Mark previous',
+                        icon: Icons.done_all_rounded,
+                        filled: true,
+                        accent: c.accent,
+                        onAccent: c.onAccent,
+                        onPressed: onMarkPrevious,
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: _KenjiBarButton(
+                        label: 'Mark read',
+                        icon: Icons.check_rounded,
+                        filled: false,
+                        accent: c.accent,
+                        onAccent: c.onAccent,
+                        muted: c.surfaceMuted,
+                        fg: c.textPrimary,
+                        onPressed: onBulkMarkRead,
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: _KenjiBarButton(
+                        label: 'Download',
+                        icon: Icons.download_rounded,
+                        filled: false,
+                        accent: c.accent,
+                        onAccent: c.onAccent,
+                        muted: c.surfaceMuted,
+                        fg: c.textPrimary,
+                        onPressed: onBulkDownload,
+                      ),
+                    ),
+                  ]
+                : bulkMode
                 ? [
                     Expanded(
                       child: _KenjiBarButton(

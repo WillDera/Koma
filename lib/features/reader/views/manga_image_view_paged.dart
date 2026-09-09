@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 
 import '../../../core/utils/custom_extended_image_provider.dart';
+import '../models/page_data.dart';
 import '../reader_settings_sheet.dart';
 import '../subsampling_scale_image_view/subsampling_scale_image_view.dart';
 import '../widgets/transition_view_paged.dart';
@@ -38,33 +39,37 @@ class MangaImageViewPaged extends StatelessWidget {
   Widget build(BuildContext context) {
     final pages = props.pages;
     if (bookMode) {
+      final spreads = _packSpreads(pages);
       return PageView.builder(
         controller: pageController,
         scrollDirection: axis,
         reverse: reverse,
         physics: const PageScrollPhysics(),
         allowImplicitScrolling: true,
-        itemCount: (pages.length / 2).ceil(),
-        onPageChanged: (i) => props.onPageChanged(i * 2),
+        itemCount: spreads.length,
+        onPageChanged: (i) {
+          if (i < 0 || i >= spreads.length) return;
+          props.onPageChanged(spreads[i].left);
+        },
         itemBuilder: (_, spreadIndex) {
-          final leftIdx = spreadIndex * 2;
-          final rightIdx = leftIdx + 1;
+          final spread = spreads[spreadIndex];
+          final leftIdx = spread.left;
+          final rightIdx = spread.right;
+          if (rightIdx == null) {
+            return _KeepAlivePage(
+              pageIndex: leftIdx,
+              currentPage: props.currentPage,
+              child: _buildPage(context, leftIdx),
+            );
+          }
           return _KeepAlivePage(
             pageIndex: leftIdx,
             currentPage: props.currentPage,
             child: Row(
               children: [
-                Expanded(
-                  child: leftIdx < pages.length
-                      ? _buildPage(context, leftIdx)
-                      : const SizedBox(),
-                ),
+                Expanded(child: _buildPage(context, leftIdx)),
                 Container(width: 1, color: Colors.white12),
-                Expanded(
-                  child: rightIdx < pages.length
-                      ? _buildPage(context, rightIdx)
-                      : const SizedBox(),
-                ),
+                Expanded(child: _buildPage(context, rightIdx)),
               ],
             ),
           );
@@ -86,6 +91,39 @@ class MangaImageViewPaged extends StatelessWidget {
         child: _buildPage(context, i),
       ),
     );
+  }
+
+  /// Packs pages into spreads for book mode. Transition pages occupy a
+  /// solo spread so they are never paired with an image page.
+  static List<({int left, int? right})> _packSpreads(List<PageData> pages) {
+    final spreads = <({int left, int? right})>[];
+    var i = 0;
+    while (i < pages.length) {
+      if (pages[i].isTransitionPage) {
+        spreads.add((left: i, right: null));
+        i++;
+        continue;
+      }
+      final next = i + 1;
+      if (next < pages.length && !pages[next].isTransitionPage) {
+        spreads.add((left: i, right: next));
+        i += 2;
+      } else {
+        spreads.add((left: i, right: null));
+        i++;
+      }
+    }
+    return spreads;
+  }
+
+  /// Maps a flat page index onto a book-mode spread index.
+  static int spreadIndexForPage(List<PageData> pages, int flatIndex) {
+    final spreads = _packSpreads(pages);
+    for (var s = 0; s < spreads.length; s++) {
+      final sp = spreads[s];
+      if (sp.left == flatIndex || sp.right == flatIndex) return s;
+    }
+    return 0;
   }
 
   Widget _buildPage(BuildContext context, int index) {

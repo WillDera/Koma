@@ -33,6 +33,42 @@ class ExportService {
         extensionManager: _extensionManager,
       );
 
+  /// Flat manga library list for spreadsheets / list managers (CSV).
+  Future<String> exportMangaListCsv() async {
+    final mangas = await _repos.manga.getMangasInLibrary();
+    final buf = StringBuffer();
+    buf.writeln(
+      'title,author,artist,source_id,status,chapters_read,chapters_total,'
+      'genres,url,in_library',
+    );
+    for (final m in mangas) {
+      final chapters = await _repos.manga.getMangaChapters(m.id);
+      final read = chapters.where((c) => c.isRead).length;
+      buf.writeln(
+        [
+          _csv(m.name),
+          _csv(m.author ?? ''),
+          _csv(m.artist ?? ''),
+          _csv(m.sourceId),
+          m.status,
+          read,
+          chapters.length,
+          _csv(m.genres.join('; ')),
+          _csv(m.url),
+          m.inLibrary,
+        ].join(','),
+      );
+    }
+    return buf.toString();
+  }
+
+  static String _csv(String value) {
+    final needsQuotes =
+        value.contains(',') || value.contains('"') || value.contains('\n');
+    final escaped = value.replaceAll('"', '""');
+    return needsQuotes ? '"$escaped"' : escaped;
+  }
+
   Future<String> exportToJson() async {
     final books = await _repos.books.getBooks();
     final chapters = <Chapter>[];
