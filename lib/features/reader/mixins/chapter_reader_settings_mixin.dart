@@ -36,6 +36,7 @@ mixin class ChapterReaderSettingsMixin {
       keepScreenOn: overrides.keepScreenOn,
       showActionsOnLongTap: overrides.showActionsOnLongTap,
       animatePageTransition: overrides.animatePageTransition,
+      hapticFeedback: overrides.hapticFeedback,
       progressBarPlacement: overrides.progressBarPlacement,
       brightness: overrides.brightness,
       contrast: overrides.contrast,

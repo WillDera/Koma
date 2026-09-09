@@ -23,7 +23,9 @@ BackupSniff sniffBackup(List<int> bytes, {String? filename}) {
     return const BackupSniff(BackupKind.mangayomi);
   }
   final name = filename?.toLowerCase() ?? '';
-  if (name.endsWith('.tachibk') || name.endsWith('.proto.gz')) {
+  if (name.endsWith('.tachibk') ||
+      name.endsWith('.tachibak') ||
+      name.endsWith('.proto.gz')) {
     return const BackupSniff(BackupKind.mihon);
   }
   if (name.endsWith('.backup') || name.contains('mangayomi')) {

@@ -48,6 +48,8 @@ class ReaderSettings {
   bool keepScreenOn;
   bool showActionsOnLongTap;
   bool animatePageTransition;
+  /// Light haptics when flipping panels (paged) or crossing pages.
+  bool hapticFeedback;
   ProgressBarPlacement progressBarPlacement;
   double brightness;
   double contrast;
@@ -72,6 +74,7 @@ class ReaderSettings {
     this.keepScreenOn = true,
     this.showActionsOnLongTap = true,
     this.animatePageTransition = true,
+    this.hapticFeedback = true,
     this.progressBarPlacement = ProgressBarPlacement.horizontalBottom,
     this.brightness = 1.0,
     this.contrast = 1.0,
@@ -96,6 +99,7 @@ class ReaderSettings {
     bool? keepScreenOn,
     bool? showActionsOnLongTap,
     bool? animatePageTransition,
+    bool? hapticFeedback,
     ProgressBarPlacement? progressBarPlacement,
     double? brightness,
     double? contrast,
@@ -120,6 +124,7 @@ class ReaderSettings {
       showActionsOnLongTap: showActionsOnLongTap ?? this.showActionsOnLongTap,
       animatePageTransition:
           animatePageTransition ?? this.animatePageTransition,
+      hapticFeedback: hapticFeedback ?? this.hapticFeedback,
       progressBarPlacement: progressBarPlacement ?? this.progressBarPlacement,
       brightness: brightness ?? this.brightness,
       contrast: contrast ?? this.contrast,
@@ -150,6 +155,7 @@ class ReaderSettings {
     'keepScreenOn': keepScreenOn ? 1 : 0,
     'showActionsOnLongTap': showActionsOnLongTap ? 1 : 0,
     'animatePageTransition': animatePageTransition ? 1 : 0,
+    'hapticFeedback': hapticFeedback ? 1 : 0,
     'progressBarPlacement': progressBarPlacement.index,
     'brightness': brightness,
     'contrast': contrast,
@@ -191,6 +197,7 @@ class ReaderSettings {
       keepScreenOn: (json['keepScreenOn'] as int? ?? 1) == 1,
       showActionsOnLongTap: (json['showActionsOnLongTap'] as int? ?? 1) == 1,
       animatePageTransition: (json['animatePageTransition'] as int? ?? 1) == 1,
+      hapticFeedback: (json['hapticFeedback'] as int? ?? 1) == 1,
       progressBarPlacement: ProgressBarPlacement
           .values[json['progressBarPlacement'] as int? ?? 1],
       brightness: (json['brightness'] as num?)?.toDouble() ?? 1.0,
@@ -432,12 +439,25 @@ class _DisplayTab extends StatelessWidget {
               SettingsRow(
                 icon: Icons.animation_outlined,
                 title: 'Animated page transition',
+                subtitle: 'Animate tap-to-turn (swipes always slide)',
                 trailing: Switch(
                   value: settings.animatePageTransition,
                   activeThumbColor: c.accent,
                   onChanged: (v) => onChanged(
                     settings.copyWith(animatePageTransition: v),
                   ),
+                ),
+              ),
+              _rowDivider(c),
+              SettingsRow(
+                icon: Icons.vibration,
+                title: 'Haptic feedback',
+                subtitle: 'Vibrate lightly when changing panels',
+                trailing: Switch(
+                  value: settings.hapticFeedback,
+                  activeThumbColor: c.accent,
+                  onChanged: (v) =>
+                      onChanged(settings.copyWith(hapticFeedback: v)),
                 ),
               ),
               _rowDivider(c),

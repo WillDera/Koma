@@ -139,7 +139,7 @@ class MainActivity : FlutterActivity() {
             .lowercase()
         if (fromName in setOf(
                 "epub", "pdf", "txt", "md", "cbz", "cbr", "pb", "json",
-                "tachibk", "backup", "mobi", "azw", "azw3", "fb2",
+                "tachibk", "tachibak", "backup", "mobi", "azw", "azw3", "fb2",
             )
         ) {
             return ".$fromName"
@@ -152,7 +152,7 @@ class MainActivity : FlutterActivity() {
             mime.contains("cbz") || mime.contains("comicbook+zip") -> ".cbz"
             mime.contains("cbr") || mime.contains("comicbook-rar") -> ".cbr"
             mime.contains("json") -> ".json"
-            mime.contains("protobuf") -> ".pb"
+            mime.contains("protobuf") || mime.contains("gzip") -> ".tachibk"
             mime.startsWith("text/") -> ".txt"
             else -> ""
         }

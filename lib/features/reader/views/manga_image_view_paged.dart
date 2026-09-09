@@ -14,6 +14,10 @@ import 'reader_view_props.dart';
 /// each page is a pinch-zoomable [SubsamplingScaleImageView], with chapter
 /// separators rendered as [TransitionViewPaged]. Book mode packs two pages
 /// per spread.
+///
+/// Swipe always uses normal [PageScrollPhysics] (panels slide in/out). The
+/// "Animated page transition" setting only affects tap-driven jumps via
+/// [PageController.animateToPage] vs [PageController.jumpToPage].
 class MangaImageViewPaged extends StatelessWidget {
   final ReaderViewProps props;
   final PageController pageController;
@@ -38,6 +42,7 @@ class MangaImageViewPaged extends StatelessWidget {
         controller: pageController,
         scrollDirection: axis,
         reverse: reverse,
+        physics: const PageScrollPhysics(),
         allowImplicitScrolling: true,
         itemCount: (pages.length / 2).ceil(),
         onPageChanged: (i) => props.onPageChanged(i * 2),
@@ -71,6 +76,7 @@ class MangaImageViewPaged extends StatelessWidget {
       controller: pageController,
       scrollDirection: axis,
       reverse: reverse,
+      physics: const PageScrollPhysics(),
       allowImplicitScrolling: true,
       itemCount: pages.length,
       onPageChanged: props.onPageChanged,

@@ -2271,7 +2271,7 @@ class _DataSectionState extends ConsumerState<_DataSection> {
           icon: Icons.file_download_outlined,
           iconColor: violet,
           title: 'Import',
-          subtitle: 'Koma JSON, Mihon .tachibk, or Mangayomi .backup',
+          subtitle: 'Koma JSON, Mihon .tachibk/.tachibak, or Mangayomi .backup',
           trailing: _importing
               ? const SizedBox(
                   width: 18,
@@ -2345,10 +2345,13 @@ class _DataSectionState extends ConsumerState<_DataSection> {
     setState(() => _importing = true);
     try {
       final repos = ref.read(repositoriesProvider);
-      final svc = ExportService(repos);
+      final svc = ExportService(
+        repos,
+        extensionManager: ref.read(extensionManagerProvider),
+      );
       final result = await FilePicker.pickFiles(
         type: FileType.custom,
-        allowedExtensions: const ['json', 'tachibk', 'backup'],
+        allowedExtensions: const ['json', 'tachibk', 'tachibak', 'backup'],
       );
       if (result == null || result.files.isEmpty) {
         if (mounted) setState(() => _importing = false);
