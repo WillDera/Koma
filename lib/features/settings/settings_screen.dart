@@ -21,8 +21,6 @@ import '../../core/services/app_update/app_update_checker.dart';
 import '../../core/services/app_update/app_update_manager.dart';
 import '../../core/services/app_update/get_application_release.dart';
 import '../../core/services/export_service.dart';
-import '../../core/services/extension_manager.dart';
-import '../../core/services/keiyoushi_service.dart';
 import '../../core/services/discover_metadata_cache.dart';
 import '../../core/services/download_prefs.dart';
 import '../../core/services/http/http_prefs.dart';
@@ -41,6 +39,7 @@ import 'custom_font_ui.dart';
 import 'open_source_licenses_sheet.dart';
 import 'security_settings_page.dart';
 import 'tracking_settings_page.dart';
+import '../extensions/extensions_catalog_provider.dart';
 import '../../theme/app_theme.dart';
 import '../../theme/theme_provider.dart';
 import '../../theme/tokens/app_colors.dart';
@@ -3064,8 +3063,9 @@ class _PluginsSection extends ConsumerWidget {
       context,
       title: 'Revoke trusted extensions?',
       content:
-          'This clears extensions you explicitly trusted. Packages signed by '
-          'a known repository remain usable.',
+          'Clears fingerprints you explicitly trusted for sideloaded APKs. '
+          'Extensions signed by a known repository stay trusted automatically '
+          '(same as Mihon) — revoke will not demote those.',
       actions: [
         TextButton(
           onPressed: () => Navigator.pop(context, false),
@@ -3078,18 +3078,18 @@ class _PluginsSection extends ConsumerWidget {
       ],
     );
     if (ok != true || !context.mounted) return;
-    final mgr = ExtensionManager(
-      ref.read(repositoriesProvider),
-      KeiyoushiService(),
-    );
+    final mgr = ref.read(extensionManagerProvider);
     final changed = await mgr.revokeAllTrusted();
+    // Extensions hub keeps a session cache — refresh so Untrusted/Loaded update.
+    await ref.read(extensionsCatalogProvider.notifier).refreshInstalled();
     if (!context.mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(
           changed > 0
-              ? 'Revoked trust · $changed extension${changed == 1 ? '' : 's'} rechecked'
-              : 'Revoked all user-trusted extensions',
+              ? 'Revoked trust · $changed source${changed == 1 ? '' : 's'} demoted'
+              : 'No user-trusted sideloads to revoke '
+                  '(repo-signed extensions stay trusted)',
         ),
       ),
     );

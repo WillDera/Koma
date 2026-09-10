@@ -27,6 +27,7 @@ import 'core/services/stats_service.dart';
 import 'core/services/user_profile.dart';
 import 'src/rust/frb_generated.dart';
 import 'theme/theme_provider.dart';
+import 'eval/model/m_bridge.dart';
 
 void main() {
   FlutterError.onError = (details) {
@@ -42,6 +43,10 @@ void main() {
     // (flutter_native_splash is dev-only for asset generation).
     widgetsBinding.deferFirstFrame();
     try {
+      // Extension chapter parsers use DateFormat(locale) for non-en sources;
+      // without this, getDetail throws LocaleDataException on screen.
+      await MBridge.ensureDateFormattingReady();
+
       // Rust metadata engine (Open Library / Google Books) via flutter_rust_bridge.
       await RustLib.init();
       await AppStorage.init();

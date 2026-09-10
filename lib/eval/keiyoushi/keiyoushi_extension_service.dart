@@ -130,8 +130,7 @@ class KeiyoushiExtensionService implements ExtensionService {
       url: chapter.url,
       memo: chapter.memo,
     );
-    // Dalvik Page.toMap() always includes `url` (often "") and puts the real
-    // address in `imageUrl`. Empty string must not win over imageUrl via `??`.
+    // Prefer imageUrl (CDN bitmap) over url (often a viewer HTML page).
     final normalized = <Map<String, dynamic>>[
       for (var i = 0; i < result.length; i++)
         {
@@ -155,11 +154,11 @@ class KeiyoushiExtensionService implements ExtensionService {
   ) async {}
 }
 
-/// Prefer non-empty [url], else [imageUrl] (Dalvik Page mapping).
+/// Prefer resolved [imageUrl] (CDN), else [url] (Dalvik Page mapping).
 String _pageImageUrl(Map<String, dynamic> page) {
-  final url = page['url'];
-  if (url is String && url.isNotEmpty) return url;
   final imageUrl = page['imageUrl'];
   if (imageUrl is String && imageUrl.isNotEmpty) return imageUrl;
+  final url = page['url'];
+  if (url is String && url.isNotEmpty) return url;
   return '';
 }

@@ -306,38 +306,40 @@ class CustomExtendedNetworkImageProvider
     assert(key == this);
     final String md5Key = cacheKey ?? keyToMd5(key.url);
     ui.Codec? result;
-    if (cache) {
-      try {
-        final Uint8List? data = await _loadCache(key, chunkEvents, md5Key);
-        if (data != null) {
-          result = await instantiateImageCodec(data, decode);
+    try {
+      if (cache) {
+        try {
+          final Uint8List? data = await _loadCache(key, chunkEvents, md5Key);
+          if (data != null) {
+            result = await instantiateImageCodec(data, decode);
+          }
+        } catch (e) {
+          if (kDebugMode) {
+            print(e);
+          }
         }
-      } catch (e) {
-        if (kDebugMode) {
-          print(e);
+      } else {
+        // Cache path already tries the network on miss — do not fetch twice
+        // (and never add to [chunkEvents] after it is closed).
+        try {
+          final Uint8List? data = await _loadNetwork(key, chunkEvents);
+          if (data != null) {
+            result = await instantiateImageCodec(data, decode);
+          }
+        } catch (e) {
+          if (kDebugMode) {
+            print(e);
+          }
         }
       }
-    }
 
-    if (result == null) {
-      try {
-        final Uint8List? data = await _loadNetwork(key, chunkEvents);
-        if (data != null) {
-          result = await instantiateImageCodec(data, decode);
-        }
-      } catch (e) {
-        if (kDebugMode) {
-          print(e);
-        }
+      if (result == null) {
+        return Future<ui.Codec>.error(StateError('Failed to load $url.'));
       }
+      return result;
+    } finally {
+      await chunkEvents.close();
     }
-
-    // Failed to load
-    if (result == null) {
-      return Future<ui.Codec>.error(StateError('Failed to load $url.'));
-    }
-
-    return result;
   }
 
   /// Get the image from cache folder.
@@ -424,6 +426,18 @@ class CustomExtendedNetworkImageProvider
         return null;
       }
 
+      final contentType = response.headers['content-type'] ?? '';
+      if (contentType.contains('text/html') ||
+          contentType.contains('application/xhtml')) {
+        if (kDebugMode) {
+          print(
+            'NetworkImage URL returned HTML ($contentType), not an image: '
+            '$resolved',
+          );
+        }
+        return null;
+      }
+
       // Pre-allocate list if content length is known.
       final int total = response.contentLength ?? 0;
       final List<int> bytes = total > 0
@@ -438,12 +452,14 @@ class CustomExtendedNetworkImageProvider
           bytes.addAll(chunk);
         }
         received += chunk.length;
-        chunkEvents?.add(
-          ImageChunkEvent(
-            cumulativeBytesLoaded: received,
-            expectedTotalBytes: total,
-          ),
-        );
+        if (chunkEvents != null && !chunkEvents.isClosed) {
+          chunkEvents.add(
+            ImageChunkEvent(
+              cumulativeBytesLoaded: received,
+              expectedTotalBytes: total,
+            ),
+          );
+        }
       }
 
       if (bytes.isEmpty) {
@@ -474,9 +490,9 @@ class CustomExtendedNetworkImageProvider
       if (kDebugMode) {
         print(e);
       }
-    } finally {
-      await chunkEvents?.close();
     }
+    // Do not close [chunkEvents] here — [_loadAsync] owns the controller and
+    // may still need it (or closes once in its own finally).
     return null;
   }
 

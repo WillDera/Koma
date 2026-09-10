@@ -238,7 +238,10 @@ class _MangaImageViewPagedState extends State<MangaImageViewPaged> {
       );
       resolvedFilePath = page.resolvedFilePath;
     } else {
-      return _BrokenPage(onRetry: () => props.onRetryPage(index));
+      return _BrokenPage(
+        onRetry: () => props.onRetryPage(index),
+        onToggleToolbar: props.onToggleToolbar,
+      );
     }
 
     final padding = settings.sidePadding;
@@ -268,6 +271,7 @@ class _MangaImageViewPagedState extends State<MangaImageViewPaged> {
         controller: _controllerFor(index),
         pageController: pageController,
         onScaleChanged: (scale) => _onScaleChanged(index, scale),
+        onTap: props.onToggleToolbar,
         onError: (msg) {
           if (settings.disableDoubleTap) props.onRetryPage(index);
         },
@@ -336,10 +340,10 @@ class _KeepAlivePageState extends State<_KeepAlivePage>
 
 /// Tap-zone overlay for paged mode.
 ///
-/// - L/R: three full-height columns — L/R navigate (top+mid+bottom of each
-///   side), M toggles the toolbar only.
-/// - L/M/R: mangayomi default — same L|M|R columns plus full-width top
-///   (prev) / bottom (next) strips so middle-top and middle-bottom navigate.
+/// - L/R: three full-height columns — L/R navigate; center passes through so
+///   page content (image tap → toolbar, Reload button) can receive hits.
+/// - L/M/R: same L|M|R columns plus full-width top (prev) / bottom (next)
+///   strips; the center band still passes through.
 class ReaderTapZones extends StatelessWidget {
   final ReaderViewProps props;
   const ReaderTapZones({super.key, required this.props});
@@ -363,10 +367,13 @@ class ReaderTapZones extends StatelessWidget {
       child: const SizedBox.expand(),
     );
 
+    // Center column must NOT absorb hits — broken-page "Reload image" and
+    // the image itself live under this overlay. Toolbar toggle is handled by
+    // onTap on the page content (see SubsamplingScaleImageView / webtoon wrap).
     Widget threeColumn() => Row(
       children: [
         Expanded(child: zone(leftAction)),
-        Expanded(child: zone(props.onToggleToolbar)),
+        const Expanded(child: SizedBox.expand()),
         Expanded(child: zone(rightAction)),
       ],
     );
@@ -405,25 +412,35 @@ class ReaderTapZones extends StatelessWidget {
 /// Fallback shown when a page has no image (no URL and no local file).
 class _BrokenPage extends StatelessWidget {
   final VoidCallback onRetry;
-  const _BrokenPage({required this.onRetry});
+  final VoidCallback? onToggleToolbar;
+  const _BrokenPage({required this.onRetry, this.onToggleToolbar});
 
   @override
   Widget build(BuildContext context) {
-    return Center(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          const Icon(Icons.broken_image, color: Colors.white38, size: 48),
-          const SizedBox(height: 8),
-          TextButton.icon(
-            onPressed: onRetry,
-            icon: const Icon(Icons.refresh, color: Colors.white54),
-            label: const Text(
-              'Reload image',
-              style: TextStyle(color: Colors.white54),
+    return GestureDetector(
+      onTap: onToggleToolbar,
+      behavior: HitTestBehavior.opaque,
+      child: Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(Icons.broken_image, color: Colors.white38, size: 48),
+            const SizedBox(height: 8),
+            // Absorb pointer so parent toolbar tap does not fire with reload.
+            TextButton.icon(
+              onPressed: onRetry,
+              style: TextButton.styleFrom(
+                minimumSize: const Size(48, 48),
+                tapTargetSize: MaterialTapTargetSize.padded,
+              ),
+              icon: const Icon(Icons.refresh, color: Colors.white54),
+              label: const Text(
+                'Reload image',
+                style: TextStyle(color: Colors.white54),
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }

@@ -120,25 +120,26 @@ class _NewUpdateSheetState extends ConsumerState<NewUpdateSheet> {
     final sizeLabel = widget.release.downloadBytes != null
         ? formatDownloadBytes(widget.release.downloadBytes!)
         : null;
+    final maxHeight = MediaQuery.sizeOf(context).height * 0.88;
 
     // Local messenger so install/download SnackBars land on this sheet,
     // not behind the modal barrier on the route underneath.
+    // Align to the bottom — a full-screen Scaffold + expand:false
+    // DraggableScrollableSheet left a large empty gap under the card.
     return ScaffoldMessenger(
       key: _messengerKey,
       child: Scaffold(
         backgroundColor: Colors.transparent,
-        body: DraggableScrollableSheet(
-          initialChildSize: 0.72,
-          minChildSize: 0.4,
-          maxChildSize: 0.95,
-          expand: false,
-          builder: (context, scrollController) {
-            return Container(
-              decoration: BoxDecoration(
-                color: c.bgElevated,
-                borderRadius: const BorderRadius.vertical(top: AppSpacing.rXl),
-              ),
+        body: Align(
+          alignment: Alignment.bottomCenter,
+          child: ConstrainedBox(
+            constraints: BoxConstraints(maxHeight: maxHeight),
+            child: Material(
+              color: c.bgElevated,
+              borderRadius: const BorderRadius.vertical(top: AppSpacing.rXl),
+              clipBehavior: Clip.antiAlias,
               child: Column(
+                mainAxisSize: MainAxisSize.min,
                 children: [
                   const SizedBox(height: 10),
                   Container(
@@ -215,9 +216,9 @@ class _NewUpdateSheetState extends ConsumerState<NewUpdateSheet> {
                         ),
                       ),
                     ),
-                  Expanded(
+                  Flexible(
                     child: ListView(
-                      controller: scrollController,
+                      shrinkWrap: true,
                       padding: const EdgeInsets.fromLTRB(20, 4, 20, 16),
                       children: [
                         if (widget.release.info.trim().isNotEmpty)
@@ -323,8 +324,8 @@ class _NewUpdateSheetState extends ConsumerState<NewUpdateSheet> {
                   ),
                 ],
               ),
-            );
-          },
+            ),
+          ),
         ),
       ),
     );

@@ -16,9 +16,10 @@ class MPage {
   factory MPage.fromJson(Map<String, dynamic> json) {
     final url = json['url'] as String? ?? '';
     final imageUrl = json['imageUrl'] as String? ?? '';
+    // Prefer imageUrl — url is often a viewer HTML page on Tachiyomi sources.
     return MPage(
       index: asIntOr(json['index']),
-      url: url.isNotEmpty ? url : imageUrl,
+      url: imageUrl.isNotEmpty ? imageUrl : url,
       headers: json['headers'] != null
           ? Map<String, String>.from(json['headers'] as Map)
           : null,

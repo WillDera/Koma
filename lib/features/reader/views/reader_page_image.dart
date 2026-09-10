@@ -108,6 +108,10 @@ class ReaderPageImage extends StatelessWidget {
         const SizedBox(height: 8),
         TextButton.icon(
           onPressed: onRetry,
+          style: TextButton.styleFrom(
+            minimumSize: const Size(48, 48),
+            tapTargetSize: MaterialTapTargetSize.padded,
+          ),
           icon: const Icon(Icons.refresh, color: Colors.white54),
           label: const Text(
             'Reload image',

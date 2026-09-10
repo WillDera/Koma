@@ -5,6 +5,7 @@ import 'package:flutter_qjs/flutter_qjs.dart';
 
 import '../../core/utils/json_coerce.dart';
 import '../extension_service.dart';
+import '../model/m_bridge.dart';
 import '../models/m_source.dart';
 import '../models/m_manga.dart';
 import '../models/m_chapter.dart';
@@ -106,6 +107,7 @@ var extention = new DefaultExtension();
         (source.dateFormatLocale != null && source.dateFormatLocale!.isNotEmpty)
         ? source.dateFormatLocale!
         : (meta['dateFormatLocale'] ?? '');
+    unawaited(MBridge.ensureDateFormattingReady(dateFormatLocale));
     return {
       'id': id ?? source.id,
       'name': source.name,

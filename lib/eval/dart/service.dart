@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:d4rt/d4rt.dart';
 import 'package:flutter/foundation.dart';
 import 'package:koma/eval/dart/bridge/registrer.dart';
@@ -5,6 +7,7 @@ import 'package:koma/eval/dart/preference_providers.dart';
 import 'package:koma/eval/extension_service.dart';
 import 'package:koma/eval/javascript/bridges/prefs_bridge.dart';
 import 'package:koma/eval/model/filter.dart' as dart_filter;
+import 'package:koma/eval/model/m_bridge.dart';
 import 'package:koma/eval/model/m_chapter.dart' as dart_chapter;
 import 'package:koma/eval/model/m_manga.dart' as dart_manga;
 import 'package:koma/eval/model/m_pages.dart' as dart_pages;
@@ -118,6 +121,7 @@ class DartExtensionService implements ExtensionService {
         (source.dateFormatLocale != null && source.dateFormatLocale!.isNotEmpty)
             ? source.dateFormatLocale
             : (meta['dateFormatLocale'] ?? '');
+    unawaited(MBridge.ensureDateFormattingReady(dateFormatLocale));
     return dart_source.MSource(
       id: id,
       name: source.name,
