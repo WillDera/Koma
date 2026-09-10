@@ -80,9 +80,11 @@ class ChapterControllerMixin {
             final pd = PageData.page(
               mangaPage: MangaPage(
                 index: p['index'] as int? ?? 0,
-                imageUrl: (p['url'] as String?) ??
-                    (p['imageUrl'] as String?) ??
-                    '',
+                imageUrl: () {
+                  final imageUrl = p['imageUrl'] as String?;
+                  if (imageUrl != null && imageUrl.isNotEmpty) return imageUrl;
+                  return (p['url'] as String?) ?? '';
+                }(),
                 chapterUrl: chapter.url,
               ),
               chapter: chapter,

@@ -53,7 +53,26 @@ class AnilistTracker extends BaseTracker {
     return oauth?['access_token'] as String?;
   }
 
+  static Future<void>? _loginInFlight;
+
   Future<void> login() async {
+    final existing = _loginInFlight;
+    if (existing != null) {
+      await existing;
+      return;
+    }
+    final done = _loginImpl();
+    _loginInFlight = done;
+    try {
+      await done;
+    } finally {
+      if (identical(_loginInFlight, done)) {
+        _loginInFlight = null;
+      }
+    }
+  }
+
+  Future<void> _loginImpl() async {
     final creds = await _clientCreds();
     if (creds.id.isEmpty || creds.secret.isEmpty) {
       throw StateError(
@@ -72,6 +91,10 @@ class AnilistTracker extends BaseTracker {
     final result = await FlutterWebAuth2.authenticate(
       url: authUri.toString(),
       callbackUrlScheme: 'koma',
+      options: const FlutterWebAuth2Options(
+        preferEphemeral: true,
+        intentFlags: ephemeralIntentFlags,
+      ),
     );
     final code = Uri.parse(result).queryParameters['code'];
     if (code == null || code.isEmpty) {
@@ -375,5 +398,264 @@ class AnilistTracker extends BaseTracker {
     final entryId = (entry?['id'] as num?)?.toInt();
     if (entryId != null) track.libraryId = entryId;
     await tracks.upsertTrack(track);
+  }
+
+  @override
+  Future<TrackerMediaDetails?> fetchMediaDetails(int mediaId) async {
+    final token = await _accessToken();
+    if (token == null) return null;
+    final body = await _gql(
+      token,
+      r'''
+        query ($id: Int) {
+          Media(id: $id, type: MANGA) {
+            id
+            format
+            status
+            startDate { year month day }
+            averageScore
+            meanScore
+            popularity
+            favourites
+            source
+            genres
+            tags { name }
+            title { romaji english native }
+            synonyms
+            coverImage { large medium }
+            siteUrl
+            chapters
+          }
+        }
+      ''',
+      variables: {'id': mediaId},
+    );
+    final media = body['data']?['Media'] as Map<String, dynamic>?;
+    if (media == null) return null;
+    final start = media['startDate'] as Map<String, dynamic>?;
+    DateTime? startDate;
+    final y = (start?['year'] as num?)?.toInt();
+    final m = (start?['month'] as num?)?.toInt();
+    final d = (start?['day'] as num?)?.toInt();
+    if (y != null && y > 0) {
+      startDate = DateTime(y, m ?? 1, d ?? 1);
+    }
+    final title = media['title'] as Map<String, dynamic>? ?? const {};
+    final tags = <String>[
+      for (final t in (media['tags'] as List<dynamic>? ?? const []))
+        if (t is Map && (t['name'] as String?)?.isNotEmpty == true)
+          t['name'] as String,
+    ];
+    final genres = <String>[
+      for (final g in (media['genres'] as List<dynamic>? ?? const []))
+        if ('$g'.isNotEmpty) '$g',
+    ];
+    final synonyms = <String>[
+      for (final s in (media['synonyms'] as List<dynamic>? ?? const []))
+        if ('$s'.isNotEmpty) '$s',
+    ];
+    final cover = media['coverImage'] as Map<String, dynamic>?;
+    return TrackerMediaDetails(
+      format: media['format'] as String?,
+      publicationStatus: media['status'] as String?,
+      startDate: startDate,
+      averageScore: (media['averageScore'] as num?)?.toInt(),
+      meanScore: (media['meanScore'] as num?)?.toInt(),
+      popularity: (media['popularity'] as num?)?.toInt(),
+      favourites: (media['favourites'] as num?)?.toInt(),
+      source: media['source'] as String?,
+      genres: genres,
+      tags: tags,
+      romajiTitle: title['romaji'] as String?,
+      englishTitle: title['english'] as String?,
+      nativeTitle: title['native'] as String?,
+      synonyms: synonyms,
+      coverUrl: cover?['large'] as String? ?? cover?['medium'] as String?,
+      trackingUrl: media['siteUrl'] as String?,
+      totalChapters: (media['chapters'] as num?)?.toInt(),
+    );
+  }
+
+  @override
+  Future<void> updateScore(Track track, int score) async {
+    final token = await _accessToken();
+    if (token == null) throw StateError('Not logged in to AniList');
+    final mediaId = track.mediaId;
+    final libraryId = track.libraryId;
+    if (mediaId == null && libraryId == null) {
+      throw StateError('AniList track missing media id');
+    }
+    // AniList POINT_100: store 0–100; UI may send 0–10 → multiply if ≤10.
+    final anilistScore = score <= 10 ? score * 10 : score.clamp(0, 100);
+    await _gql(
+      token,
+      libraryId != null
+          ? r'''
+        mutation ($id: Int, $score: Float) {
+          SaveMediaListEntry(id: $id, score: $score) { id score }
+        }
+      '''
+          : r'''
+        mutation ($mediaId: Int, $score: Float) {
+          SaveMediaListEntry(mediaId: $mediaId, score: $score) { id score }
+        }
+      ''',
+      variables: {
+        if (libraryId != null) 'id': libraryId,
+        if (libraryId == null) 'mediaId': mediaId,
+        'score': anilistScore.toDouble(),
+      },
+    );
+    track.score = anilistScore;
+    await tracks.upsertTrack(track);
+  }
+
+  @override
+  Future<List<TrackerReview>> listReviews(int mediaId) async {
+    final token = await _accessToken();
+    final body = await _gql(
+      token ?? '',
+      r'''
+        query ($mediaId: Int) {
+          Page(page: 1, perPage: 20) {
+            reviews(mediaId: $mediaId, sort: CREATED_AT_DESC) {
+              id
+              summary
+              body
+              score
+              user { name }
+              userId
+            }
+          }
+          Viewer { id }
+        }
+      ''',
+      variables: {'mediaId': mediaId},
+    );
+    final viewerId = (body['data']?['Viewer']?['id'] as num?)?.toInt();
+    final rows =
+        body['data']?['Page']?['reviews'] as List<dynamic>? ?? const [];
+    return [
+      for (final row in rows)
+        if (row is Map<String, dynamic>)
+          TrackerReview(
+            id: (row['id'] as num?)?.toInt() ?? 0,
+            title: row['summary'] as String?,
+            body: (row['body'] as String? ?? '').trim(),
+            score: (row['score'] as num?)?.toInt(),
+            userName: row['user']?['name'] as String?,
+            isMine: viewerId != null &&
+                (row['userId'] as num?)?.toInt() == viewerId,
+          ),
+    ].where((e) => e.id != 0 && e.body.isNotEmpty).toList();
+  }
+
+  @override
+  Future<TrackerReview?> upsertReview({
+    required int mediaId,
+    required String body,
+    String? title,
+    int? score,
+    int? existingReviewId,
+  }) async {
+    final token = await _accessToken();
+    if (token == null) throw StateError('Not logged in to AniList');
+    final result = await _gql(
+      token,
+      existingReviewId != null
+          ? r'''
+        mutation ($id: Int, $body: String, $summary: String, $score: Int) {
+          SaveReview(id: $id, body: $body, summary: $summary, score: $score, private: false) {
+            id summary body score user { name }
+          }
+        }
+      '''
+          : r'''
+        mutation ($mediaId: Int, $body: String, $summary: String, $score: Int) {
+          SaveReview(mediaId: $mediaId, body: $body, summary: $summary, score: $score, private: false) {
+            id summary body score user { name }
+          }
+        }
+      ''',
+      variables: {
+        if (existingReviewId != null) 'id': existingReviewId,
+        if (existingReviewId == null) 'mediaId': mediaId,
+        'body': body,
+        'summary': (title ?? body).trim().isEmpty
+            ? 'Review'
+            : (title ?? body).trim().substring(
+                  0,
+                  ((title ?? body).trim().length).clamp(0, 100),
+                ),
+        'score': (score ?? 0).clamp(0, 100),
+      },
+    );
+    final row = result['data']?['SaveReview'] as Map<String, dynamic>?;
+    if (row == null) return null;
+    return TrackerReview(
+      id: (row['id'] as num?)?.toInt() ?? 0,
+      title: row['summary'] as String?,
+      body: row['body'] as String? ?? body,
+      score: (row['score'] as num?)?.toInt(),
+      userName: row['user']?['name'] as String?,
+      isMine: true,
+    );
+  }
+
+  @override
+  Future<List<TrackerComment>> listComments(int reviewId) async {
+    final token = await _accessToken();
+    final body = await _gql(
+      token ?? '',
+      r'''
+        query ($reviewId: Int) {
+          Page(page: 1, perPage: 30) {
+            threadComments(threadId: $reviewId) {
+              id
+              comment
+              createdAt
+              user { name }
+            }
+          }
+        }
+      ''',
+      variables: {'reviewId': reviewId},
+    );
+    // AniList review comments use Review → thread differently; fall back to
+    // empty if the query shape is unsupported.
+    final rows =
+        body['data']?['Page']?['threadComments'] as List<dynamic>? ?? const [];
+    return [
+      for (final row in rows)
+        if (row is Map<String, dynamic>)
+          TrackerComment(
+            id: (row['id'] as num?)?.toInt() ?? 0,
+            body: (row['comment'] as String? ?? '').trim(),
+            userName: row['user']?['name'] as String?,
+            createdAt: row['createdAt'] is num
+                ? DateTime.fromMillisecondsSinceEpoch(
+                    (row['createdAt'] as num).toInt() * 1000,
+                  )
+                : null,
+          ),
+    ].where((e) => e.id != 0 && e.body.isNotEmpty).toList();
+  }
+
+  @override
+  Future<void> postComment({
+    required int reviewId,
+    required String body,
+  }) async {
+    final token = await _accessToken();
+    if (token == null) throw StateError('Not logged in to AniList');
+    await _gql(
+      token,
+      r'''
+        mutation ($threadId: Int, $comment: String) {
+          SaveThreadComment(threadId: $threadId, comment: $comment) { id }
+        }
+      ''',
+      variables: {'threadId': reviewId, 'comment': body},
+    );
   }
 }

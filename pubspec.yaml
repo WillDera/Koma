@@ -1,7 +1,7 @@
 name: koma
 description: "A hybrid reader + knowledge snippet manager."
 publish_to: 'none'
-version: 2.51.0+388
+version: 2.53.0+390
 
 environment:
   sdk: ^3.12.2
@@ -119,6 +119,9 @@ flutter:
 
 # Adaptive icons need a separate FG/BG. Using a pre-rounded PNG alone makes
 # Android pad a small square onto a white circle on many launchers.
+# If you previously generated adaptive icons then switch to image_path-only,
+# delete android/.../mipmap-anydpi-v26/launcher_icon.xml and
+# drawable-*/ic_launcher_foreground.png — API 26+ prefers those over the PNGs.
 flutter_launcher_icons:
   android: "launcher_icon"
   image_path: "app_icons/hon_sb.png"

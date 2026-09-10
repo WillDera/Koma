@@ -108,8 +108,17 @@ final appLockEnabledProvider =
 class AppUnlockedNotifier extends Notifier<bool> {
   @override
   bool build() {
-    final lockOn = ref.watch(appLockEnabledProvider);
-    return !lockOn;
+    // Prefer listen over watch so unlock() is not wiped on every rebuild.
+    ref.listen<bool>(appLockEnabledProvider, (prev, next) {
+      if (!next) {
+        state = true;
+      } else if (prev != true) {
+        // Cold-start from prefs, or user just enabled lock → require unlock.
+        // Enable flow calls [unlock] immediately after set(true).
+        state = false;
+      }
+    });
+    return !ref.read(appLockEnabledProvider);
   }
 
   void unlock() => state = true;

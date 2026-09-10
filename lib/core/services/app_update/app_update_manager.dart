@@ -218,6 +218,8 @@ class AppUpdateManager extends ChangeNotifier {
         'info': release.info,
         'releaseLink': release.releaseLink,
         'downloadLink': release.downloadLink,
+        if (release.downloadBytes != null)
+          'downloadBytes': release.downloadBytes,
       }),
     );
   }
@@ -229,11 +231,16 @@ class AppUpdateManager extends ChangeNotifier {
     try {
       final map = jsonDecode(raw);
       if (map is! Map<String, dynamic>) return null;
+      final bytesRaw = map['downloadBytes'];
+      final downloadBytes = bytesRaw is int
+          ? bytesRaw
+          : (bytesRaw is num ? bytesRaw.toInt() : null);
       return AppRelease(
         version: map['version'] as String? ?? '',
         info: map['info'] as String? ?? '',
         releaseLink: map['releaseLink'] as String? ?? '',
         downloadLink: map['downloadLink'] as String? ?? '',
+        downloadBytes: downloadBytes,
       );
     } catch (_) {
       return null;

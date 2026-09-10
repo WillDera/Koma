@@ -38,6 +38,9 @@ class Track {
   String? trackingUrl;
   int? updatedAt;
 
+  /// Cached [TrackerMediaDetails] JSON from the tracker catalog.
+  String? mediaDetailsJson;
+
   Track({
     this.id = Isar.autoIncrement,
     this.libraryId,
@@ -53,5 +56,6 @@ class Track {
     this.finishedReadingDate,
     this.trackingUrl,
     this.updatedAt = 0,
+    this.mediaDetailsJson,
   });
 }

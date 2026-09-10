@@ -794,6 +794,59 @@ class _ExtensionsScreenState extends ConsumerState<ExtensionsScreen>
 }
 
 // ─── Installed tab ──────────────────────────────────────────────────────
+// ─── Shared Extensions hub chrome (Loaded / Available / Repos) ─────────
+
+BoxDecoration _hubCardDecoration(KomaColors c, {bool accent = false}) {
+  return BoxDecoration(
+    color: accent ? c.accentMuted.withValues(alpha: 0.35) : c.surface,
+    borderRadius: AppSpacing.brMd,
+    border: Border.all(
+      color: accent ? c.accent.withValues(alpha: 0.6) : c.border,
+    ),
+  );
+}
+
+/// Static group label — always visible, never accordion/chevron.
+class _HubSectionLabel extends StatelessWidget {
+  final String label;
+  final Color? color;
+  final String? trailing;
+
+  const _HubSectionLabel(this.label, {this.color, this.trailing});
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.colors;
+    return Padding(
+      padding: const EdgeInsets.only(top: 4, bottom: 2),
+      child: Row(
+        children: [
+          Expanded(
+            child: Text(
+              label,
+              style: TextStyle(
+                color: color ?? c.textSecondary,
+                fontSize: 13,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ),
+          if (trailing != null)
+            Text(
+              trailing!,
+              style: TextStyle(
+                color: c.textTertiary,
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+                fontFeatures: const [FontFeature.tabularFigures()],
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
 class _InstalledTab extends StatelessWidget {
   final List<ExtensionSource> installed;
   final List<ExtensionRepo> repos;
@@ -836,7 +889,7 @@ class _InstalledTab extends StatelessWidget {
       );
     }
 
-    // One tile per APK — active first, then Untrusted section.
+    // One tile per APK — Untrusted first, then active grouped by language.
     final byApk = <String, ExtensionSource>{};
     for (final s in installed) {
       final key = s.apkPath.isNotEmpty ? s.apkPath : s.sourceId;
@@ -846,9 +899,25 @@ class _InstalledTab extends StatelessWidget {
     // Only true Untrusted (inactive + signing metadata). Do not list every
     // inactive APK — repo-signed inactives would all activate on the next
     // reconcileTrust after trusting a single sideload.
-    final untrusted = unique.where((s) => s.isUntrusted).toList();
+    final untrusted = unique.where((s) => s.isUntrusted).toList()
+      ..sort((a, b) => a.name.compareTo(b.name));
     final active = unique.where((s) => s.isActive).toList();
     final updates = active.where((s) => s.isUpdateAvailable).toList();
+
+    final byLang = <String, List<ExtensionSource>>{};
+    for (final s in active) {
+      final key = s.lang.trim().isEmpty ? 'other' : s.lang.toLowerCase();
+      byLang.putIfAbsent(key, () => []).add(s);
+    }
+    for (final list in byLang.values) {
+      list.sort((a, b) => a.name.compareTo(b.name));
+    }
+    final langKeys = byLang.keys.toList()
+      ..sort((a, b) {
+        if (a == 'en') return -1;
+        if (b == 'en') return 1;
+        return completeLanguageName(a).compareTo(completeLanguageName(b));
+      });
 
     final children = <Widget>[];
     if (updates.isNotEmpty) {
@@ -857,19 +926,7 @@ class _InstalledTab extends StatelessWidget {
       );
     }
     if (untrusted.isNotEmpty) {
-      children.add(
-        Padding(
-          padding: const EdgeInsets.only(top: 4, bottom: 4),
-          child: Text(
-            'Untrusted',
-            style: TextStyle(
-              color: c.accent,
-              fontSize: 13,
-              fontWeight: FontWeight.w700,
-            ),
-          ),
-        ),
-      );
+      children.add(_HubSectionLabel('Untrusted', color: c.accent));
       for (final src in untrusted) {
         children.add(
           _UntrustedTile(
@@ -880,31 +937,19 @@ class _InstalledTab extends StatelessWidget {
         );
       }
     }
-    if (active.isNotEmpty && untrusted.isNotEmpty) {
-      children.add(
-        Padding(
-          padding: const EdgeInsets.only(top: 12, bottom: 4),
-          child: Text(
-            'Loaded',
-            style: TextStyle(
-              color: c.textSecondary,
-              fontSize: 13,
-              fontWeight: FontWeight.w700,
-            ),
+    for (final lang in langKeys) {
+      children.add(_HubSectionLabel(completeLanguageName(lang)));
+      for (final src in byLang[lang]!) {
+        children.add(
+          _ActiveInstalledTile(
+            src: src,
+            repoLabel: _repoLabel(src),
+            onBrowse: () => onBrowse(src),
+            onUpdate: () => onUpdate(src),
+            onUninstall: () => onUninstall(src),
           ),
-        ),
-      );
-    }
-    for (final src in active) {
-      children.add(
-        _ActiveInstalledTile(
-          src: src,
-          repoLabel: _repoLabel(src),
-          onBrowse: () => onBrowse(src),
-          onUpdate: () => onUpdate(src),
-          onUninstall: () => onUninstall(src),
-        ),
-      );
+        );
+      }
     }
 
     return ListView.separated(
@@ -932,11 +977,7 @@ class _UntrustedTile extends StatelessWidget {
     final c = context.colors;
     return Container(
       padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: c.accentMuted.withValues(alpha: 0.25),
-        borderRadius: AppSpacing.brMd,
-        border: Border.all(color: c.accent.withValues(alpha: 0.5)),
-      ),
+      decoration: _hubCardDecoration(c, accent: true),
       child: Row(
         children: [
           _buildIcon(
@@ -1013,13 +1054,7 @@ class _ActiveInstalledTile extends StatelessWidget {
       onTap: onBrowse,
       child: Container(
         padding: const EdgeInsets.all(14),
-        decoration: BoxDecoration(
-          color: hasUpdate ? c.accentMuted.withValues(alpha: 0.35) : c.surface,
-          borderRadius: AppSpacing.brMd,
-          border: Border.all(
-            color: hasUpdate ? c.accent.withValues(alpha: 0.6) : c.border,
-          ),
-        ),
+        decoration: _hubCardDecoration(c, accent: hasUpdate),
         child: Row(
           children: [
             _buildIcon(
@@ -1153,11 +1188,7 @@ class _UpdateAllBanner extends StatelessWidget {
     final c = context.colors;
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-      decoration: BoxDecoration(
-        color: c.accentMuted.withValues(alpha: 0.5),
-        borderRadius: AppSpacing.brMd,
-        border: Border.all(color: c.accent.withValues(alpha: 0.6)),
-      ),
+      decoration: _hubCardDecoration(c, accent: true),
       child: Row(
         children: [
           Icon(Icons.system_update_alt, size: 20, color: c.accent),
@@ -1243,8 +1274,6 @@ class _AvailableTabState extends State<_AvailableTab> {
   String _query = '';
   Timer? _searchDebounce;
 
-  /// Repo ids whose not-installed section is expanded. Empty = all collapsed.
-  final Set<int> _expandedRepos = {};
   List<_AvailableRow>? _cachedRows;
   int _rowsCacheKey = 0;
 
@@ -1294,7 +1323,6 @@ class _AvailableTabState extends State<_AvailableTab> {
       widget.repos.length,
       widget.indexCache.length,
       widget.installed.length,
-      _expandedRepos.length,
       showNsfw,
       showOnlyNsfw,
       showObsolete,
@@ -1360,7 +1388,7 @@ class _AvailableTabState extends State<_AvailableTab> {
 
     final rows = <_AvailableRow>[];
 
-    // One expandable group per repo — no Mihon/JS catalogue section headers.
+    // Static per-repo groups (always expanded — no accordion).
     final groups = <int, List<_EntryWithRepo>>{};
     for (final er in notInstalledEntries) {
       groups.putIfAbsent(er.repo.id, () => []).add(er);
@@ -1378,18 +1406,16 @@ class _AvailableTabState extends State<_AvailableTab> {
       }
       final sortedGroup = List<_EntryWithRepo>.from(group)
         ..sort((a, b) => a.entry.name.compareTo(b.entry.name));
-      final expanded = _expandedRepos.contains(repo.id);
       rows.add(
         _AvailableRow.repoHeader(
           repoId: repo.id,
           repoName: repo.name,
           count: sortedGroup.length,
-          expanded: expanded,
         ),
       );
       if (!fetched) {
         rows.add(_AvailableRow.pendingFetch(repoId: repo.id, loading: loading));
-      } else if (expanded) {
+      } else {
         for (final er in sortedGroup) {
           rows.add(_AvailableRow.entry(er, installed: false, hasUpdate: false));
         }
@@ -1499,27 +1525,17 @@ class _AvailableTabState extends State<_AvailableTab> {
                 Widget built;
                 switch (row.kind) {
                   case _AvailableRowKind.repoHeader:
-                    built = _RepoGroupHeader(
-                      repoName: row.title!,
-                      count: row.count,
-                      expanded: row.expanded,
-                      onToggle: () {
-                        final id = row.repoId!;
-                        setState(() {
-                          if (row.expanded) {
-                            _expandedRepos.remove(id);
-                          } else {
-                            _expandedRepos.add(id);
-                          }
-                        });
-                      },
+                    built = _HubSectionLabel(
+                      row.title!,
+                      trailing: '${row.count}',
                     );
                   case _AvailableRowKind.pendingFetch:
                     final repo = widget.repos.firstWhere(
                       (r) => r.id == row.repoId,
                     );
-                    built = Padding(
-                      padding: const EdgeInsets.fromLTRB(12, 0, 4, 16),
+                    built = Container(
+                      padding: const EdgeInsets.all(14),
+                      decoration: _hubCardDecoration(c),
                       child: Row(
                         children: [
                           Expanded(
@@ -1529,7 +1545,7 @@ class _AvailableTabState extends State<_AvailableTab> {
                                   : 'Catalogue not loaded yet',
                               style: TextStyle(
                                 color: c.textSecondary,
-                                fontSize: 12,
+                                fontSize: 13,
                               ),
                             ),
                           ),
@@ -1553,36 +1569,29 @@ class _AvailableTabState extends State<_AvailableTab> {
                     );
                   case _AvailableRowKind.entry:
                     final er = row.entry!;
-                    built = Padding(
-                      padding: const EdgeInsets.only(
-                        left: 8,
-                        right: 0,
-                        bottom: 4,
-                      ),
-                      child: _ExtensionRow(
-                        entry: er.entry,
-                        installed: row.installed,
-                        hasUpdate: row.hasUpdate,
-                        installedVersion: row.installedVersion,
-                        onInstall: () => widget.onInstall(er.entry, er.repo),
-                      ),
+                    built = _ExtensionRow(
+                      entry: er.entry,
+                      installed: row.installed,
+                      hasUpdate: row.hasUpdate,
+                      installedVersion: row.installedVersion,
+                      onInstall: () => widget.onInstall(er.entry, er.repo),
                     );
                   case _AvailableRowKind.emptyMessage:
                     built = Padding(
-                      padding: const EdgeInsets.only(top: 24, bottom: 16),
-                      child: Center(
-                        child: Text(
-                          row.title ?? '',
-                          style: TextStyle(
-                            color: c.textSecondary,
-                            fontSize: 13,
-                          ),
-                          textAlign: TextAlign.center,
+                      padding: const EdgeInsets.symmetric(vertical: 8),
+                      child: Text(
+                        row.title ?? '',
+                        style: TextStyle(
+                          color: c.textSecondary,
+                          fontSize: 13,
                         ),
                       ),
                     );
                 }
-                return StaggeredFadeScale(index: index, child: built);
+                return Padding(
+                  padding: const EdgeInsets.only(bottom: 8),
+                  child: StaggeredFadeScale(index: index, child: built),
+                );
               },
             ),
           ),
@@ -1603,7 +1612,6 @@ class _AvailableRow {
   final String? installedVersion;
   final int? repoId;
   final int count;
-  final bool expanded;
   final bool loading;
 
   const _AvailableRow._({
@@ -1615,7 +1623,6 @@ class _AvailableRow {
     this.installedVersion,
     this.repoId,
     this.count = 0,
-    this.expanded = false,
     this.loading = false,
   });
 
@@ -1626,13 +1633,11 @@ class _AvailableRow {
     required int repoId,
     required String repoName,
     required int count,
-    required bool expanded,
   }) : this._(
          kind: _AvailableRowKind.repoHeader,
          title: repoName,
          repoId: repoId,
          count: count,
-         expanded: expanded,
        );
 
   const _AvailableRow.pendingFetch({required int repoId, required bool loading})
@@ -1686,17 +1691,12 @@ class _ExtensionRow extends StatelessWidget {
     final c = context.colors;
     final isNsfw = entry.isNsfw;
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 11),
-      decoration: BoxDecoration(
-        color: hasUpdate ? c.accentMuted.withValues(alpha: 0.4) : c.surface,
-        border: Border(
-          bottom: BorderSide(color: c.border.withValues(alpha: 0.85)),
-        ),
-      ),
+      padding: const EdgeInsets.all(14),
+      decoration: _hubCardDecoration(c, accent: hasUpdate),
       child: Row(
         children: [
-          _buildIcon(entry.pkg, c, size: 28, iconUrl: entry.iconUrl),
-          const SizedBox(width: 10),
+          _buildIcon(entry.pkg, c, iconUrl: entry.iconUrl),
+          const SizedBox(width: 12),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -1708,18 +1708,18 @@ class _ExtensionRow extends StatelessWidget {
                         entry.name,
                         style: TextStyle(
                           color: c.textPrimary,
-                          fontSize: 14,
-                          fontWeight: FontWeight.w500,
+                          fontSize: 15,
+                          fontWeight: FontWeight.w600,
                         ),
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                       ),
                     ),
                     if (isNsfw) ...[
-                      const SizedBox(width: 4),
+                      const SizedBox(width: 6),
                       Container(
                         padding: const EdgeInsets.symmetric(
-                          horizontal: 4,
+                          horizontal: 5,
                           vertical: 1,
                         ),
                         decoration: BoxDecoration(
@@ -1729,7 +1729,7 @@ class _ExtensionRow extends StatelessWidget {
                         child: const Text(
                           'NSFW',
                           style: TextStyle(
-                            fontSize: 8,
+                            fontSize: 9,
                             fontWeight: FontWeight.bold,
                             color: Colors.white,
                           ),
@@ -1739,48 +1739,41 @@ class _ExtensionRow extends StatelessWidget {
                   ],
                 ),
                 const SizedBox(height: 2),
-                Row(
-                  children: [
-                    Text(
-                      completeLanguageName(entry.lang),
-                      style: TextStyle(
-                        color: c.textSecondary,
-                        fontSize: 11,
-                        fontWeight: FontWeight.w300,
-                      ),
-                    ),
-                    const SizedBox(width: 4),
-                    if (hasUpdate && installedVersion != null)
-                      Text(
-                        '$installedVersion → ${entry.version}',
-                        style: TextStyle(
-                          color: c.accent,
-                          fontSize: 11,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      )
-                    else
-                      Text(
-                        'v${entry.version}',
-                        style: TextStyle(
-                          color: c.textSecondary,
-                          fontSize: 11,
-                          fontWeight: FontWeight.w300,
-                        ),
-                      ),
-                  ],
+                Text(
+                  hasUpdate && installedVersion != null
+                      ? '${completeLanguageName(entry.lang)} · '
+                            '$installedVersion → ${entry.version}'
+                      : '${completeLanguageName(entry.lang)} · v${entry.version}',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: hasUpdate ? c.accent : c.textSecondary,
+                    fontSize: 12,
+                    fontWeight: hasUpdate ? FontWeight.w600 : FontWeight.w400,
+                  ),
                 ),
               ],
             ),
           ),
           TextButton(
             onPressed: hasUpdate ? onInstall : (installed ? null : onInstall),
+            style: TextButton.styleFrom(
+              backgroundColor: (hasUpdate || !installed)
+                  ? c.accent.withValues(alpha: 0.12)
+                  : null,
+              padding: const EdgeInsets.symmetric(horizontal: 10),
+              minimumSize: const Size(0, 32),
+            ),
             child: Text(
               hasUpdate
                   ? 'Update'
                   : installed
                   ? 'Loaded'
                   : 'Load',
+              style: TextStyle(
+                color: installed && !hasUpdate ? c.textTertiary : c.accent,
+                fontSize: 12,
+              ),
             ),
           ),
         ],
@@ -1834,12 +1827,8 @@ class _ReposTab extends StatelessWidget {
                     );
                   },
                   child: Container(
-                    padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(
-                      color: c.surface,
-                      borderRadius: AppSpacing.brMd,
-                      border: Border.all(color: c.border),
-                    ),
+                    padding: const EdgeInsets.all(14),
+                    decoration: _hubCardDecoration(c),
                     child: Row(
                       children: [
                         Icon(Icons.cloud, color: c.accent),
@@ -1852,15 +1841,16 @@ class _ReposTab extends StatelessWidget {
                                 r.name,
                                 style: TextStyle(
                                   color: c.textPrimary,
-                                  fontSize: 14,
+                                  fontSize: 15,
                                   fontWeight: FontWeight.w600,
                                 ),
                               ),
+                              const SizedBox(height: 2),
                               Text(
                                 r.url,
                                 style: TextStyle(
                                   color: c.textSecondary,
-                                  fontSize: 11,
+                                  fontSize: 12,
                                 ),
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
@@ -2037,87 +2027,4 @@ class _PkgExtensionIconState extends State<_PkgExtensionIcon> {
   }
 }
 
-/// Collapsible repo group header used by the lazy Available list.
-class _RepoGroupHeader extends StatelessWidget {
-  final String repoName;
-  final int count;
-  final bool expanded;
-  final VoidCallback onToggle;
 
-  const _RepoGroupHeader({
-    required this.repoName,
-    required this.count,
-    required this.expanded,
-    required this.onToggle,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final c = context.colors;
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 6, top: 4),
-      child: AnimatedPress(
-        onTap: onToggle,
-        child: Container(
-          decoration: BoxDecoration(
-            color: c.bgElevated,
-            border: Border(
-              left: BorderSide(color: c.accent, width: 2.5),
-              bottom: BorderSide(color: c.border),
-            ),
-          ),
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(12, 12, 12, 12),
-            child: Row(
-              children: [
-                AnimatedRotation(
-                  turns: expanded ? 0.25 : 0,
-                  duration: const Duration(milliseconds: 180),
-                  child: Icon(
-                    Icons.chevron_right,
-                    size: 18,
-                    color: c.textSecondary,
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Text(
-                    repoName,
-                    style: TextStyle(
-                      fontWeight: FontWeight.w600,
-                      fontSize: 14,
-                      letterSpacing: 0.15,
-                      color: c.textPrimary,
-                    ),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ),
-                const SizedBox(width: 10),
-                Text(
-                  '$count',
-                  style: TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w600,
-                    fontFeatures: const [FontFeature.tabularFigures()],
-                    color: c.textTertiary,
-                  ),
-                ),
-                const SizedBox(width: 4),
-                Text(
-                  expanded ? 'hide' : 'open',
-                  style: TextStyle(
-                    fontSize: 10,
-                    letterSpacing: 0.8,
-                    fontWeight: FontWeight.w600,
-                    color: c.accent,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}

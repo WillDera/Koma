@@ -34,8 +34,11 @@ class _KomaAppState extends ConsumerState<KomaApp> with WidgetsBindingObserver {
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
+    // Do not lock on [inactive]: biometric / credential sheets put the app
+    // inactive and would immediately re-lock (or fight the enable toggle).
     if (state == AppLifecycleState.paused ||
-        state == AppLifecycleState.inactive) {
+        state == AppLifecycleState.hidden) {
+      if (AppLockService.authInProgress) return;
       if (ref.read(appLockEnabledProvider)) {
         ref.read(appUnlockedProvider.notifier).lock();
       }

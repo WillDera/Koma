@@ -21,8 +21,13 @@ import eu.kanade.tachiyomi.util.system.ChildFirstPathClassLoader
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
@@ -696,15 +701,12 @@ class DalvikServer(
                             this.url = url
                             memo = root.memo()
                         }
+                        // Mihon reader/downloader call getImageUrl when Page.imageUrl
+                        // is empty — many sources put a viewer HTML URL in Page.url
+                        // and only fill imageUrl (CDN bitmap) in imageUrlParse.
+                        // Resolve here so Flutter never GETs HTML as a bitmap.
                         val pages = runBlocking {
-                            resolvePageList(src, chapter).map { page ->
-                                val headers = try {
-                                    src.getImageRequestHeaders(page).toMap()
-                                } catch (_: Exception) {
-                                    emptyMap<String, String>()
-                                }
-                                page.toMap() + ("headers" to headers)
-                            }
+                            resolveAndMapPages(src, chapter)
                         }
                         json.encodeToString(pages.toJsonElement())
                     }
@@ -1231,6 +1233,44 @@ class DalvikServer(
             MkissaHostPageList.fetch(src, chapter)
         } else {
             src.getPageList(chapter)
+        }
+    }
+
+    /**
+     * Resolve CDN [Page.imageUrl] (Mihon [HttpSource.getImageUrl]) then serialize
+     * for Flutter. Bounded concurrency avoids hammering the source host.
+     */
+    private suspend fun resolveAndMapPages(
+        src: HttpSource,
+        chapter: SChapter,
+    ): List<Map<String, Any?>> = coroutineScope {
+        val list = resolvePageList(src, chapter)
+        val gate = Semaphore(6)
+        list.map { page ->
+            async(Dispatchers.IO) {
+                gate.withPermit { ensureImageUrl(src, page) }
+                val headers = try {
+                    src.getImageRequestHeaders(page).toMap()
+                } catch (_: Exception) {
+                    emptyMap<String, String>()
+                }
+                page.toMap() + ("headers" to headers)
+            }
+        }.awaitAll()
+    }
+
+    /** Same contract as [downloadPageWithRetry]: fill imageUrl when missing. */
+    private suspend fun ensureImageUrl(src: HttpSource, page: Page) {
+        if (!page.imageUrl.isNullOrEmpty()) return
+        try {
+            page.imageUrl = src.getImageUrl(page)
+        } catch (e: Exception) {
+            Log.w(TAG, "getImageUrl failed for page ${page.index}: ${e.message}")
+        }
+        // Sources that already put the bitmap URL in Page.url and never
+        // implement imageUrlParse — fall back so headers/image fetch still work.
+        if (page.imageUrl.isNullOrEmpty() && page.url.isNotEmpty()) {
+            page.imageUrl = page.url
         }
     }
 }

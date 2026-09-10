@@ -1562,13 +1562,11 @@ class _MangaReaderScreenState extends ConsumerState<MangaReaderScreen>
                           )
                         else if (!_showNavigationOverlay)
                           Positioned.fill(
+                            // Continuous: no full-screen absorb — page widgets
+                            // own center taps (toolbar + Reload). Paged: L/R
+                            // strips only; center passes through to the page.
                             child: isContinuous
-                                ? GestureDetector(
-                                    onTap: _toggleToolbar,
-                                    onLongPress: _showLongPressMenu,
-                                    behavior: HitTestBehavior.translucent,
-                                    child: const SizedBox.expand(),
-                                  )
+                                ? const SizedBox.shrink()
                                 : ReaderTapZones(props: props),
                           ),
                         ReaderAppBar(

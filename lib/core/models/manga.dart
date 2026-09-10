@@ -34,6 +34,10 @@ class Manga {
   /// Mihon chapter-list flags. Stored in MangaExtras (opaque to Koma UI).
   final int chapterFlags;
 
+  /// Synonym / alt titles from trackers. Stored in MangaExtras; not shown on
+  /// library cards — used for search matching only.
+  final List<String> alternateTitles;
+
   final DateTime createdAt;
   final DateTime updatedAt;
 
@@ -56,10 +60,12 @@ class Manga {
     this.customCoverPath,
     this.viewerFlags = 0,
     this.chapterFlags = 0,
+    List<String>? alternateTitles,
     DateTime? createdAt,
     DateTime? updatedAt,
   }) : genres = List.unmodifiable(genres ?? const []),
        categoryIds = List.unmodifiable(categoryIds ?? const []),
+       alternateTitles = List.unmodifiable(alternateTitles ?? const []),
        createdAt = createdAt ?? DateTime.now(),
        updatedAt = updatedAt ?? DateTime.now();
 
@@ -82,6 +88,7 @@ class Manga {
     String? customCoverPath,
     int? viewerFlags,
     int? chapterFlags,
+    List<String>? alternateTitles,
     DateTime? createdAt,
     DateTime? updatedAt,
   }) {
@@ -104,6 +111,7 @@ class Manga {
       customCoverPath: customCoverPath ?? this.customCoverPath,
       viewerFlags: viewerFlags ?? this.viewerFlags,
       chapterFlags: chapterFlags ?? this.chapterFlags,
+      alternateTitles: alternateTitles ?? this.alternateTitles,
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
     );
@@ -128,6 +136,7 @@ class Manga {
     'custom_cover_path': customCoverPath,
     'viewer_flags': viewerFlags,
     'chapter_flags': chapterFlags,
+    'alternate_titles': alternateTitles,
     'created_at': createdAt.toIso8601String(),
     'updated_at': updatedAt.toIso8601String(),
   };
@@ -153,6 +162,10 @@ class Manga {
     customCoverPath: json['custom_cover_path'] as String?,
     viewerFlags: (json['viewer_flags'] as num?)?.toInt() ?? 0,
     chapterFlags: (json['chapter_flags'] as num?)?.toInt() ?? 0,
+    alternateTitles: (json['alternate_titles'] as List<dynamic>?)
+        ?.map((e) => '$e')
+        .where((e) => e.isNotEmpty)
+        .toList(),
     createdAt: json['created_at'] != null
         ? DateTime.parse(json['created_at'] as String)
         : DateTime.now(),

@@ -93,8 +93,25 @@ void main() {
     });
   });
 
-  group('AppReleaseService.pickApkUrl', () {
-    test('prefers versioned koma-*.apk over app-release.apk', () {
+  group('AppReleaseService.pickApkAsset', () {
+    test('prefers versioned koma-*.apk over app-release.apk and keeps size', () {
+      final picked = AppReleaseService.pickApkAsset([
+        {
+          'name': 'app-release.apk',
+          'browser_download_url': 'https://example.com/app-release.apk',
+          'size': 10,
+        },
+        {
+          'name': 'koma-2.37.41+308.apk',
+          'browser_download_url': 'https://example.com/koma-2.37.41+308.apk',
+          'size': 12345678,
+        },
+      ]);
+      expect(picked?.url, 'https://example.com/koma-2.37.41+308.apk');
+      expect(picked?.sizeBytes, 12345678);
+    });
+
+    test('pickApkUrl still returns the preferred URL', () {
       expect(
         AppReleaseService.pickApkUrl([
           {

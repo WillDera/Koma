@@ -24,8 +24,9 @@ fun SChapter.toMap(): Map<String, Any?> = mapOf(
 
 fun Page.toMap(): Map<String, Any?> = mapOf(
     "index" to index,
-    // Prefer imageUrl when url is blank — Flutter MPage reads `url`.
-    "url" to url.ifBlank { imageUrl.orEmpty() },
+    // Prefer the resolved bitmap URL. Page.url is often a viewer HTML page
+    // (e.g. /g/id/120/); imageUrl is the CDN jpg after getImageUrl.
+    "url" to (imageUrl?.takeIf { it.isNotEmpty() } ?: url),
     "imageUrl" to imageUrl,
     "uri" to uri?.toString(),
 )

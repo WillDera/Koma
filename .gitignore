@@ -71,4 +71,6 @@ anymex/
 !README.md
 !THIRD-PARTY-NOTICES.md
 docs/
-*.sh
+commit.sh
+update_app_icon.sh
+release.sh

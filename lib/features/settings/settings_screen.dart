@@ -21,8 +21,6 @@ import '../../core/services/app_update/app_update_checker.dart';
 import '../../core/services/app_update/app_update_manager.dart';
 import '../../core/services/app_update/get_application_release.dart';
 import '../../core/services/export_service.dart';
-import '../../core/services/extension_manager.dart';
-import '../../core/services/keiyoushi_service.dart';
 import '../../core/services/discover_metadata_cache.dart';
 import '../../core/services/download_prefs.dart';
 import '../../core/services/http/http_prefs.dart';
@@ -41,6 +39,7 @@ import 'custom_font_ui.dart';
 import 'open_source_licenses_sheet.dart';
 import 'security_settings_page.dart';
 import 'tracking_settings_page.dart';
+import '../extensions/extensions_catalog_provider.dart';
 import '../../theme/app_theme.dart';
 import '../../theme/theme_provider.dart';
 import '../../theme/tokens/app_colors.dart';
@@ -297,26 +296,34 @@ class _SettingsDestinationScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Material(
-      type: MaterialType.transparency,
-      child: ScreenBackdrop(
-        child: SafeArea(
-          bottom: false,
-          child: ListView(
-            padding: const EdgeInsets.only(bottom: 32),
-            children: [
-              const OneHandSpacer(),
-              LibraryHeader(
-                title: title,
-                showBackButton: true,
-                padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+    // Own ScaffoldMessenger so SnackBars from this sub-page (Tracking,
+    // Security, etc.) paint here — not on the Settings list underneath.
+    // Pushed with rootNavigator:true, so MaterialApp's messenger is the shell.
+    return ScaffoldMessenger(
+      child: Scaffold(
+        backgroundColor: Colors.transparent,
+        body: Material(
+          type: MaterialType.transparency,
+          child: ScreenBackdrop(
+            child: SafeArea(
+              bottom: false,
+              child: ListView(
+                padding: const EdgeInsets.only(bottom: 32),
+                children: [
+                  const OneHandSpacer(),
+                  LibraryHeader(
+                    title: title,
+                    showBackButton: true,
+                    padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+                  ),
+                  StaggeredFadeScale(
+                    index: 0,
+                    scaleBegin: 0.97,
+                    child: child,
+                  ),
+                ],
               ),
-              StaggeredFadeScale(
-                index: 0,
-                scaleBegin: 0.97,
-                child: child,
-              ),
-            ],
+            ),
           ),
         ),
       ),
@@ -3056,8 +3063,9 @@ class _PluginsSection extends ConsumerWidget {
       context,
       title: 'Revoke trusted extensions?',
       content:
-          'This clears extensions you explicitly trusted. Packages signed by '
-          'a known repository remain usable.',
+          'Clears fingerprints you explicitly trusted for sideloaded APKs. '
+          'Extensions signed by a known repository stay trusted automatically '
+          '(same as Mihon) — revoke will not demote those.',
       actions: [
         TextButton(
           onPressed: () => Navigator.pop(context, false),
@@ -3070,18 +3078,18 @@ class _PluginsSection extends ConsumerWidget {
       ],
     );
     if (ok != true || !context.mounted) return;
-    final mgr = ExtensionManager(
-      ref.read(repositoriesProvider),
-      KeiyoushiService(),
-    );
+    final mgr = ref.read(extensionManagerProvider);
     final changed = await mgr.revokeAllTrusted();
+    // Extensions hub keeps a session cache — refresh so Untrusted/Loaded update.
+    await ref.read(extensionsCatalogProvider.notifier).refreshInstalled();
     if (!context.mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(
           changed > 0
-              ? 'Revoked trust · $changed extension${changed == 1 ? '' : 's'} rechecked'
-              : 'Revoked all user-trusted extensions',
+              ? 'Revoked trust · $changed source${changed == 1 ? '' : 's'} demoted'
+              : 'No user-trusted sideloads to revoke '
+                  '(repo-signed extensions stay trusted)',
         ),
       ),
     );

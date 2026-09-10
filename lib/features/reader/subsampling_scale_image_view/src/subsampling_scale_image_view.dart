@@ -1,6 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
-import 'dart:ffi';
+import 'dart:ffi' hide Size;
 import 'dart:io';
 import 'dart:math';
 import 'dart:ui' as ui;
@@ -397,6 +397,9 @@ class SubsamplingScaleImageView extends StatefulWidget {
   /// Called in case of error loading a tile.
   final ValueChanged<String>? onTileError;
 
+  /// Single-tap (e.g. toggle reader chrome). Does not fire during pan/zoom.
+  final VoidCallback? onTap;
+
   const SubsamplingScaleImageView({
     super.key,
     required this.image,
@@ -432,6 +435,7 @@ class SubsamplingScaleImageView extends StatefulWidget {
     this.onCenterChanged,
     this.onError,
     this.onTileError,
+    this.onTap,
   });
 
   /// A source sub-region (srcRect) to display.
@@ -1505,25 +1509,33 @@ class _SubsamplingScaleImageViewState extends State<SubsamplingScaleImageView>
                     )
                   : const CircularProgressIndicator(),
             ),
-            LoadState.failed => Center(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  const Icon(
-                    Icons.broken_image_outlined,
-                    color: Colors.grey,
-                    size: 48,
-                  ),
-                  const SizedBox(height: 12),
-                  TextButton.icon(
-                    onPressed: _loadFromProvider,
-                    icon: const Icon(Icons.refresh, color: Colors.white54),
-                    label: const Text(
-                      'Reload image',
-                      style: TextStyle(color: Colors.white54),
+            LoadState.failed => GestureDetector(
+              onTap: widget.onTap,
+              behavior: HitTestBehavior.opaque,
+              child: Center(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(
+                      Icons.broken_image_outlined,
+                      color: Colors.grey,
+                      size: 48,
                     ),
-                  ),
-                ],
+                    const SizedBox(height: 12),
+                    TextButton.icon(
+                      onPressed: _loadFromProvider,
+                      style: TextButton.styleFrom(
+                        minimumSize: const Size(48, 48),
+                        tapTargetSize: MaterialTapTargetSize.padded,
+                      ),
+                      icon: const Icon(Icons.refresh, color: Colors.white54),
+                      label: const Text(
+                        'Reload image',
+                        style: TextStyle(color: Colors.white54),
+                      ),
+                    ),
+                  ],
+                ),
               ),
             ),
             LoadState.completed => const SizedBox.shrink(),
@@ -1531,6 +1543,7 @@ class _SubsamplingScaleImageViewState extends State<SubsamplingScaleImageView>
         }
 
         return GestureDetector(
+          onTap: widget.onTap,
           onScaleStart: widget.zoomEnabled || widget.panEnabled
               ? _handleScaleStart
               : null,

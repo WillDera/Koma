@@ -56,10 +56,15 @@ class MangaImageViewWebtoon extends StatelessWidget {
           key: ValueKey(
             'webtoon-$index-r${props.pageRetryTokens[index] ?? 0}',
           ),
-          child: ReaderPageImage(
-            page: page,
-            webtoon: isWebtoonLayout,
-            onRetry: () => props.onRetryPage(index),
+          child: GestureDetector(
+            onTap: props.onToggleToolbar,
+            onLongPress: props.onLongPress,
+            behavior: HitTestBehavior.opaque,
+            child: ReaderPageImage(
+              page: page,
+              webtoon: isWebtoonLayout,
+              onRetry: () => props.onRetryPage(index),
+            ),
           ),
         );
         if (gap > 0) {

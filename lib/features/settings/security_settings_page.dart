@@ -5,13 +5,94 @@ import '../../core/services/app_lock_service.dart';
 import '../../core/services/security_prefs.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/settings_section.dart';
+import '../../widgets/toast.dart';
 
 /// Settings → Security hub page.
-class SecuritySettingsPage extends ConsumerWidget {
+class SecuritySettingsPage extends ConsumerStatefulWidget {
   const SecuritySettingsPage({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<SecuritySettingsPage> createState() =>
+      _SecuritySettingsPageState();
+}
+
+class _SecuritySettingsPageState extends ConsumerState<SecuritySettingsPage> {
+  var _togglingLock = false;
+
+  void _toast(String message, {IconData icon = Icons.info_outline}) {
+    if (!mounted) return;
+    StashToast.show(context, message: message, icon: icon);
+  }
+
+  Future<void> _setAppLock(bool enable) async {
+    if (_togglingLock) return;
+    setState(() => _togglingLock = true);
+    try {
+      if (enable) {
+        final status = await AppLockService.deviceAuthStatus();
+        if (!mounted) return;
+
+        if (!status.available) {
+          // Emulators often have no PIN/fingerprint — still allow enabling
+          // with an in-app confirm unlock fallback.
+          final proceed = await showDialog<bool>(
+            context: context,
+            builder: (ctx) {
+              final c = ctx.colors;
+              return AlertDialog(
+                backgroundColor: c.surface,
+                title: Text(
+                  'No device lock found',
+                  style: TextStyle(color: c.textPrimary),
+                ),
+                content: Text(
+                  '${status.detail}\n\n'
+                  'Enable app lock anyway? Unlock will use an in-app '
+                  'confirm button until a PIN/fingerprint is set up.',
+                  style: TextStyle(color: c.textSecondary, height: 1.4),
+                ),
+                actions: [
+                  TextButton(
+                    onPressed: () => Navigator.pop(ctx, false),
+                    child: const Text('Cancel'),
+                  ),
+                  TextButton(
+                    onPressed: () => Navigator.pop(ctx, true),
+                    child: const Text('Enable anyway'),
+                  ),
+                ],
+              );
+            },
+          );
+          if (proceed != true || !mounted) return;
+        } else {
+          final result = await AppLockService.authenticate(
+            reason: 'Enable app lock',
+          );
+          if (!mounted) return;
+          if (!result.success) {
+            _toast(
+              result.errorMessage ?? 'Authentication cancelled',
+              icon: Icons.lock_outline,
+            );
+            return;
+          }
+        }
+      }
+      await ref.read(appLockEnabledProvider.notifier).set(enable);
+      if (enable) {
+        ref.read(appUnlockedProvider.notifier).unlock();
+        _toast('App lock on', icon: Icons.lock);
+      } else {
+        _toast('App lock off', icon: Icons.lock_open);
+      }
+    } finally {
+      if (mounted) setState(() => _togglingLock = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final c = context.colors;
     final incognito = ref.watch(incognitoProvider);
     final lockOn = ref.watch(appLockEnabledProvider);
@@ -51,31 +132,7 @@ class SecuritySettingsPage extends ConsumerWidget {
               trailing: Switch(
                 value: lockOn,
                 activeThumbColor: c.accent,
-                onChanged: (v) async {
-                  if (v) {
-                    final can = await AppLockService.canAuthenticate();
-                    if (!can) {
-                      if (context.mounted) {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(
-                            content: Text(
-                              'Set up a screen lock or biometrics first',
-                            ),
-                          ),
-                        );
-                      }
-                      return;
-                    }
-                    final ok = await AppLockService.authenticate(
-                      reason: 'Enable app lock',
-                    );
-                    if (!ok) return;
-                  }
-                  await ref.read(appLockEnabledProvider.notifier).set(v);
-                  if (v) {
-                    ref.read(appUnlockedProvider.notifier).unlock();
-                  }
-                },
+                onChanged: _togglingLock ? null : _setAppLock,
               ),
             ),
           ],
@@ -87,7 +144,7 @@ class SecuritySettingsPage extends ConsumerWidget {
               icon: Icons.screenshot_outlined,
               title: 'Hide from recents',
               subtitle: _secureLabel(secureMode),
-              onTap: () => _pickSecureMode(context, ref, secureMode),
+              onTap: () => _pickSecureMode(context, secureMode),
             ),
           ],
         ),
@@ -96,7 +153,8 @@ class SecuritySettingsPage extends ConsumerWidget {
           child: Text(
             'Incognito skips history for manga and ebooks. Secure screen '
             'uses Android FLAG_SECURE (blocks screenshots and recent-task '
-            'thumbnails).',
+            'thumbnails). App lock needs a device PIN/biometric — emulators '
+            'often have none until you set one.',
             style: TextStyle(color: c.textTertiary, fontSize: 12, height: 1.4),
           ),
         ),
@@ -110,11 +168,7 @@ class SecuritySettingsPage extends ConsumerWidget {
         _ => 'Always',
       };
 
-  Future<void> _pickSecureMode(
-    BuildContext context,
-    WidgetRef ref,
-    int current,
-  ) async {
+  Future<void> _pickSecureMode(BuildContext context, int current) async {
     final picked = await showModalBottomSheet<int>(
       context: context,
       builder: (ctx) {
@@ -140,7 +194,7 @@ class SecuritySettingsPage extends ConsumerWidget {
         );
       },
     );
-    if (picked == null) return;
+    if (picked == null || !mounted) return;
     await ref.read(secureScreenProvider.notifier).set(picked);
     await AppLockService.applySecureScreen(
       mode: picked,

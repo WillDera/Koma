@@ -10,6 +10,7 @@ import '../../core/services/trackers/myanimelist.dart';
 import '../../core/services/trackers/track_chapter_use_case.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/settings_section.dart';
+import '../../widgets/toast.dart';
 import '../../widgets/tracker_brand_icon.dart';
 
 class TrackingSettingsPage extends ConsumerStatefulWidget {
@@ -241,13 +242,17 @@ class _TrackingSettingsPageState extends ConsumerState<TrackingSettingsPage>
       await MangaUpdatesTracker(ref.read(repositoriesProvider)).login(user, pass);
       await _reload();
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Logged in to MangaUpdates')),
+      StashToast.show(
+        context,
+        message: 'Logged in to MangaUpdates',
+        icon: Icons.check,
       );
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Login failed: $e')),
+      StashToast.show(
+        context,
+        message: 'Login failed: $e',
+        icon: Icons.error_outline,
       );
     }
   }
@@ -353,8 +358,10 @@ class _TrackingSettingsPageState extends ConsumerState<TrackingSettingsPage>
     await onDisconnect();
     await _reload();
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('Disconnected from $serviceName')),
+    StashToast.show(
+      context,
+      message: 'Disconnected from $serviceName',
+      icon: Icons.link_off,
     );
   }
 
@@ -412,13 +419,17 @@ class _TrackingSettingsPageState extends ConsumerState<TrackingSettingsPage>
                       .login();
                   await _reload();
                   if (!mounted) return;
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('Logged in to MyAnimeList')),
+                  StashToast.show(
+                    context,
+                    message: 'Logged in to MyAnimeList',
+                    icon: Icons.check,
                   );
                 } catch (e) {
                   if (!mounted) return;
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(content: Text('$e')),
+                  StashToast.show(
+                    context,
+                    message: '$e',
+                    icon: Icons.error_outline,
                   );
                 }
               },
@@ -445,13 +456,17 @@ class _TrackingSettingsPageState extends ConsumerState<TrackingSettingsPage>
                   await AnilistTracker(ref.read(repositoriesProvider)).login();
                   await _reload();
                   if (!mounted) return;
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('Logged in to AniList')),
+                  StashToast.show(
+                    context,
+                    message: 'Logged in to AniList',
+                    icon: Icons.check,
                   );
                 } catch (e) {
                   if (!mounted) return;
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(content: Text('$e')),
+                  StashToast.show(
+                    context,
+                    message: '$e',
+                    icon: Icons.error_outline,
                   );
                 }
               },

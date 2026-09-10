@@ -378,6 +378,12 @@ class ExportService {
               notes: (existing.notes == null || existing.notes!.isEmpty)
                   ? manga.notes
                   : existing.notes,
+              alternateTitles: manga.alternateTitles.isNotEmpty
+                  ? {
+                      ...existing.alternateTitles,
+                      ...manga.alternateTitles,
+                    }.toList()
+                  : existing.alternateTitles,
             ),
           );
           mangaSkipped++;

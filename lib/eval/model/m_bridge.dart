@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:typed_data';
 
@@ -270,6 +271,38 @@ class MBridge {
   }
 
   static final Set<String> _initializedLocales = {};
+  static bool _allLocalesReady = false;
+
+  /// Load intl date symbols so [DateFormat] works for extension locales.
+  /// Call once at startup; also safe to call per-source before getDetail.
+  static Future<void> ensureDateFormattingReady([String? locale]) async {
+    Future<void> load(String key) async {
+      if (_initializedLocales.contains(key)) return;
+      try {
+        if (key.isEmpty) {
+          await initializeDateFormatting();
+        } else {
+          await initializeDateFormatting(key);
+        }
+      } catch (_) {
+        // Missing / unsupported locale — keep going; parse falls back.
+      }
+      _initializedLocales.add(key);
+    }
+
+    if (!_allLocalesReady) {
+      await load('');
+      _allLocalesReady = true;
+    }
+
+    final raw = locale?.trim() ?? '';
+    if (raw.isEmpty) return;
+    await load(raw);
+    final lang = raw.split(RegExp(r'[_-]')).first;
+    if (lang.isNotEmpty && lang != raw) {
+      await load(lang);
+    }
+  }
 
   static String parseChapterDate(
     String date,
@@ -340,6 +373,19 @@ class MBridge {
       }
     }
 
+    int? tryParseWith(String fmt, String? loc, String raw) {
+      try {
+        final parsed = loc == null || loc.isEmpty
+            ? DateFormat(fmt).parse(raw)
+            : DateFormat(fmt, loc).parse(raw);
+        return parsed.millisecondsSinceEpoch;
+      } catch (e) {
+        // LocaleDataException is not exported from package:intl.
+        if (e.toString().contains('LocaleDataException')) return null;
+        return null;
+      }
+    }
+
     try {
       if (WordSet(["yesterday", "يوم واحد"]).startsWith(date)) {
         DateTime cal = DateTime.now().subtract(const Duration(days: 1));
@@ -366,26 +412,29 @@ class MBridge {
                   : it,
             )
             .join(" ");
-        return DateFormat(
-          dateFormat,
-          dateFormatLocale,
-        ).parse(cleanedDate).millisecondsSinceEpoch.toString();
+        final ms = tryParseWith(dateFormat, dateFormatLocale, cleanedDate) ??
+            tryParseWith(dateFormat, null, cleanedDate);
+        if (ms != null) return ms.toString();
+        throw FormatException('unparsed ordinal date');
       } else {
-        return DateFormat(
-          dateFormat,
-          dateFormatLocale,
-        ).parse(date).millisecondsSinceEpoch.toString();
+        final ms = tryParseWith(dateFormat, dateFormatLocale, date) ??
+            tryParseWith(dateFormat, null, date);
+        if (ms != null) return ms.toString();
+        throw FormatException('unparsed date');
       }
     } catch (e) {
-      final supportedLocales = DateFormat.allLocalesWithSymbols();
+      List<String> supportedLocales = const ['en', 'en_US', 'en_GB'];
+      try {
+        supportedLocales = DateFormat.allLocalesWithSymbols();
+      } catch (_) {}
 
       for (var locale in supportedLocales) {
         for (var fmt in _dateFormats) {
           newLocale((fmt, locale, false));
           try {
+            // Kick off load for next calls; do not rely on it completing here.
             if (!_initializedLocales.contains(locale)) {
-              initializeDateFormatting(locale);
-              _initializedLocales.add(locale);
+              unawaited(ensureDateFormattingReady(locale));
             }
             if (WordSet(["yesterday", "يوم واحد"]).startsWith(date)) {
               DateTime cal = DateTime.now().subtract(const Duration(days: 1));
@@ -417,15 +466,13 @@ class MBridge {
                         : it,
                   )
                   .join(" ");
-              return DateFormat(
-                fmt,
-                locale,
-              ).parse(cleanedDate).millisecondsSinceEpoch.toString();
+              final ms = tryParseWith(fmt, locale, cleanedDate) ??
+                  tryParseWith(fmt, null, cleanedDate);
+              if (ms != null) return ms.toString();
             } else {
-              return DateFormat(
-                fmt,
-                locale,
-              ).parse(date).millisecondsSinceEpoch.toString();
+              final ms = tryParseWith(fmt, locale, date) ??
+                  tryParseWith(fmt, null, date);
+              if (ms != null) return ms.toString();
             }
           } catch (_) {}
         }

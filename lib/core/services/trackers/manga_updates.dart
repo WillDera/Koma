@@ -171,4 +171,55 @@ class MangaUpdatesTracker extends BaseTracker {
     track.status = TrackStatus.reading;
     await tracks.upsertTrack(track);
   }
+
+  @override
+  Future<TrackerMediaDetails?> fetchMediaDetails(int mediaId) async {
+    final res = await http.get(Uri.parse('$_base/v1/series/$mediaId'));
+    if (res.statusCode < 200 || res.statusCode >= 300) return null;
+    final body = jsonDecode(res.body) as Map<String, dynamic>;
+    final genres = <String>[
+      for (final g in (body['genres'] as List<dynamic>? ?? const []))
+        if (g is Map && (g['genre'] as String?)?.isNotEmpty == true)
+          g['genre'] as String
+        else if (g is String && g.isNotEmpty)
+          g,
+    ];
+    final categories = <String>[
+      for (final c in (body['categories'] as List<dynamic>? ?? const []))
+        if (c is Map && (c['category'] as String?)?.isNotEmpty == true)
+          c['category'] as String,
+    ];
+    final titles = <String>[
+      for (final t in (body['associated'] as List<dynamic>? ?? const []))
+        if (t is Map && (t['title'] as String?)?.isNotEmpty == true)
+          t['title'] as String,
+    ];
+    final bayesian = (body['bayesian_rating'] as num?)?.toDouble();
+    final scorePct =
+        bayesian == null ? null : ((bayesian / 10) * 100).round().clamp(0, 100);
+    DateTime? start;
+    final year = (body['year'] as num?)?.toInt();
+    if (year != null && year > 0) start = DateTime(year);
+    return TrackerMediaDetails(
+      format: body['type'] as String?,
+      publicationStatus: body['status'] as String?,
+      startDate: start,
+      averageScore: scorePct,
+      meanScore: scorePct,
+      popularity: (body['ranking']?['list']?['positions'] as num?)?.toInt() ??
+          (body['series_id'] as num?)?.toInt(),
+      favourites: null,
+      source: null,
+      genres: genres.isNotEmpty ? genres : categories,
+      tags: categories,
+      romajiTitle: null,
+      englishTitle: body['title'] as String?,
+      nativeTitle: null,
+      synonyms: titles,
+      coverUrl: body['image']?['url']?['original'] as String? ??
+          body['image']?['url'] as String?,
+      trackingUrl: body['url'] as String?,
+      totalChapters: (body['latest_chapter'] as num?)?.toInt(),
+    );
+  }
 }

@@ -27,6 +27,9 @@ class MangaExtras {
   /// Mihon chapter-list flags (sort/filter/display; opaque to Koma UI).
   int chapterFlags;
 
+  /// Tracker / synonym titles for search (not shown on library cards).
+  List<String>? alternateTitles;
+
   MangaExtras({
     this.id = Isar.autoIncrement,
     required this.mangaId,
@@ -35,27 +38,33 @@ class MangaExtras {
     this.customCoverPath,
     this.viewerFlags = 0,
     this.chapterFlags = 0,
+    this.alternateTitles,
   });
 
   Map<String, dynamic> toJson() => {
-    'id': id,
-    'manga_id': mangaId,
-    'category_ids': categoryIds ?? const <int>[],
-    'notes': notes,
-    'custom_cover_path': customCoverPath,
-    'viewer_flags': viewerFlags,
-    'chapter_flags': chapterFlags,
-  };
+        'id': id,
+        'manga_id': mangaId,
+        'category_ids': categoryIds ?? const <int>[],
+        'notes': notes,
+        'custom_cover_path': customCoverPath,
+        'viewer_flags': viewerFlags,
+        'chapter_flags': chapterFlags,
+        'alternate_titles': alternateTitles ?? const <String>[],
+      };
 
   factory MangaExtras.fromJson(Map<String, dynamic> json) => MangaExtras(
-    id: json['id'] as int?,
-    mangaId: (json['manga_id'] as num?)?.toInt() ?? 0,
-    categoryIds: (json['category_ids'] as List<dynamic>?)
-        ?.map((e) => (e as num).toInt())
-        .toList(),
-    notes: json['notes'] as String?,
-    customCoverPath: json['custom_cover_path'] as String?,
-    viewerFlags: (json['viewer_flags'] as num?)?.toInt() ?? 0,
-    chapterFlags: (json['chapter_flags'] as num?)?.toInt() ?? 0,
-  );
+        id: json['id'] as int?,
+        mangaId: (json['manga_id'] as num?)?.toInt() ?? 0,
+        categoryIds: (json['category_ids'] as List<dynamic>?)
+            ?.map((e) => (e as num).toInt())
+            .toList(),
+        notes: json['notes'] as String?,
+        customCoverPath: json['custom_cover_path'] as String?,
+        viewerFlags: (json['viewer_flags'] as num?)?.toInt() ?? 0,
+        chapterFlags: (json['chapter_flags'] as num?)?.toInt() ?? 0,
+        alternateTitles: (json['alternate_titles'] as List<dynamic>?)
+            ?.map((e) => '$e')
+            .where((e) => e.isNotEmpty)
+            .toList(),
+      );
 }

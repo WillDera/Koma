@@ -18,6 +18,7 @@ class MigrateBatchScreen extends ConsumerStatefulWidget {
 
 class _MigrateBatchScreenState extends ConsumerState<MigrateBatchScreen> {
   List<Manga> _library = [];
+  Map<String, String> _sourceNames = {};
   bool _loading = true;
 
   @override
@@ -29,11 +30,25 @@ class _MigrateBatchScreenState extends ConsumerState<MigrateBatchScreen> {
   Future<void> _load() async {
     final repos = ref.read(repositoriesProvider);
     final all = await repos.manga.getMangasInLibrary();
+    final installed = await repos.extensions.getInstalledExtensions();
+    final names = <String, String>{};
+    for (final s in installed) {
+      if (s.name.isEmpty) continue;
+      if (s.sourceId.isNotEmpty) names[s.sourceId] = s.name;
+      if (s.id.isNotEmpty) names[s.id] = s.name;
+    }
     if (!mounted) return;
     setState(() {
       _library = all;
+      _sourceNames = names;
       _loading = false;
     });
+  }
+
+  String _sourceLabel(Manga manga) {
+    final id = manga.sourceId;
+    if (id.isEmpty) return 'Unknown source';
+    return _sourceNames[id] ?? id;
   }
 
   Future<void> _migrate(Manga manga) async {
@@ -81,7 +96,7 @@ class _MigrateBatchScreenState extends ConsumerState<MigrateBatchScreen> {
                     title:
                         Text(m.name, style: TextStyle(color: c.textPrimary)),
                     subtitle: Text(
-                      m.sourceId,
+                      _sourceLabel(m),
                       style: TextStyle(color: c.textTertiary, fontSize: 12),
                     ),
                     trailing: TextButton(
