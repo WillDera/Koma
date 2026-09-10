@@ -26,6 +26,8 @@ import '../../core/services/merge_manga_use_case.dart';
 import '../../core/services/local_cbz_prefs.dart';
 import '../../core/services/local_cbz_source.dart';
 import '../../core/services/trackers/track_chapter_use_case.dart';
+import '../../core/services/trackers/track_enrichment.dart';
+import '../../core/services/trackers/tracker_media_details.dart';
 import '../../eval/dispatch_service.dart';
 import '../../eval/models/m_chapter.dart';
 import '../../core/services/source_webview_bridge.dart';
@@ -2243,8 +2245,13 @@ class _MangaDetailScreenState extends ConsumerState<MangaDetailScreen> {
       if (mounted) setState(() => _linkedTracks = const []);
       return;
     }
-    final tracks =
-        await ref.read(repositoriesProvider).tracks.getTracksForManga(id);
+    final repos = ref.read(repositoriesProvider);
+    var tracks = await repos.tracks.getTracksForManga(id);
+    final preferred = TrackEnrichment.preferredTrack(tracks);
+    if (preferred != null) {
+      await TrackEnrichment.refreshTrackMedia(repos, preferred);
+      tracks = await repos.tracks.getTracksForManga(id);
+    }
     if (!mounted) return;
     setState(() => _linkedTracks = tracks);
   }
@@ -2494,6 +2501,13 @@ class _MangaDetailScreenState extends ConsumerState<MangaDetailScreen> {
                         ref.read(mangaDetailProvider.notifier).setExpanded(v),
                     fallbackTitle: widget.title,
                     isTracking: _linkedTracks.isNotEmpty,
+                    trackingSyncId:
+                        TrackEnrichment.preferredTrack(_linkedTracks)?.syncId,
+                    trackerMedia: TrackerMediaDetails.tryDecode(
+                      TrackEnrichment.preferredTrack(
+                        _linkedTracks,
+                      )?.mediaDetailsJson,
+                    ),
                     onTrackingTap: _linkedTracks.isEmpty
                         ? null
                         : _openTrackingLinks,
@@ -3085,6 +3099,8 @@ class _Header extends StatefulWidget {
   final VoidCallback onBack;
   final Widget overflowButton;
   final bool isTracking;
+  final int? trackingSyncId;
+  final TrackerMediaDetails? trackerMedia;
   final VoidCallback? onTrackingTap;
 
   const _Header({
@@ -3102,6 +3118,8 @@ class _Header extends StatefulWidget {
     required this.onBack,
     required this.overflowButton,
     this.isTracking = false,
+    this.trackingSyncId,
+    this.trackerMedia,
     this.onTrackingTap,
   });
 
@@ -3153,14 +3171,11 @@ class _HeaderState extends State<_Header> with SingleTickerProviderStateMixin {
       6 => (Icons.pause_circle, Colors.orange),
       _ => (Icons.help_outline, widget.c.textTertiary),
     };
-    final chip = Container(
+    return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
       decoration: BoxDecoration(
         color: chipColor.withValues(alpha: 0.15),
         borderRadius: AppSpacing.brXs,
-        border: widget.isTracking
-            ? Border.all(color: chipColor.withValues(alpha: 0.55), width: 1)
-            : null,
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
@@ -3175,21 +3190,41 @@ class _HeaderState extends State<_Header> with SingleTickerProviderStateMixin {
               fontWeight: FontWeight.w600,
             ),
           ),
-          if (widget.isTracking) ...[
-            const SizedBox(width: 4),
-            Icon(Icons.sync_alt_rounded, size: 11, color: chipColor),
-          ],
         ],
       ),
     );
+  }
 
+  Widget _buildTrackingPill() {
+    final syncId = widget.trackingSyncId ?? 0;
+    final pill = Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.14),
+        borderRadius: AppSpacing.brXs,
+        border: Border.all(color: Colors.white.withValues(alpha: 0.28)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          TrackerBrandIcon(syncId: syncId, size: 14),
+          const SizedBox(width: 5),
+          const Text(
+            'Tracking',
+            style: TextStyle(
+              color: Colors.white,
+              fontSize: 11,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ],
+      ),
+    );
     final tappable = widget.onTrackingTap == null
-        ? chip
-        : GestureDetector(onTap: widget.onTrackingTap, child: chip);
-
+        ? pill
+        : GestureDetector(onTap: widget.onTrackingTap, child: pill);
     final pulse = _pulse;
-    if (!widget.isTracking || pulse == null) return tappable;
-
+    if (pulse == null) return tappable;
     return AnimatedBuilder(
       animation: pulse,
       builder: (context, child) {
@@ -3199,9 +3234,9 @@ class _HeaderState extends State<_Header> with SingleTickerProviderStateMixin {
             borderRadius: AppSpacing.brXs,
             boxShadow: [
               BoxShadow(
-                color: chipColor.withValues(alpha: 0.18 + 0.22 * t),
+                color: Colors.white.withValues(alpha: 0.08 + 0.16 * t),
                 blurRadius: 6 + 8 * t,
-                spreadRadius: 0.5 + 1.5 * t,
+                spreadRadius: 0.5 + 1.2 * t,
               ),
             ],
           ),
@@ -3209,6 +3244,38 @@ class _HeaderState extends State<_Header> with SingleTickerProviderStateMixin {
         );
       },
       child: tappable,
+    );
+  }
+
+  Widget _metaRow(String label, String value) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 6),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            width: 110,
+            child: Text(
+              label,
+              style: TextStyle(
+                color: widget.c.textTertiary,
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+          Expanded(
+            child: Text(
+              value,
+              style: TextStyle(
+                color: widget.c.textPrimary,
+                fontSize: 13,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -3231,9 +3298,23 @@ class _HeaderState extends State<_Header> with SingleTickerProviderStateMixin {
     final artist = widget.details['artist'] as String?;
     final description = widget.details['description'] as String?;
     final genre = widget.details['genre'] as String?;
-    final status = asIntOr(widget.details['status']);
-    final statusLabel =
-        _MangaDetailScreenState._statusLabels[status] ?? 'Unknown';
+    final media = widget.trackerMedia;
+    final status = media?.publicationStatus != null
+        ? TrackerPublicationStatus.toMangaStatusInt(media!.publicationStatus)
+        : asIntOr(widget.details['status']);
+    final statusLabel = media?.publicationStatus != null
+        ? TrackerPublicationStatus.labelForMangaStatusInt(status)
+        : (_MangaDetailScreenState._statusLabels[status] ?? 'Unknown');
+
+    final tagList = <String>[
+      if (media != null && (media.genres.isNotEmpty || media.tags.isNotEmpty))
+        ...{...media.genres, ...media.tags}
+      else if (genre != null)
+        ...genre
+            .split(',')
+            .map((g) => g.trim())
+            .where((g) => g.isNotEmpty),
+    ];
     final sourceName = widget.sourceName;
 
     return Column(
@@ -3243,6 +3324,7 @@ class _HeaderState extends State<_Header> with SingleTickerProviderStateMixin {
           title: title,
           thumb: thumb,
           statusChip: _buildStatusChip(status, statusLabel),
+          trackingPill: widget.isTracking ? _buildTrackingPill() : null,
           c: widget.c,
           localThumbnail: widget.localThumbnail,
           sourceId: widget.sourceId,
@@ -3283,6 +3365,32 @@ class _HeaderState extends State<_Header> with SingleTickerProviderStateMixin {
                   ),
                 ],
                 const SizedBox(height: 20),
+              ],
+              if (media != null) ...[
+                _sectionLabel('TRACKER'),
+                const SizedBox(height: 8),
+                if (media.format != null && media.format!.isNotEmpty)
+                  _metaRow('Format', media.format!),
+                if (media.publicationStatus != null &&
+                    media.publicationStatus!.isNotEmpty)
+                  _metaRow('Status', statusLabel),
+                if (media.startDate != null)
+                  _metaRow(
+                    'Start Date',
+                    DateFormat.yMMMd().format(media.startDate!),
+                  ),
+                if (media.averageScore != null)
+                  _metaRow('Average Score', '${media.averageScore}%'),
+                if (media.meanScore != null &&
+                    media.meanScore != media.averageScore)
+                  _metaRow('Mean Score', '${media.meanScore}%'),
+                if (media.popularity != null)
+                  _metaRow('Popularity', '${media.popularity}'),
+                if (media.favourites != null)
+                  _metaRow('Favorites', '${media.favourites}'),
+                if (media.source != null && media.source!.isNotEmpty)
+                  _metaRow('Source', media.source!),
+                const SizedBox(height: 12),
               ],
               if (description != null && description.isNotEmpty) ...[
                 Row(
@@ -3327,8 +3435,13 @@ class _HeaderState extends State<_Header> with SingleTickerProviderStateMixin {
                 ),
                 const SizedBox(height: 20),
               ],
-              if (genre != null && genre.isNotEmpty) ...[
-                _sectionLabel('TAGS'),
+              if (tagList.isNotEmpty) ...[
+                _sectionLabel(
+                  media != null &&
+                          (media.genres.isNotEmpty || media.tags.isNotEmpty)
+                      ? 'GENRES & TAGS'
+                      : 'TAGS',
+                ),
                 const SizedBox(height: 10),
                 AnimatedSize(
                   duration: const Duration(milliseconds: 280),
@@ -3338,20 +3451,12 @@ class _HeaderState extends State<_Header> with SingleTickerProviderStateMixin {
                       ? Wrap(
                           spacing: 8,
                           runSpacing: 8,
-                          children: genre
-                              .split(',')
-                              .map((g) => g.trim())
-                              .where((g) => g.isNotEmpty)
-                              .map(_tagChip)
-                              .toList(),
+                          children: tagList.map(_tagChip).toList(),
                         )
                       : SingleChildScrollView(
                           scrollDirection: Axis.horizontal,
                           child: Row(
-                            children: genre
-                                .split(',')
-                                .map((g) => g.trim())
-                                .where((g) => g.isNotEmpty)
+                            children: tagList
                                 .map(
                                   (g) => Padding(
                                     padding: const EdgeInsets.only(right: 8),
@@ -3647,6 +3752,7 @@ class _HeroSection extends ConsumerWidget {
   final String title;
   final String? thumb;
   final Widget statusChip;
+  final Widget? trackingPill;
   final KomaColors c;
   final String? localThumbnail;
   final String sourceId;
@@ -3660,6 +3766,7 @@ class _HeroSection extends ConsumerWidget {
     required this.title,
     this.thumb,
     required this.statusChip,
+    this.trackingPill,
     required this.c,
     this.localThumbnail,
     required this.sourceId,
@@ -3780,6 +3887,7 @@ class _HeroSection extends ConsumerWidget {
                   runSpacing: 4,
                   children: [
                     statusChip,
+                    ?trackingPill,
                     if (sourceName.isNotEmpty)
                       Container(
                         padding: const EdgeInsets.symmetric(

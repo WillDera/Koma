@@ -16,10 +16,12 @@ import 'reader_view_props.dart';
 /// separators rendered as [TransitionViewPaged]. Book mode packs two pages
 /// per spread.
 ///
-/// Swipe always uses normal [PageScrollPhysics] (panels slide in/out). The
-/// "Animated page transition" setting only affects tap-driven jumps via
+/// Swipe uses [PageScrollPhysics] at rest; when any page is zoomed past
+/// `minScale * 1.05`, physics switches to [NeverScrollableScrollPhysics] so
+/// pan stays on the image (same idea as [KrePageView] `onZoomed`).
+/// The "Animated page transition" setting only affects tap-driven jumps via
 /// [PageController.animateToPage] vs [PageController.jumpToPage].
-class MangaImageViewPaged extends StatelessWidget {
+class MangaImageViewPaged extends StatefulWidget {
   final ReaderViewProps props;
   final PageController pageController;
   final Axis axis;
@@ -36,20 +38,131 @@ class MangaImageViewPaged extends StatelessWidget {
   });
 
   @override
+  State<MangaImageViewPaged> createState() => _MangaImageViewPagedState();
+
+  /// Packs pages into spreads for book mode. Transition pages occupy a
+  /// solo spread so they are never paired with an image page.
+  static List<({int left, int? right})> packSpreads(List<PageData> pages) {
+    final spreads = <({int left, int? right})>[];
+    var i = 0;
+    while (i < pages.length) {
+      if (pages[i].isTransitionPage) {
+        spreads.add((left: i, right: null));
+        i++;
+        continue;
+      }
+      final next = i + 1;
+      if (next < pages.length && !pages[next].isTransitionPage) {
+        spreads.add((left: i, right: next));
+        i += 2;
+      } else {
+        spreads.add((left: i, right: null));
+        i++;
+      }
+    }
+    return spreads;
+  }
+
+  /// Maps a flat page index onto a book-mode spread index.
+  static int spreadIndexForPage(List<PageData> pages, int flatIndex) {
+    final spreads = packSpreads(pages);
+    for (var s = 0; s < spreads.length; s++) {
+      final sp = spreads[s];
+      if (sp.left == flatIndex || sp.right == flatIndex) return s;
+    }
+    return 0;
+  }
+}
+
+class _MangaImageViewPagedState extends State<MangaImageViewPaged> {
+  bool _pageZoomed = false;
+  final Map<int, SubsamplingScaleImageViewController> _controllers = {};
+  final Set<int> _zoomedPages = {};
+
+  ReaderViewProps get props => widget.props;
+  PageController get pageController => widget.pageController;
+
+  @override
+  void dispose() {
+    for (final c in _controllers.values) {
+      c.dispose();
+    }
+    _controllers.clear();
+    super.dispose();
+  }
+
+  @override
+  void didUpdateWidget(covariant MangaImageViewPaged oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (!identical(oldWidget.props.pages, widget.props.pages)) {
+      final stale = List<SubsamplingScaleImageViewController>.from(
+        _controllers.values,
+      );
+      _controllers.clear();
+      _zoomedPages.clear();
+      if (_pageZoomed) {
+        _pageZoomed = false;
+      }
+      // Dispose after children detach so notifyListeners isn't called on a
+      // disposed ChangeNotifier during the same rebuild.
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        for (final c in stale) {
+          c.dispose();
+        }
+      });
+    }
+  }
+
+  SubsamplingScaleImageViewController _controllerFor(int index) {
+    return _controllers.putIfAbsent(
+      index,
+      SubsamplingScaleImageViewController.new,
+    );
+  }
+
+  void _onScaleChanged(int pageIndex, double scale) {
+    final ctrl = _controllers[pageIndex];
+    if (ctrl == null || !ctrl.isReady) return;
+    final zoomed = scale > ctrl.minScale * 1.05;
+    final was = _zoomedPages.isNotEmpty;
+    if (zoomed) {
+      _zoomedPages.add(pageIndex);
+    } else {
+      _zoomedPages.remove(pageIndex);
+    }
+    final now = _zoomedPages.isNotEmpty;
+    if (was != now && mounted) {
+      setState(() => _pageZoomed = now);
+    }
+  }
+
+  void _onPageChanged(int flatPageIndex) {
+    // Changing pages is only possible when not zoomed; clear stale zoom flags.
+    if (_pageZoomed || _zoomedPages.isNotEmpty) {
+      _zoomedPages.clear();
+      setState(() => _pageZoomed = false);
+    }
+    props.onPageChanged(flatPageIndex);
+  }
+
+  @override
   Widget build(BuildContext context) {
     final pages = props.pages;
-    if (bookMode) {
-      final spreads = _packSpreads(pages);
+    final physics =
+        _pageZoomed ? const NeverScrollableScrollPhysics() : const PageScrollPhysics();
+
+    if (widget.bookMode) {
+      final spreads = MangaImageViewPaged.packSpreads(pages);
       return PageView.builder(
         controller: pageController,
-        scrollDirection: axis,
-        reverse: reverse,
-        physics: const PageScrollPhysics(),
+        scrollDirection: widget.axis,
+        reverse: widget.reverse,
+        physics: physics,
         allowImplicitScrolling: true,
         itemCount: spreads.length,
         onPageChanged: (i) {
           if (i < 0 || i >= spreads.length) return;
-          props.onPageChanged(spreads[i].left);
+          _onPageChanged(spreads[i].left);
         },
         itemBuilder: (_, spreadIndex) {
           final spread = spreads[spreadIndex];
@@ -79,51 +192,18 @@ class MangaImageViewPaged extends StatelessWidget {
 
     return PageView.builder(
       controller: pageController,
-      scrollDirection: axis,
-      reverse: reverse,
-      physics: const PageScrollPhysics(),
+      scrollDirection: widget.axis,
+      reverse: widget.reverse,
+      physics: physics,
       allowImplicitScrolling: true,
       itemCount: pages.length,
-      onPageChanged: props.onPageChanged,
+      onPageChanged: _onPageChanged,
       itemBuilder: (_, i) => _KeepAlivePage(
         pageIndex: i,
         currentPage: props.currentPage,
         child: _buildPage(context, i),
       ),
     );
-  }
-
-  /// Packs pages into spreads for book mode. Transition pages occupy a
-  /// solo spread so they are never paired with an image page.
-  static List<({int left, int? right})> _packSpreads(List<PageData> pages) {
-    final spreads = <({int left, int? right})>[];
-    var i = 0;
-    while (i < pages.length) {
-      if (pages[i].isTransitionPage) {
-        spreads.add((left: i, right: null));
-        i++;
-        continue;
-      }
-      final next = i + 1;
-      if (next < pages.length && !pages[next].isTransitionPage) {
-        spreads.add((left: i, right: next));
-        i += 2;
-      } else {
-        spreads.add((left: i, right: null));
-        i++;
-      }
-    }
-    return spreads;
-  }
-
-  /// Maps a flat page index onto a book-mode spread index.
-  static int spreadIndexForPage(List<PageData> pages, int flatIndex) {
-    final spreads = _packSpreads(pages);
-    for (var s = 0; s < spreads.length; s++) {
-      final sp = spreads[s];
-      if (sp.left == flatIndex || sp.right == flatIndex) return s;
-    }
-    return 0;
   }
 
   Widget _buildPage(BuildContext context, int index) {
@@ -185,7 +265,9 @@ class MangaImageViewPaged extends StatelessWidget {
         panEnabled: !settings.disableDoubleTap || !settings.disableZoomOut,
         zoomEnabled: !settings.disableZoomOut,
         doubleTapZoomScale: settings.disableDoubleTap ? 1.0 : null,
+        controller: _controllerFor(index),
         pageController: pageController,
+        onScaleChanged: (scale) => _onScaleChanged(index, scale),
         onError: (msg) {
           if (settings.disableDoubleTap) props.onRetryPage(index);
         },

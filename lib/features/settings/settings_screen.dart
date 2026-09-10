@@ -297,26 +297,34 @@ class _SettingsDestinationScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Material(
-      type: MaterialType.transparency,
-      child: ScreenBackdrop(
-        child: SafeArea(
-          bottom: false,
-          child: ListView(
-            padding: const EdgeInsets.only(bottom: 32),
-            children: [
-              const OneHandSpacer(),
-              LibraryHeader(
-                title: title,
-                showBackButton: true,
-                padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+    // Own ScaffoldMessenger so SnackBars from this sub-page (Tracking,
+    // Security, etc.) paint here — not on the Settings list underneath.
+    // Pushed with rootNavigator:true, so MaterialApp's messenger is the shell.
+    return ScaffoldMessenger(
+      child: Scaffold(
+        backgroundColor: Colors.transparent,
+        body: Material(
+          type: MaterialType.transparency,
+          child: ScreenBackdrop(
+            child: SafeArea(
+              bottom: false,
+              child: ListView(
+                padding: const EdgeInsets.only(bottom: 32),
+                children: [
+                  const OneHandSpacer(),
+                  LibraryHeader(
+                    title: title,
+                    showBackButton: true,
+                    padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+                  ),
+                  StaggeredFadeScale(
+                    index: 0,
+                    scaleBegin: 0.97,
+                    child: child,
+                  ),
+                ],
               ),
-              StaggeredFadeScale(
-                index: 0,
-                scaleBegin: 0.97,
-                child: child,
-              ),
-            ],
+            ),
           ),
         ),
       ),

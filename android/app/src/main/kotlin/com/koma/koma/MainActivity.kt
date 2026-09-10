@@ -20,14 +20,14 @@ import androidx.core.content.FileProvider
 import androidx.core.content.pm.PackageInfoCompat
 import eu.kanade.tachiyomi.extension.DalvikRuntimeManager
 import eu.kanade.tachiyomi.extension.DalvikServer
-import io.flutter.embedding.android.FlutterActivity
+import io.flutter.embedding.android.FlutterFragmentActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
 import java.io.File
 import java.io.FileOutputStream
 import java.security.MessageDigest
 
-class MainActivity : FlutterActivity() {
+class MainActivity : FlutterFragmentActivity() {
 
     private var searchChannel: MethodChannel? = null
     private var initialSearchQuery: String? = null

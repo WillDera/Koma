@@ -936,6 +936,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> with RouteAware {
               manga.artist ?? '',
               manga.sourceId,
               ...manga.genres,
+              ...manga.alternateTitles,
             ].join(' ').toLowerCase();
             return haystack.contains(query);
           }).toList();

@@ -86,6 +86,7 @@ class MangaRepository {
     String? customCoverPath,
     int? viewerFlags,
     int? chapterFlags,
+    List<String>? alternateTitles,
   }) async {
     final existing = await getMangaById(mangaId);
     if (existing == null) return;
@@ -97,6 +98,7 @@ class MangaRepository {
         customCoverPath: customCoverPath ?? existing.customCoverPath,
         viewerFlags: viewerFlags ?? existing.viewerFlags,
         chapterFlags: chapterFlags ?? existing.chapterFlags,
+        alternateTitles: alternateTitles ?? existing.alternateTitles,
       ),
     );
   }
@@ -464,12 +466,13 @@ class MangaRepository {
     final hasCover =
         manga.customCoverPath != null && manga.customCoverPath!.isNotEmpty;
     final hasFlags = manga.viewerFlags != 0 || manga.chapterFlags != 0;
+    final hasAlts = manga.alternateTitles.isNotEmpty;
     await _isar.writeTxn(() async {
       final existing = await _isar.mangaExtras
           .where()
           .mangaIdEqualTo(mangaId)
           .findFirst();
-      if (!hasCats && !hasNotes && !hasCover && !hasFlags) {
+      if (!hasCats && !hasNotes && !hasCover && !hasFlags && !hasAlts) {
         if (existing != null) {
           await _isar.mangaExtras.delete(existing.id ?? 0);
         }
@@ -484,6 +487,7 @@ class MangaRepository {
             customCoverPath: manga.customCoverPath,
             viewerFlags: manga.viewerFlags,
             chapterFlags: manga.chapterFlags,
+            alternateTitles: manga.alternateTitles,
           ),
         );
       } else {
@@ -492,6 +496,7 @@ class MangaRepository {
         existing.customCoverPath = manga.customCoverPath;
         existing.viewerFlags = manga.viewerFlags;
         existing.chapterFlags = manga.chapterFlags;
+        existing.alternateTitles = manga.alternateTitles;
         await _isar.mangaExtras.put(existing);
       }
     });
@@ -516,6 +521,7 @@ class MangaRepository {
     customCoverPath: extras?.customCoverPath,
     viewerFlags: extras?.viewerFlags ?? 0,
     chapterFlags: extras?.chapterFlags ?? 0,
+    alternateTitles: extras?.alternateTitles,
     createdAt: m.createdAt,
     updatedAt: m.updatedAt,
   );

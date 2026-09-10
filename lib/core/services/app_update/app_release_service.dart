@@ -39,8 +39,8 @@ class AppReleaseService {
     final assets = json['assets'];
     if (version.isEmpty || assets is! List) return null;
 
-    final downloadLink = pickApkUrl(assets);
-    if (downloadLink == null) return null;
+    final apk = pickApkAsset(assets);
+    if (apk == null) return null;
 
     final info = infoRaw
         .split('<!-->')
@@ -54,29 +54,40 @@ class AppReleaseService {
       version: version,
       info: info,
       releaseLink: releaseLink,
-      downloadLink: downloadLink,
+      downloadLink: apk.url,
+      downloadBytes: apk.sizeBytes,
     );
   }
 
   /// Prefer a versioned `koma-*.apk`, then `app-release.apk`, else any `.apk`.
-  static String? pickApkUrl(List<dynamic> assets) {
-    String? versioned;
-    String? releaseNamed;
-    String? fallback;
+  ///
+  /// Also captures GitHub asset `size` when present.
+  static ({String url, int? sizeBytes})? pickApkAsset(List<dynamic> assets) {
+    ({String url, int? sizeBytes})? versioned;
+    ({String url, int? sizeBytes})? releaseNamed;
+    ({String url, int? sizeBytes})? fallback;
     for (final raw in assets) {
       if (raw is! Map) continue;
       final name = raw['name'] as String? ?? '';
       final url = raw['browser_download_url'] as String? ?? '';
       if (!name.toLowerCase().endsWith('.apk') || url.isEmpty) continue;
+      final sizeRaw = raw['size'];
+      final sizeBytes = sizeRaw is int
+          ? sizeRaw
+          : (sizeRaw is num ? sizeRaw.toInt() : null);
+      final entry = (url: url, sizeBytes: sizeBytes);
       final lower = name.toLowerCase();
       if (lower.startsWith('koma-')) {
-        versioned ??= url;
+        versioned ??= entry;
       } else if (lower == 'app-release.apk') {
-        releaseNamed ??= url;
+        releaseNamed ??= entry;
       } else {
-        fallback ??= url;
+        fallback ??= entry;
       }
     }
     return versioned ?? releaseNamed ?? fallback;
   }
+
+  /// URL-only convenience over [pickApkAsset].
+  static String? pickApkUrl(List<dynamic> assets) => pickApkAsset(assets)?.url;
 }

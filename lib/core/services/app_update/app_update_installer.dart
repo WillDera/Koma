@@ -159,9 +159,16 @@ class AppUpdateInstaller {
   }
 
   Future<void> installUpdate([File? file]) async {
-    final apk = file ?? _apkFile;
+    var apk = file ?? _apkFile;
     if (apk == null || !await apk.exists()) {
-      throw StateError('Update APK not downloaded');
+      final cached = await cachedApkFile();
+      if (cached != null) {
+        adoptCachedApk(cached);
+        apk = cached;
+      }
+    }
+    if (apk == null || !await apk.exists()) {
+      throw StateError('Update file missing — tap Download again');
     }
     await _channel.invokeMethod<void>('installApk', {
       'apkPath': apk.path,

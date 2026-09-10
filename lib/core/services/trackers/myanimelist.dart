@@ -58,7 +58,26 @@ class MyAnimeListTracker extends BaseTracker {
     return List.generate(length, (_) => chars[rnd.nextInt(chars.length)]).join();
   }
 
+  static Future<void>? _loginInFlight;
+
   Future<void> login() async {
+    final existing = _loginInFlight;
+    if (existing != null) {
+      await existing;
+      return;
+    }
+    final done = _loginImpl();
+    _loginInFlight = done;
+    try {
+      await done;
+    } finally {
+      if (identical(_loginInFlight, done)) {
+        _loginInFlight = null;
+      }
+    }
+  }
+
+  Future<void> _loginImpl() async {
     final clientId = await _clientId();
     if (clientId.isEmpty) {
       throw StateError('Set MyAnimeList client id in Settings → Tracking first');
@@ -80,6 +99,10 @@ class MyAnimeListTracker extends BaseTracker {
     final result = await FlutterWebAuth2.authenticate(
       url: authUri.toString(),
       callbackUrlScheme: 'koma',
+      options: const FlutterWebAuth2Options(
+        preferEphemeral: true,
+        intentFlags: ephemeralIntentFlags,
+      ),
     );
     final code = Uri.parse(result).queryParameters['code'];
     if (code == null || code.isEmpty) {
@@ -266,5 +289,100 @@ class MyAnimeListTracker extends BaseTracker {
     track.lastChapterRead = lastChapterRead;
     track.status = TrackStatus.reading;
     await tracks.upsertTrack(track);
+  }
+
+  @override
+  Future<TrackerMediaDetails?> fetchMediaDetails(int mediaId) async {
+    final token = await _accessToken();
+    if (token == null) return null;
+    final uri = Uri.parse('$_api/manga/$mediaId').replace(
+      queryParameters: {
+        'fields':
+            'id,title,main_picture,alternative_titles,start_date,media_type,'
+            'status,mean,num_list_users,num_favorites,genres,num_chapters,'
+            'synopsis,source',
+      },
+    );
+    final res = await http.get(
+      uri,
+      headers: {'Authorization': 'Bearer $token'},
+    );
+    if (res.statusCode < 200 || res.statusCode >= 300) return null;
+    final body = jsonDecode(res.body) as Map<String, dynamic>;
+    final alt = body['alternative_titles'] as Map<String, dynamic>? ?? const {};
+    final synonyms = <String>[
+      for (final s in (alt['synonyms'] as List<dynamic>? ?? const []))
+        if ('$s'.isNotEmpty) '$s',
+    ];
+    final genres = <String>[
+      for (final g in (body['genres'] as List<dynamic>? ?? const []))
+        if (g is Map && (g['name'] as String?)?.isNotEmpty == true)
+          g['name'] as String,
+    ];
+    DateTime? startDate;
+    final startRaw = body['start_date'] as String?;
+    if (startRaw != null && startRaw.isNotEmpty) {
+      startDate = DateTime.tryParse(startRaw);
+    }
+    final mean = (body['mean'] as num?)?.toDouble();
+    final meanPct = mean == null ? null : (mean * 10).round();
+    return TrackerMediaDetails(
+      format: body['media_type'] as String?,
+      publicationStatus: body['status'] as String?,
+      startDate: startDate,
+      averageScore: meanPct,
+      meanScore: meanPct,
+      popularity: (body['num_list_users'] as num?)?.toInt(),
+      favourites: (body['num_favorites'] as num?)?.toInt(),
+      source: null,
+      genres: genres,
+      tags: const [],
+      romajiTitle: null,
+      englishTitle: alt['en'] as String?,
+      nativeTitle: alt['ja'] as String?,
+      synonyms: synonyms,
+      coverUrl: body['main_picture']?['large'] as String? ??
+          body['main_picture']?['medium'] as String?,
+      trackingUrl: 'https://myanimelist.net/manga/$mediaId',
+      totalChapters: (body['num_chapters'] as num?)?.toInt(),
+    );
+  }
+
+  @override
+  Future<void> updateScore(Track track, int score) async {
+    final token = await _accessToken();
+    if (token == null) throw StateError('Not logged in to MyAnimeList');
+    final mediaId = track.mediaId;
+    if (mediaId == null) throw StateError('MAL track missing media id');
+    final malScore = score.clamp(0, 10);
+    await http.put(
+      Uri.parse('$_api/manga/$mediaId/my_list_status'),
+      headers: {
+        'Authorization': 'Bearer $token',
+        'Content-Type': 'application/x-www-form-urlencoded',
+      },
+      body: {'score': '$malScore'},
+    );
+    track.score = malScore;
+    await tracks.upsertTrack(track);
+  }
+
+  @override
+  Future<List<TrackerReview>> listReviews(int mediaId) async {
+    // MAL public reviews API is limited; return empty and rely on score UI.
+    return const [];
+  }
+
+  @override
+  Future<TrackerReview?> upsertReview({
+    required int mediaId,
+    required String body,
+    String? title,
+    int? score,
+    int? existingReviewId,
+  }) async {
+    // MAL does not expose a simple create-review endpoint for mobile OAuth
+    // apps in the same way as AniList — score via updateScore instead.
+    return null;
   }
 }

@@ -1,6 +1,9 @@
 import '../../isar/collections/track.dart';
 import '../../repositories/repositories.dart';
 import '../../repositories/track_repository.dart';
+import 'tracker_media_details.dart';
+
+export 'tracker_media_details.dart';
 
 class TrackSearchResult {
   final int mediaId;
@@ -34,6 +37,38 @@ class TrackerRecPage {
   final bool reachedEnd;
 }
 
+class TrackerReview {
+  const TrackerReview({
+    required this.id,
+    required this.body,
+    this.title,
+    this.score,
+    this.userName,
+    this.isMine = false,
+  });
+
+  final int id;
+  final String body;
+  final String? title;
+  final int? score;
+  final String? userName;
+  final bool isMine;
+}
+
+class TrackerComment {
+  const TrackerComment({
+    required this.id,
+    required this.body,
+    this.userName,
+    this.createdAt,
+  });
+
+  final int id;
+  final String body;
+  final String? userName;
+  final DateTime? createdAt;
+}
+
 abstract class BaseTracker {
   int get syncId;
   String get name;
@@ -54,4 +89,29 @@ abstract class BaseTracker {
   });
 
   Future<void> updateProgress(Track track, int lastChapterRead);
+
+  Future<TrackerMediaDetails?> fetchMediaDetails(int mediaId) async => null;
+
+  Future<void> updateScore(Track track, int score) async {
+    track.score = score;
+    await tracks.upsertTrack(track);
+  }
+
+  Future<List<TrackerReview>> listReviews(int mediaId) async => const [];
+
+  Future<TrackerReview?> upsertReview({
+    required int mediaId,
+    required String body,
+    String? title,
+    int? score,
+    int? existingReviewId,
+  }) async =>
+      null;
+
+  Future<List<TrackerComment>> listComments(int reviewId) async => const [];
+
+  Future<void> postComment({
+    required int reviewId,
+    required String body,
+  }) async {}
 }

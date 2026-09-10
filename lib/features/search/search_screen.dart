@@ -148,8 +148,23 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
       final title = m.name.toLowerCase();
       final author = (m.author ?? '').toLowerCase();
       final genres = m.genres.join(' ').toLowerCase();
-      return title.contains(q) || author.contains(q) || genres.contains(q);
+      final alts = m.alternateTitles.any((a) => a.toLowerCase().contains(q));
+      return title.contains(q) ||
+          author.contains(q) ||
+          genres.contains(q) ||
+          alts;
     }).toList();
+  }
+
+  /// Alt title that matched [query] when the primary name did not.
+  String? _matchedViaAlt(Manga manga, String query) {
+    final q = query.trim().toLowerCase();
+    if (q.isEmpty) return null;
+    if (manga.name.toLowerCase().contains(q)) return null;
+    for (final alt in manga.alternateTitles) {
+      if (alt.toLowerCase().contains(q)) return alt;
+    }
+    return null;
   }
 
   @override
@@ -542,14 +557,46 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
           delegate: SliverChildBuilderDelegate(
             (_, i) {
               if (i == 0) {
+                final c = context.colors;
                 return Padding(
                   padding: const EdgeInsets.only(bottom: 8),
-                  child: Text(
-                    '$total result${total == 1 ? '' : 's'} for "$q"',
-                    style: TextStyle(
-                      color: context.colors.textSecondary,
-                      fontSize: 12,
-                    ),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          '$total result${total == 1 ? '' : 's'} for "$q"',
+                          style: TextStyle(
+                            color: c.textSecondary,
+                            fontSize: 12,
+                          ),
+                        ),
+                      ),
+                      AnimatedPress(
+                        onTap: () => context.pushNamed(
+                          Routes.globalSearch,
+                          extra: q,
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(
+                              Icons.extension_outlined,
+                              size: 16,
+                              color: c.accent,
+                            ),
+                            const SizedBox(width: 4),
+                            Text(
+                              'Global search',
+                              style: TextStyle(
+                                color: c.accent,
+                                fontSize: 12,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
                   ),
                 );
               }
@@ -636,12 +683,16 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
   Widget _mangaResult(Manga manga) {
     final status = _mangaStatusLabel(manga.status);
     final statusColor = _mangaStatusColor(manga.status);
+    final via = _matchedViaAlt(manga, _query);
     return _resultCard(
       onTap: () => _openManga(manga),
       cover: _mangaCover(manga),
       title: manga.name,
-      subtitle: manga.author,
-      meta: manga.genres.isNotEmpty ? manga.genres.first : null,
+      subtitle: via != null ? 'matched via $via' : manga.author,
+      meta: via != null
+          ? (manga.author ??
+              (manga.genres.isNotEmpty ? manga.genres.first : null))
+          : (manga.genres.isNotEmpty ? manga.genres.first : null),
       footer: Padding(
         padding: const EdgeInsets.only(top: 6),
         child: Align(

@@ -16,6 +16,7 @@ class AppLockOverlay extends ConsumerStatefulWidget {
 class _AppLockOverlayState extends ConsumerState<AppLockOverlay> {
   var _busy = false;
   String? _error;
+  var _useConfirmFallback = false;
 
   Future<void> _unlock() async {
     if (_busy) return;
@@ -23,12 +24,51 @@ class _AppLockOverlayState extends ConsumerState<AppLockOverlay> {
       _busy = true;
       _error = null;
     });
-    final ok = await AppLockService.authenticate();
+
+    if (_useConfirmFallback) {
+      final ok = await showDialog<bool>(
+        context: context,
+        builder: (ctx) {
+          final c = ctx.colors;
+          return AlertDialog(
+            backgroundColor: c.surface,
+            title: Text('Unlock Koma', style: TextStyle(color: c.textPrimary)),
+            content: Text(
+              'No device PIN/biometric is available. Confirm to unlock.',
+              style: TextStyle(color: c.textSecondary),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx, false),
+                child: const Text('Cancel'),
+              ),
+              TextButton(
+                onPressed: () => Navigator.pop(ctx, true),
+                child: const Text('Unlock'),
+              ),
+            ],
+          );
+        },
+      );
+      if (!mounted) return;
+      if (ok == true) {
+        ref.read(appUnlockedProvider.notifier).unlock();
+      }
+      setState(() => _busy = false);
+      return;
+    }
+
+    final result = await AppLockService.authenticate();
     if (!mounted) return;
-    if (ok) {
+    if (result.success) {
       ref.read(appUnlockedProvider.notifier).unlock();
+    } else if (result.deviceAuthUnavailable) {
+      setState(() {
+        _useConfirmFallback = true;
+        _error = result.errorMessage;
+      });
     } else {
-      setState(() => _error = 'Authentication failed');
+      setState(() => _error = result.errorMessage ?? 'Authentication failed');
     }
     setState(() => _busy = false);
   }
@@ -63,12 +103,18 @@ class _AppLockOverlayState extends ConsumerState<AppLockOverlay> {
                 ),
                 const SizedBox(height: 8),
                 Text(
-                  'Authenticate to continue',
+                  _useConfirmFallback
+                      ? 'Tap unlock to continue'
+                      : 'Authenticate to continue',
                   style: TextStyle(color: c.textSecondary, fontSize: 14),
                 ),
                 if (_error != null) ...[
                   const SizedBox(height: 12),
-                  Text(_error!, style: TextStyle(color: c.accent, fontSize: 13)),
+                  Text(
+                    _error!,
+                    textAlign: TextAlign.center,
+                    style: TextStyle(color: c.accent, fontSize: 13, height: 1.35),
+                  ),
                 ],
                 const SizedBox(height: 24),
                 FilledButton.icon(
@@ -79,7 +125,11 @@ class _AppLockOverlayState extends ConsumerState<AppLockOverlay> {
                           height: 18,
                           child: CircularProgressIndicator(strokeWidth: 2),
                         )
-                      : const Icon(Icons.fingerprint),
+                      : Icon(
+                          _useConfirmFallback
+                              ? Icons.lock_open
+                              : Icons.fingerprint,
+                        ),
                   label: Text(_busy ? 'Waiting…' : 'Unlock'),
                 ),
               ],
