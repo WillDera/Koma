@@ -19,6 +19,7 @@ import '../../core/providers.dart';
 import '../../core/services/cache_service.dart';
 import '../../core/services/ebook_media_store.dart';
 import '../../core/services/ebook_service.dart';
+import '../../core/services/hidden_titles_prefs.dart';
 import '../../core/services/koma_package_store.dart';
 import '../../core/services/local_cbz_prefs.dart';
 import '../../core/services/local_cbz_scanner.dart';
@@ -31,11 +32,13 @@ import '../../core/services/web_scraper_service.dart';
 import '../../core/utils/benchmark_logger.dart';
 import '../../core/utils/image_cache.dart';
 import '../../core/utils/image_headers.dart';
+import '../../features/reader/reader_settings_sheet.dart';
 import '../../router/book_navigation.dart';
 import '../../router/router.dart';
 import '../../theme/app_icons.dart';
 import '../../theme/app_theme.dart';
 import '../../theme/theme_provider.dart';
+import '../../theme/tokens/app_motion.dart';
 import '../../theme/tokens/app_spacing.dart';
 import '../../widgets/animated_press.dart';
 import '../../widgets/catalog_card_layout.dart';
@@ -55,6 +58,7 @@ import '../../widgets/screen_chrome.dart';
 import '../../widgets/catalog_cover_card.dart';
 import '../../core/repositories/manga_repository.dart' show InProgressManga;
 import 'ebook_export_flow.dart';
+import 'hidden_library_screen.dart';
 import 'library_group_modal.dart';
 import 'library_provider.dart';
 
@@ -118,13 +122,23 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> with RouteAware {
       final results = await Future.wait([
         repos.books.getInProgressBooks(),
         repos.manga.getInProgressManga(),
+        HiddenTitlesPrefs.hiddenBookIds(),
       ]);
       if (!mounted) return;
-      final books = results[0] as List<Book>;
+      final hiddenBooks = results[2] as Set<int>;
+      final books = [
+        for (final b in results[0] as List<Book>)
+          if (!hiddenBooks.contains(b.id)) b,
+      ];
       // Drop manga that were removed from the library (row may still exist
       // with chapter history until the user clears history / deletes).
+      // Also drop secret-shelf (hidden) titles.
       final mangas = (results[1] as List<InProgressManga>)
-          .where((m) => m.manga.inLibrary)
+          .where(
+            (m) =>
+                m.manga.inLibrary &&
+                !ViewerFlags.isHidden(m.manga.viewerFlags),
+          )
           .toList(growable: false);
       final epoch = DateTime.fromMillisecondsSinceEpoch(0);
       final merged = <_ContinueItem>[
@@ -199,15 +213,51 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> with RouteAware {
           children: [
             SafeArea(bottom: false, child: _body(context, provider)),
             if (!provider.loading &&
-                !provider.selectionMode &&
                 (provider.books.isNotEmpty || provider.mangas.isNotEmpty))
               Positioned(
                 left: leftHanded ? 20 : null,
                 right: leftHanded ? null : 20,
                 bottom: navClearance,
-                child: _AethelgardFab(
-                  iconData: AppIcons.add,
-                  onPressed: () => _showImportOptions(context),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    AnimatedSwitcher(
+                      duration: AppMotion.fast,
+                      switchInCurve: Curves.easeOutCubic,
+                      switchOutCurve: Curves.easeInCubic,
+                      transitionBuilder: (child, animation) {
+                        return FadeTransition(
+                          opacity: animation,
+                          child: SizeTransition(
+                            sizeFactor: animation,
+                            axis: Axis.vertical,
+                            alignment: Alignment.bottomCenter,
+                            child: child,
+                          ),
+                        );
+                      },
+                      child: provider.selectionMode &&
+                              provider.selectedIds.isNotEmpty
+                          ? Padding(
+                              key: const ValueKey('hide-fab'),
+                              padding: const EdgeInsets.only(bottom: 12),
+                              child: _AethelgardFab(
+                                iconData: const MaterialIconData(
+                                  Icons.visibility_off_outlined,
+                                ),
+                                tonal: true,
+                                tooltip: 'Hide selected',
+                                onPressed: () =>
+                                    _hideSelected(context, provider),
+                              ),
+                            )
+                          : const SizedBox.shrink(key: ValueKey('no-hide-fab')),
+                    ),
+                    _AethelgardFab(
+                      iconData: AppIcons.add,
+                      onPressed: () => _showImportOptions(context),
+                    ),
+                  ],
                 ),
               ),
             if (_importingFile)
@@ -705,10 +755,19 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> with RouteAware {
   Widget _header(BuildContext context, LibraryState provider) {
     final c = context.colors;
     if (provider.selectionMode) {
+      final hasBooks = provider.selectedIds.any((k) => k.startsWith('b:'));
+      final hasManga = provider.selectedIds.any((k) => k.startsWith('m:'));
+      final inMangaOnly = _viewAllSection == _LibrarySection.manga;
+      final inBooksOnly = _viewAllSection == _LibrarySection.books;
+      final showExport = hasBooks && !inMangaOnly;
+      final showMerge = hasManga &&
+          !inBooksOnly &&
+          _selectedMangaPair(provider) != null;
+      final showGroup = provider.selectedIds.length >= 2;
       return LibraryHeader(
         title: '${provider.selectedIds.length} selected',
         actions: [
-          if (provider.selectedIds.length >= 2) ...[
+          if (showGroup)
             IconButtonRound(
               icon: Icons.layers_outlined,
               size: 38,
@@ -717,9 +776,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> with RouteAware {
               tooltip: 'Create group',
               onPressed: () => _createGroupFromSelection(context),
             ),
-            const SizedBox(width: 8),
-          ],
-          if (_selectedMangaPair(provider) != null) ...[
+          if (showMerge)
             IconButtonRound(
               icon: Icons.merge_type_rounded,
               size: 38,
@@ -728,40 +785,38 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> with RouteAware {
               tooltip: 'Merge duplicates',
               onPressed: () => _mergeSelectedManga(context, provider),
             ),
-            const SizedBox(width: 8),
-          ],
           IconButtonRound(
             icon: Icons.select_all_rounded,
             size: 38,
             variant: IconButtonVariant.tonal,
             iconColor: c.textSecondary,
-            onPressed: ref.read(libraryProvider.notifier).selectAll,
+            tooltip: 'Select all',
+            onPressed: () => _selectAllInView(provider),
           ),
-          const SizedBox(width: 8),
-          IconButtonRound(
-            icon: Icons.folder_copy_outlined,
-            size: 38,
-            variant: IconButtonVariant.tonal,
-            iconColor: c.accent,
-            tooltip: 'Export ebooks',
-            onPressed: () => _exportSelectedEbooks(context, provider),
-          ),
-          const SizedBox(width: 8),
+          if (showExport)
+            IconButtonRound(
+              icon: Icons.folder_copy_outlined,
+              size: 38,
+              variant: IconButtonVariant.tonal,
+              iconColor: c.accent,
+              tooltip: 'Export ebooks',
+              onPressed: () => _exportSelectedEbooks(context, provider),
+            ),
           IconButtonRound(
             icon: Icons.delete_outline,
             size: 38,
             variant: IconButtonVariant.tonal,
             iconColor: const Color(0xFFC44C4C),
+            tooltip: 'Delete',
             onPressed: () => _confirmDelete(context, provider),
           ),
-          const SizedBox(width: 8),
           IconButtonRound(
             icon: Icons.close,
             size: 38,
             variant: IconButtonVariant.tonal,
+            tooltip: 'Cancel',
             onPressed: ref.read(libraryProvider.notifier).clearSelection,
           ),
-          const SizedBox(width: 8),
         ],
       );
     }
@@ -774,6 +829,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> with RouteAware {
               : '${provider.mangas.length} manga'),
       titleFontSize: 28,
       titleFontWeight: FontWeight.w600,
+      onTitleLongPress: () => openHiddenLibrary(context, ref),
       actions: [
         IconButtonRound(
           iconData: AppIcons.search,
@@ -986,6 +1042,16 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> with RouteAware {
     }).toList();
   }
 
+  /// Select-all scoped to the visible shelf (books / manga / both on home).
+  void _selectAllInView(LibraryState provider) {
+    final includeBooks = _viewAllSection != _LibrarySection.manga;
+    final includeManga = _viewAllSection != _LibrarySection.books;
+    ref.read(libraryProvider.notifier).selectAll(
+          books: includeBooks,
+          mangas: includeManga,
+        );
+  }
+
   Future<void> _createGroupFromSelection(BuildContext context) async {
     final c = context.colors;
     final name = await showDialog<String>(
@@ -1167,6 +1233,25 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> with RouteAware {
       await ref.read(libraryProvider.notifier).deleteSelected();
       if (mounted) await _loadContinue();
     }
+  }
+
+  Future<void> _hideSelected(
+    BuildContext context,
+    LibraryState provider,
+  ) async {
+    final n = provider.selectedIds.length;
+    if (n == 0) return;
+    final count = await ref.read(libraryProvider.notifier).hideSelected();
+    if (!mounted) return;
+    await _loadContinue();
+    if (!context.mounted) return;
+    StashToast.show(
+      context,
+      message: count == 1
+          ? '1 title hidden — long-press Library title to open'
+          : '$count titles hidden — long-press Library title to open',
+      icon: Icons.visibility_off_outlined,
+    );
   }
 
   void _showImportOptions(BuildContext context) {
@@ -2904,27 +2989,49 @@ class _NewChapterBadge extends StatelessWidget {
 class _AethelgardFab extends StatelessWidget {
   final AppIconData iconData;
   final VoidCallback? onPressed;
+  final bool tonal;
+  final String? tooltip;
 
-  const _AethelgardFab({required this.iconData, this.onPressed});
+  const _AethelgardFab({
+    required this.iconData,
+    this.onPressed,
+    this.tonal = false,
+    this.tooltip,
+  });
 
   @override
   Widget build(BuildContext context) {
     final c = context.colors;
-    return AnimatedPress(
+    final fab = AnimatedPress(
       onTap: onPressed,
       scaleDown: 0.90,
       child: Container(
         width: 56,
         height: 56,
         decoration: BoxDecoration(
-          color: c.accent,
+          color: tonal ? c.surface : c.accent,
           shape: BoxShape.circle,
-          boxShadow: AppSpacing.fabGlow(accent: c.accent),
+          border: tonal ? Border.all(color: c.border, width: 0.5) : null,
+          boxShadow: tonal
+              ? [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.18),
+                    blurRadius: 12,
+                    offset: const Offset(0, 4),
+                  ),
+                ]
+              : AppSpacing.fabGlow(accent: c.accent),
         ),
         child: Center(
-          child: AppIcon(data: iconData, size: 26, color: c.onAccent),
+          child: AppIcon(
+            data: iconData,
+            size: 26,
+            color: tonal ? c.textPrimary : c.onAccent,
+          ),
         ),
       ),
     );
+    if (tooltip == null) return fab;
+    return Tooltip(message: tooltip!, child: fab);
   }
 }

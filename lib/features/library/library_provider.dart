@@ -19,9 +19,11 @@ import '../../core/services/background_task.dart';
 import '../../core/services/library_update_auto_download.dart';
 import '../../core/services/library_update_prefs.dart';
 import '../../core/services/library_update_service.dart';
+import '../../core/services/hidden_titles_prefs.dart';
 import '../../core/services/local_cbz_prefs.dart';
 import '../../core/services/local_cbz_source.dart';
 import '../../core/services/notification_service.dart';
+import '../../features/reader/reader_settings_sheet.dart';
 import '../../widgets/library_book_card.dart';
 
 /// Immutable state for the library screen.
@@ -29,6 +31,7 @@ class LibraryState {
   const LibraryState({
     this.books = const [],
     this.mangas = const [],
+    this.allMangas = const [],
     this.categories = const [],
     this.groups = const [],
     this.loading = true,
@@ -47,6 +50,9 @@ class LibraryState {
 
   final List<Book> books;
   final List<Manga> mangas;
+
+  /// Full library including hidden titles (for Updates when opted in).
+  final List<Manga> allMangas;
   final List<LibraryCategory> categories;
   final List<LibraryGroupInfo> groups;
   final bool loading;
@@ -75,6 +81,7 @@ class LibraryState {
   LibraryState copyWith({
     List<Book>? books,
     List<Manga>? mangas,
+    List<Manga>? allMangas,
     List<LibraryCategory>? categories,
     List<LibraryGroupInfo>? groups,
     bool? loading,
@@ -93,6 +100,7 @@ class LibraryState {
     return LibraryState(
       books: books ?? this.books,
       mangas: mangas ?? this.mangas,
+      allMangas: allMangas ?? this.allMangas,
       categories: categories ?? this.categories,
       groups: groups ?? this.groups,
       loading: loading ?? this.loading,
@@ -204,6 +212,15 @@ class LibraryNotifier extends Notifier<LibraryState> {
       final categories = await repos.categories.getCategories();
       final groups = await repos.groups.getAllGroups();
       final newChapters = await repos.manga.countNewChaptersByManga();
+      final hiddenBooks = await HiddenTitlesPrefs.hiddenBookIds();
+      final visibleMangas = [
+        for (final m in mangas)
+          if (!ViewerFlags.isHidden(m.viewerFlags)) m,
+      ];
+      final visibleBooks = [
+        for (final b in books)
+          if (!hiddenBooks.contains(b.id)) b,
+      ];
       final extNames = <String, String>{
         LocalCbzSource.sourceId: LocalCbzSource.displayName,
       };
@@ -215,8 +232,9 @@ class LibraryNotifier extends Notifier<LibraryState> {
         if (ext.id.isNotEmpty) extNames[ext.id] = ext.name;
       }
       state = state.copyWith(
-        books: books,
-        mangas: mangas,
+        books: visibleBooks,
+        mangas: visibleMangas,
+        allMangas: mangas,
         categories: categories,
         groups: groups,
         extensionNames: extNames,
@@ -301,16 +319,20 @@ class LibraryNotifier extends Notifier<LibraryState> {
     state = state.copyWith(selectedIds: {}, selectionMode: false);
   }
 
-  void selectAll() {
+  void selectAll({bool books = true, bool mangas = true}) {
     final grouped = state.groupedMemberKeys;
     final ids = <String>{};
-    for (final book in state.books) {
-      final key = 'b:${book.id}';
-      if (!grouped.contains(key)) ids.add(key);
+    if (books) {
+      for (final book in state.books) {
+        final key = 'b:${book.id}';
+        if (!grouped.contains(key)) ids.add(key);
+      }
     }
-    for (final manga in state.mangas) {
-      final key = 'm:${manga.id}';
-      if (!grouped.contains(key)) ids.add(key);
+    if (mangas) {
+      for (final manga in state.mangas) {
+        final key = 'm:${manga.id}';
+        if (!grouped.contains(key)) ids.add(key);
+      }
     }
     if (ids.isEmpty ||
         (state.selectedIds.length == ids.length &&
@@ -367,6 +389,41 @@ class LibraryNotifier extends Notifier<LibraryState> {
     state = state.copyWith(selectedIds: {}, selectionMode: false);
     await loadBooks();
     ref.read(historyRevisionProvider.notifier).bump();
+  }
+
+  /// Move selected books/manga to the secret shelf (does not delete).
+  Future<int> hideSelected() async {
+    if (state.selectedIds.isEmpty) return 0;
+    final repos = ref.read(repositoriesProvider);
+    final hiddenBooks = ref.read(hiddenTitlesProvider.notifier);
+    var count = 0;
+    for (final key in state.selectedIds.toList()) {
+      if (key.startsWith('b:')) {
+        final id = int.tryParse(key.substring(2));
+        if (id == null) continue;
+        await hiddenBooks.setBookHidden(id, true);
+        count++;
+      } else if (key.startsWith('m:')) {
+        final id = int.tryParse(key.substring(2));
+        if (id == null) continue;
+        final manga = state.mangas.firstWhereOrNull((m) => m.id == id) ??
+            await repos.manga.getMangaById(id);
+        if (manga == null) continue;
+        if (ViewerFlags.isHidden(manga.viewerFlags)) {
+          count++;
+          continue;
+        }
+        await repos.manga.updateMangaExtras(
+          id,
+          viewerFlags: ViewerFlags.setHidden(manga.viewerFlags, true),
+        );
+        count++;
+      }
+    }
+    state = state.copyWith(selectedIds: {}, selectionMode: false);
+    await loadBooks();
+    ref.read(historyRevisionProvider.notifier).bump();
+    return count;
   }
 
   Future<int> createGroupFromSelection(String name) async {

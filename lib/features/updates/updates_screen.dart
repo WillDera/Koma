@@ -7,6 +7,7 @@ import 'package:intl/intl.dart';
 
 import '../../core/models/manga.dart';
 import '../../core/providers.dart';
+import '../../core/services/hidden_titles_prefs.dart';
 import '../../core/utils/image_cache.dart';
 import '../../core/utils/image_headers.dart';
 import '../../router/router.dart';
@@ -43,7 +44,10 @@ class UpdatesScreen extends ConsumerWidget {
     final c = context.colors;
     final library = ref.watch(libraryProvider);
     final update = ref.watch(libraryUpdateProvider);
-    final mangasById = {for (final m in library.mangas) m.id: m};
+    final hiddenPrefs = ref.watch(hiddenTitlesProvider);
+    final mangaSource =
+        hiddenPrefs.showInUpdates ? library.allMangas : library.mangas;
+    final mangasById = {for (final m in mangaSource) m.id: m};
 
     final entries = <({Manga manga, int count})>[];
     for (final e in library.newChapters.entries) {

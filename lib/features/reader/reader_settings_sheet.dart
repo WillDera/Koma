@@ -239,6 +239,14 @@ class ViewerFlags {
   static const webtoon = 4;
   static const continuousVertical = 5;
 
+  /// Koma: hide title from library (bit outside reading-mode mask).
+  static const hidden = 1 << 8;
+
+  static bool isHidden(int flags) => (flags & hidden) != 0;
+
+  static int setHidden(int flags, bool hide) =>
+      hide ? (flags | hidden) : (flags & ~hidden);
+
   static ReadingMode? readingModeFromFlags(int flags) {
     final mode = flags & mask;
     return switch (mode) {
