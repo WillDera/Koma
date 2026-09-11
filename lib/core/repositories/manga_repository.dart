@@ -176,6 +176,11 @@ class MangaRepository {
     // Fetch only the manga that have progress, preserving read-count keys.
     final ids = readCounts.keys.toList(growable: false);
     final rows = await _isar.mangas.getAll(ids);
+    final extrasRows = await _isar.mangaExtras.getAllByMangaId(ids);
+    final extrasById = <int, i.MangaExtras>{};
+    for (final e in extrasRows) {
+      if (e != null) extrasById[e.mangaId] = e;
+    }
 
     final result = <InProgressManga>[];
     for (var i = 0; i < ids.length; i++) {
@@ -184,7 +189,7 @@ class MangaRepository {
       final mangaId = ids[i];
       result.add(
         InProgressManga(
-          manga: _toModel(row),
+          manga: _toModel(row, extras: extrasById[mangaId]),
           readCount: readCounts[mangaId] ?? 0,
           totalChapters: totalCounts[mangaId] ?? 0,
           lastReadAt: lastReadAt[mangaId],

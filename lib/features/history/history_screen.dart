@@ -10,8 +10,10 @@ import '../../core/models/book.dart';
 import '../../core/models/manga.dart';
 import '../../core/providers.dart';
 import '../../core/repositories/manga_repository.dart';
+import '../../core/services/hidden_titles_prefs.dart';
 import '../../core/utils/image_cache.dart';
 import '../../core/utils/image_headers.dart';
+import '../../features/reader/reader_settings_sheet.dart';
 import '../../router/book_navigation.dart';
 import '../../router/router.dart';
 import '../../theme/app_icons.dart';
@@ -98,8 +100,19 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> with RouteAware {
       repos.books.getInProgressBooks(),
       repos.manga.getInProgressManga(),
     ]);
-    _books = results[0] as List<Book>;
-    _mangaRows = results[1] as List<InProgressManga>;
+    final hidden = ref.read(hiddenTitlesProvider);
+    final showHidden = hidden.showInHistory;
+    final hiddenBooks = hidden.hiddenBookIds;
+    final books = results[0] as List<Book>;
+    final mangaRows = results[1] as List<InProgressManga>;
+    _books = [
+      for (final b in books)
+        if (showHidden || !hiddenBooks.contains(b.id)) b,
+    ];
+    _mangaRows = [
+      for (final m in mangaRows)
+        if (showHidden || !ViewerFlags.isHidden(m.manga.viewerFlags)) m,
+    ];
     _coverCache.clear();
     if (mounted) setState(() => _loading = false);
   }
@@ -251,6 +264,12 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> with RouteAware {
     ref.listen<int>(historyRevisionProvider, (prev, next) {
       if (next != _lastSeenRevision) {
         _lastSeenRevision = next;
+        _load();
+      }
+    });
+    ref.listen<HiddenTitlesState>(hiddenTitlesProvider, (prev, next) {
+      if (prev?.showInHistory != next.showInHistory ||
+          prev?.hiddenBookIds != next.hiddenBookIds) {
         _load();
       }
     });

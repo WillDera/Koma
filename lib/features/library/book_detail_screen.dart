@@ -9,6 +9,7 @@ import 'package:share_plus/share_plus.dart';
 import '../../core/models/book.dart';
 import '../../core/models/chapter.dart';
 import '../../core/providers.dart';
+import '../../core/services/hidden_titles_prefs.dart';
 import '../../router/book_navigation.dart';
 import '../../theme/app_theme.dart';
 import '../../theme/theme_provider.dart';
@@ -62,10 +63,13 @@ class BookDetailScreen extends ConsumerWidget {
         actions: book.maybeWhen(
           data: (value) {
             if (value == null) return const <Widget>[];
+            final id = value.id;
+            final isHidden =
+                ref.watch(hiddenTitlesProvider).isBookHidden(id);
             return [
               PopupMenuButton<String>(
                 icon: Icon(Icons.more_vert_rounded, color: c.textPrimary),
-                onSelected: (v) {
+                onSelected: (v) async {
                   switch (v) {
                     case 'edit':
                       editBookInfo(context, ref, value);
@@ -73,6 +77,25 @@ class BookDetailScreen extends ConsumerWidget {
                       shareBookFile(context, value);
                     case 'export':
                       exportEbooksToPickedFolder(context, books: [value]);
+                    case 'hide':
+                      await ref
+                          .read(hiddenTitlesProvider.notifier)
+                          .setBookHidden(id, !isHidden);
+                      ref.read(libraryProvider.notifier).loadBooks();
+                      ref.read(historyRevisionProvider.notifier).bump();
+                      if (!context.mounted) return;
+                      StashToast.show(
+                        context,
+                        message: isHidden
+                            ? 'Title visible in library again'
+                            : 'Hidden — long-press your Library title and unlock to open',
+                        icon: isHidden
+                            ? Icons.visibility_outlined
+                            : Icons.visibility_off_outlined,
+                      );
+                      if (!isHidden && Navigator.of(context).canPop()) {
+                        Navigator.of(context).pop();
+                      }
                   }
                 },
                 itemBuilder: (ctx) => [
@@ -90,6 +113,10 @@ class BookDetailScreen extends ConsumerWidget {
                       value: 'export',
                       child: Text('Export to folder'),
                     ),
+                  PopupMenuItem(
+                    value: 'hide',
+                    child: Text(isHidden ? 'Unhide' : 'Hide'),
+                  ),
                 ],
               ),
             ];

@@ -316,7 +316,9 @@ class _SourceBrowseScreenState extends ConsumerState<SourceBrowseScreen>
           if (!_searchActive) {
             setState(() => _searchActive = true);
           }
-          _performSearch(_searchQuery);
+          // Apply/Save always runs search with the new filter state (empty
+          // query is fine when filters are active).
+          _performSearch(_searchCtrl.text);
         },
       ),
     );
@@ -324,8 +326,9 @@ class _SourceBrowseScreenState extends ConsumerState<SourceBrowseScreen>
 
   Future<void> _performSearch(String query) async {
     if (_source == null) return;
-    final hasFilters = _filters.isNotEmpty;
-    if (query.isEmpty && !hasFilters) {
+    final q = query.trim();
+    final filtersActive = _hasActiveFilterValues();
+    if (q.isEmpty && !filtersActive) {
       _mangas = [];
       _page = 1;
       _hasNext = true;
@@ -341,13 +344,14 @@ class _SourceBrowseScreenState extends ConsumerState<SourceBrowseScreen>
       final page = await _service.search(
         _requireSource,
         1,
-        query,
+        q,
         filters: filterList,
       );
       if (!mounted) return;
       setState(() {
         _searchResults = page.list;
         _searchLoading = false;
+        _error = null;
       });
     } catch (e) {
       if (!mounted) return;
@@ -356,6 +360,41 @@ class _SourceBrowseScreenState extends ConsumerState<SourceBrowseScreen>
         _searchLoading = false;
         _error = '$e';
       });
+    }
+  }
+
+  /// True when the user changed any filter away from its default.
+  bool _hasActiveFilterValues() {
+    if (_filters.isEmpty) return false;
+    for (final f in _filters) {
+      if (_filterIsActive(f, _filterValues)) return true;
+    }
+    return false;
+  }
+
+  bool _filterIsActive(Filter f, Map<String, dynamic> values) {
+    switch (f.type) {
+      case FilterType.text:
+        return (values[f.name] as String? ?? '').trim().isNotEmpty;
+      case FilterType.check:
+        return values[f.name] as bool? ?? false;
+      case FilterType.triState:
+        return (values[f.name] as int? ?? 0) != 0;
+      case FilterType.select:
+        return (values[f.name] as int? ?? 0) != (f.value as int? ?? 0);
+      case FilterType.sort:
+        return values[f.name] != null;
+      case FilterType.group:
+        final subs = values[f.name] as List<Map<String, dynamic>>? ?? const [];
+        for (var i = 0; i < (f.subFilters?.length ?? 0); i++) {
+          final sf = f.subFilters![i];
+          final sv = i < subs.length ? subs[i] : <String, dynamic>{};
+          if (_filterIsActive(sf, sv)) return true;
+        }
+        return false;
+      case FilterType.header:
+      case FilterType.separator:
+        return false;
     }
   }
 
@@ -729,8 +768,11 @@ class _SourceBrowseScreenState extends ConsumerState<SourceBrowseScreen>
     if (_searchLoading) {
       return const Center(child: CircularProgressIndicator(strokeWidth: 2));
     }
-    if (_searchQuery.isEmpty) {
-      return const Center(child: Text('Type to search'));
+    final q = _searchQuery.trim();
+    final filtersActive = _hasActiveFilterValues();
+    // Filter-only searches (empty query) must still show results.
+    if (q.isEmpty && !filtersActive && _searchResults.isEmpty) {
+      return const Center(child: Text('Type to search or apply filters'));
     }
     if (_searchResults.isEmpty) {
       return ListView(
@@ -738,7 +780,11 @@ class _SourceBrowseScreenState extends ConsumerState<SourceBrowseScreen>
           const SizedBox(height: 120),
           Center(
             child: Text(
-              _error != null ? '$_error' : 'No results for "$_searchQuery"',
+              _error != null
+                  ? '$_error'
+                  : q.isEmpty
+                  ? 'No results for these filters'
+                  : 'No results for "$q"',
               textAlign: TextAlign.center,
               style: TextStyle(color: c.textSecondary),
             ),
@@ -772,10 +818,151 @@ class _FilterSheet extends StatefulWidget {
 class _FilterSheetState extends State<_FilterSheet> {
   late Map<String, dynamic> _values;
 
+  /// Tag groups rendered as a single TriState list: includeName → excludeName.
+  late final Map<String, String?> _triTagPairs;
+
+  /// Group names consumed by a paired TriState UI (skip when iterating).
+  late final Set<String> _pairedGroupNames;
+
   @override
   void initState() {
     super.initState();
     _values = Map.from(widget.values);
+    _triTagPairs = _discoverTagPairs(widget.filters);
+    _pairedGroupNames = {
+      for (final e in _triTagPairs.entries) ...[
+        e.key,
+        if (e.value != null) e.value!,
+      ],
+    };
+  }
+
+  /// Pair "Include …" / "Exclude …" CheckBox groups that share the same tags.
+  Map<String, String?> _discoverTagPairs(List<Filter> filters) {
+    final checkGroups = <Filter>[
+      for (final f in filters)
+        if (_isCheckOnlyGroup(f)) f,
+    ];
+    final include = <Filter>[];
+    final exclude = <Filter>[];
+    final other = <Filter>[];
+    for (final g in checkGroups) {
+      final n = g.name.toLowerCase();
+      if (n.contains('include')) {
+        include.add(g);
+      } else if (n.contains('exclude')) {
+        exclude.add(g);
+      } else if (n.contains('tag') || n.contains('genre')) {
+        other.add(g);
+      }
+    }
+
+    final pairs = <String, String?>{};
+    for (final inc in include) {
+      Filter? match;
+      for (final ex in exclude) {
+        if (_sameTagNames(inc, ex)) {
+          match = ex;
+          break;
+        }
+      }
+      pairs[inc.name] = match?.name;
+      if (match != null) exclude.remove(match);
+    }
+    // Remaining exclude-only / genre CheckBox groups → TriState UI; Include
+    // maps to unchecked exclude (source may not support positive include).
+    for (final ex in exclude) {
+      pairs[ex.name] = ex.name; // self-pair: exclude-only
+    }
+    for (final g in other) {
+      pairs.putIfAbsent(g.name, () => g.name);
+    }
+    return pairs;
+  }
+
+  bool _isCheckOnlyGroup(Filter f) {
+    if (f.type != FilterType.group) return false;
+    final subs = f.subFilters ?? const <Filter>[];
+    return subs.isNotEmpty && subs.every((s) => s.type == FilterType.check);
+  }
+
+  bool _sameTagNames(Filter a, Filter b) {
+    final an = {...?a.subFilters?.map((s) => s.name)};
+    final bn = {...?b.subFilters?.map((s) => s.name)};
+    return an.isNotEmpty && an.length == bn.length && an.containsAll(bn);
+  }
+
+  Filter? _groupByName(String name) {
+    for (final f in widget.filters) {
+      if (f.name == name) return f;
+    }
+    return null;
+  }
+
+  int _triStateForTag({
+    required String includeGroup,
+    required String? excludeGroup,
+    required String tagName,
+  }) {
+    final inc = _checkboxState(includeGroup, tagName);
+    final exc = excludeGroup == null
+        ? false
+        : _checkboxState(excludeGroup, tagName);
+    if (exc) return 2;
+    if (inc && includeGroup != excludeGroup) return 1;
+    // Exclude-only self-pair: checked means exclude.
+    if (inc && includeGroup == excludeGroup) return 2;
+    return 0;
+  }
+
+  bool _checkboxState(String groupName, String tagName) {
+    final group = _groupByName(groupName);
+    if (group == null) return false;
+    final subs = _values[groupName] as List<Map<String, dynamic>>? ?? const [];
+    final idx = group.subFilters?.indexWhere((s) => s.name == tagName) ?? -1;
+    if (idx < 0 || idx >= subs.length) return false;
+    return subs[idx][tagName] as bool? ?? false;
+  }
+
+  void _setTriStateForTag({
+    required String includeGroup,
+    required String? excludeGroup,
+    required String tagName,
+    required int state,
+  }) {
+    final includeOnly = includeGroup == excludeGroup;
+    if (includeOnly) {
+      // Exclude-only group: Ignore=off, Exclude=on. Include≈off (no include API).
+      _setCheckbox(includeGroup, tagName, state == 2);
+      return;
+    }
+    _setCheckbox(includeGroup, tagName, state == 1);
+    if (excludeGroup != null) {
+      _setCheckbox(excludeGroup, tagName, state == 2);
+    }
+  }
+
+  void _setCheckbox(String groupName, String tagName, bool on) {
+    final group = _groupByName(groupName);
+    if (group == null) return;
+    final subs = List<Map<String, dynamic>>.from(
+      (_values[groupName] as List<Map<String, dynamic>>?) ?? const [],
+    );
+    final idx = group.subFilters?.indexWhere((s) => s.name == tagName) ?? -1;
+    if (idx < 0) return;
+    while (subs.length <= idx) {
+      subs.add(<String, dynamic>{});
+    }
+    final map = Map<String, dynamic>.from(subs[idx]);
+    map[tagName] = on;
+    // Keep legacy key used by _initFilterValue (filter name as key).
+    if (group.subFilters![idx].name == tagName) {
+      map[group.subFilters![idx].name] = on;
+    }
+    // _initFilterValue stores under sf.name inside the sub map via recursive call
+    // which uses values[f.name] = bool. So key is tag name.
+    subs[idx] = {tagName: on};
+    _values[groupName] = subs;
   }
 
   @override
@@ -807,7 +994,7 @@ class _FilterSheetState extends State<_FilterSheet> {
                     Navigator.of(context).pop();
                   },
                   child: Text(
-                    'Apply',
+                    'Save',
                     style: TextStyle(
                       color: c.accent,
                       fontWeight: FontWeight.w600,
@@ -822,11 +1009,80 @@ class _FilterSheetState extends State<_FilterSheet> {
             child: ListView(
               controller: scrollCtrl,
               padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
-              children: widget.filters
-                  .map((f) => _buildFilterWidget(f, _values))
-                  .toList(),
+              children: [
+                for (final f in widget.filters)
+                  if (_triTagPairs.containsKey(f.name))
+                    _buildTriTagGroup(f.name, _triTagPairs[f.name])
+                  else if (!_pairedGroupNames.contains(f.name))
+                    _buildFilterWidget(f, _values),
+              ],
             ),
           ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildTriTagGroup(String primaryName, String? excludeName) {
+    final c = Theme.of(context).extension<KomaColors>()!;
+    final primary = _groupByName(primaryName);
+    if (primary == null) return const SizedBox.shrink();
+    final excludeOnly = primaryName == excludeName;
+    final title = excludeOnly
+        ? primary.name
+        : (primary.name.toLowerCase().contains('include')
+              ? primary.name.replaceFirst(RegExp(r'include', caseSensitive: false), 'Tags')
+              : 'Tags');
+    final tags = primary.subFilters ?? const <Filter>[];
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 6),
+      child: ExpansionTile(
+        initiallyExpanded: true,
+        title: Text(
+          title,
+          style: TextStyle(color: c.textPrimary, fontWeight: FontWeight.w600),
+        ),
+        subtitle: Text(
+          excludeOnly
+              ? 'Ignore / Exclude (this source has no include filter)'
+              : 'Ignore / Include / Exclude',
+          style: TextStyle(color: c.textTertiary, fontSize: 11),
+        ),
+        children: [
+          for (final tag in tags)
+            Padding(
+              padding: const EdgeInsets.only(left: 8, right: 4, bottom: 8),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(tag.name, style: TextStyle(color: c.textPrimary, fontSize: 13)),
+                  const SizedBox(height: 4),
+                  SegmentedButton<int>(
+                    segments: [
+                      const ButtonSegment(value: 0, label: Text('Ignore')),
+                      if (!excludeOnly)
+                        const ButtonSegment(value: 1, label: Text('Include')),
+                      const ButtonSegment(value: 2, label: Text('Exclude')),
+                    ],
+                    selected: {
+                      _triStateForTag(
+                        includeGroup: primaryName,
+                        excludeGroup: excludeName,
+                        tagName: tag.name,
+                      ),
+                    },
+                    onSelectionChanged: (s) => setState(() {
+                      _setTriStateForTag(
+                        includeGroup: primaryName,
+                        excludeGroup: excludeName,
+                        tagName: tag.name,
+                        state: s.first,
+                      );
+                    }),
+                  ),
+                ],
+              ),
+            ),
         ],
       ),
     );
@@ -972,15 +1228,18 @@ class _FilterSheetState extends State<_FilterSheet> {
       case FilterType.group:
         final subValuesList =
             (values[f.name] as List<Map<String, dynamic>>?) ?? [];
+        // Ensure list length matches for nested edits.
+        while (subValuesList.length < (f.subFilters?.length ?? 0)) {
+          subValuesList.add(<String, dynamic>{});
+        }
+        values[f.name] = subValuesList;
         return Padding(
           padding: const EdgeInsets.symmetric(vertical: 6),
           child: ExpansionTile(
             title: Text(f.name, style: TextStyle(color: c.textPrimary)),
             children: (f.subFilters ?? []).asMap().entries.map((e) {
               final sf = e.value;
-              final sv = e.key < subValuesList.length
-                  ? subValuesList[e.key]
-                  : <String, dynamic>{};
+              final sv = subValuesList[e.key];
               return Padding(
                 padding: const EdgeInsets.only(left: 16),
                 child: _buildFilterWidget(sf, sv),

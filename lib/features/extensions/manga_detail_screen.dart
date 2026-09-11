@@ -36,6 +36,7 @@ import '../../core/utils/image_cache.dart';
 import '../../core/utils/image_headers.dart';
 import '../../core/utils/json_coerce.dart';
 import '../../router/router.dart';
+import '../../features/reader/reader_settings_sheet.dart';
 import '../../theme/app_theme.dart';
 import '../../theme/tokens/app_spacing.dart';
 import '../../theme/tokens/app_type.dart';
@@ -115,6 +116,7 @@ class _MangaDetailScreenState extends ConsumerState<MangaDetailScreen> {
   int? _mangaId;
   String? _localThumbnail;
   bool _inLibrary = false;
+  int _viewerFlags = 0;
   bool _chapterSelectMode = false;
   final Set<String> _selectedChapterUrls = {};
   List<Track> _linkedTracks = const [];
@@ -276,6 +278,7 @@ class _MangaDetailScreenState extends ConsumerState<MangaDetailScreen> {
     );
     _mangaId = null;
     _inLibrary = false;
+    _viewerFlags = widget.manga?.viewerFlags ?? 0;
     _localThumbnail = null;
     if (mounted) setState(() => _sessionReady = true);
 
@@ -367,6 +370,7 @@ class _MangaDetailScreenState extends ConsumerState<MangaDetailScreen> {
     _mangaId = m.id;
     _notes = m.notes;
     _inLibrary = m.inLibrary;
+    _viewerFlags = m.viewerFlags;
     unawaited(_reloadLinkedTracks());
     final notifier = ref.read(mangaDetailProvider.notifier);
     notifier
@@ -722,6 +726,7 @@ class _MangaDetailScreenState extends ConsumerState<MangaDetailScreen> {
     setState(() {
       _mangaId = manga.id;
       _inLibrary = manga.inLibrary;
+      _viewerFlags = manga.viewerFlags;
     });
     unawaited(_reloadLinkedTracks());
   }
@@ -1400,6 +1405,37 @@ class _MangaDetailScreenState extends ConsumerState<MangaDetailScreen> {
     setState(() => _notes = saved.isEmpty ? null : saved);
   }
 
+  Future<void> _toggleHidden() async {
+    final mangaId = _mangaId;
+    if (mangaId == null) return;
+    final repos = ref.read(repositoriesProvider);
+    final manga = await repos.manga.getMangaById(mangaId);
+    if (manga == null) return;
+    final hide = !ViewerFlags.isHidden(manga.viewerFlags);
+    final nextFlags = ViewerFlags.setHidden(manga.viewerFlags, hide);
+    await repos.manga.updateMangaExtras(
+      mangaId,
+      viewerFlags: nextFlags,
+    );
+    if (!mounted) return;
+    setState(() => _viewerFlags = nextFlags);
+    ref.read(libraryProvider.notifier).loadBooks();
+    ref.read(historyRevisionProvider.notifier).bump();
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          hide
+              ? 'Hidden — long-press your Library title and unlock to open'
+              : 'Title visible in library again',
+        ),
+      ),
+    );
+    if (hide && context.mounted) {
+      // Leave detail so it disappears from the library stack cleanly.
+      if (context.canPop()) context.pop();
+    }
+  }
+
   List<Map<String, dynamic>> _selectedChapters() {
     final detail = ref.read(mangaDetailProvider);
     return detail.chapters
@@ -2076,6 +2112,8 @@ class _MangaDetailScreenState extends ConsumerState<MangaDetailScreen> {
         }
       case 'notes':
         await _editNotes();
+      case 'hide':
+        await _toggleHidden();
       case 'migrate':
         if (LocalCbzSource.isLocal(widget.sourceId)) return;
         final mangaId = _mangaId;
@@ -2578,6 +2616,15 @@ class _MangaDetailScreenState extends ConsumerState<MangaDetailScreen> {
                           const PopupMenuItem(
                             value: 'merge',
                             child: Text('Merge duplicate…'),
+                          ),
+                        if (_inLibrary && _mangaId != null)
+                          PopupMenuItem(
+                            value: 'hide',
+                            child: Text(
+                              ViewerFlags.isHidden(_viewerFlags)
+                                  ? 'Unhide'
+                                  : 'Hide',
+                            ),
                           ),
                         if (_inLibrary && _mangaId != null)
                           PopupMenuItem(

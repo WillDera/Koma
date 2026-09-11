@@ -12,6 +12,7 @@ class LibraryHeader extends StatelessWidget {
   final Widget? leading;
   final bool showBackButton;
   final VoidCallback? onBack;
+  final VoidCallback? onTitleLongPress;
   final EdgeInsets padding;
   final double? titleFontSize;
   final FontWeight? titleFontWeight;
@@ -24,6 +25,7 @@ class LibraryHeader extends StatelessWidget {
     this.leading,
     this.showBackButton = false,
     this.onBack,
+    this.onTitleLongPress,
     this.padding = const EdgeInsets.fromLTRB(20, 8, 16, 12),
     this.titleFontSize,
     this.titleFontWeight,
@@ -39,6 +41,18 @@ class LibraryHeader extends StatelessWidget {
         : padding;
     final titleSize = titleFontSize ?? (showBackButton ? 18.0 : 24.0);
     final weight = titleFontWeight ?? FontWeight.w700;
+    final titleText = Text(
+      title,
+      maxLines: 1,
+      overflow: TextOverflow.ellipsis,
+      style: TextStyle(
+        color: c.textPrimary,
+        fontSize: titleSize,
+        fontWeight: weight,
+        letterSpacing: showBackButton ? 0 : -0.6,
+        height: 1.15,
+      ),
+    );
     return Padding(
       padding: effectivePadding,
       child: Row(
@@ -61,18 +75,14 @@ class LibraryHeader extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               mainAxisSize: MainAxisSize.min,
               children: [
-                Text(
-                  title,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    color: c.textPrimary,
-                    fontSize: titleSize,
-                    fontWeight: weight,
-                    letterSpacing: showBackButton ? 0 : -0.6,
-                    height: 1.15,
-                  ),
-                ),
+                if (onTitleLongPress != null)
+                  GestureDetector(
+                    onLongPress: onTitleLongPress,
+                    behavior: HitTestBehavior.opaque,
+                    child: titleText,
+                  )
+                else
+                  titleText,
                 if (subtitle != null) ...[
                   const SizedBox(height: 3),
                   Text(
@@ -91,10 +101,15 @@ class LibraryHeader extends StatelessWidget {
           ),
           if (actions.isNotEmpty) ...[
             const SizedBox(width: 8),
-            for (var i = 0; i < actions.length; i++) ...[
-              if (i > 0) const SizedBox(width: 8),
-              actions[i],
-            ],
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                for (var i = 0; i < actions.length; i++) ...[
+                  if (i > 0) const SizedBox(width: 8),
+                  actions[i],
+                ],
+              ],
+            ),
           ],
         ],
       ),

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../core/utils/cached_network.dart';
 import '../theme/app_theme.dart';
+import '../theme/tokens/app_motion.dart';
 import '../theme/tokens/app_spacing.dart';
 import 'animated_press.dart';
 import 'library_book_card.dart';
@@ -14,6 +15,7 @@ class CatalogCoverCard extends StatelessWidget {
     super.key,
     required this.title,
     required this.onTap,
+    this.onLongPress,
     this.subtitle,
     this.imageUrl,
     this.imageProvider,
@@ -23,6 +25,8 @@ class CatalogCoverCard extends StatelessWidget {
     this.formatBadge,
     this.showBadge = true,
     this.inLibrary = false,
+    this.selected = false,
+    this.selectionMode = false,
     this.coverMaxBytes,
     this.variant = LibraryCardVariant.grid,
     this.downloadProgress,
@@ -42,10 +46,13 @@ class CatalogCoverCard extends StatelessWidget {
   final bool showBadge;
   /// Accent heart when this title is already in the user's library.
   final bool inLibrary;
+  final bool selected;
+  final bool selectionMode;
   /// Decode budget for remote covers; null uses the default medium budget.
   final int? coverMaxBytes;
   final LibraryCardVariant variant;
   final VoidCallback onTap;
+  final VoidCallback? onLongPress;
   final double? downloadProgress;
 
   bool get _busy => downloadProgress != null;
@@ -171,6 +178,22 @@ class CatalogCoverCard extends StatelessWidget {
     );
   }
 
+  Widget _selectionBadge(KomaColors c, {double size = 24}) {
+    return AnimatedContainer(
+      duration: AppMotion.fast,
+      width: size,
+      height: size,
+      decoration: BoxDecoration(
+        color: selected ? c.accent : Colors.black.withValues(alpha: 0.4),
+        shape: BoxShape.circle,
+        border: Border.all(color: Colors.white, width: 1.5),
+      ),
+      child: selected
+          ? Icon(Icons.check, size: size * 0.58, color: c.onAccent)
+          : null,
+    );
+  }
+
   Widget _grid(BuildContext context) {
     final c = context.colors;
     final chip = _badgeChip();
@@ -178,6 +201,7 @@ class CatalogCoverCard extends StatelessWidget {
     final heart = _inLibraryHeart(c);
     return AnimatedPress(
       onTap: _busy ? null : onTap,
+      onLongPress: onLongPress,
       scaleDown: 0.97,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -193,6 +217,12 @@ class CatalogCoverCard extends StatelessWidget {
                 if (chip != null) Positioned(top: 6, left: 6, child: chip),
                 if (heart != null)
                   Positioned(top: 6, right: 6, child: heart),
+                if (selectionMode)
+                  Positioned(
+                    top: 8,
+                    right: 8,
+                    child: _selectionBadge(c),
+                  ),
                 if (metaPills != null)
                   Positioned(bottom: 6, left: 6, child: metaPills),
                 if (_busy)
@@ -243,6 +273,7 @@ class CatalogCoverCard extends StatelessWidget {
     final heart = _inLibraryHeart(c);
     return AnimatedPress(
       onTap: _busy ? null : onTap,
+      onLongPress: onLongPress,
       scaleDown: 0.97,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.center,
@@ -258,6 +289,12 @@ class CatalogCoverCard extends StatelessWidget {
                 if (chip != null) Positioned(top: 4, left: 4, child: chip),
                 if (heart != null)
                   Positioned(top: 4, right: 4, child: heart),
+                if (selectionMode)
+                  Positioned(
+                    top: 6,
+                    right: 6,
+                    child: _selectionBadge(c, size: 20),
+                  ),
                 if (metaPills != null)
                   Positioned(bottom: 4, left: 4, child: metaPills),
                 if (_busy)
@@ -299,6 +336,7 @@ class CatalogCoverCard extends StatelessWidget {
     final heart = _inLibraryHeart(c);
     return AnimatedPress(
       onTap: _busy ? null : onTap,
+      onLongPress: onLongPress,
       scaleDown: 0.97,
       child: ClipRRect(
         borderRadius: AppSpacing.brMd,
@@ -324,6 +362,12 @@ class CatalogCoverCard extends StatelessWidget {
             if (chip != null) Positioned(top: 6, left: 6, child: chip),
             if (heart != null)
               Positioned(top: 6, right: 6, child: heart),
+            if (selectionMode)
+              Positioned(
+                top: 8,
+                right: 8,
+                child: _selectionBadge(c),
+              ),
             if (metaPills != null)
               Positioned(
                 bottom: showTitle ? 36 : 8,
@@ -379,6 +423,7 @@ class CatalogCoverCard extends StatelessWidget {
     final listSub = _listSubtitle;
     return AnimatedPress(
       onTap: _busy ? null : onTap,
+      onLongPress: onLongPress,
       scaleDown: 0.99,
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
@@ -401,6 +446,12 @@ class CatalogCoverCard extends StatelessWidget {
                 if (chip != null) Positioned(top: 2, left: 2, child: chip),
                 if (heart != null)
                   Positioned(top: 2, right: 2, child: heart),
+                if (selectionMode)
+                  Positioned(
+                    top: 2,
+                    right: 2,
+                    child: _selectionBadge(c, size: 18),
+                  ),
                 if (sizeChip != null)
                   Positioned(bottom: 2, left: 2, child: sizeChip),
               ],

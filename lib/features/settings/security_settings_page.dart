@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/services/app_lock_service.dart';
+import '../../core/services/hidden_titles_prefs.dart';
 import '../../core/services/security_prefs.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/settings_section.dart';
@@ -97,6 +98,7 @@ class _SecuritySettingsPageState extends ConsumerState<SecuritySettingsPage> {
     final incognito = ref.watch(incognitoProvider);
     final lockOn = ref.watch(appLockEnabledProvider);
     final secureMode = ref.watch(secureScreenProvider);
+    final hidden = ref.watch(hiddenTitlesProvider);
 
     return Column(
       children: [
@@ -118,6 +120,28 @@ class _SecuritySettingsPageState extends ConsumerState<SecuritySettingsPage> {
                     incognito: v,
                   );
                 },
+              ),
+            ),
+            SettingsRow(
+              icon: Icons.history_outlined,
+              title: 'Hidden titles in History',
+              subtitle: 'Show secret-shelf titles in Your History',
+              trailing: Switch(
+                value: hidden.showInHistory,
+                activeThumbColor: c.accent,
+                onChanged: (v) =>
+                    ref.read(hiddenTitlesProvider.notifier).setShowInHistory(v),
+              ),
+            ),
+            SettingsRow(
+              icon: Icons.update_outlined,
+              title: 'Hidden titles in Updates',
+              subtitle: 'Show secret-shelf titles in Your Updates',
+              trailing: Switch(
+                value: hidden.showInUpdates,
+                activeThumbColor: c.accent,
+                onChanged: (v) =>
+                    ref.read(hiddenTitlesProvider.notifier).setShowInUpdates(v),
               ),
             ),
           ],
