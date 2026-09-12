@@ -30,6 +30,7 @@ import '../../core/services/media_export_service.dart';
 import '../../core/services/security_prefs.dart';
 import '../../core/services/stats_service.dart';
 import '../../core/services/trackers/track_chapter_use_case.dart';
+import '../../core/services/trackers/track_sync_feedback.dart';
 import '../../core/utils/custom_extended_image_provider.dart';
 import '../../eval/dispatch_service.dart';
 import '../../eval/models/m_chapter.dart';
@@ -39,6 +40,7 @@ import '../../router/router.dart';
 import '../../theme/theme_provider.dart';
 import '../../theme/tokens/app_colors.dart';
 import '../../widgets/dialog_sheet.dart';
+import '../../widgets/toast.dart';
 import 'managers/manga_page_session_cache.dart';
 import 'mixins/reader_memory_management.dart';
 import 'models/page_data.dart';
@@ -988,13 +990,24 @@ class _MangaReaderScreenState extends ConsumerState<MangaReaderScreen>
       if (chPages > 0 && chapterRelativeIndex >= chPages - 1) {
         await _repos!.manga.markMangaChapterRead(chapterId);
         final chNum = ch.chapterNumber;
-        unawaited(
-          TrackChapterUseCase(_repos!).invoke(
+        unawaited(() async {
+          final outcome = await TrackChapterUseCase(_repos!).invoke(
             mangaId: ch.mangaId,
             chapterNumber: chNum,
             chapterName: ch.name,
-          ),
-        );
+          );
+          if (outcome == null || !outcome.didAnything) return;
+          if (!mounted) return;
+          ref.read(latestTrackSyncProvider.notifier).setOutcome(outcome);
+          final fail = outcome.failureToast;
+          if (fail != null) {
+            StashToast.show(
+              context,
+              message: fail,
+              icon: Icons.error_outline,
+            );
+          }
+        }());
         if (await DownloadPrefs.isDeleteAfterReadEnabled()) {
           final manga = await _repos!.manga.getMangaById(ch.mangaId);
           final mgr = _downloadManager;

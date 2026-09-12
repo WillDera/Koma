@@ -15,8 +15,10 @@ import '../../theme/app_theme.dart';
 import '../../theme/tokens/app_motion.dart';
 import '../../widgets/catalog_card_layout.dart';
 import '../../widgets/catalog_cover_card.dart';
+import '../../widgets/empty_state.dart';
 import '../../widgets/horizontal_tab_swipe.dart';
 import '../../widgets/library_book_card.dart';
+import '../../theme/app_icons.dart';
 import '../../widgets/page_transitions.dart';
 import '../../widgets/screen_chrome.dart';
 import 'manga_detail_screen.dart';
@@ -743,8 +745,16 @@ class _SourceBrowseScreenState extends ConsumerState<SourceBrowseScreen>
               : _mangas.isEmpty && !_loading
               ? ListView(
                   children: [
-                    const SizedBox(height: 120),
-                    const Center(child: Text('Nothing found')),
+                    const SizedBox(height: 80),
+                    EmptyState(
+                      icon: AppIcons.search,
+                      emoji: '📭',
+                      title: 'Nothing found',
+                      subtitle: 'Try another tab or pull to refresh',
+                      primaryActionLabel: 'Retry',
+                      onPrimaryAction: _refresh,
+                      pillPrimary: true,
+                    ),
                   ],
                 )
               : _catalogMangaBody(

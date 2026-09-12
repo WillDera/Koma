@@ -1,7 +1,7 @@
 import 'dart:convert';
+import 'dart:io';
 import 'dart:math';
 
-import 'package:crypto/crypto.dart';
 import 'package:flutter_web_auth_2/flutter_web_auth_2.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
@@ -13,6 +13,9 @@ import '../../repositories/track_repository.dart';
 import 'base_tracker.dart';
 
 /// MyAnimeList PKCE OAuth (redirect `koma://mal-auth`).
+///
+/// MAL currently supports **only** the PKCE `plain` method — the code
+/// challenge must equal the code verifier (not S256).
 class MyAnimeListTracker extends BaseTracker {
   MyAnimeListTracker(this.repos);
 
@@ -51,11 +54,13 @@ class MyAnimeListTracker extends BaseTracker {
     return oauth?['access_token'] as String?;
   }
 
-  static String _randomString(int length) {
+  /// PKCE code_verifier: 43–128 chars from the unreserved set.
+  static String _randomVerifier([int length = 128]) {
     const chars =
         'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~';
     final rnd = Random.secure();
-    return List.generate(length, (_) => chars[rnd.nextInt(chars.length)]).join();
+    final n = length.clamp(43, 128);
+    return List.generate(n, (_) => chars[rnd.nextInt(chars.length)]).join();
   }
 
   static Future<void>? _loginInFlight;
@@ -78,30 +83,36 @@ class MyAnimeListTracker extends BaseTracker {
   }
 
   Future<void> _loginImpl() async {
+    if (await isLoggedIn()) return;
     final clientId = await _clientId();
     if (clientId.isEmpty) {
-      throw StateError('Set MyAnimeList client id in Settings → Tracking first');
+      throw StateError(
+        'Set MyAnimeList client id in Settings → Tracking first. '
+        'Register at myanimelist.net/apiconfig with App Redirect URL '
+        'exactly: $redirectUri',
+      );
     }
-    final verifier = _randomString(64);
-    final challenge = base64Url
-        .encode(sha256.convert(utf8.encode(verifier)).bytes)
-        .replaceAll('=', '');
+    // MAL only supports PKCE "plain": challenge == verifier.
+    final verifier = _randomVerifier();
+    final challenge = verifier;
 
     final authUri = Uri.parse(_authUrl).replace(
       queryParameters: {
         'response_type': 'code',
         'client_id': clientId,
         'code_challenge': challenge,
-        'code_challenge_method': 'S256',
+        'code_challenge_method': 'plain',
         'redirect_uri': redirectUri,
       },
     );
     final result = await FlutterWebAuth2.authenticate(
       url: authUri.toString(),
       callbackUrlScheme: 'koma',
+      // iOS: preferEphemeral hides the shared Safari session.
+      // Android: do NOT pass ephemeralIntentFlags — FLAG_ACTIVITY_NO_HISTORY
+      // keeps the Custom Tab from closing cleanly after koma:// redirect.
       options: const FlutterWebAuth2Options(
         preferEphemeral: true,
-        intentFlags: ephemeralIntentFlags,
       ),
     );
     final code = Uri.parse(result).queryParameters['code'];
@@ -109,19 +120,48 @@ class MyAnimeListTracker extends BaseTracker {
       throw StateError('MyAnimeList auth cancelled');
     }
 
-    final tokenRes = await http.post(
-      Uri.parse(_tokenUrl),
-      headers: {'Content-Type': 'application/x-www-form-urlencoded'},
-      body: {
-        'client_id': clientId,
-        'code': code,
-        'code_verifier': verifier,
-        'grant_type': 'authorization_code',
-        'redirect_uri': redirectUri,
-      },
-    );
+    late final http.Response tokenRes;
+    try {
+      tokenRes = await http.post(
+        Uri.parse(_tokenUrl),
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded',
+          'Accept': 'application/json',
+        },
+        body: {
+          'client_id': clientId,
+          'code': code,
+          'code_verifier': verifier,
+          'grant_type': 'authorization_code',
+          'redirect_uri': redirectUri,
+        },
+      );
+    } on SocketException catch (e) {
+      throw StateError(
+        'Could not reach myanimelist.net ($e). '
+        'Check network/DNS, then try again.',
+      );
+    } on http.ClientException catch (e) {
+      throw StateError(
+        'Could not reach myanimelist.net ($e). '
+        'Check network/DNS, then try again.',
+      );
+    }
     if (tokenRes.statusCode < 200 || tokenRes.statusCode >= 300) {
-      throw StateError('MAL token exchange failed (${tokenRes.statusCode})');
+      String detail = tokenRes.body.trim();
+      try {
+        final err = jsonDecode(tokenRes.body) as Map<String, dynamic>;
+        detail = (err['message'] as String?) ??
+            (err['hint'] as String?) ??
+            (err['error_description'] as String?) ??
+            (err['error'] as String?) ??
+            detail;
+      } catch (_) {}
+      if (detail.length > 180) detail = '${detail.substring(0, 180)}…';
+      throw StateError(
+        'MAL token exchange failed (${tokenRes.statusCode}): $detail. '
+        'Confirm client id and App Redirect URL is exactly $redirectUri',
+      );
     }
     final tokenJson = jsonDecode(tokenRes.body) as Map<String, dynamic>;
     final access = tokenJson['access_token'] as String? ?? '';

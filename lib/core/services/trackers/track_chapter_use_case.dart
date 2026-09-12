@@ -8,6 +8,7 @@ import 'anilist.dart';
 import 'base_tracker.dart';
 import 'manga_updates.dart';
 import 'myanimelist.dart';
+import 'track_sync_feedback.dart';
 
 /// After marking a chapter read, push progress to linked trackers.
 class TrackChapterUseCase {
@@ -33,12 +34,12 @@ class TrackChapterUseCase {
 
   /// Push [chapterNumber] (and/or the highest recognized read chapter) to
   /// every linked tracker for [mangaId].
-  Future<void> invoke({
+  Future<TrackSyncOutcome?> invoke({
     required int mangaId,
     double? chapterNumber,
     String? chapterName,
   }) async {
-    if (!await isUpdateAfterReadingEnabled()) return;
+    if (!await isUpdateAfterReadingEnabled()) return null;
 
     var last = 0;
     if (chapterNumber != null &&
@@ -58,9 +59,9 @@ class TrackChapterUseCase {
     // mark-read and unrecognized single chapters still sync correctly.
     final fromLibrary = await _highestReadChapter(mangaId);
     if (fromLibrary > last) last = fromLibrary;
-    if (last <= 0) return;
+    if (last <= 0) return null;
 
-    await _push(mangaId, last);
+    return _push(mangaId, last);
   }
 
   Future<int> _highestReadChapter(int mangaId) async {
@@ -80,9 +81,12 @@ class TrackChapterUseCase {
     return max;
   }
 
-  Future<void> _push(int mangaId, int last) async {
+  Future<TrackSyncOutcome?> _push(int mangaId, int last) async {
     final linked = await _repos.tracks.getTracksForManga(mangaId);
-    if (linked.isEmpty) return;
+    if (linked.isEmpty) return null;
+
+    final synced = <String>[];
+    final failed = <String>[];
 
     for (final track in linked) {
       final syncId = track.syncId;
@@ -94,9 +98,25 @@ class TrackChapterUseCase {
       if (!await tracker.isLoggedIn()) continue;
       try {
         await tracker.updateProgress(track, last);
+        synced.add(_shortName(tracker.name));
       } catch (e, st) {
         debugPrint('TrackChapterUseCase ${tracker.name} failed: $e\n$st');
+        failed.add(_shortName(tracker.name));
       }
     }
+
+    if (synced.isEmpty && failed.isEmpty) return null;
+    return TrackSyncOutcome(
+      mangaId: mangaId,
+      chapter: last,
+      syncedNames: synced,
+      failedNames: failed,
+    );
   }
+
+  static String _shortName(String name) => switch (name) {
+        'MyAnimeList' => 'MAL',
+        'MangaUpdates' => 'MU',
+        _ => name,
+      };
 }
