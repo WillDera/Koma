@@ -143,6 +143,24 @@ class KeiyoushiExtensionService implements ExtensionService {
   }
 
   @override
+  Future<String> getHtmlContent(
+    MSource source, {
+    required String name,
+    required String url,
+  }) async {
+    throw UnsupportedError(
+      'getHtmlContent is not supported for Mihon APK extensions',
+    );
+  }
+
+  @override
+  Future<String> cleanHtmlContent(MSource source, String html) async {
+    throw UnsupportedError(
+      'cleanHtmlContent is not supported for Mihon APK extensions',
+    );
+  }
+
+  @override
   Future<List<SourcePreference>> getSourcePreferences(MSource source) async {
     return [];
   }

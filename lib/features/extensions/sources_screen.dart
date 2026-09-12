@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -57,16 +59,27 @@ class _SourcesScreenState extends ConsumerState<SourcesScreen> {
   List<ExtensionSource> _sources = [];
   bool _loading = true;
   String? _lastUsedId;
+  StreamSubscription<List<ExtensionSource>>? _installedSub;
 
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) => _load());
+    // Live Isar watch so Plugin SDK / Extensions installs appear without
+    // restarting the app (a one-shot load left Sources stale until relaunch).
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final repos = ref.read(repositoriesProvider);
+      _installedSub = repos.extensions.watchInstalled().listen(_applySources);
+    });
   }
 
-  Future<void> _load() async {
-    final repos = ref.watch(repositoriesProvider);
-    final sources = await repos.extensions.getInstalledExtensions();
+  @override
+  void dispose() {
+    _installedSub?.cancel();
+    super.dispose();
+  }
+
+  void _applySources(List<ExtensionSource> sources) {
     if (!mounted) return;
     setState(() {
       _sources = sources
@@ -78,7 +91,8 @@ class _SourcesScreenState extends ConsumerState<SourcesScreen> {
 
   bool _isMangaProduct(ExtensionSource s) {
     final t = s.itemType.trim().toLowerCase();
-    return t.isEmpty || t == 'manga';
+    // Manga + novels share the Sources hub; anime stays hidden.
+    return t.isEmpty || t == 'manga' || t == 'novel';
   }
 
   Future<void> _navigateToSource(ExtensionSource src) async {

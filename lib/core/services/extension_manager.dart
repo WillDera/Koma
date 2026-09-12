@@ -412,6 +412,73 @@ class ExtensionManager {
     return src;
   }
 
+  /// Install a JS extension from inlined [sourceCode] (Plugin SDK samples).
+  Future<ExtensionSource> installJsFromSourceCode({
+    required String sourceCode,
+    required String pkg,
+    String repoUrl = 'asset://koma-plugin-sdk',
+    String? name,
+    String? version,
+    String? lang,
+    String? baseUrl,
+    String? iconUrl,
+    bool isNsfw = false,
+  }) async {
+    final body = sourceCode.trim();
+    if (body.isEmpty) {
+      throw StateError('JS source body empty');
+    }
+    if (pkg.isEmpty) {
+      throw StateError('JS extension missing pkg id');
+    }
+    final header = parseMangayomiSourcesHeader(body);
+    final apiUrl =
+        header['apiUrl']?.isNotEmpty == true ? header['apiUrl'] : null;
+    final hasCloudflare = header['hasCloudflare'] == 'true';
+    final itemType = (header['itemType'] != null && header['itemType']!.isNotEmpty)
+        ? header['itemType']!
+        : 'manga';
+    final resolvedName = name ??
+        (header['name']?.isNotEmpty == true ? header['name'] : null) ??
+        RegExp(r'"?name"?\s*:\s*"([^"]*)"').firstMatch(body)?.group(1) ??
+        pkg;
+    final src = ExtensionSource(
+      id: pkg,
+      sourceId: pkg,
+      name: resolvedName,
+      version: version ??
+          (header['version']?.isNotEmpty == true ? header['version'] : null) ??
+          RegExp(r'"?version"?\s*:\s*"([^"]*)"').firstMatch(body)?.group(1) ??
+          '1.0.0',
+      lang: lang ??
+          (header['lang']?.isNotEmpty == true ? header['lang'] : null) ??
+          RegExp(r'"?lang"?\s*:\s*"([^"]*)"').firstMatch(body)?.group(1) ??
+          'en',
+      apkPath: '',
+      className: '',
+      iconUrl: iconUrl ??
+          (header['iconUrl']?.isNotEmpty == true ? header['iconUrl'] : null) ??
+          RegExp(r'"?iconUrl"?\s*:\s*"([^"]*)"').firstMatch(body)?.group(1),
+      baseUrl: baseUrl ??
+          (header['baseUrl']?.isNotEmpty == true ? header['baseUrl'] : null) ??
+          RegExp(r'"?baseUrl"?\s*:\s*"([^"]*)"').firstMatch(body)?.group(1) ??
+          '',
+      sourceCodeUrl: 'asset://$pkg',
+      repoUrl: repoUrl,
+      apiUrl: apiUrl ??
+          RegExp(r'"?apiUrl"?\s*:\s*"([^"]*)"').firstMatch(body)?.group(1),
+      hasCloudflare: hasCloudflare,
+      itemType: itemType,
+      sourceCode: body,
+      sourceCodeLanguage: SourceCodeLanguage.js,
+      isInstalled: true,
+      isActive: true,
+      isNsfw: isNsfw,
+    );
+    await _repos.extensions.insertExtensionSource(src);
+    return src;
+  }
+
   /// Fetch Dart `sourceCodeUrl` text and persist — same shape as [installJs].
   Future<ExtensionSource> installDart(
     ExtensionIndexEntry entry, {

@@ -3044,8 +3044,9 @@ class _PluginsSection extends ConsumerWidget {
           icon: Icons.code,
           iconColor: AppColors.figmaCyan,
           title: 'Plugin SDK',
-          subtitle: 'Documentation for authors',
+          subtitle: 'Write sources for any site — starters & samples',
           trailing: const Icon(Icons.chevron_right, size: 18),
+          onTap: () => context.pushNamed(Routes.pluginSdk),
         ),
         _PrefSwitchRow(
           key: const Key('notify_extension_updates'),

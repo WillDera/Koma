@@ -87,6 +87,18 @@ class ExtensionDispatchService implements ExtensionService {
       _resolve(source).getPageList(source, chapter);
 
   @override
+  Future<String> getHtmlContent(
+    MSource source, {
+    required String name,
+    required String url,
+  }) =>
+      _resolve(source).getHtmlContent(source, name: name, url: url);
+
+  @override
+  Future<String> cleanHtmlContent(MSource source, String html) =>
+      _resolve(source).cleanHtmlContent(source, html);
+
+  @override
   Future<List<SourcePreference>> getSourcePreferences(MSource source) =>
       _resolve(source).getSourcePreferences(source);
 
