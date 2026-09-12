@@ -1,11 +1,15 @@
 name: Deploy GitHub Pages
 
-# Publishes site/ + extensions/ to https://<user>.github.io/Koma/
-# Enable once: Repo → Settings → Pages → Source = GitHub Actions
+# Publishes site/ + extensions/ to https://willdera.github.io/Koma/
+#
+# Instant fail with no step logs = github-pages environment branch policy.
+# Fix: Settings → Environments → github-pages → Deployment branches
+#   → Selected branches → add the branch you deploy from (or "All branches").
+# Default is often only `main`, so feat/* pushes die before any step runs.
 
 on:
   push:
-    branches: [main, develop, feat/optimization]
+    branches: [main, master, develop, feat/optimization]
     paths:
       - 'site/**'
       - 'extensions/**'
