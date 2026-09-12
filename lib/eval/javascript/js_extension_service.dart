@@ -294,7 +294,23 @@ var extention = new DefaultExtension();
     String? memo,
     String? title,
   }) async {
-    // Mangayomi JS has no getChapterList — chapters come from getDetail only.
+    // Prefer an explicit getChapterList when the extension implements it
+    // (lighter library Updates). Fall back to getDetail.chapters — Mangayomi
+    // JS sources typically only ship getDetail.
+    try {
+      final raw = await _extensionCallAsync(
+        source,
+        'getChapterList(${jsonEncode(url)})',
+      );
+      if (raw is List) return _parseChapters(raw);
+      if (raw is Map) {
+        final map = Map<String, dynamic>.from(raw);
+        final chapters = map['chapters'] ?? map['episodes'];
+        if (chapters != null) return _parseChapters(chapters);
+      }
+    } catch (_) {
+      // Unimplemented / throw → getDetail path below.
+    }
     final raw = await _extensionCallAsync(
       source,
       'getDetail(${jsonEncode(url)})',
@@ -332,6 +348,30 @@ var extention = new DefaultExtension();
     );
     final pages = _parsePageImages(raw);
     return [MPages(pages: pages)];
+  }
+
+  @override
+  Future<String> getHtmlContent(
+    MSource source, {
+    required String name,
+    required String url,
+  }) async {
+    final raw = await _extensionCallAsync(
+      source,
+      'getHtmlContent(${jsonEncode(name)}, ${jsonEncode(url)})',
+    );
+    if (raw is String) return raw;
+    return raw?.toString() ?? '';
+  }
+
+  @override
+  Future<String> cleanHtmlContent(MSource source, String html) async {
+    final raw = await _extensionCallAsync(
+      source,
+      'cleanHtmlContent(${jsonEncode(html)})',
+    );
+    if (raw is String) return raw;
+    return raw?.toString() ?? html;
   }
 
   @override

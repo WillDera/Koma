@@ -22,6 +22,9 @@ Map<String, String> parseMangayomiSourcesHeader(String? sourceCode) {
     'dateFormatLocale',
     'iconUrl',
     'itemType',
+    'name',
+    'version',
+    'lang',
   ]) {
     final m = RegExp(
       '"$key"\\s*:\\s*"([^"]*)"',

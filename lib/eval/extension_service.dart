@@ -57,6 +57,16 @@ abstract class ExtensionService {
 
   Future<List<MPages>> getPageList(MSource source, MChapter chapter);
 
+  /// Fetch cleaned HTML for a novel chapter (mangayomi/LNReader ABI).
+  Future<String> getHtmlContent(
+    MSource source, {
+    required String name,
+    required String url,
+  });
+
+  /// Sanitize novel chapter HTML for the reader.
+  Future<String> cleanHtmlContent(MSource source, String html);
+
   Future<List<SourcePreference>> getSourcePreferences(MSource source);
 
   Future<void> saveSourcePreference(MSource source, SourcePreference pref);

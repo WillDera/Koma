@@ -1,0 +1,74 @@
+name: Deploy GitHub Pages
+
+# Publishes site/ + extensions/ to https://<user>.github.io/Koma/
+# Enable once: Repo → Settings → Pages → Source = GitHub Actions
+
+on:
+  push:
+    branches: [main, master, feat/optimization]
+    paths:
+      - 'site/**'
+      - 'extensions/**'
+      - '.github/workflows/pages.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Assemble site
+        run: |
+          set -euo pipefail
+          mkdir -p _site/extensions
+          cp -a site/. _site/
+          cp -a extensions/. _site/extensions/
+          # Prefer app icon as favicon when present.
+          if [ -f app_icons/hon_sb.png ]; then
+            cp app_icons/hon_sb.png _site/favicon.png
+          elif [ -f app_icons/hon_2.png ]; then
+            cp app_icons/hon_2.png _site/favicon.png
+          fi
+          # Absolute sourceCodeUrl for clients that do not resolve relative paths.
+          python3 <<'PY'
+          import json, pathlib
+          root = pathlib.Path("_site/extensions")
+          base = "https://willdera.github.io/Koma/extensions/"
+          for name in ("index.json", "index.min.json"):
+              path = root / name
+              if not path.exists():
+                  continue
+              data = json.loads(path.read_text())
+              exts = data.get("extensions") if isinstance(data, dict) else data
+              if not isinstance(exts, list):
+                  continue
+              for e in exts:
+                  url = e.get("sourceCodeUrl") or ""
+                  if url and "://" not in url:
+                      e["sourceCodeUrl"] = base + url.lstrip("./")
+              path.write_text(json.dumps(data, indent=2) + "\n")
+              print(f"rewrote {name}")
+          PY
+          ls -la _site _site/extensions
+
+      - uses: actions/configure-pages@v5
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+
+      - id: deployment
+        uses: actions/deploy-pages@v4

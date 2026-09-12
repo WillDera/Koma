@@ -16,9 +16,11 @@ import '../features/library/collections_screen.dart';
 import '../features/library/library_screen.dart';
 import '../features/onboarding/onboarding_screen.dart';
 import '../features/reader/manga_reader_screen.dart';
+import '../features/reader/novel_reader_screen.dart';
 import '../features/reader/pdf_reader_screen.dart';
 import '../features/reader/reader_screen.dart';
 import '../features/search/search_screen.dart';
+import '../features/settings/plugin_sdk_screen.dart';
 import '../features/settings/settings_screen.dart';
 import '../features/snippets/snippets_screen.dart';
 import '../features/updates/updates_screen.dart';
@@ -43,9 +45,11 @@ abstract final class Routes {
   static const reader = 'reader';
   static const bookDetail = 'bookDetail';
   static const mangaReader = 'mangaReader';
+  static const novelReader = 'novelReader';
   static const mangaDetail = 'mangaDetail';
   static const extensions = 'extensions';
   static const sources = 'sources';
+  static const pluginSdk = 'pluginSdk';
   static const downloadQueue = 'downloadQueue';
   static const globalSearch = 'globalSearch';
   static const pdfReader = 'pdfReader';
@@ -84,6 +88,15 @@ typedef MangaReaderArgs = ({
   String chapterUrl,
   String chapterName,
   int? pageNumber,
+});
+
+typedef NovelReaderArgs = ({
+  int? mangaId,
+  String sourceId,
+  String mangaUrl,
+  String mangaName,
+  String chapterUrl,
+  String chapterName,
 });
 
 typedef MangaDetailArgs = ({
@@ -273,6 +286,22 @@ final GoRouter appRouter = GoRouter(
       },
     ),
     GoRoute(
+      path: '/novel-reader',
+      name: Routes.novelReader,
+      parentNavigatorKey: rootNavigatorKey,
+      builder: (context, state) {
+        final a = state.extra as NovelReaderArgs;
+        return NovelReaderScreen(
+          mangaId: a.mangaId,
+          sourceId: a.sourceId,
+          mangaUrl: a.mangaUrl,
+          mangaName: a.mangaName,
+          chapterUrl: a.chapterUrl,
+          chapterName: a.chapterName,
+        );
+      },
+    ),
+    GoRoute(
       path: '/manga-detail',
       name: Routes.mangaDetail,
       parentNavigatorKey: rootNavigatorKey,
@@ -286,6 +315,12 @@ final GoRouter appRouter = GoRouter(
           memo: a.memo ?? a.manga?.memo,
         );
       },
+    ),
+    GoRoute(
+      path: '/plugin-sdk',
+      name: Routes.pluginSdk,
+      parentNavigatorKey: rootNavigatorKey,
+      builder: (context, state) => const PluginSdkScreen(),
     ),
     GoRoute(
       path: '/extensions',

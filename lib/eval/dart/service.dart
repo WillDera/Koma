@@ -546,6 +546,24 @@ class DartExtensionService implements ExtensionService {
   }
 
   @override
+  Future<String> getHtmlContent(
+    MSource source, {
+    required String name,
+    required String url,
+  }) async {
+    await _init(source);
+    final result = await _interpreter!.invoke('getHtmlContent', [name, url]);
+    return result?.toString() ?? '';
+  }
+
+  @override
+  Future<String> cleanHtmlContent(MSource source, String html) async {
+    await _init(source);
+    final result = await _interpreter!.invoke('cleanHtmlContent', [html]);
+    return result?.toString() ?? html;
+  }
+
+  @override
   Future<List<SourcePreference>> getSourcePreferences(MSource source) async {
     await _init(source);
     try {

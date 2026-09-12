@@ -2042,19 +2042,33 @@ class _MangaDetailScreenState extends ConsumerState<MangaDetailScreen> {
         ..setLocalChapters(local);
     }
     if (!mounted) return;
-    await context.pushNamed(
-      Routes.mangaReader,
-      extra:
-          (
-                mangaId: detail.mangaId,
-                sourceId: widget.sourceId,
-                mangaUrl: widget.url,
-                chapterUrl: url,
-                chapterName: ch['name'] as String? ?? '',
-                pageNumber: null,
-              )
-              as MangaReaderArgs,
-    );
+
+    final repos = ref.read(repositoriesProvider);
+    final ext = await findInstalledExtension(repos, widget.sourceId);
+    final isNovel = (ext?.itemType ?? '').toLowerCase() == 'novel';
+    if (!mounted) return;
+
+    if (isNovel) {
+      final NovelReaderArgs novelArgs = (
+        mangaId: detail.mangaId,
+        sourceId: widget.sourceId,
+        mangaUrl: widget.url,
+        mangaName: widget.title,
+        chapterUrl: url,
+        chapterName: ch['name'] as String? ?? '',
+      );
+      await context.pushNamed(Routes.novelReader, extra: novelArgs);
+    } else {
+      final MangaReaderArgs mangaArgs = (
+        mangaId: detail.mangaId,
+        sourceId: widget.sourceId,
+        mangaUrl: widget.url,
+        chapterUrl: url,
+        chapterName: ch['name'] as String? ?? '',
+        pageNumber: null,
+      );
+      await context.pushNamed(Routes.mangaReader, extra: mangaArgs);
+    }
     if (detail.mangaId != null && mounted) {
       final repos = ref.read(repositoriesProvider);
       final localChs = await repos.manga.getMangaChapters(detail.mangaId!);
@@ -3377,14 +3391,17 @@ class _HeaderState extends State<_Header> with SingleTickerProviderStateMixin {
         ? TrackerPublicationStatus.labelForMangaStatusInt(status)
         : (_MangaDetailScreenState._statusLabels[status] ?? 'Unknown');
 
+    // Merge source genres with tracker genres/tags (deduped, source first).
     final tagList = <String>[
-      if (media != null && (media.genres.isNotEmpty || media.tags.isNotEmpty))
-        ...{...media.genres, ...media.tags}
-      else if (genre != null)
-        ...genre
-            .split(',')
-            .map((g) => g.trim())
-            .where((g) => g.isNotEmpty),
+      ...{
+        if (genre != null)
+          ...genre
+              .split(',')
+              .map((g) => g.trim())
+              .where((g) => g.isNotEmpty),
+        if (media != null) ...media.genres,
+        if (media != null) ...media.tags,
+      },
     ];
     final sourceName = widget.sourceName;
 
