@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+
 import '../../../core/models/manga_chapter.dart';
+import '../../../core/services/trackers/track_sync_feedback.dart';
 import '../reader_settings_sheet.dart';
 
 /// "End of Chapter" separator widget — shown between chapters in the
@@ -7,7 +10,7 @@ import '../reader_settings_sheet.dart';
 ///
 /// Displays the completed chapter, an arrow, and the next chapter info,
 /// enabling the user to seamlessly scroll past the chapter boundary.
-class ChapterTransitionPage extends StatelessWidget {
+class ChapterTransitionPage extends ConsumerWidget {
   final MangaChapter currentChapter;
   final MangaChapter? nextChapter;
   final String mangaName;
@@ -26,17 +29,25 @@ class ChapterTransitionPage extends StatelessWidget {
       readerMode == ReadingMode.longStrip ||
       readerMode == ReadingMode.longStripWithGaps;
 
+  String? _syncLine(WidgetRef ref) {
+    final outcome = ref.watch(latestTrackSyncProvider);
+    if (outcome == null) return null;
+    if (outcome.mangaId != currentChapter.mangaId) return null;
+    return outcome.ritualLine;
+  }
+
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final syncLine = _syncLine(ref);
     return Container(
       color: Theme.of(context).scaffoldBackgroundColor,
       child: _isVertical
-          ? _buildVerticalScaffold(context)
-          : _buildHorizontalScaffold(context),
+          ? _buildVerticalScaffold(context, syncLine)
+          : _buildHorizontalScaffold(context, syncLine),
     );
   }
 
-  Widget _buildVerticalScaffold(BuildContext context) {
+  Widget _buildVerticalScaffold(BuildContext context, String? syncLine) {
     return Center(
       child: LayoutBuilder(
         builder: (context, constraints) {
@@ -49,7 +60,7 @@ class ChapterTransitionPage extends StatelessWidget {
               ),
               child: Padding(
                 padding: const EdgeInsets.all(24.0),
-                child: _buildVerticalLayout(context),
+                child: _buildVerticalLayout(context, syncLine),
               ),
             ),
           );
@@ -58,7 +69,7 @@ class ChapterTransitionPage extends StatelessWidget {
     );
   }
 
-  Widget _buildHorizontalScaffold(BuildContext context) {
+  Widget _buildHorizontalScaffold(BuildContext context, String? syncLine) {
     final screenWidth = MediaQuery.of(context).size.width;
     return Center(
       child: SizedBox(
@@ -66,14 +77,14 @@ class ChapterTransitionPage extends StatelessWidget {
         child: SingleChildScrollView(
           child: Padding(
             padding: const EdgeInsets.all(24.0),
-            child: _buildHorizontalLayout(context),
+            child: _buildHorizontalLayout(context, syncLine),
           ),
         ),
       ),
     );
   }
 
-  Widget _buildVerticalLayout(BuildContext context) {
+  Widget _buildVerticalLayout(BuildContext context, String? syncLine) {
     return IntrinsicWidth(
       child: Column(
         mainAxisSize: MainAxisSize.min,
@@ -92,6 +103,16 @@ class ChapterTransitionPage extends StatelessWidget {
             ).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.bold),
             textAlign: TextAlign.center,
           ),
+          if (syncLine != null) ...[
+            const SizedBox(height: 8),
+            Text(
+              syncLine,
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                color: Theme.of(context).colorScheme.onSurface.withAlpha(179),
+              ),
+              textAlign: TextAlign.center,
+            ),
+          ],
           const SizedBox(height: 16),
           _buildChapterCard(
             context,
@@ -141,7 +162,7 @@ class ChapterTransitionPage extends StatelessWidget {
     );
   }
 
-  Widget _buildHorizontalLayout(BuildContext context) {
+  Widget _buildHorizontalLayout(BuildContext context, String? syncLine) {
     final theme = Theme.of(context);
 
     final Widget currentCard = _buildChapterCard(
@@ -188,6 +209,16 @@ class ChapterTransitionPage extends StatelessWidget {
           ),
           textAlign: TextAlign.center,
         ),
+        if (syncLine != null) ...[
+          const SizedBox(height: 8),
+          Text(
+            syncLine,
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: theme.colorScheme.onSurface.withAlpha(179),
+            ),
+            textAlign: TextAlign.center,
+          ),
+        ],
         const SizedBox(height: 20),
         Center(
           child: ConstrainedBox(

@@ -216,7 +216,7 @@ class _SettingsHub extends StatelessWidget {
             icon: Icons.storage_outlined,
             iconColor: AppColors.figmaAmber,
             title: 'Data',
-            subtitle: 'Storage folder, export and import',
+            subtitle: 'Backup, downloads, library updates',
             onTap: () => _open(context, 'Data', const _DataAndStatsPage()),
           ),
         ),
@@ -248,13 +248,24 @@ class _SettingsHub extends StatelessWidget {
             icon: Icons.track_changes_rounded,
             iconColor: AppColors.figmaGreen,
             title: 'Tracking',
-            subtitle: 'MAL, AniList, MangaUpdates',
+            subtitle: 'MAL, AniList',
             onTap: () =>
                 _open(context, 'Tracking', const TrackingSettingsPage()),
           ),
         ),
         row(
           8,
+          SettingsRow(
+            icon: Icons.tune_rounded,
+            iconColor: const Color(0xFF8888A0),
+            title: 'Advanced',
+            subtitle: 'Storage path, network, OAuth clients',
+            onTap: () =>
+                _open(context, 'Advanced', const _AdvancedSettingsPage()),
+          ),
+        ),
+        row(
+          9,
           SettingsRow(
             icon: Icons.info_outline_rounded,
             iconColor: const Color(0xFF8888A0),
@@ -338,15 +349,11 @@ class _DataAndStatsPage extends StatelessWidget {
   Widget build(BuildContext context) {
     return const Column(
       children: [
-        _StorageSection(),
-        SizedBox(height: 20),
         _DataSection(),
         SizedBox(height: 20),
         _DownloadQueueSection(),
         SizedBox(height: 20),
         _LibraryUpdateSection(),
-        SizedBox(height: 20),
-        _BookMetadataSection(),
         SizedBox(height: 20),
         LibraryStatsPanel(),
       ],
@@ -361,13 +368,30 @@ class _SourcesAndPluginsPage extends StatelessWidget {
   Widget build(BuildContext context) {
     return const Column(
       children: [
-        _AnnasArchiveKeysSection(),
-        SizedBox(height: 20),
         _SourcesSection(),
         SizedBox(height: 20),
         _PluginsSection(),
+      ],
+    );
+  }
+}
+
+class _AdvancedSettingsPage extends StatelessWidget {
+  const _AdvancedSettingsPage();
+
+  @override
+  Widget build(BuildContext context) {
+    return const Column(
+      children: [
+        _StorageSection(),
+        SizedBox(height: 20),
+        _BookMetadataSection(),
+        SizedBox(height: 20),
+        _AnnasArchiveKeysSection(),
         SizedBox(height: 20),
         _HttpNetworkSection(),
+        SizedBox(height: 20),
+        TrackingOAuthClientsSection(),
       ],
     );
   }

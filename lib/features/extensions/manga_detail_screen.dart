@@ -938,9 +938,11 @@ class _MangaDetailScreenState extends ConsumerState<MangaDetailScreen> {
       if (mounted) ref.read(libraryProvider.notifier).loadBooks();
     }
     if (!mounted) return;
-    ScaffoldMessenger.of(
+    StashToast.show(
       context,
-    ).showSnackBar(const SnackBar(content: Text('Added to library')));
+      message: 'Added to library',
+      icon: Icons.check,
+    );
   }
 
   Future<void> _removeFromLibrary() async {
@@ -960,9 +962,11 @@ class _MangaDetailScreenState extends ConsumerState<MangaDetailScreen> {
       ref.read(historyRevisionProvider.notifier).bump();
     }
     if (!mounted) return;
-    ScaffoldMessenger.of(
+    StashToast.show(
       context,
-    ).showSnackBar(const SnackBar(content: Text('Removed from library')));
+      message: 'Removed from library',
+      icon: Icons.check,
+    );
   }
 
   void _showFilterSheet() {
@@ -1476,8 +1480,10 @@ class _MangaDetailScreenState extends ConsumerState<MangaDetailScreen> {
     );
     if (idx <= 0) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('No previous chapters to mark')),
+        StashToast.show(
+          context,
+          message: 'No previous chapters to mark',
+          icon: Icons.info_outline,
         );
       }
       return;
@@ -1488,15 +1494,25 @@ class _MangaDetailScreenState extends ConsumerState<MangaDetailScreen> {
       await _markChapterMapRead(repos, mangaId, title, filteredChapters[i]);
     }
     await _refreshChaptersFromDb(mangaId);
-    await TrackChapterUseCase(repos).invoke(mangaId: mangaId);
+    final outcome = await TrackChapterUseCase(repos).invoke(mangaId: mangaId);
     if (!mounted) return;
     setState(() {
       _selectedChapterUrls.clear();
       _chapterSelectMode = false;
     });
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('Marked $idx previous chapter(s) as read')),
+    StashToast.show(
+      context,
+      message: 'Marked $idx previous chapter(s) as read',
+      icon: Icons.check,
     );
+    final fail = outcome?.failureToast;
+    if (fail != null) {
+      StashToast.show(
+        context,
+        message: fail,
+        icon: Icons.error_outline,
+      );
+    }
   }
 
   /// Persist a display-row chapter as read (inserting the Isar row if missing).
@@ -2167,8 +2183,10 @@ class _MangaDetailScreenState extends ConsumerState<MangaDetailScreen> {
     ];
     if (candidates.isEmpty) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('No library duplicates found')),
+      StashToast.show(
+        context,
+        message: 'No library duplicates found',
+        icon: Icons.info_outline,
       );
       return;
     }
@@ -2253,18 +2271,24 @@ class _MangaDetailScreenState extends ConsumerState<MangaDetailScreen> {
       await MergeMangaUseCase(repos).invoke(keep: keep, absorb: absorb);
       if (!mounted) return;
       ref.read(libraryProvider.notifier).loadBooks();
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Merged duplicate')),
+      StashToast.show(
+        context,
+        message: 'Merged duplicate',
+        icon: Icons.check,
       );
     } on MergeValidationException catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(e.message)),
+      StashToast.show(
+        context,
+        message: e.message,
+        icon: Icons.error_outline,
       );
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Merge failed: $e')),
+      StashToast.show(
+        context,
+        message: 'Merge failed',
+        icon: Icons.error_outline,
       );
     }
   }

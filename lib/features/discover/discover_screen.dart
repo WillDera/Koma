@@ -10,6 +10,8 @@ import '../../core/models/book.dart';
 import '../../core/models/manga.dart';
 import '../../core/models/source.dart';
 import '../../core/providers.dart';
+import '../../core/repositories/manga_repository.dart';
+import '../../core/services/hidden_titles_prefs.dart';
 import '../../core/services/local_manga_recs_service.dart';
 import '../../core/services/personalized_catalog_picks_service.dart';
 import '../../core/services/discover_metadata_cache.dart';
@@ -18,6 +20,7 @@ import '../../core/services/metadata_enrichment_service.dart';
 import '../../core/services/source_service.dart';
 import '../../core/utils/image_cache.dart';
 import '../../core/utils/image_headers.dart';
+import '../../features/reader/reader_settings_sheet.dart';
 import '../../router/book_navigation.dart';
 import '../../router/router.dart';
 import '../../router/shell.dart';
@@ -66,6 +69,7 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
   PersonalizedCatalogPicks? _trackerPicks;
   bool _viewingAllPicks = false;
   bool _picksLoadingMore = false;
+  List<_ExploreContinueItem> _continueItems = const [];
 
   @override
   void initState() {
@@ -75,6 +79,7 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
       _loadSources();
       _loadBecauseYouRead();
       _loadTrackerPicks();
+      _loadContinue();
     });
   }
 
@@ -161,6 +166,39 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
     } catch (_) {
       if (!mounted) return;
       setState(() => _trackerPicks = null);
+    }
+  }
+
+  Future<void> _loadContinue() async {
+    try {
+      final repos = ref.read(repositoriesProvider);
+      final results = await Future.wait([
+        repos.books.getInProgressBooks(),
+        repos.manga.getInProgressManga(),
+        HiddenTitlesPrefs.hiddenBookIds(),
+      ]);
+      if (!mounted) return;
+      final hiddenBooks = results[2] as Set<int>;
+      final books = [
+        for (final b in results[0] as List<Book>)
+          if (!hiddenBooks.contains(b.id)) b,
+      ];
+      final mangas = (results[1] as List<InProgressManga>)
+          .where(
+            (m) =>
+                m.manga.inLibrary &&
+                !ViewerFlags.isHidden(m.manga.viewerFlags),
+          )
+          .toList(growable: false);
+      final epoch = DateTime.fromMillisecondsSinceEpoch(0);
+      final merged = <_ExploreContinueItem>[
+        for (final b in books) _ExploreContinueItem.book(b, b.updatedAt),
+        for (final m in mangas)
+          _ExploreContinueItem.manga(m, m.lastReadAt ?? epoch),
+      ]..sort((a, b) => b.lastReadAt.compareTo(a.lastReadAt));
+      setState(() => _continueItems = merged.take(12).toList());
+    } catch (_) {
+      // Continue rail is best-effort.
     }
   }
 
@@ -617,6 +655,9 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
     final c = context.colors;
     final mangaState = ref.watch(globalSearchProvider);
     final library = ref.watch(libraryProvider);
+    ref.listen(libraryProvider, (_, _) {
+      _loadContinue();
+    });
     final mangaItemCount = mangaState.mangaHitCount;
     final hasMangaUi =
         mangaState.query.trim().isNotEmpty &&
@@ -1093,19 +1134,115 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
 
     if (!hasLibrary) {
       slivers.add(
-        const SliverToBoxAdapter(
+        SliverToBoxAdapter(
           child: SizedBox(
             height: 220,
             child: EmptyState(
               icon: AppIcons.search,
               emoji: '🧭',
               title: 'Find your next read',
-              subtitle: 'Search across your configured sources',
+              subtitle: 'Add extensions to search manga and ebooks',
+              primaryActionLabel: 'Browse Extensions',
+              onPrimaryAction: () => context.pushNamed(Routes.extensions),
+              pillPrimary: true,
             ),
           ),
         ),
       );
       return slivers;
+    }
+
+    if (_continueItems.isNotEmpty) {
+      slivers.add(
+        SliverToBoxAdapter(
+          child: MediaRail(
+            title: 'Continue reading',
+            subtitle: '${_continueItems.length} in progress',
+            height: 200,
+            onViewAll: () => context.goNamed(Routes.library),
+            itemCount: _continueItems.length,
+            itemBuilder: (context, i) {
+              final item = _continueItems[i];
+              final book = item.book;
+              if (book != null) {
+                final path = book.coverPath;
+                return MediaRailCover(
+                  width: 118,
+                  child: StaggeredFadeScale(
+                    index: i + 1,
+                    child: CatalogCoverCard(
+                      title: book.title,
+                      subtitle: '${(book.progress * 100).round()}% · Resume',
+                      imageProvider:
+                          path != null &&
+                              path.isNotEmpty &&
+                              File(path).existsSync()
+                          ? FileImage(File(path))
+                          : null,
+                      variant: LibraryCardVariant.grid,
+                      onTap: () => openBookFromCollection(context, book.id),
+                    ),
+                  ),
+                );
+              }
+              final row = item.manga!;
+              final manga = row.manga;
+              final custom = manga.customCoverPath;
+              return MediaRailCover(
+                width: 118,
+                child: StaggeredFadeScale(
+                  index: i + 1,
+                  child: CatalogCoverCard(
+                    title: manga.name,
+                    subtitle: '${(row.progress * 100).round()}% · Resume',
+                    imageProvider:
+                        custom != null &&
+                            custom.isNotEmpty &&
+                            File(custom).existsSync()
+                        ? FileImage(File(custom))
+                        : null,
+                    imageUrl: manga.imageUrl,
+                    variant: LibraryCardVariant.grid,
+                    onTap: () => _openManga(manga),
+                  ),
+                ),
+              );
+            },
+          ),
+        ),
+      );
+    }
+
+    final trackerPicks = _trackerPicks;
+    if (trackerPicks != null && trackerPicks.items.isNotEmpty) {
+      final preview = trackerPicks.items
+          .take(PersonalizedCatalogPicksService.defaultPageSize)
+          .toList();
+      slivers.add(
+        SliverToBoxAdapter(
+          child: MediaRail(
+            title: 'Picks for you',
+            subtitle: trackerPicks.sourceName,
+            onViewAll: _openTrackerPicksViewAll,
+            itemCount: preview.length,
+            itemBuilder: (context, i) {
+              final hit = preview[i];
+              return MediaRailCover(
+                child: StaggeredFadeScale(
+                  index: i + 1,
+                  child: CatalogCoverCard(
+                    title: hit.title,
+                    subtitle: trackerPicks.sourceName,
+                    imageUrl: hit.coverUrl,
+                    variant: LibraryCardVariant.grid,
+                    onTap: () => _openTrackerPick(hit),
+                  ),
+                ),
+              );
+            },
+          ),
+        ),
+      );
     }
 
     if (newlyPreview.isNotEmpty) {
@@ -1165,6 +1302,7 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
       );
     }
 
+    // Because you read + Latest Titles stay below the fold as secondary rails.
     final because = _becauseYouRead;
     if (because != null && because.suggestions.isNotEmpty) {
       final seedTitle = because.seed.name;
@@ -1195,38 +1333,6 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
                     imageUrl: manga.imageUrl,
                     variant: LibraryCardVariant.grid,
                     onTap: () => _openManga(manga),
-                  ),
-                ),
-              );
-            },
-          ),
-        ),
-      );
-    }
-
-    final trackerPicks = _trackerPicks;
-    if (trackerPicks != null && trackerPicks.items.isNotEmpty) {
-      final preview = trackerPicks.items
-          .take(PersonalizedCatalogPicksService.defaultPageSize)
-          .toList();
-      slivers.add(
-        SliverToBoxAdapter(
-          child: MediaRail(
-            title: 'Picks for you',
-            subtitle: trackerPicks.sourceName,
-            onViewAll: _openTrackerPicksViewAll,
-            itemCount: preview.length,
-            itemBuilder: (context, i) {
-              final hit = preview[i];
-              return MediaRailCover(
-                child: StaggeredFadeScale(
-                  index: i + 1,
-                  child: CatalogCoverCard(
-                    title: hit.title,
-                    subtitle: trackerPicks.sourceName,
-                    imageUrl: hit.coverUrl,
-                    variant: LibraryCardVariant.grid,
-                    onTap: () => _openTrackerPick(hit),
                   ),
                 ),
               );
@@ -1296,6 +1402,26 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
   }
 }
 
+class _ExploreContinueItem {
+  const _ExploreContinueItem._({
+    required this.lastReadAt,
+    this.book,
+    this.manga,
+  });
+
+  factory _ExploreContinueItem.book(Book book, DateTime lastReadAt) =>
+      _ExploreContinueItem._(lastReadAt: lastReadAt, book: book);
+
+  factory _ExploreContinueItem.manga(
+    InProgressManga manga,
+    DateTime lastReadAt,
+  ) =>
+      _ExploreContinueItem._(lastReadAt: lastReadAt, manga: manga);
+
+  final DateTime lastReadAt;
+  final Book? book;
+  final InProgressManga? manga;
+}
 
 class _ExploreRecommendationHero extends ConsumerWidget {
   const _ExploreRecommendationHero({
@@ -1330,7 +1456,7 @@ class _ExploreRecommendationHero extends ConsumerWidget {
       if (manga != null && manga!.genres.isNotEmpty) manga!.genres.first,
     ];
     final meta = metaParts.join('  ·  ');
-    final heroHeight = 420.0 + topInset;
+    final heroHeight = 300.0 + topInset;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,

@@ -753,6 +753,7 @@ class _ExtensionsScreenState extends ConsumerState<ExtensionsScreen>
                   onUpdate: _update,
                   onUpdateAll: _updateAll,
                   onTrust: _trustExisting,
+                  onBrowseAvailable: () => _tabs.animateTo(1),
                   onBrowse: (src) => Navigator.push(
                     context,
                     _scaleFadeRoute(
@@ -854,6 +855,7 @@ class _InstalledTab extends StatelessWidget {
   final void Function(ExtensionSource) onUpdate;
   final VoidCallback onUpdateAll;
   final void Function(ExtensionSource) onTrust;
+  final VoidCallback onBrowseAvailable;
   final void Function(ExtensionSource) onBrowse;
 
   const _InstalledTab({
@@ -863,6 +865,7 @@ class _InstalledTab extends StatelessWidget {
     required this.onUpdate,
     required this.onUpdateAll,
     required this.onTrust,
+    required this.onBrowseAvailable,
     required this.onBrowse,
   });
 
@@ -880,11 +883,13 @@ class _InstalledTab extends StatelessWidget {
   Widget build(BuildContext context) {
     final c = context.colors;
     if (installed.isEmpty) {
-      return const EmptyState(
+      return EmptyState(
         icon: AppIcons.download,
         emoji: '🧩',
-        title: 'Nothing installed yet',
-        subtitle: 'Open the Available tab to load your first extension.',
+        title: 'No extensions installed',
+        subtitle: 'Browse available extensions to add your first source.',
+        primaryActionLabel: 'Browse available',
+        onPrimaryAction: onBrowseAvailable,
         pillPrimary: true,
       );
     }
@@ -1800,11 +1805,14 @@ class _ReposTab extends StatelessWidget {
     return Stack(
       children: [
         if (repos.isEmpty)
-          const EmptyState(
+          EmptyState(
             icon: AppIcons.globe,
             emoji: '🌐',
-            title: 'No repos',
+            title: 'No repos yet',
             subtitle: 'Add a repo to discover extensions.',
+            primaryActionLabel: 'Add repo',
+            onPrimaryAction: onAdd,
+            pillPrimary: true,
           )
         else
           ListView.separated(

@@ -73,6 +73,7 @@ class AnilistTracker extends BaseTracker {
   }
 
   Future<void> _loginImpl() async {
+    if (await isLoggedIn()) return;
     final creds = await _clientCreds();
     if (creds.id.isEmpty || creds.secret.isEmpty) {
       throw StateError(
@@ -91,9 +92,11 @@ class AnilistTracker extends BaseTracker {
     final result = await FlutterWebAuth2.authenticate(
       url: authUri.toString(),
       callbackUrlScheme: 'koma',
+      // iOS: preferEphemeral hides the shared Safari session.
+      // Android: do NOT pass ephemeralIntentFlags — FLAG_ACTIVITY_NO_HISTORY
+      // keeps the Custom Tab from closing cleanly after koma:// redirect.
       options: const FlutterWebAuth2Options(
         preferEphemeral: true,
-        intentFlags: ephemeralIntentFlags,
       ),
     );
     final code = Uri.parse(result).queryParameters['code'];

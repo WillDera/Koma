@@ -35,7 +35,6 @@ class _TrackMangaScreenState extends ConsumerState<TrackMangaScreen> {
   static const _services = [
     (TrackIds.mal, 'MyAnimeList'),
     (TrackIds.anilist, 'AniList'),
-    (TrackIds.mangaUpdates, 'MangaUpdates'),
   ];
 
   @override
@@ -84,13 +83,11 @@ class _TrackMangaScreenState extends ConsumerState<TrackMangaScreen> {
   }
 
   void _showLocalSnack(String message) {
-    final messenger = _scaffoldMessengerKey.currentState;
-    messenger?.clearSnackBars();
-    messenger?.showSnackBar(SnackBar(content: Text(message)));
+    if (!mounted) return;
+    StashToast.show(context, message: message, icon: Icons.check);
   }
 
   void _showError(String message) {
-    _scaffoldMessengerKey.currentState?.clearSnackBars();
     if (!mounted) return;
     StashToast.show(
       context,
