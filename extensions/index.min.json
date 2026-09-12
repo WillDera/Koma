@@ -1,0 +1,19 @@
+{
+  "name": "Koma Official",
+  "extensions": [
+    {
+      "id": "koma.novelbuddy",
+      "name": "NovelBuddy",
+      "lang": "en",
+      "baseUrl": "https://novelbuddy.me",
+      "apiUrl": "https://api.novelbuddy.me",
+      "iconUrl": "https://novelbuddy.me/static/sites/novelbuddy-me/logo.webp",
+      "version": "1.0.2",
+      "itemType": 2,
+      "sourceCodeLanguage": 1,
+      "sourceCodeUrl": "novelbuddy.js",
+      "hasCloudflare": false,
+      "isNsfw": false
+    }
+  ]
+}

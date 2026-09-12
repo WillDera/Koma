@@ -25,6 +25,20 @@ export '../models/extension_source.dart' show SourceCodeLanguage;
 export 'trust_extension.dart' show UntrustedExtensionException;
 export 'apk_signature_service.dart' show ApkSigningInfo;
 
+/// Resolve a catalog [sourceCodeUrl] against the repo index URL.
+///
+/// Relative paths (`novelbuddy.js`) resolve next to the index
+/// (`…/extensions/index.json` → `…/extensions/novelbuddy.js`).
+String resolveExtensionSourceCodeUrl(String sourceCodeUrl, String repoUrl) {
+  final src = Uri.tryParse(sourceCodeUrl.trim());
+  if (src != null && src.hasScheme) return src.toString();
+  final base = Uri.tryParse(repoUrl.trim());
+  if (base == null || !base.hasScheme) {
+    return sourceCodeUrl.trim();
+  }
+  return base.resolve(sourceCodeUrl.trim()).toString();
+}
+
 /// Thrown when catalog entry language is unsupported (e.g. LNReader).
 class UnsupportedExtensionLanguageException implements Exception {
   final String language;
@@ -354,12 +368,13 @@ class ExtensionManager {
     ExtensionIndexEntry entry, {
     required String repoUrl,
   }) async {
-    final url = entry.sourceCodeUrl;
-    if (url == null || url.isEmpty) {
+    final rawUrl = entry.sourceCodeUrl;
+    if (rawUrl == null || rawUrl.isEmpty) {
       throw StateError(
         'JavaScript extension missing sourceCodeUrl: ${entry.name}',
       );
     }
+    final url = resolveExtensionSourceCodeUrl(rawUrl, repoUrl);
     final id = entry.pkg;
     if (id.isEmpty) {
       throw StateError('JavaScript extension missing id: ${entry.name}');
@@ -484,12 +499,13 @@ class ExtensionManager {
     ExtensionIndexEntry entry, {
     required String repoUrl,
   }) async {
-    final url = entry.sourceCodeUrl;
-    if (url == null || url.isEmpty) {
+    final rawUrl = entry.sourceCodeUrl;
+    if (rawUrl == null || rawUrl.isEmpty) {
       throw StateError(
         'Dart extension missing sourceCodeUrl: ${entry.name}',
       );
     }
+    final url = resolveExtensionSourceCodeUrl(rawUrl, repoUrl);
     final id = entry.pkg;
     if (id.isEmpty) {
       throw StateError('Dart extension missing id: ${entry.name}');

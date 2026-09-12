@@ -2,7 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:http/http.dart' as http;
 
+import '../../core/models/extension_repo.dart';
 import '../../core/providers.dart';
 import '../../features/extensions/extensions_catalog_provider.dart';
 import '../../router/router.dart';
@@ -11,6 +13,20 @@ import '../../theme/tokens/app_spacing.dart';
 import '../../widgets/screen_chrome.dart';
 import '../../widgets/settings_section.dart';
 import '../../widgets/toast.dart';
+
+/// Official hosted catalog (GitHub Pages). Raw GitHub works as a fallback
+/// before Pages is enabled.
+class KomaOfficialExtensions {
+  static const pagesIndex =
+      'https://willdera.github.io/Koma/extensions/index.json';
+  static const pagesNovelBuddy =
+      'https://willdera.github.io/Koma/extensions/novelbuddy.js';
+  static const rawIndex =
+      'https://raw.githubusercontent.com/WillDera/Koma/main/extensions/index.json';
+  static const rawNovelBuddy =
+      'https://raw.githubusercontent.com/WillDera/Koma/main/extensions/novelbuddy.js';
+  static const siteHome = 'https://willdera.github.io/Koma/';
+}
 
 /// In-app Plugin SDK hub — docs + sample installs for any source platform.
 class PluginSdkScreen extends ConsumerStatefulWidget {
@@ -21,7 +37,7 @@ class PluginSdkScreen extends ConsumerStatefulWidget {
 }
 
 class _PluginSdkScreenState extends ConsumerState<PluginSdkScreen> {
-  bool _installing = false;
+  bool _busy = false;
 
   /// Manga-oriented JS starter (image chapters via getPageList).
   static const _mangaStarter = r'''
@@ -141,20 +157,82 @@ class DefaultExtension extends MProvider {
 }
 ''';
 
-  Future<void> _installNovelBuddy() async {
-    if (_installing) return;
-    setState(() => _installing = true);
+  Future<String> _fetchText(List<String> urls) async {
+    Object? last;
+    for (final u in urls) {
+      try {
+        final res = await http.get(Uri.parse(u));
+        if (res.statusCode == 200 && res.body.trim().isNotEmpty) {
+          return res.body;
+        }
+        last = 'HTTP ${res.statusCode} for $u';
+      } catch (e) {
+        last = e;
+      }
+    }
+    throw StateError('Download failed: $last');
+  }
+
+  Future<void> _addOfficialRepo() async {
+    if (_busy) return;
+    setState(() => _busy = true);
     try {
-      final code = await rootBundle.loadString(
-        'assets/extensions/novelbuddy.js',
+      final mgr = ref.read(extensionManagerProvider);
+      // Prefer Pages; fall back to raw GitHub if Pages is not live yet.
+      String indexUrl = KomaOfficialExtensions.pagesIndex;
+      try {
+        final probe = await http.head(Uri.parse(indexUrl));
+        if (probe.statusCode < 200 || probe.statusCode >= 300) {
+          indexUrl = KomaOfficialExtensions.rawIndex;
+        }
+      } catch (_) {
+        indexUrl = KomaOfficialExtensions.rawIndex;
+      }
+      await mgr.addRepo(
+        name: 'Koma Official',
+        url: indexUrl,
+        kind: ExtensionRepoKind.javascript,
       );
+      final catalog = ref.read(extensionsCatalogProvider.notifier);
+      await catalog.refreshInstalled();
+      final repos = await mgr.listRepos();
+      final repo = repos.where((r) => r.url == indexUrl).firstOrNull ??
+          repos.where((r) => r.name == 'Koma Official').firstOrNull;
+      if (repo != null) {
+        await catalog.fetchIndex(repo);
+      }
+      if (!mounted) return;
+      StashToast.show(
+        context,
+        message: 'Official repo added — install from Extensions → Available',
+        icon: Icons.check,
+      );
+    } catch (e) {
+      if (!mounted) return;
+      StashToast.show(
+        context,
+        message: 'Could not add repo: $e',
+        icon: Icons.error_outline,
+      );
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Future<void> _installNovelBuddy() async {
+    if (_busy) return;
+    setState(() => _busy = true);
+    try {
+      final code = await _fetchText([
+        KomaOfficialExtensions.pagesNovelBuddy,
+        KomaOfficialExtensions.rawNovelBuddy,
+      ]);
       final mgr = ref.read(extensionManagerProvider);
       await mgr.installJsFromSourceCode(
         sourceCode: code,
         pkg: 'koma.novelbuddy',
+        repoUrl: KomaOfficialExtensions.pagesIndex,
       );
-      // Extensions hub / Sources keep session caches — refresh so Loaded
-      // shows the new source without an app restart.
       await ref.read(extensionsCatalogProvider.notifier).refreshInstalled();
       if (!mounted) return;
       StashToast.show(
@@ -170,7 +248,7 @@ class DefaultExtension extends MProvider {
         icon: Icons.error_outline,
       );
     } finally {
-      if (mounted) setState(() => _installing = false);
+      if (mounted) setState(() => _busy = false);
     }
   }
 
@@ -181,6 +259,18 @@ class DefaultExtension extends MProvider {
       context,
       message: '$label copied',
       icon: Icons.content_copy_outlined,
+    );
+  }
+
+  Future<void> _copyRepoUrl() async {
+    await Clipboard.setData(
+      const ClipboardData(text: KomaOfficialExtensions.pagesIndex),
+    );
+    if (!mounted) return;
+    StashToast.show(
+      context,
+      message: 'Repo URL copied',
+      icon: Icons.link,
     );
   }
 
@@ -217,7 +307,51 @@ class DefaultExtension extends MProvider {
             ),
             const SizedBox(height: 20),
             SettingsSection(
-              title: 'Get started',
+              title: 'Official catalog',
+              footer:
+                  'Hosted on GitHub Pages (${KomaOfficialExtensions.siteHome}). '
+                  'Extensions live in the repo under extensions/.',
+              children: [
+                SettingsRow(
+                  icon: Icons.cloud_download_outlined,
+                  title: 'Add official extensions repo',
+                  subtitle: KomaOfficialExtensions.pagesIndex,
+                  trailing: _busy
+                      ? const SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Icon(Icons.add_link, size: 18),
+                  onTap: _busy ? null : _addOfficialRepo,
+                ),
+                SettingsRow(
+                  icon: Icons.link,
+                  title: 'Copy repo URL',
+                  subtitle: 'Paste into Extensions → Repos → Add repo',
+                  trailing: const Icon(Icons.content_copy_outlined, size: 18),
+                  onTap: _copyRepoUrl,
+                ),
+                SettingsRow(
+                  icon: Icons.auto_stories_outlined,
+                  title: 'Install NovelBuddy',
+                  subtitle:
+                      'Fetches novelbuddy.js from the official catalog '
+                      '(not bundled in the APK)',
+                  trailing: _busy
+                      ? const SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Icon(Icons.download_outlined, size: 18),
+                  onTap: _busy ? null : _installNovelBuddy,
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+            SettingsSection(
+              title: 'Starters',
               children: [
                 SettingsRow(
                   icon: Icons.content_copy_outlined,
@@ -236,21 +370,6 @@ class DefaultExtension extends MProvider {
                       '(itemType 2)',
                   trailing: const Icon(Icons.copy_all_outlined, size: 18),
                   onTap: () => _copyTemplate('Novel starter', _novelStarter),
-                ),
-                SettingsRow(
-                  icon: Icons.auto_stories_outlined,
-                  title: 'Install NovelBuddy sample',
-                  subtitle:
-                      'Working novel source against api.novelbuddy.me — '
-                      'reference for HTTP JSON plugins',
-                  trailing: _installing
-                      ? const SizedBox(
-                          width: 18,
-                          height: 18,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : const Icon(Icons.download_outlined, size: 18),
-                  onTap: _installing ? null : _installNovelBuddy,
                 ),
               ],
             ),
@@ -324,10 +443,9 @@ class DefaultExtension extends MProvider {
                 borderRadius: AppSpacing.brLg,
               ),
               child: Text(
-                'Tip: after Install / sideload, the source shows under '
-                'Extensions → Loaded and Sources immediately. Open it, browse '
-                'or search, add a title to library — Updates will poll '
-                'getDetail chapters like any other source.',
+                'Tip: after adding the official repo, install sources from '
+                'Extensions → Available. Updates poll getDetail / getChapterList '
+                'like any other catalog.',
                 style: TextStyle(
                   color: c.textSecondary,
                   height: 1.45,

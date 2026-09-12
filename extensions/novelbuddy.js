@@ -1,6 +1,7 @@
-/* Koma Plugin SDK sample — NovelBuddy (novel / itemType 2)
+/* Koma official extension — NovelBuddy (novel / itemType 2)
  *
- * Install from Settings → Sources → Plugin SDK, or sideload this file.
+ * Catalog: extensions/index.json (GitHub Pages / raw GitHub).
+ * Install via Plugin SDK or Extensions → Repos → Koma Official.
  */
 const mangayomiSources = [
   {

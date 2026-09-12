@@ -116,7 +116,6 @@ flutter:
   assets:
     - app_icons/
     - assets/trackers/
-    - assets/extensions/
 
 # Adaptive icons need a separate FG/BG. Using a pre-rounded PNG alone makes
 # Android pad a small square onto a white circle on many launchers.
