@@ -5,7 +5,7 @@ name: Deploy GitHub Pages
 
 on:
   push:
-    branches: [main, master, feat/optimization]
+    branches: [main, develop, feat/optimization]
     paths:
       - 'site/**'
       - 'extensions/**'
@@ -65,6 +65,10 @@ jobs:
           ls -la _site _site/extensions
 
       - uses: actions/configure-pages@v5
+        with:
+          # First run: create the Pages site + set Source = GitHub Actions
+          # (avoids the Settings chicken-and-egg / org-domain-only UI).
+          enablement: true
 
       - uses: actions/upload-pages-artifact@v3
         with:
