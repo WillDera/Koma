@@ -38,6 +38,7 @@ import '../snippets/snippets_screen.dart';
 import 'custom_font_ui.dart';
 import 'open_source_licenses_sheet.dart';
 import 'security_settings_page.dart';
+import 'theme_pack_picker.dart';
 import 'tracking_settings_page.dart';
 import '../extensions/extensions_catalog_provider.dart';
 import '../../theme/app_theme.dart';
@@ -422,9 +423,12 @@ class _AppearanceSection extends ConsumerWidget {
               value: theme.themeMode,
               onChanged: tn.setThemeMode,
             ),
+            const ThemePackPicker(),
             SettingsRow(
               title: 'Sepia mode',
-              subtitle: 'Warm paper-like background',
+              subtitle: theme.usesCommunityPack
+                  ? 'Turns off the color theme while active'
+                  : 'Warm paper-like background',
               trailing: Switch(
                 value: theme.sepiaMode,
                 activeThumbColor: c.accent,
@@ -433,11 +437,13 @@ class _AppearanceSection extends ConsumerWidget {
             ),
             SettingsRow(
               title: 'AMOLED dark mode',
-              subtitle: 'True black for OLED screens',
+              subtitle: theme.usesCommunityPack
+                  ? 'Only applies with the Koma theme'
+                  : 'True black for OLED screens',
               trailing: Switch(
                 value: theme.amoledMode,
                 activeThumbColor: c.accent,
-                onChanged: tn.setAmoledMode,
+                onChanged: theme.usesCommunityPack ? null : tn.setAmoledMode,
               ),
             ),
             SettingsRow(

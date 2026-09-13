@@ -803,7 +803,8 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
                   gridView: gridView,
                   cardVariant: library.cardVariant,
                   gridColumns: library.gridColumns,
-                  showSourcePills: library.showSourcePills,
+                  showSourcePills: library.showCardChrome,
+                  minimalChrome: library.minimalCards,
                   downloading: _downloading,
                   onTap: (result) => _showResultOptions(context, result),
                 ),
@@ -1640,6 +1641,7 @@ class _DiscoverBookResults extends ConsumerWidget {
   final LibraryCardVariant cardVariant;
   final int gridColumns;
   final bool showSourcePills;
+  final bool minimalChrome;
   final Map<String, double> downloading;
   final ValueChanged<SourceSearchResult> onTap;
 
@@ -1650,6 +1652,7 @@ class _DiscoverBookResults extends ConsumerWidget {
     required this.cardVariant,
     required this.gridColumns,
     required this.showSourcePills,
+    this.minimalChrome = false,
     required this.downloading,
     required this.onTap,
   });
@@ -1750,6 +1753,7 @@ class _DiscoverBookResults extends ConsumerWidget {
       secondaryBadge: result.size,
       formatBadge: _formatLabel(result.extension),
       showBadge: showSourcePills,
+      minimalChrome: minimalChrome,
       variant: variant,
       downloadProgress: downloading[result.title],
       onTap: () => onTap(result),

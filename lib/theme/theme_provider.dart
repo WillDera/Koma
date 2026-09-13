@@ -8,8 +8,9 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../core/models/custom_font.dart';
 import '../core/services/custom_font_service.dart';
 import 'app_theme.dart';
+import 'presets/theme_packs.dart';
+import 'presets/theme_palette.dart';
 import 'theme_state.dart';
-import 'tokens/app_type.dart';
 
 export 'theme_state.dart';
 
@@ -26,12 +27,14 @@ class ThemeNotifier extends Notifier<ThemeState> {
 
   static const _keyThemeMode = 'theme_mode';
   static const _keySepiaMode = 'sepia_mode';
+  static const _keyThemePackId = 'theme_pack_id';
   static const _keyFontFamily = 'font_family';
   static const _keyGoogleFont = 'google_font';
   static const _keyFontSize = 'font_size';
   static const _keyLineHeight = 'line_height';
   static const _keyAccentIndex = 'accent_index';
   static const _keyCustomAccentHex = 'custom_accent_hex';
+  static const _keyAccentFromPack = 'accent_from_pack';
   static const _keyFollowSystemAccent = 'follow_system_accent';
   static const _keyReadingFont = 'reading_font';
   static const _keyPageWidth = 'page_width';
@@ -68,15 +71,22 @@ class ThemeNotifier extends Notifier<ThemeState> {
     final uiFontId = _nonEmpty(prefs.getString(_keyUiFontId));
     final readingFontId = _nonEmpty(prefs.getString(_keyReadingFontId));
 
+    final rawPack = prefs.getString(_keyThemePackId) ?? kDefaultThemePackId;
+    final packId = ThemePacks.byId.containsKey(rawPack)
+        ? rawPack
+        : kDefaultThemePackId;
+
     state = ThemeState(
       themeMode: ThemeMode.values[prefs.getInt(_keyThemeMode) ?? 0],
       sepiaMode: prefs.getBool(_keySepiaMode) ?? false,
+      themePackId: packId,
       fontFamily: prefs.getString(_keyFontFamily) ?? state.fontFamily,
       googleFont: _nonEmpty(prefs.getString(_keyGoogleFont)),
       fontSize: prefs.getDouble(_keyFontSize) ?? 17.0,
       lineHeight: prefs.getDouble(_keyLineHeight) ?? 1.65,
       accent: AccentPreset.values[prefs.getInt(_keyAccentIndex) ?? 0],
       customAccentHex: prefs.getString(_keyCustomAccentHex),
+      accentFromPack: prefs.getBool(_keyAccentFromPack) ?? false,
       followSystemAccent: prefs.getBool(_keyFollowSystemAccent) ?? true,
       readingFont: ReadingFont.values[prefs.getInt(_keyReadingFont) ?? 0],
       pageWidth: prefs.getDouble(_keyPageWidth) ?? 680,
@@ -170,12 +180,14 @@ class ThemeNotifier extends Notifier<ThemeState> {
     accent: state.accentColor,
     fontFamily: state.uiFontFamily,
     dynamicScheme: _lightDynamicForTheme,
+    palette: state.paletteForBrightness(Brightness.light),
   );
   ThemeData get darkTheme => AppTheme.darkTheme(
     accent: state.accentColor,
-    amoled: state.amoledMode,
+    amoled: state.amoledMode && !state.usesCommunityPack,
     fontFamily: state.uiFontFamily,
     dynamicScheme: _darkDynamicForTheme,
+    palette: state.paletteForBrightness(Brightness.dark),
   );
   ThemeData get sepiaTheme => AppTheme.sepiaTheme(
     accent: state.accentColor,
@@ -254,9 +266,50 @@ class ThemeNotifier extends Notifier<ThemeState> {
   }
 
   Future<void> setSepiaMode(bool value) async {
-    state = state.copyWith(sepiaMode: value);
+    state = state.copyWith(
+      sepiaMode: value,
+      // Sepia replaces community packs while active.
+      themePackId: value ? kDefaultThemePackId : state.themePackId,
+      accentFromPack: value ? false : state.accentFromPack,
+    );
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool(_keySepiaMode, value);
+    if (value) {
+      await prefs.setString(_keyThemePackId, kDefaultThemePackId);
+      await prefs.setBool(_keyAccentFromPack, false);
+    }
+  }
+
+  /// Apply a community / brand color theme app-wide.
+  ///
+  /// Pass [kDefaultThemePackId] to restore Koma light/dark tokens.
+  Future<void> setThemePackId(String id) async {
+    final resolved =
+        ThemePacks.byId.containsKey(id) ? id : kDefaultThemePackId;
+    final pack = ThemePacks.tryGet(resolved);
+    final isCommunity = resolved != kDefaultThemePackId && pack != null;
+    final mode = isCommunity
+        ? (pack.isDark ? ThemeMode.dark : ThemeMode.light)
+        : state.themeMode;
+
+    state = state.copyWith(
+      themePackId: resolved,
+      sepiaMode: false,
+      themeMode: mode,
+      // Pack brings its own accent; stop following wallpaper until user opts in.
+      followSystemAccent: isCommunity ? false : state.followSystemAccent,
+      accentFromPack: isCommunity,
+      customAccentHex: isCommunity ? () => null : null,
+    );
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_keyThemePackId, resolved);
+    await prefs.setBool(_keySepiaMode, false);
+    await prefs.setBool(_keyAccentFromPack, isCommunity);
+    if (isCommunity) {
+      await prefs.setBool(_keyFollowSystemAccent, false);
+      await prefs.remove(_keyCustomAccentHex);
+      await prefs.setInt(_keyThemeMode, mode.index);
+    }
   }
 
   Future<void> setFontFamily(String family) async {
@@ -286,10 +339,12 @@ class ThemeNotifier extends Notifier<ThemeState> {
   Future<void> setFollowSystemAccent(bool value) async {
     state = state.copyWith(
       followSystemAccent: value,
+      accentFromPack: false,
       customAccentHex: value ? () => null : null,
     );
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool(_keyFollowSystemAccent, value);
+    await prefs.setBool(_keyAccentFromPack, false);
     if (value) {
       await prefs.remove(_keyCustomAccentHex);
     }
@@ -300,11 +355,13 @@ class ThemeNotifier extends Notifier<ThemeState> {
       accent: accent,
       customAccentHex: () => null,
       followSystemAccent: false,
+      accentFromPack: false,
     );
     final prefs = await SharedPreferences.getInstance();
     await prefs.setInt(_keyAccentIndex, accent.index);
     await prefs.remove(_keyCustomAccentHex);
     await prefs.setBool(_keyFollowSystemAccent, false);
+    await prefs.setBool(_keyAccentFromPack, false);
   }
 
   Future<void> setCustomAccentHex(String? hex) async {
@@ -316,9 +373,11 @@ class ThemeNotifier extends Notifier<ThemeState> {
     }
     state = state.copyWith(
       customAccentHex: () => resolved,
+      accentFromPack: false,
       followSystemAccent: resolved != null ? false : state.followSystemAccent,
     );
     final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_keyAccentFromPack, false);
     if (resolved == null) {
       await prefs.remove(_keyCustomAccentHex);
     } else {

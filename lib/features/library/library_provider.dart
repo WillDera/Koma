@@ -42,6 +42,7 @@ class LibraryState {
     this.gridColumns = 2,
     this.cardVariant = LibraryCardVariant.grid,
     this.showSourcePills = true,
+    this.minimalCards = false,
     this.showUnreadBadge = true,
     this.showContinueButton = false,
     this.extensionNames = const {},
@@ -64,6 +65,10 @@ class LibraryState {
   final int gridColumns;
   final LibraryCardVariant cardVariant;
   final bool showSourcePills;
+
+  /// Hide source / type / size pills on library and explore cover cards.
+  final bool minimalCards;
+
   final bool showUnreadBadge;
   final bool showContinueButton;
   final Map<String, String> extensionNames;
@@ -73,6 +78,9 @@ class LibraryState {
 
   /// mangaId → count of unopened (new) chapters. Populated by loadBooks.
   final Map<int, int> newChapters;
+
+  /// Whether chrome pills (source / type / size) should render on cards.
+  bool get showCardChrome => !minimalCards && showSourcePills;
 
   int get totalNewChapters => newChapters.values.fold(0, (a, b) => a + b);
 
@@ -110,6 +118,7 @@ class LibraryState {
     int? gridColumns,
     LibraryCardVariant? cardVariant,
     bool? showSourcePills,
+    bool? minimalCards,
     bool? showUnreadBadge,
     bool? showContinueButton,
     Map<String, String>? extensionNames,
@@ -130,6 +139,7 @@ class LibraryState {
       gridColumns: gridColumns ?? this.gridColumns,
       cardVariant: cardVariant ?? this.cardVariant,
       showSourcePills: showSourcePills ?? this.showSourcePills,
+      minimalCards: minimalCards ?? this.minimalCards,
       showUnreadBadge: showUnreadBadge ?? this.showUnreadBadge,
       showContinueButton: showContinueButton ?? this.showContinueButton,
       extensionNames: extensionNames ?? this.extensionNames,
@@ -142,6 +152,7 @@ class LibraryState {
 class LibraryNotifier extends Notifier<LibraryState> {
   static const _keyIsGridView = 'library_is_grid_view';
   static const _keyShowSourcePills = 'library_show_source_pills';
+  static const _keyMinimalCards = 'library_minimal_cards';
   static const _keyShowUnreadBadge = 'library_show_unread_badge';
   static const _keyShowContinueButton = 'library_show_continue_button';
   static const _keyGridColumns = 'library_grid_columns';
@@ -169,6 +180,7 @@ class LibraryNotifier extends Notifier<LibraryState> {
     state = state.copyWith(
       isGridView: isGrid,
       showSourcePills: prefs.getBool(_keyShowSourcePills) ?? true,
+      minimalCards: prefs.getBool(_keyMinimalCards) ?? false,
       showUnreadBadge: prefs.getBool(_keyShowUnreadBadge) ?? true,
       showContinueButton: prefs.getBool(_keyShowContinueButton) ?? false,
       gridColumns: (prefs.getInt(_keyGridColumns) ?? 2).clamp(2, 5),
@@ -189,6 +201,13 @@ class LibraryNotifier extends Notifier<LibraryState> {
     state = state.copyWith(showSourcePills: value);
     SharedPreferences.getInstance().then(
       (prefs) => prefs.setBool(_keyShowSourcePills, value),
+    );
+  }
+
+  void setMinimalCards(bool value) {
+    state = state.copyWith(minimalCards: value);
+    SharedPreferences.getInstance().then(
+      (prefs) => prefs.setBool(_keyMinimalCards, value),
     );
   }
 

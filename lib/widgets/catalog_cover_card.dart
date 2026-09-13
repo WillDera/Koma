@@ -24,6 +24,7 @@ class CatalogCoverCard extends StatelessWidget {
     this.secondaryBadge,
     this.formatBadge,
     this.showBadge = true,
+    this.minimalChrome = false,
     this.inLibrary = false,
     this.selected = false,
     this.selectionMode = false,
@@ -44,6 +45,8 @@ class CatalogCoverCard extends StatelessWidget {
   /// or beside [subtitle] in list layout.
   final String? formatBadge;
   final bool showBadge;
+  /// Hide source / type / size pills for a cleaner cover.
+  final bool minimalChrome;
   /// Accent heart when this title is already in the user's library.
   final bool inLibrary;
   final bool selected;
@@ -107,21 +110,28 @@ class CatalogCoverCard extends StatelessWidget {
   }
 
   Widget? _badgeChip({double fontSize = 10}) {
-    if (!showBadge || badge == null || badge!.isEmpty) return null;
+    if (minimalChrome || !showBadge || badge == null || badge!.isEmpty) {
+      return null;
+    }
     return _pill(badge!, fontSize: fontSize);
   }
 
   Widget? _secondaryChip({double fontSize = 10}) {
-    if (secondaryBadge == null || secondaryBadge!.isEmpty) return null;
+    if (minimalChrome || secondaryBadge == null || secondaryBadge!.isEmpty) {
+      return null;
+    }
     return _pill(secondaryBadge!, fontSize: fontSize);
   }
 
   Widget? _formatChip({double fontSize = 10}) {
-    if (formatBadge == null || formatBadge!.isEmpty) return null;
+    if (minimalChrome || formatBadge == null || formatBadge!.isEmpty) {
+      return null;
+    }
     return _pill(formatBadge!, fontSize: fontSize);
   }
 
   Widget? _coverMetaPills({double fontSize = 10}) {
+    if (minimalChrome) return null;
     final size = _secondaryChip(fontSize: fontSize);
     final format = _formatChip(fontSize: fontSize);
     if (size == null && format == null) return null;
@@ -136,6 +146,11 @@ class CatalogCoverCard extends StatelessWidget {
   }
 
   String? get _listSubtitle {
+    if (minimalChrome) {
+      final author = subtitle?.trim();
+      if (author != null && author.isNotEmpty) return author;
+      return null;
+    }
     final author = subtitle?.trim();
     final format = formatBadge?.trim();
     final hasAuthor = author != null && author.isNotEmpty;

@@ -132,15 +132,30 @@ class LibraryLayoutSheet extends ConsumerWidget {
               SwitchListTile(
                 contentPadding: EdgeInsets.zero,
                 title: Text(
+                  'Minimal cards',
+                  style: TextStyle(color: c.textPrimary, fontSize: 14),
+                ),
+                subtitle: Text(
+                  'Hide source, type, and size pills on covers',
+                  style: TextStyle(color: c.textTertiary, fontSize: 12),
+                ),
+                value: library.minimalCards,
+                onChanged: ln.setMinimalCards,
+              ),
+              SwitchListTile(
+                contentPadding: EdgeInsets.zero,
+                title: Text(
                   'Source label',
                   style: TextStyle(color: c.textPrimary, fontSize: 14),
                 ),
                 subtitle: Text(
-                  'Extension / source name on covers',
+                  library.minimalCards
+                      ? 'Overridden while minimal cards is on'
+                      : 'Extension / source name on covers',
                   style: TextStyle(color: c.textTertiary, fontSize: 12),
                 ),
                 value: library.showSourcePills,
-                onChanged: ln.setShowSourcePills,
+                onChanged: library.minimalCards ? null : ln.setShowSourcePills,
               ),
               SwitchListTile(
                 contentPadding: EdgeInsets.zero,

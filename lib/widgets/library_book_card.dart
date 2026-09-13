@@ -18,6 +18,7 @@ class LibraryBookCard extends StatelessWidget {
   final bool selectionMode;
   final LibraryCardVariant variant;
   final bool showSourcePills;
+  final bool minimalChrome;
 
   const LibraryBookCard({
     super.key,
@@ -28,7 +29,10 @@ class LibraryBookCard extends StatelessWidget {
     this.selectionMode = false,
     this.variant = LibraryCardVariant.grid,
     this.showSourcePills = true,
+    this.minimalChrome = false,
   });
+
+  bool get _showSource => !minimalChrome && showSourcePills;
 
   @override
   Widget build(BuildContext context) {
@@ -61,7 +65,7 @@ class LibraryBookCard extends StatelessWidget {
                   variant: BookCoverVariant.grid,
                   expand: true,
                 ),
-                if (showSourcePills)
+                if (_showSource)
                   Positioned(
                     top: 6,
                     left: 6,
@@ -178,7 +182,7 @@ class LibraryBookCard extends StatelessWidget {
                       style: TextStyle(color: c.textSecondary, fontSize: 12),
                     ),
                   ],
-                  if (showSourcePills) ...[
+                  if (_showSource) ...[
                     const SizedBox(height: 4),
                     Text(
                       _sourceLabel(book.source),
@@ -230,7 +234,7 @@ class LibraryBookCard extends StatelessWidget {
                   borderRadius: AppSpacing.brSm,
                   expand: true,
                 ),
-                if (showSourcePills)
+                if (_showSource)
                   Positioned(
                     top: 4,
                     left: 4,

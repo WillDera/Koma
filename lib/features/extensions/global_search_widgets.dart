@@ -280,7 +280,8 @@ class GlobalSearchSourceSection extends ConsumerWidget {
         ? CatalogCardLayout.gridVariant(library.cardVariant)
         : LibraryCardVariant.list;
     final columns = library.gridColumns;
-    final showPills = library.showSourcePills;
+    final showPills = library.showCardChrome;
+    final minimalChrome = library.minimalCards;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -373,6 +374,7 @@ class GlobalSearchSourceSection extends ConsumerWidget {
                             headers: headers,
                             badge: src.name,
                             showBadge: showPills,
+                            minimalChrome: minimalChrome,
                             variant: variant,
                             onTap: () => onMangaTap(manga),
                           ),
@@ -393,6 +395,7 @@ class GlobalSearchSourceSection extends ConsumerWidget {
                               headers: headers,
                               badge: src.name,
                               showBadge: showPills,
+                              minimalChrome: minimalChrome,
                               variant: LibraryCardVariant.list,
                               onTap: () => onMangaTap(item.mangas[i]),
                             ),

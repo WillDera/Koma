@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 
 import '../core/models/custom_font.dart';
+import 'presets/theme_packs.dart';
+import 'presets/theme_palette.dart';
 import 'tokens/app_colors.dart';
 import 'tokens/app_type.dart';
 
@@ -12,12 +14,14 @@ class ThemeState {
   const ThemeState({
     this.themeMode = ThemeMode.system,
     this.sepiaMode = false,
+    this.themePackId = kDefaultThemePackId,
     this.fontFamily = AppType.uiFont,
     this.googleFont,
     this.fontSize = 17.0,
     this.lineHeight = 1.65,
     this.accent = AccentPreset.indigo,
     this.customAccentHex,
+    this.accentFromPack = false,
     this.followSystemAccent = true,
     this.lightDynamicPrimary,
     this.darkDynamicPrimary,
@@ -42,12 +46,19 @@ class ThemeState {
 
   final ThemeMode themeMode;
   final bool sepiaMode;
+
+  /// Selected community / brand pack (`koma`, `catppuccin_mocha`, …).
+  final String themePackId;
+
   final String fontFamily;
   final String? googleFont;
   final double fontSize;
   final double lineHeight;
   final AccentPreset accent;
   final String? customAccentHex;
+
+  /// When true, accent follows the selected community pack until overridden.
+  final bool accentFromPack;
 
   /// When true (default), accent comes from Material You / wallpaper colors.
   final bool followSystemAccent;
@@ -85,6 +96,13 @@ class ThemeState {
   final PageStyle pageStyle;
 
   // ── Derived getters ────────────────────────────────────────────────
+
+  ThemePack? get selectedPack {
+    if (themePackId == kDefaultThemePackId) return null;
+    return ThemePacks.tryGet(themePackId);
+  }
+
+  bool get usesCommunityPack => selectedPack != null;
 
   CustomFont? customFontById(String id) {
     for (final font in customFonts) {
@@ -129,12 +147,24 @@ class ThemeState {
     if (followSystemAccent) {
       final dynamicPrimary =
           isDarkMode ? darkDynamicPrimary : lightDynamicPrimary;
-      return dynamicPrimary ?? _presetAccent(AccentPreset.indigo);
+      return dynamicPrimary ?? _fallbackAccent();
+    }
+    if (accentFromPack) {
+      final pack = _resolvedPackForBrightness(
+        isDarkMode ? Brightness.dark : Brightness.light,
+      );
+      if (pack != null) return pack.palette.accent;
     }
     return _presetAccent(accent);
   }
 
-  Color _fallbackAccent() => _presetAccent(accent);
+  Color _fallbackAccent() {
+    final pack = _resolvedPackForBrightness(
+      isDarkMode ? Brightness.dark : Brightness.light,
+    );
+    if (pack != null) return pack.palette.accent;
+    return _presetAccent(AccentPreset.indigo);
+  }
 
   Color _presetAccent(AccentPreset preset) {
     if (sepiaMode) return AppColors.sepiaAccent;
@@ -165,8 +195,25 @@ class ThemeState {
 
   Color get bgColor {
     if (sepiaMode) return AppColors.sepiaBg;
+    final pack = _resolvedPackForBrightness(
+      isDarkMode ? Brightness.dark : Brightness.light,
+    );
+    if (pack != null) return pack.palette.bg;
     if (isDarkMode && amoledMode) return AppColors.amoledBg;
     return isDarkMode ? AppColors.darkBg : AppColors.lightBg;
+  }
+
+  /// Pack to use for a given brightness (sibling swap for system mode).
+  ThemePack? _resolvedPackForBrightness(Brightness brightness) {
+    final pack = selectedPack;
+    if (pack == null) return null;
+    if (pack.brightness == brightness) return pack;
+    return ThemePacks.sibling(pack, brightness) ?? pack;
+  }
+
+  ThemePalette? paletteForBrightness(Brightness brightness) {
+    if (sepiaMode) return null;
+    return _resolvedPackForBrightness(brightness)?.palette;
   }
 
   FontWeight get bionicBoldWeight => FontWeight.w700;
@@ -187,12 +234,14 @@ class ThemeState {
   ThemeState copyWith({
     ThemeMode? themeMode,
     bool? sepiaMode,
+    String? themePackId,
     String? fontFamily,
     String? Function()? googleFont,
     double? fontSize,
     double? lineHeight,
     AccentPreset? accent,
     String? Function()? customAccentHex,
+    bool? accentFromPack,
     bool? followSystemAccent,
     Color? Function()? lightDynamicPrimary,
     Color? Function()? darkDynamicPrimary,
@@ -217,6 +266,7 @@ class ThemeState {
     return ThemeState(
       themeMode: themeMode ?? this.themeMode,
       sepiaMode: sepiaMode ?? this.sepiaMode,
+      themePackId: themePackId ?? this.themePackId,
       fontFamily: fontFamily ?? this.fontFamily,
       googleFont: googleFont != null ? googleFont() : this.googleFont,
       fontSize: fontSize ?? this.fontSize,
@@ -225,6 +275,7 @@ class ThemeState {
       customAccentHex: customAccentHex != null
           ? customAccentHex()
           : this.customAccentHex,
+      accentFromPack: accentFromPack ?? this.accentFromPack,
       followSystemAccent: followSystemAccent ?? this.followSystemAccent,
       lightDynamicPrimary: lightDynamicPrimary != null
           ? lightDynamicPrimary()
@@ -244,7 +295,8 @@ class ThemeState {
       amoledMode: amoledMode ?? this.amoledMode,
       customFonts: customFonts ?? this.customFonts,
       uiFontId: uiFontId != null ? uiFontId() : this.uiFontId,
-      readingFontId: readingFontId != null ? readingFontId() : this.readingFontId,
+      readingFontId:
+          readingFontId != null ? readingFontId() : this.readingFontId,
       showNsfwExtensions: showNsfwExtensions ?? this.showNsfwExtensions,
       showObsoleteExtensions:
           showObsoleteExtensions ?? this.showObsoleteExtensions,
