@@ -7,7 +7,6 @@ import '../core/models/manga.dart';
 import '../core/models/reading_stat.dart';
 import '../core/providers.dart';
 import '../theme/app_theme.dart';
-import '../theme/tokens/app_colors.dart';
 import '../theme/tokens/app_spacing.dart';
 import 'reading_calendar_sheet.dart';
 import 'reading_streak_card.dart';
@@ -159,9 +158,10 @@ class _LibraryStatsPanelState extends ConsumerState<LibraryStatsPanel> {
 
     if (widget.embedded) return body;
 
+    final c = context.colors;
     return SettingsSection(
       title: 'Stats',
-      headerColor: AppColors.figmaAmber,
+      headerColor: c.accent,
       padding: const EdgeInsets.symmetric(horizontal: 16),
       children: [body],
     );

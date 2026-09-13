@@ -171,7 +171,6 @@ class _SettingsHub extends StatelessWidget {
           0,
           SettingsRow(
             icon: Icons.person_outline_rounded,
-            iconColor: AppColors.figmaViolet,
             title: 'Profile',
             subtitle: 'Name, photo, genres',
             onTap: () => _open(context, 'Profile', const _ProfileSection()),
@@ -181,7 +180,6 @@ class _SettingsHub extends StatelessWidget {
           1,
           SettingsRow(
             icon: Icons.bookmark_outline_rounded,
-            iconColor: AppColors.figmaAmber,
             title: 'Snippets',
             subtitle: 'Highlights and bookmarks',
             onTap: () => Navigator.of(context, rootNavigator: true).push(
@@ -193,7 +191,6 @@ class _SettingsHub extends StatelessWidget {
           2,
           SettingsRow(
             icon: Icons.palette_outlined,
-            iconColor: AppColors.figmaViolet,
             title: 'Appearance',
             subtitle: 'Theme, accent, single hand mode',
             onTap: () =>
@@ -204,7 +201,6 @@ class _SettingsHub extends StatelessWidget {
           3,
           SettingsRow(
             icon: Icons.text_fields_rounded,
-            iconColor: AppColors.figmaGreen,
             title: 'Typography',
             subtitle: 'Font, size, line height, bionic reading',
             onTap: () =>
@@ -215,7 +211,6 @@ class _SettingsHub extends StatelessWidget {
           4,
           SettingsRow(
             icon: Icons.storage_outlined,
-            iconColor: AppColors.figmaAmber,
             title: 'Data',
             subtitle: 'Backup, downloads, library updates',
             onTap: () => _open(context, 'Data', const _DataAndStatsPage()),
@@ -225,7 +220,6 @@ class _SettingsHub extends StatelessWidget {
           5,
           SettingsRow(
             icon: Icons.shield_outlined,
-            iconColor: AppColors.figmaViolet,
             title: 'Security',
             subtitle: 'Incognito, app lock, secure screen',
             onTap: () =>
@@ -236,7 +230,6 @@ class _SettingsHub extends StatelessWidget {
           6,
           SettingsRow(
             icon: Icons.layers_outlined,
-            iconColor: AppColors.figmaCyan,
             title: 'Sources',
             subtitle: 'Ebook sources and manga plugins',
             onTap: () =>
@@ -247,7 +240,6 @@ class _SettingsHub extends StatelessWidget {
           7,
           SettingsRow(
             icon: Icons.track_changes_rounded,
-            iconColor: AppColors.figmaGreen,
             title: 'Tracking',
             subtitle: 'MAL, AniList',
             onTap: () =>
@@ -410,13 +402,11 @@ class _AppearanceSection extends ConsumerWidget {
     final c = context.colors;
     final theme = ref.watch(themeProvider);
     final tn = ref.read(themeProvider.notifier);
-    final violet = AppColors.figmaViolet;
 
     return Column(
       children: [
         SettingsSection(
           title: 'Theme',
-          headerColor: violet,
           padding: _pad,
           children: [
             _ThemeModePicker(
@@ -465,7 +455,6 @@ class _AppearanceSection extends ConsumerWidget {
         _gap,
         SettingsSection(
           title: 'Accent color',
-          headerColor: violet,
           padding: _pad,
           children: [
             Padding(
@@ -558,7 +547,6 @@ class _AppearanceSection extends ConsumerWidget {
         _gap,
         SettingsSection(
           title: 'Ergonomics',
-          headerColor: violet,
           padding: _pad,
           children: [
             Padding(
@@ -1179,17 +1167,14 @@ class _TypographySection extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final p = ref.watch(themeProvider);
     final tn = ref.read(themeProvider.notifier);
-    final green = AppColors.figmaGreen;
     return Column(
       children: [
         SettingsSection(
           title: 'Reading font',
-          headerColor: green,
           padding: _pad,
           children: [
             SettingsRow(
               icon: Icons.text_fields,
-              iconColor: green,
               title: 'Reading font',
               subtitle: p.readingFontLabel,
               trailing: const Icon(Icons.chevron_right, size: 18),
@@ -1200,12 +1185,10 @@ class _TypographySection extends ConsumerWidget {
         _gap,
         SettingsSection(
           title: 'Layout',
-          headerColor: green,
           padding: _pad,
           children: [
             SettingsRow(
               icon: Icons.format_size,
-              iconColor: green,
               title: 'Font size',
               subtitle: '${p.fontSize.toInt()}px',
               trailing: SizedBox(
@@ -1215,14 +1198,13 @@ class _TypographySection extends ConsumerWidget {
                   min: 13,
                   max: 26,
                   divisions: 13,
-                  activeColor: green,
+                  activeColor: context.colors.accent,
                   onChanged: tn.setFontSize,
                 ),
               ),
             ),
             SettingsRow(
               icon: Icons.format_line_spacing,
-              iconColor: green,
               title: 'Line height',
               subtitle: '${p.lineHeight.toStringAsFixed(2)}×',
               trailing: SizedBox(
@@ -1232,14 +1214,13 @@ class _TypographySection extends ConsumerWidget {
                   min: 1.2,
                   max: 2.2,
                   divisions: 10,
-                  activeColor: green,
+                  activeColor: context.colors.accent,
                   onChanged: tn.setLineHeight,
                 ),
               ),
             ),
             SettingsRow(
               icon: Icons.width_normal,
-              iconColor: green,
               title: 'Page width',
               subtitle: '${p.pageWidth.toInt()}px',
               trailing: SizedBox(
@@ -1249,7 +1230,7 @@ class _TypographySection extends ConsumerWidget {
                   min: 520,
                   max: 760,
                   divisions: 12,
-                  activeColor: green,
+                  activeColor: context.colors.accent,
                   onChanged: tn.setPageWidth,
                 ),
               ),
@@ -1259,12 +1240,10 @@ class _TypographySection extends ConsumerWidget {
         _gap,
         SettingsSection(
           title: 'Reading mode',
-          headerColor: green,
           padding: _pad,
           children: [
             SettingsRow(
               icon: Icons.auto_stories_outlined,
-              iconColor: green,
               title: 'Default manga reading mode',
               subtitle:
                   '${_mangaReadingModeLabel(ref.watch(readerSettingsProvider).readingMode)} · unread titles',
@@ -1273,18 +1252,16 @@ class _TypographySection extends ConsumerWidget {
             ),
             SettingsRow(
               icon: Icons.bolt,
-              iconColor: green,
               title: 'Bionic reading',
               subtitle: 'Bold the first 40% of every word',
               trailing: Switch(
                 value: p.bionicReading,
-                activeThumbColor: green,
+                activeThumbColor: context.colors.accent,
                 onChanged: tn.setBionicReading,
               ),
             ),
             SettingsRow(
               icon: Icons.format_align_left,
-              iconColor: green,
               title: 'Text alignment',
               subtitle: _alignName(p.textAlign),
               trailing: const Icon(Icons.chevron_right, size: 18),
@@ -1543,7 +1520,6 @@ class _BookMetadataSectionState extends ConsumerState<_BookMetadataSection> {
         kDiscoverMetadataEnabledDefault;
     return SettingsSection(
       title: 'Book metadata',
-      headerColor: AppColors.figmaAmber,
       padding: const EdgeInsets.symmetric(horizontal: 16),
       footer:
           'Looks up author, cover, genres, and release date via Open Library (primary) and Google Books (fallback). An API key improves Google Books rate limits but is optional.',
@@ -1730,7 +1706,6 @@ class _DownloadQueueSection extends ConsumerWidget {
     final pending = ref.watch(downloadManagerProvider).pendingCount;
     return SettingsSection(
       title: 'Downloads',
-      headerColor: AppColors.figmaAmber,
       padding: const EdgeInsets.symmetric(horizontal: 16),
       footer:
           'Chapter downloads run in a shared queue across titles. Wi‑Fi and charging gates apply to the download queue (not manual library checks).',
@@ -1785,7 +1760,6 @@ class _LibraryUpdateSection extends ConsumerWidget {
     final lastChecked = update.lastCheckedAt;
     return SettingsSection(
       title: 'Library updates',
-      headerColor: AppColors.figmaAmber,
       padding: const EdgeInsets.symmetric(horizontal: 16),
       footer:
           'Check now always fetches every library title. Skip filters below '
@@ -2050,11 +2024,9 @@ class _StorageSectionState extends ConsumerState<_StorageSection> {
 
   @override
   Widget build(BuildContext context) {
-    final amber = AppColors.figmaAmber;
     final path = AppStorage.rootPath;
     return SettingsSection(
       title: 'Storage',
-      headerColor: amber,
       padding: const EdgeInsets.symmetric(horizontal: 16),
       footer:
           'Downloaded ebooks, manga chapters, covers, fonts, '
@@ -2067,7 +2039,6 @@ class _StorageSectionState extends ConsumerState<_StorageSection> {
       children: [
         SettingsRow(
           icon: Icons.folder_outlined,
-          iconColor: amber,
           title: 'Data folder',
           subtitle: path ?? 'App default (internal storage)',
           trailing: _picking
@@ -2082,14 +2053,12 @@ class _StorageSectionState extends ConsumerState<_StorageSection> {
         if (path != null)
           SettingsRow(
             icon: Icons.restart_alt,
-            iconColor: amber,
             title: 'Use app default',
             subtitle: 'Move data back to internal storage',
             onTap: _clearFolder,
           ),
         SettingsRow(
           icon: Icons.folder_zip_outlined,
-          iconColor: amber,
           title: 'Local manga folder',
           subtitle: _cbzFolder ?? 'Not set — import CBZ/CBR series',
           trailing: _pickingCbz
@@ -2104,14 +2073,12 @@ class _StorageSectionState extends ConsumerState<_StorageSection> {
         if (_cbzFolder != null) ...[
           SettingsRow(
             icon: Icons.refresh,
-            iconColor: amber,
             title: 'Rescan local manga',
             subtitle: 'Add new CBZ chapters from the folder',
             onTap: _rescanCbzFolder,
           ),
           SettingsRow(
             icon: Icons.link_off,
-            iconColor: amber,
             title: 'Clear local manga folder',
             subtitle: 'Stop scanning (library entries stay)',
             onTap: _clearCbzFolder,
@@ -2387,18 +2354,15 @@ class _DataSectionState extends ConsumerState<_DataSection> {
 
   @override
   Widget build(BuildContext context) {
-    final amber = AppColors.figmaAmber;
-    final violet = AppColors.figmaVioletLight;
+    final c = context.colors;
     return SettingsSection(
       title: 'Backup & restore',
-      headerColor: amber,
       padding: const EdgeInsets.symmetric(horizontal: 16),
       footer:
           'Koma backups are JSON. You can also restore Mihon .tachibk and Mangayomi .backup files. Downloads and extension APKs are not inside those backups.',
       children: [
         SettingsRow(
           icon: Icons.file_upload_outlined,
-          iconColor: amber,
           title: 'Export',
           subtitle: 'Save books, manga, and snippets as JSON',
           trailing: _exporting
@@ -2410,13 +2374,12 @@ class _DataSectionState extends ConsumerState<_DataSection> {
               : _TintedActionChip(
                   label: 'Export',
                   icon: Icons.download_outlined,
-                  color: amber,
+                  color: c.accent,
                 ),
           onTap: _exporting ? null : _export,
         ),
         SettingsRow(
           icon: Icons.list_alt_outlined,
-          iconColor: amber,
           title: 'Export manga list',
           subtitle: 'CSV of titles, progress, genres, and sources',
           trailing: _exportingList
@@ -2428,13 +2391,12 @@ class _DataSectionState extends ConsumerState<_DataSection> {
               : _TintedActionChip(
                   label: 'CSV',
                   icon: Icons.ios_share_outlined,
-                  color: amber,
+                  color: c.accent,
                 ),
           onTap: _exportingList ? null : _exportMangaList,
         ),
         SettingsRow(
           icon: Icons.file_download_outlined,
-          iconColor: violet,
           title: 'Import',
           subtitle: 'Koma JSON, Mihon .tachibk/.tachibak, or Mangayomi .backup',
           trailing: _importing
@@ -2446,7 +2408,7 @@ class _DataSectionState extends ConsumerState<_DataSection> {
               : _TintedActionChip(
                   label: 'Import',
                   icon: Icons.upload_outlined,
-                  color: violet,
+                  color: c.accent,
                 ),
           onTap: _importing ? null : _import,
         ),
@@ -2642,7 +2604,6 @@ class _AnnasArchiveKeysSectionState extends State<_AnnasArchiveKeysSection> {
     final c = context.colors;
     return SettingsSection(
       title: "Anna's Archive",
-      headerColor: AppColors.figmaCyan,
       padding: const EdgeInsets.symmetric(horizontal: 16),
       footer:
           "Optional RapidAPI key enables hosted search and mirror lookup (100 free requests/month). "
@@ -2726,7 +2687,6 @@ class _SourcesSectionState extends ConsumerState<_SourcesSection> {
     if (_error != null) {
       return SettingsSection(
         title: 'Ebook sources',
-        headerColor: AppColors.figmaCyan,
         padding: const EdgeInsets.symmetric(horizontal: 16),
         children: [
           Padding(
@@ -2741,7 +2701,6 @@ class _SourcesSectionState extends ConsumerState<_SourcesSection> {
     }
     return SettingsSection(
       title: 'Ebook sources',
-      headerColor: AppColors.figmaCyan,
       padding: const EdgeInsets.symmetric(horizontal: 16),
       footer:
           'Discover searches all enabled sources. You can add multiple entries with the same tag (e.g. several LibGen mirrors or Anna\'s Archive rows with different language filters).',
@@ -2754,7 +2713,7 @@ class _SourcesSectionState extends ConsumerState<_SourcesSection> {
             onEdit: () => _edit(s),
           ),
         ),
-        SettingsRow(icon: Icons.add, iconColor: AppColors.figmaCyan, title: 'Add source', onTap: _add),
+        SettingsRow(icon: Icons.add, title: 'Add source', onTap: _add),
       ],
     );
   }
@@ -2919,7 +2878,6 @@ class _SourceRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final c = context.colors;
-    const cyan = AppColors.figmaCyan;
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
       child: Row(
@@ -2928,10 +2886,10 @@ class _SourceRow extends StatelessWidget {
             width: 40,
             height: 40,
             decoration: BoxDecoration(
-              color: cyan.withValues(alpha: 0.13),
+              color: c.accent.withValues(alpha: 0.13),
               borderRadius: AppSpacing.brMd,
             ),
-            child: const Icon(Icons.language, size: 18, color: cyan),
+            child: Icon(Icons.language, size: 18, color: c.accent),
           ),
           const SizedBox(width: 12),
           Expanded(
@@ -2964,13 +2922,13 @@ class _SourceRow extends StatelessWidget {
                         vertical: 2,
                       ),
                       decoration: BoxDecoration(
-                        color: cyan.withValues(alpha: 0.13),
+                        color: c.accent.withValues(alpha: 0.13),
                         borderRadius: BorderRadius.circular(4),
                       ),
                       child: Text(
                         source.tag.toUpperCase(),
-                        style: const TextStyle(
-                          color: cyan,
+                        style: TextStyle(
+                          color: c.accent,
                           fontSize: 9,
                           fontWeight: FontWeight.w700,
                         ),
@@ -3004,14 +2962,12 @@ class _PluginsSection extends ConsumerWidget {
     final updateCount = ref.watch(extensionUpdateCountProvider);
     return SettingsSection(
       title: 'Plugins',
-      headerColor: AppColors.figmaCyan,
       padding: const EdgeInsets.symmetric(horizontal: 16),
       footer:
           'Plugins extend Koma with new sources via Keiyoushi/Mihon extension APKs. Add a repo, fetch its index, and install the ones you want.',
       children: [
         SettingsRow(
           icon: Icons.extension_outlined,
-          iconColor: AppColors.figmaCyan,
           title: 'Manage plugins',
           subtitle: updateCount > 0
               ? 'Browse, install, and remove extensions · $updateCount update${updateCount == 1 ? '' : 's'} available'
@@ -3048,7 +3004,6 @@ class _PluginsSection extends ConsumerWidget {
         ),
         SettingsRow(
           icon: Icons.code,
-          iconColor: AppColors.figmaCyan,
           title: 'Plugin SDK',
           subtitle: 'Write sources for any site — starters & samples',
           trailing: const Icon(Icons.chevron_right, size: 18),
@@ -3191,14 +3146,12 @@ class _HttpNetworkSectionState extends State<_HttpNetworkSection> {
     }
     return SettingsSection(
       title: 'HTTP',
-      headerColor: AppColors.figmaViolet,
       padding: const EdgeInsets.symmetric(horizontal: 16),
       footer:
           'DoH resolves hostnames via DNS-over-HTTPS. CF proxy URL is tried before the in-app WebView solver (FlareSolverr / Byparr: http://host:8191). Per-source User-Agent overrides apply to all extension HTTP.',
       children: [
         SettingsRow(
           icon: Icons.dns_outlined,
-          iconColor: AppColors.figmaViolet,
           title: 'DNS-over-HTTPS',
           subtitle: 'Resolve hostnames via DoH instead of system DNS',
           trailing: Switch.adaptive(
@@ -3871,11 +3824,11 @@ class _AboutSection extends ConsumerWidget {
           loading: () => 'Version …',
           error: (_, _) => 'Version',
         );
-    const features = <(IconData, String, Color)>[
-      (Icons.menu_book_outlined, 'EPUB reading', AppColors.figmaViolet),
-      (Icons.extension_outlined, 'Manga plugins', AppColors.figmaAmber),
-      (Icons.bolt, 'Bionic reading', Color(0xFFEF4444)),
-      (Icons.shield_outlined, 'Local-first / offline', AppColors.figmaGreen),
+    final features = <(IconData, String, Color)>[
+      (Icons.menu_book_outlined, 'EPUB reading', c.accent),
+      (Icons.extension_outlined, 'Manga plugins', c.accent),
+      (Icons.bolt, 'Bionic reading', c.accent),
+      (Icons.shield_outlined, 'Local-first / offline', c.accent),
     ];
     return Column(
       children: [
@@ -3909,11 +3862,11 @@ class _AboutSection extends ConsumerWidget {
                     'app_icons/hon.png',
                     fit: BoxFit.cover,
                     errorBuilder: (_, error, stackTrace) => Container(
-                      decoration: const BoxDecoration(
+                      decoration: BoxDecoration(
                         gradient: LinearGradient(
                           begin: Alignment.topLeft,
                           end: Alignment.bottomRight,
-                          colors: [AppColors.figmaViolet, AppColors.figmaCyan],
+                          colors: [c.accent, c.accentMuted],
                         ),
                       ),
                       child: const Icon(

@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import '../theme/app_theme.dart';
 import '../theme/tokens/app_spacing.dart';
 import 'animated_press.dart';
+import 'library_book_card.dart';
 
 /// Cover descriptors for the fan stack (resolved by the caller).
 class GroupCoverSlot {
@@ -13,18 +14,22 @@ class GroupCoverSlot {
     required this.memberKey,
     this.image,
     this.readingOrder,
+    this.badge,
   });
 
   final String title;
   final String memberKey;
   final ImageProvider? image;
   final int? readingOrder;
+
+  /// Optional source / type pill on the front cover (respects badge settings).
+  final String? badge;
 }
 
 /// Fanned stack of covers used as a single library card for a group.
 ///
-/// Set [listLayout] inside vertical lists (unbounded height). Grid cells keep
-/// the default so the fan can [Expanded] into the tile.
+/// Honors [variant] (grid / list / compact / overlay / coverOnly) and
+/// [minimalChrome] the same way catalog cards do.
 class LibraryGroupStackCard extends StatelessWidget {
   const LibraryGroupStackCard({
     super.key,
@@ -37,6 +42,9 @@ class LibraryGroupStackCard extends StatelessWidget {
     this.maxVisible = 4,
     this.enableHero = true,
     this.listLayout = false,
+    this.variant = LibraryCardVariant.grid,
+    this.minimalChrome = false,
+    this.showSourcePills = true,
   });
 
   final int groupId;
@@ -48,18 +56,29 @@ class LibraryGroupStackCard extends StatelessWidget {
   final int maxVisible;
   final bool enableHero;
   final bool listLayout;
+  final LibraryCardVariant variant;
+  final bool minimalChrome;
+  final bool showSourcePills;
 
   static String coverHeroTag(int groupId, String memberKey) =>
       'library-group-$groupId-$memberKey';
+
+  bool get _isList => listLayout || variant == LibraryCardVariant.list;
+  bool get _showTitle => variant != LibraryCardVariant.coverOnly;
+  bool get _overlayTitle =>
+      variant == LibraryCardVariant.overlay ||
+      variant == LibraryCardVariant.coverOnly;
+  bool get _showBadges => !minimalChrome;
+  bool get _showSource => _showBadges && showSourcePills;
 
   @override
   Widget build(BuildContext context) {
     final c = context.colors;
     final visible = covers.take(maxVisible).toList();
     final count = memberCount > 0 ? memberCount : covers.length;
+    final frontBadge = _frontBadge(visible);
 
-    if (listLayout) {
-      // Compact row for library list shelves — no grey chrome; same fan as grid.
+    if (_isList) {
       return AnimatedPress(
         onTap: onTap,
         onLongPress: onLongPress,
@@ -78,6 +97,8 @@ class LibraryGroupStackCard extends StatelessWidget {
                   width: 88,
                   height: 110,
                   enableHero: enableHero,
+                  showReadingOrder: _showBadges,
+                  sourceBadge: _showSource ? frontBadge : null,
                 ),
               ),
               const SizedBox(width: 14),
@@ -118,55 +139,127 @@ class LibraryGroupStackCard extends StatelessWidget {
       );
     }
 
+    final titleStyle = TextStyle(
+      color: _overlayTitle ? Colors.white : c.textPrimary,
+      fontSize: variant == LibraryCardVariant.compact ? 11 : 13,
+      fontWeight: FontWeight.w600,
+      height: variant == LibraryCardVariant.compact ? 1.15 : 1.2,
+      letterSpacing: -0.1,
+      decoration: TextDecoration.none,
+      shadows: _overlayTitle
+          ? const [
+              Shadow(
+                blurRadius: 4,
+                color: Colors.black54,
+                offset: Offset(0, 1),
+              ),
+            ]
+          : null,
+    );
+    final subtitleStyle = TextStyle(
+      color: _overlayTitle
+          ? Colors.white.withValues(alpha: 0.85)
+          : c.textSecondary,
+      fontSize: variant == LibraryCardVariant.compact ? 10 : 11,
+      decoration: TextDecoration.none,
+    );
+
+    final fan = LayoutBuilder(
+      builder: (context, constraints) {
+        return _FanStack(
+          groupId: groupId,
+          covers: visible,
+          colors: c,
+          width: constraints.maxWidth,
+          height: constraints.maxHeight,
+          enableHero: enableHero,
+          showReadingOrder: _showBadges,
+          sourceBadge: _showSource ? frontBadge : null,
+        );
+      },
+    );
+
     return AnimatedPress(
       onTap: onTap,
       onLongPress: onLongPress,
       scaleDown: 0.97,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Expanded(
-            child: LayoutBuilder(
-              builder: (context, constraints) {
-                return _FanStack(
-                  groupId: groupId,
-                  covers: visible,
-                  colors: c,
-                  width: constraints.maxWidth,
-                  height: constraints.maxHeight,
-                  enableHero: enableHero,
-                );
-              },
+      child: _overlayTitle
+          ? ClipRRect(
+              borderRadius: AppSpacing.brMd,
+              child: Stack(
+                fit: StackFit.expand,
+                children: [
+                  fan,
+                  if (_showTitle)
+                    const DecoratedBox(
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          begin: Alignment.bottomCenter,
+                          end: Alignment.topCenter,
+                          colors: [
+                            Color(0xBF000000),
+                            Color(0x59000000),
+                            Color(0x00000000),
+                          ],
+                          stops: [0.0, 0.35, 1.0],
+                        ),
+                      ),
+                    ),
+                  if (_showTitle)
+                    Positioned(
+                      left: 8,
+                      right: 8,
+                      bottom: 8,
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(
+                            name,
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            style: titleStyle,
+                          ),
+                          const SizedBox(height: 2),
+                          Text('$count titles', style: subtitleStyle),
+                        ],
+                      ),
+                    ),
+                ],
+              ),
+            )
+          : Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(child: fan),
+                if (_showTitle) ...[
+                  SizedBox(
+                    height: variant == LibraryCardVariant.compact ? 4 : 6,
+                  ),
+                  Text(
+                    name,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: titleStyle,
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    '$count titles',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: subtitleStyle,
+                  ),
+                ],
+              ],
             ),
-          ),
-          const SizedBox(height: 6),
-          Text(
-            name,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: TextStyle(
-              color: c.textPrimary,
-              fontSize: 13,
-              fontWeight: FontWeight.w600,
-              height: 1.2,
-              letterSpacing: -0.1,
-              decoration: TextDecoration.none,
-            ),
-          ),
-          const SizedBox(height: 2),
-          Text(
-            '$count titles',
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: TextStyle(
-              color: c.textSecondary,
-              fontSize: 11,
-              decoration: TextDecoration.none,
-            ),
-          ),
-        ],
-      ),
     );
+  }
+
+  String? _frontBadge(List<GroupCoverSlot> visible) {
+    if (visible.isEmpty) return null;
+    final badge = visible.first.badge?.trim();
+    if (badge == null || badge.isEmpty) return null;
+    return badge;
   }
 }
 
@@ -178,6 +271,8 @@ class _FanStack extends StatelessWidget {
     required this.width,
     required this.height,
     required this.enableHero,
+    required this.showReadingOrder,
+    this.sourceBadge,
   });
 
   final int groupId;
@@ -186,6 +281,8 @@ class _FanStack extends StatelessWidget {
   final double width;
   final double height;
   final bool enableHero;
+  final bool showReadingOrder;
+  final String? sourceBadge;
 
   @override
   Widget build(BuildContext context) {
@@ -202,7 +299,6 @@ class _FanStack extends StatelessWidget {
     }
 
     final n = covers.length;
-    // Reserve horizontal room so peeks stay inside the grid cell.
     final spread = math.min(width * 0.14, 18.0);
     final coverW = math.max(width - spread * (n - 1), width * 0.62);
     final coverH = math.min(
@@ -210,7 +306,6 @@ class _FanStack extends StatelessWidget {
       coverW / AppSpacing.coverAspectRatio,
     );
 
-    // Draw back → front so index 0 (reading order) sits on top.
     return Stack(
       clipBehavior: Clip.none,
       alignment: Alignment.bottomLeft,
@@ -226,6 +321,8 @@ class _FanStack extends StatelessWidget {
             spread: spread,
             colors: colors,
             enableHero: enableHero,
+            showReadingOrder: showReadingOrder,
+            sourceBadge: i == 0 ? sourceBadge : null,
           ),
       ],
     );
@@ -243,6 +340,8 @@ class _FanCover extends StatelessWidget {
     required this.spread,
     required this.colors,
     required this.enableHero,
+    required this.showReadingOrder,
+    this.sourceBadge,
   });
 
   final int groupId;
@@ -254,6 +353,8 @@ class _FanCover extends StatelessWidget {
   final double spread;
   final KomaColors colors;
   final bool enableHero;
+  final bool showReadingOrder;
+  final String? sourceBadge;
 
   @override
   Widget build(BuildContext context) {
@@ -283,11 +384,32 @@ class _FanCover extends StatelessWidget {
             fit: StackFit.expand,
             children: [
               _coverFace(cover),
-              if (index == 0 && cover.readingOrder != null)
+              if (index == 0 &&
+                  showReadingOrder &&
+                  cover.readingOrder != null)
                 Positioned(
                   top: 6,
                   left: 6,
                   child: ReadingOrderPill(order: cover.readingOrder!),
+                ),
+              if (index == 0 &&
+                  sourceBadge != null &&
+                  sourceBadge!.isNotEmpty &&
+                  !(showReadingOrder && cover.readingOrder != null))
+                Positioned(
+                  top: 6,
+                  left: 6,
+                  child: _SourcePill(label: sourceBadge!),
+                ),
+              if (index == 0 &&
+                  sourceBadge != null &&
+                  sourceBadge!.isNotEmpty &&
+                  showReadingOrder &&
+                  cover.readingOrder != null)
+                Positioned(
+                  top: 6,
+                  right: 6,
+                  child: _SourcePill(label: sourceBadge!),
                 ),
             ],
           ),
@@ -352,6 +474,34 @@ class _FanCover extends StatelessWidget {
             fontWeight: FontWeight.w600,
             decoration: TextDecoration.none,
           ),
+        ),
+      ),
+    );
+  }
+}
+
+class _SourcePill extends StatelessWidget {
+  const _SourcePill({required this.label});
+
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+      decoration: BoxDecoration(
+        color: Colors.black.withValues(alpha: 0.7),
+        borderRadius: AppSpacing.brPill,
+      ),
+      child: Text(
+        label,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: const TextStyle(
+          color: Colors.white,
+          fontSize: 10,
+          fontWeight: FontWeight.w600,
+          decoration: TextDecoration.none,
         ),
       ),
     );

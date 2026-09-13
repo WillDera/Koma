@@ -39,7 +39,7 @@ class SettingsSection extends StatelessWidget {
               child: Text(
                 title.toUpperCase(),
                 style: TextStyle(
-                  color: headerColor ?? c.textTertiary,
+                  color: headerColor ?? c.accent,
                   fontSize: 11,
                   fontWeight: FontWeight.w600,
                   letterSpacing: 0.8,

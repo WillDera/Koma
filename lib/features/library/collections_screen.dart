@@ -11,6 +11,7 @@ import '../../router/book_navigation.dart';
 import '../../router/router.dart';
 import '../../theme/app_icons.dart';
 import '../../theme/app_theme.dart';
+import '../../widgets/catalog_card_layout.dart';
 import '../../widgets/empty_state.dart';
 import '../../widgets/icon_button_round.dart';
 import '../../widgets/library_group_stack_card.dart';
@@ -194,6 +195,11 @@ class _CollectionsScreenState extends ConsumerState<CollectionsScreen> {
                             name: g.name,
                             memberCount: g.members.length,
                             covers: _covers(g, library),
+                            variant: CatalogCardLayout.gridVariant(
+                              library.cardVariant,
+                            ),
+                            minimalChrome: library.minimalCards,
+                            showSourcePills: library.showCardChrome,
                             onTap: () => showLibraryGroupModal(
                               context: context,
                               ref: ref,
@@ -234,6 +240,7 @@ class _CollectionsScreenState extends ConsumerState<CollectionsScreen> {
         final book = booksById[m.itemId];
         if (book == null) continue;
         final path = book.coverPath;
+        final ext = book.fileExtension.trim();
         slots.add(
           GroupCoverSlot(
             title: book.title,
@@ -242,6 +249,7 @@ class _CollectionsScreenState extends ConsumerState<CollectionsScreen> {
             image: path != null && path.isNotEmpty && File(path).existsSync()
                 ? FileImage(File(path))
                 : null,
+            badge: ext.isNotEmpty ? ext.toUpperCase() : null,
           ),
         );
       } else {
@@ -260,6 +268,9 @@ class _CollectionsScreenState extends ConsumerState<CollectionsScreen> {
             memberKey: m.memberKey,
             readingOrder: m.readingOrder,
             image: image,
+            badge: library.isNovelManga(manga)
+                ? 'Novel'
+                : (library.extensionNames[manga.sourceId] ?? manga.sourceId),
           ),
         );
       }
