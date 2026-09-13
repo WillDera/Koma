@@ -9,9 +9,12 @@ void main() {
     const padding = EdgeInsets.fromLTRB(0, 47, 0, 24);
     final inset = readerVerticalChromeInset(padding);
     expect(inset, padding.top + ReaderTopBar.bodyHeight);
-    expect(inset, greaterThanOrEqualTo(padding.bottom + ReaderBottomBar.bodyHeight));
-    expect(ReaderTopBar.bodyHeight, 50);
-    expect(ReaderBottomBar.bodyHeight, 56);
+    expect(
+      inset,
+      greaterThanOrEqualTo(padding.bottom + ReaderBottomBar.bodyHeight),
+    );
+    expect(ReaderTopBar.bodyHeight, 56);
+    expect(ReaderBottomBar.bodyHeight, 72);
   });
 
   test('a taller bottom inset wins', () {

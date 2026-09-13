@@ -28,6 +28,11 @@ android {
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
         versionName = flutter.versionName
+        // Sideload / GitHub release APKs: arm64 only. Covers essentially all
+        // phones from ~2019+. Comment out to debug on x86_64 emulators.
+        ndk {
+            abiFilters += listOf("arm64-v8a")
+        }
     }
 
     signingConfigs {
@@ -60,8 +65,12 @@ android {
             } else {
                 signingConfig = signingConfigs.getByName("debug")
             }
-            isMinifyEnabled = false
-            isShrinkResources = false
+            isMinifyEnabled = true
+            isShrinkResources = true
+            proguardFiles(
+                getDefaultProguardFile("proguard-android-optimize.txt"),
+                "proguard-rules.pro",
+            )
         }
     }
 
@@ -69,6 +78,10 @@ android {
         jniLibs {
             pickFirsts += listOf(
                 "**/libc++_shared.so",
+            )
+            // Vulkan validation is a debug engine artifact; never ship it.
+            excludes += setOf(
+                "**/libVkLayer_khronos_validation.so",
             )
         }
         resources {

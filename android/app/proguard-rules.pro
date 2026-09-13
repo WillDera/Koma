@@ -20,9 +20,16 @@
 -keepclassmembers,allowobfuscation class * {
     @javax.inject.Inject <init>(...);
 }
+# Flutter Rust Bridge / JNI entry points
+-keep class com.flutter_rust_bridge.** { *; }
+-keep class dev.fluttercommunity.** { *; }
+-keepclasseswithmembernames class * {
+    native <methods>;
+}
 -dontwarn kotlinx.serialization.**
 -dontwarn okhttp3.**
 -dontwarn okio.**
 -dontwarn org.jsoup.**
 -dontwarn io.reactivex.**
 -dontwarn rx.**
+-dontwarn com.flutter_rust_bridge.**

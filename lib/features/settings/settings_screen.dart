@@ -3859,7 +3859,7 @@ class _AboutSection extends ConsumerWidget {
                   ),
                   clipBehavior: Clip.antiAlias,
                   child: Image.asset(
-                    'app_icons/hon.png',
+                    'assets/branding/hon.png',
                     fit: BoxFit.cover,
                     errorBuilder: (_, error, stackTrace) => Container(
                       decoration: BoxDecoration(

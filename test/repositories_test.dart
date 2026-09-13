@@ -12,29 +12,43 @@ import 'package:koma/core/models/manga_chapter.dart';
 import 'package:koma/core/repositories/book_repository.dart';
 import 'package:koma/core/repositories/manga_repository.dart';
 import 'package:koma/core/repositories/snippet_repository.dart';
+import 'package:path_provider_platform_interface/path_provider_platform_interface.dart';
 
 /// Point Isar at the macOS dylib shipped in isar_community_flutter_libs.
 Future<void> _initIsarCore() async {
-  final home = Platform.environment['HOME']!;
+  final cacheRoot = Platform.environment['PUB_CACHE'] ??
+      '${Platform.environment['HOME']}/.pub-cache';
   final dylib = File(
-    '$home/.pub-cache/hosted/pub.dev/'
+    '$cacheRoot/hosted/pub.dev/'
     'isar_community_flutter_libs-3.3.2/macos/libisar.dylib',
   );
   await Isar.initializeIsarCore(libraries: {Abi.current(): dylib.path});
+}
+
+class _FakePathProvider extends PathProviderPlatform {
+  _FakePathProvider(this.docs);
+  final String docs;
+
+  @override
+  Future<String?> getApplicationDocumentsPath() async => docs;
 }
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
   late Isar isar;
+  late Directory tmp;
 
   setUp(() async {
+    tmp = await Directory.systemTemp.createTemp('koma_repo_');
+    PathProviderPlatform.instance = _FakePathProvider(tmp.path);
     await _initIsarCore();
     isar = await openIsarInMemory();
   });
 
   tearDown(() async {
     await isar.close(deleteFromDisk: true);
+    if (await tmp.exists()) await tmp.delete(recursive: true);
   });
 
   group('BookRepository', () {

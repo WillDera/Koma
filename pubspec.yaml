@@ -1,7 +1,7 @@
 name: koma
 description: "A hybrid reader + knowledge snippet manager."
 publish_to: 'none'
-version: 2.58.1+396
+version: 2.59.0+397
 
 environment:
   sdk: ^3.12.2
@@ -11,7 +11,6 @@ dependencies:
   flutter:
     sdk: flutter
   scrollable_positioned_list: ^0.3.8
-  cupertino_icons: ^1.0.8
   # Data layer (Isar — Drift retired, see PHASE 11).
   isar_community: ^3.3.2
   isar_community_flutter_libs: ^3.3.2
@@ -38,7 +37,6 @@ dependencies:
   flutter_markdown: ^0.7.6
   google_fonts: ^8.1.0
   kindle_unpack: ^0.1.1
-  flutter_launcher_icons: ^0.14.4
   flutter_tts: ^4.2.5
   just_audio: ^0.9.43
   # Routing (replacing raw Navigator.push — see PHASE 3).
@@ -57,9 +55,7 @@ dependencies:
     git:
       url: https://github.com/kodjodevf/flutter_qjs.git
       ref: main
-  # Native C++ build hook (PHASE 5 spike — verifies native_toolchain_c works
-  # on our pinned JDK 25 / AGP 8.7.3 toolchain before the full
-  # subsampling_scale_image_view port).
+  # Native C++ build hook (image decoder for SubsamplingScaleImageView).
   code_assets: ^1.2.1
   hooks: ^2.0.2
   native_toolchain_c: ^0.19.2
@@ -74,9 +70,9 @@ dependencies:
     path: rust_builder
   flutter_rust_bridge: 2.12.0
 
-  extended_image_library: any
-  http_client_helper: any
-  image: any
+  extended_image_library: ^5.0.1
+  http_client_helper: ^3.0.0
+  image: ^4.8.0
   archive: ^4.0.7
   wakelock_plus: ^1.5.2
   url_launcher: ^6.3.2
@@ -103,6 +99,7 @@ dev_dependencies:
       ref: v3
   freezed: ^3.2.3
   path_provider_platform_interface: ^2.1.3
+  flutter_launcher_icons: ^0.14.4
 
 # kindle_unpack 0.1.1 still pins archive ^3.6.1; epub_pro needs archive 4.
 dependency_overrides:
@@ -114,7 +111,9 @@ dependency_overrides:
 flutter:
   uses-material-design: true
   assets:
-    - app_icons/
+    # Only runtime-needed brand art. Launcher/splash sources stay in app_icons/
+    # for flutter_launcher_icons / flutter_native_splash — not shipped in the APK.
+    - assets/branding/
     - assets/trackers/
 
 # Adaptive icons need a separate FG/BG. Using a pre-rounded PNG alone makes

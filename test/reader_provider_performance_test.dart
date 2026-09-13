@@ -4,11 +4,16 @@ import 'package:koma/core/models/book.dart';
 import 'package:koma/core/models/chapter.dart';
 import 'package:koma/core/providers.dart';
 import 'package:koma/features/reader/reader_provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import 'helpers/test_database.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
+
+  setUp(() {
+    SharedPreferences.setMockInitialValues({});
+  });
 
   Future<({ProviderContainer container, int chapterId})> createReader() async {
     final repositories = await createTestRepositories();
