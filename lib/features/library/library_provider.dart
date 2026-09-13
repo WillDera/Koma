@@ -45,6 +45,7 @@ class LibraryState {
     this.showUnreadBadge = true,
     this.showContinueButton = false,
     this.extensionNames = const {},
+    this.extensionItemTypes = const {},
     this.newChapters = const {},
   });
 
@@ -67,10 +68,27 @@ class LibraryState {
   final bool showContinueButton;
   final Map<String, String> extensionNames;
 
+  /// sourceId / extension id → `manga` / `anime` / `novel`.
+  final Map<String, String> extensionItemTypes;
+
   /// mangaId → count of unopened (new) chapters. Populated by loadBooks.
   final Map<int, int> newChapters;
 
   int get totalNewChapters => newChapters.values.fold(0, (a, b) => a + b);
+
+  /// Web-novel sources (Mangayomi itemType 2) — shown on the Books shelf.
+  bool isNovelSource(String sourceId) {
+    final t = (extensionItemTypes[sourceId] ?? '').toLowerCase();
+    return t == 'novel';
+  }
+
+  bool isNovelManga(Manga m) => isNovelSource(m.sourceId);
+
+  List<Manga> get novelMangas =>
+      mangas.where(isNovelManga).toList(growable: false);
+
+  List<Manga> get comicMangas =>
+      mangas.where((m) => !isNovelManga(m)).toList(growable: false);
 
   /// Member keys currently assigned to any group.
   Set<String> get groupedMemberKeys => {
@@ -95,6 +113,7 @@ class LibraryState {
     bool? showUnreadBadge,
     bool? showContinueButton,
     Map<String, String>? extensionNames,
+    Map<String, String>? extensionItemTypes,
     Map<int, int>? newChapters,
   }) {
     return LibraryState(
@@ -114,6 +133,7 @@ class LibraryState {
       showUnreadBadge: showUnreadBadge ?? this.showUnreadBadge,
       showContinueButton: showContinueButton ?? this.showContinueButton,
       extensionNames: extensionNames ?? this.extensionNames,
+      extensionItemTypes: extensionItemTypes ?? this.extensionItemTypes,
       newChapters: newChapters ?? this.newChapters,
     );
   }
@@ -224,8 +244,14 @@ class LibraryNotifier extends Notifier<LibraryState> {
       final extNames = <String, String>{
         LocalCbzSource.sourceId: LocalCbzSource.displayName,
       };
+      final extTypes = <String, String>{};
       final extensions = await repos.extensions.getInstalledExtensions();
       for (final ext in extensions) {
+        final type = ext.itemType.trim().toLowerCase();
+        if (type.isNotEmpty) {
+          if (ext.sourceId.isNotEmpty) extTypes[ext.sourceId] = type;
+          if (ext.id.isNotEmpty) extTypes[ext.id] = type;
+        }
         if (ext.name.isEmpty) continue;
         // Manga.sourceId may be the bridge hex id OR Mihon Source.id.
         if (ext.sourceId.isNotEmpty) extNames[ext.sourceId] = ext.name;
@@ -238,6 +264,7 @@ class LibraryNotifier extends Notifier<LibraryState> {
         categories: categories,
         groups: groups,
         extensionNames: extNames,
+        extensionItemTypes: extTypes,
         newChapters: newChapters,
         loading: false,
       );
@@ -319,7 +346,11 @@ class LibraryNotifier extends Notifier<LibraryState> {
     state = state.copyWith(selectedIds: {}, selectionMode: false);
   }
 
-  void selectAll({bool books = true, bool mangas = true}) {
+  void selectAll({
+    bool books = true,
+    bool mangas = true,
+    bool novels = true,
+  }) {
     final grouped = state.groupedMemberKeys;
     final ids = <String>{};
     if (books) {
@@ -329,7 +360,13 @@ class LibraryNotifier extends Notifier<LibraryState> {
       }
     }
     if (mangas) {
-      for (final manga in state.mangas) {
+      for (final manga in state.comicMangas) {
+        final key = 'm:${manga.id}';
+        if (!grouped.contains(key)) ids.add(key);
+      }
+    }
+    if (novels) {
+      for (final manga in state.novelMangas) {
         final key = 'm:${manga.id}';
         if (!grouped.contains(key)) ids.add(key);
       }

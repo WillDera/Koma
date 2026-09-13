@@ -446,12 +446,12 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> with RouteAware {
                     ? 'Books'
                     : 'Manga',
                 countLabel: _viewAllSection == _LibrarySection.books
-                    ? '${_visibleBooks(provider).length} titles'
+                    ? '${_visibleBooks(provider).length + _visibleNovels(provider).length} titles'
                     : '${_visibleMangas(provider).length} titles',
                 onBack: _backToRails,
               ),
             ),
-            if (_viewAllSection == _LibrarySection.books)
+            if (_viewAllSection == _LibrarySection.books) ...[
               _BookShelf(
                 key: const ValueKey('books-shelf'),
                 books: _visibleBooks(provider),
@@ -463,8 +463,25 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> with RouteAware {
                 onOpen: (id) => openBookFromCollection(context, id),
                 onBookLongPress: _showBookActions,
                 onOpenGroup: (g) => _openGroup(context, g),
-              )
-            else ...[
+                emptyWhenNoNovels: _visibleNovels(provider).isEmpty,
+              ),
+              if (_visibleNovels(provider).isNotEmpty)
+                _MangaShelf(
+                  key: const ValueKey('novels-shelf'),
+                  mangas: _visibleNovels(provider),
+                  groups: const [],
+                  provider: provider,
+                  notifier: ref.read(libraryProvider.notifier),
+                  extensionNames: provider.extensionNames,
+                  mangaThumbnails: _mangaThumbnails,
+                  showSourcePills: provider.showSourcePills,
+                  formatBadge: 'Novel',
+                  emptyTitle: 'No novels found',
+                  emptySubtitle: 'Try another title, author, source, or tag.',
+                  onOpen: (manga) => _openManga(context, manga),
+                  onOpenGroup: (g) => _openGroup(context, g),
+                ),
+            ] else ...[
               if (_mangaSearchCtrl.text.trim().isNotEmpty)
                 SliverToBoxAdapter(
                   child: Padding(
@@ -519,6 +536,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> with RouteAware {
     LibraryState provider,
   ) {
     final books = _visibleBooks(provider);
+    final novels = _visibleNovels(provider);
     final mangas = _visibleMangas(provider);
     final groups = [
       ..._visibleBookGroups(provider),
@@ -562,6 +580,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> with RouteAware {
               }
               final row = item.manga!;
               final manga = row.manga;
+              final isNovel = provider.isNovelManga(manga);
               return MediaRailCover(
                 width: 118,
                 child: StaggeredFadeScale(
@@ -571,6 +590,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> with RouteAware {
                     subtitle: '${(row.progress * 100).round()}% · Resume',
                     imageProvider: _mangaCoverProvider(manga),
                     imageUrl: manga.imageUrl,
+                    formatBadge: isNovel ? 'Novel' : null,
                     variant: LibraryCardVariant.grid,
                     onTap: () => _openManga(context, manga),
                   ),
@@ -582,26 +602,51 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> with RouteAware {
       );
     }
 
-    if (books.isNotEmpty) {
-      final preview = books.take(12).toList();
+    if (books.isNotEmpty || novels.isNotEmpty) {
+      final preview = <Object>[
+        ...books.take(12),
+        ...novels.take(12 - books.take(12).length),
+      ];
+      final textCount = books.length + novels.length;
       slivers.add(
         SliverToBoxAdapter(
           child: MediaRail(
             title: 'Books',
-            subtitle: '${books.length} titles',
+            subtitle: novels.isEmpty
+                ? '$textCount titles'
+                : '${books.length} files · ${novels.length} novels',
             onViewAll: () => _openViewAll(_LibrarySection.books),
             itemCount: preview.length,
             itemBuilder: (context, i) {
-              final book = preview[i];
+              final item = preview[i];
+              if (item is Book) {
+                final ext = item.fileExtension.trim();
+                return MediaRailCover(
+                  child: StaggeredFadeScale(
+                    index: i,
+                    child: CatalogCoverCard(
+                      title: item.title,
+                      subtitle: item.author,
+                      imageProvider: _bookCoverProvider(item),
+                      formatBadge: ext.isNotEmpty ? ext.toUpperCase() : null,
+                      variant: LibraryCardVariant.grid,
+                      onTap: () => openBookFromCollection(context, item.id),
+                    ),
+                  ),
+                );
+              }
+              final manga = item as Manga;
               return MediaRailCover(
                 child: StaggeredFadeScale(
                   index: i,
                   child: CatalogCoverCard(
-                    title: book.title,
-                    subtitle: book.author,
-                    imageProvider: _bookCoverProvider(book),
+                    title: manga.name,
+                    subtitle: manga.author,
+                    imageProvider: _mangaCoverProvider(manga),
+                    imageUrl: manga.imageUrl,
+                    formatBadge: 'Novel',
                     variant: LibraryCardVariant.grid,
-                    onTap: () => openBookFromCollection(context, book.id),
+                    onTap: () => _openManga(context, manga),
                   ),
                 ),
               );
@@ -823,10 +868,10 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> with RouteAware {
     return LibraryHeader(
       title: ref.watch(userProfileProvider).libraryTitle,
       subtitle: _viewAllSection == null
-          ? '${provider.books.length} books · ${provider.mangas.length} manga'
+          ? _libraryHomeSubtitle(provider)
           : (_viewAllSection == _LibrarySection.books
-              ? '${provider.books.length} books'
-              : '${provider.mangas.length} manga'),
+              ? _booksSectionSubtitle(provider)
+              : '${provider.comicMangas.length} manga'),
       titleFontSize: 28,
       titleFontWeight: FontWeight.w600,
       onTitleLongPress: () => openHiddenLibrary(context, ref),
@@ -979,7 +1024,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> with RouteAware {
 
   List<Manga> _visibleMangas(LibraryState provider) {
     final grouped = provider.groupedMemberKeys;
-    final mangas = provider.mangas
+    final mangas = provider.comicMangas
         .where((m) => !grouped.contains('m:${m.id}'))
         .toList();
     final query = _mangaSearchCtrl.text.trim().toLowerCase();
@@ -1024,6 +1069,50 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> with RouteAware {
     return filtered;
   }
 
+  /// Web novels (itemType novel) share the Books shelf with file ebooks.
+  List<Manga> _visibleNovels(LibraryState provider) {
+    final grouped = provider.groupedMemberKeys;
+    final novels = provider.novelMangas
+        .where((m) => !grouped.contains('m:${m.id}'))
+        .toList();
+    final query = _bookSearchCtrl.text.trim().toLowerCase();
+    final searched = query.isEmpty
+        ? novels.toList()
+        : novels.where((manga) {
+            final haystack = [
+              manga.name,
+              manga.author ?? '',
+              manga.artist ?? '',
+              manga.sourceId,
+              provider.extensionNames[manga.sourceId] ?? '',
+              ...manga.genres,
+              ...manga.alternateTitles,
+            ].join(' ').toLowerCase();
+            return haystack.contains(query);
+          }).toList();
+    final filtered = searched
+        .where(
+          (manga) => _filters.entries.every(
+            (entry) =>
+                _matchesFilter(entry.value, _mangaMatches(manga, entry.key)),
+          ),
+        )
+        .toList();
+    filtered.sort(
+      (a, b) => switch (_sort) {
+        _LibrarySort.alphabetical => a.name.toLowerCase().compareTo(
+          b.name.toLowerCase(),
+        ),
+        _LibrarySort.author =>
+          (a.author ?? a.artist ?? '').toLowerCase().compareTo(
+            (b.author ?? b.artist ?? '').toLowerCase(),
+          ),
+        _LibrarySort.progress => b.readingStatus.compareTo(a.readingStatus),
+      },
+    );
+    return filtered;
+  }
+
   List<LibraryGroupInfo> _visibleBookGroups(LibraryState provider) {
     final q = _bookSearchCtrl.text.trim().toLowerCase();
     return provider.groups.where((g) {
@@ -1044,11 +1133,12 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> with RouteAware {
 
   /// Select-all scoped to the visible shelf (books / manga / both on home).
   void _selectAllInView(LibraryState provider) {
-    final includeBooks = _viewAllSection != _LibrarySection.manga;
-    final includeManga = _viewAllSection != _LibrarySection.books;
+    final onManga = _viewAllSection == _LibrarySection.manga;
+    final onBooks = _viewAllSection == _LibrarySection.books;
     ref.read(libraryProvider.notifier).selectAll(
-          books: includeBooks,
-          mangas: includeManga,
+          books: !onManga,
+          mangas: !onBooks,
+          novels: !onManga,
         );
   }
 
@@ -1693,6 +1783,24 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> with RouteAware {
 
 enum _LibrarySection { books, manga }
 
+String _libraryHomeSubtitle(LibraryState provider) {
+  final parts = <String>[
+    '${provider.books.length} books',
+  ];
+  if (provider.novelMangas.isNotEmpty) {
+    parts.add('${provider.novelMangas.length} novels');
+  }
+  parts.add('${provider.comicMangas.length} manga');
+  return parts.join(' · ');
+}
+
+String _booksSectionSubtitle(LibraryState provider) {
+  if (provider.novelMangas.isEmpty) {
+    return '${provider.books.length} books';
+  }
+  return '${provider.books.length} books · ${provider.novelMangas.length} novels';
+}
+
 enum _LibrarySort { alphabetical, author, progress }
 
 enum _LibraryFilter { unread, newlyAdded }
@@ -2122,6 +2230,9 @@ class _BookShelf extends StatelessWidget {
   final ValueChanged<LibraryGroupInfo> onOpenGroup;
   final bool showSourcePills;
 
+  /// When novels are also shown below this shelf, skip the empty state here.
+  final bool emptyWhenNoNovels;
+
   const _BookShelf({
     super.key,
     required this.books,
@@ -2133,6 +2244,7 @@ class _BookShelf extends StatelessWidget {
     required this.onBookLongPress,
     required this.onOpenGroup,
     this.showSourcePills = true,
+    this.emptyWhenNoNovels = true,
   });
 
   int get _total => groups.length + books.length;
@@ -2140,6 +2252,9 @@ class _BookShelf extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (_total == 0) {
+      if (!emptyWhenNoNovels) {
+        return const SliverToBoxAdapter(child: SizedBox.shrink());
+      }
       return const SliverToBoxAdapter(
         child: SizedBox(
           height: 280,
@@ -2284,6 +2399,9 @@ class _MangaShelf extends StatelessWidget {
   final Map<int, String?> mangaThumbnails;
   final Map<String, String> extensionNames;
   final bool showSourcePills;
+  final String? formatBadge;
+  final String emptyTitle;
+  final String emptySubtitle;
 
   const _MangaShelf({
     super.key,
@@ -2296,6 +2414,9 @@ class _MangaShelf extends StatelessWidget {
     this.mangaThumbnails = const {},
     this.extensionNames = const {},
     this.showSourcePills = true,
+    this.formatBadge,
+    this.emptyTitle = 'No manga found',
+    this.emptySubtitle = 'Try another title, author, source, or genre.',
   });
 
   int get _total => groups.length + mangas.length;
@@ -2303,14 +2424,14 @@ class _MangaShelf extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (_total == 0) {
-      return const SliverToBoxAdapter(
+      return SliverToBoxAdapter(
         child: SizedBox(
           height: 280,
           child: EmptyState(
             icon: AppIcons.search,
             emoji: '🔎',
-            title: 'No manga found',
-            subtitle: 'Try another title, author, source, or genre.',
+            title: emptyTitle,
+            subtitle: emptySubtitle,
           ),
         ),
       );
@@ -2398,6 +2519,7 @@ class _MangaShelf extends StatelessWidget {
       showSourcePills: showSourcePills,
       showUnreadBadge: provider.showUnreadBadge,
       showContinueButton: provider.showContinueButton,
+      formatBadge: formatBadge,
       variant: variant,
       onContinue: () => onOpen(manga),
       onTap: () => provider.selectionMode
@@ -2466,6 +2588,7 @@ class _MangaLibraryCard extends ConsumerWidget {
   final bool showUnreadBadge;
   final bool showContinueButton;
   final VoidCallback? onContinue;
+  final String? formatBadge;
 
   const _MangaLibraryCard({
     required this.manga,
@@ -2481,6 +2604,7 @@ class _MangaLibraryCard extends ConsumerWidget {
     this.showUnreadBadge = true,
     this.showContinueButton = false,
     this.onContinue,
+    this.formatBadge,
   });
 
   @override
@@ -2534,30 +2658,53 @@ class _MangaLibraryCard extends ConsumerWidget {
                       ),
                     ),
                   ),
-                if (showSourcePills)
-                  Positioned(
-                    top: 6,
-                    left: 6,
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 6,
-                        vertical: 2,
-                      ),
-                      decoration: BoxDecoration(
-                        color: Colors.black.withValues(alpha: 0.7),
-                        borderRadius: AppSpacing.brPill,
-                      ),
-                      child: Text(
-                        extensionName ?? manga.sourceId,
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 10,
-                          fontWeight: FontWeight.w600,
+                  if (showSourcePills)
+                    Positioned(
+                      top: 6,
+                      left: 6,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 6,
+                          vertical: 2,
+                        ),
+                        decoration: BoxDecoration(
+                          color: Colors.black.withValues(alpha: 0.7),
+                          borderRadius: AppSpacing.brPill,
+                        ),
+                        child: Text(
+                          extensionName ?? manga.sourceId,
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 10,
+                            fontWeight: FontWeight.w600,
+                          ),
                         ),
                       ),
                     ),
-                  ),
-                if (showUnreadBadge && newChapterCount > 0)
+                  if (formatBadge != null && formatBadge!.isNotEmpty)
+                    Positioned(
+                      left: 6,
+                      bottom: 6,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 6,
+                          vertical: 2,
+                        ),
+                        decoration: BoxDecoration(
+                          color: Colors.black.withValues(alpha: 0.7),
+                          borderRadius: AppSpacing.brPill,
+                        ),
+                        child: Text(
+                          formatBadge!,
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 10,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                    ),
+                  if (showUnreadBadge && newChapterCount > 0)
                   Positioned(
                     top: 6,
                     right: 6,
