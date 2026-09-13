@@ -976,7 +976,6 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> with RouteAware {
     final filters = Map<_LibraryFilter, _FilterMode>.from(_filters);
     var selectedSort = _sort;
     var showSourcePills = ref.read(libraryProvider).showSourcePills;
-    var minimalCards = ref.read(libraryProvider).minimalCards;
     var selectedCategoryId = _selectedCategoryId;
     final categories = ref.read(libraryProvider).categories;
     final queryCtrl = switch (_section) {
@@ -993,7 +992,6 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> with RouteAware {
           filters: filters,
           sort: selectedSort,
           showSourcePills: showSourcePills,
-          minimalCards: minimalCards,
           queryController: queryCtrl,
           queryHint: switch (_section) {
             _LibrarySection.books => 'Filter books',
@@ -1023,10 +1021,6 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> with RouteAware {
           onShowSourcePillsChanged: (value) {
             setSheetState(() => showSourcePills = value);
             ref.read(libraryProvider.notifier).setShowSourcePills(value);
-          },
-          onMinimalCardsChanged: (value) {
-            setSheetState(() => minimalCards = value);
-            ref.read(libraryProvider.notifier).setMinimalCards(value);
           },
         ),
       ),
@@ -1972,7 +1966,6 @@ class _LibraryFilterSheet extends StatelessWidget {
   final Map<_LibraryFilter, _FilterMode> filters;
   final _LibrarySort sort;
   final bool showSourcePills;
-  final bool minimalCards;
   final TextEditingController queryController;
   final String queryHint;
   final List<LibraryCategory> categories;
@@ -1982,13 +1975,11 @@ class _LibraryFilterSheet extends StatelessWidget {
   final ValueChanged<_LibraryFilter> onFilterChanged;
   final ValueChanged<_LibrarySort> onSortChanged;
   final ValueChanged<bool> onShowSourcePillsChanged;
-  final ValueChanged<bool> onMinimalCardsChanged;
 
   const _LibraryFilterSheet({
     required this.filters,
     required this.sort,
     required this.showSourcePills,
-    required this.minimalCards,
     required this.queryController,
     required this.queryHint,
     this.categories = const [],
@@ -1998,7 +1989,6 @@ class _LibraryFilterSheet extends StatelessWidget {
     required this.onFilterChanged,
     required this.onSortChanged,
     required this.onShowSourcePillsChanged,
-    required this.onMinimalCardsChanged,
   });
 
   @override
@@ -2138,37 +2128,6 @@ class _LibraryFilterSheet extends StatelessWidget {
                     ),
                     _TriStateGlyph(
                       mode: showSourcePills
-                          ? _FilterMode.include
-                          : _FilterMode.none,
-                    ),
-                  ],
-                ),
-              ),
-            ),
-            AnimatedPress(
-              onTap: () => onMinimalCardsChanged(!minimalCards),
-              child: SizedBox(
-                height: 50,
-                child: Row(
-                  children: [
-                    Icon(
-                      Icons.crop_free_rounded,
-                      size: 21,
-                      color: c.textSecondary,
-                    ),
-                    const SizedBox(width: 14),
-                    Expanded(
-                      child: Text(
-                        'Minimal cards',
-                        style: TextStyle(
-                          color: c.textPrimary,
-                          fontSize: 15,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                    ),
-                    _TriStateGlyph(
-                      mode: minimalCards
                           ? _FilterMode.include
                           : _FilterMode.none,
                     ),

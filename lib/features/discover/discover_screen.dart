@@ -10,8 +10,6 @@ import '../../core/models/book.dart';
 import '../../core/models/manga.dart';
 import '../../core/models/source.dart';
 import '../../core/providers.dart';
-import '../../core/repositories/manga_repository.dart';
-import '../../core/services/hidden_titles_prefs.dart';
 import '../../core/services/local_manga_recs_service.dart';
 import '../../core/services/personalized_catalog_picks_service.dart';
 import '../../core/services/discover_metadata_cache.dart';
@@ -20,7 +18,6 @@ import '../../core/services/metadata_enrichment_service.dart';
 import '../../core/services/source_service.dart';
 import '../../core/utils/image_cache.dart';
 import '../../core/utils/image_headers.dart';
-import '../../features/reader/reader_settings_sheet.dart';
 import '../../router/book_navigation.dart';
 import '../../router/router.dart';
 import '../../router/shell.dart';
@@ -69,7 +66,6 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
   PersonalizedCatalogPicks? _trackerPicks;
   bool _viewingAllPicks = false;
   bool _picksLoadingMore = false;
-  List<_ExploreContinueItem> _continueItems = const [];
 
   @override
   void initState() {
@@ -79,7 +75,6 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
       _loadSources();
       _loadBecauseYouRead();
       _loadTrackerPicks();
-      _loadContinue();
     });
   }
 
@@ -166,39 +161,6 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
     } catch (_) {
       if (!mounted) return;
       setState(() => _trackerPicks = null);
-    }
-  }
-
-  Future<void> _loadContinue() async {
-    try {
-      final repos = ref.read(repositoriesProvider);
-      final results = await Future.wait([
-        repos.books.getInProgressBooks(),
-        repos.manga.getInProgressManga(),
-        HiddenTitlesPrefs.hiddenBookIds(),
-      ]);
-      if (!mounted) return;
-      final hiddenBooks = results[2] as Set<int>;
-      final books = [
-        for (final b in results[0] as List<Book>)
-          if (!hiddenBooks.contains(b.id)) b,
-      ];
-      final mangas = (results[1] as List<InProgressManga>)
-          .where(
-            (m) =>
-                m.manga.inLibrary &&
-                !ViewerFlags.isHidden(m.manga.viewerFlags),
-          )
-          .toList(growable: false);
-      final epoch = DateTime.fromMillisecondsSinceEpoch(0);
-      final merged = <_ExploreContinueItem>[
-        for (final b in books) _ExploreContinueItem.book(b, b.updatedAt),
-        for (final m in mangas)
-          _ExploreContinueItem.manga(m, m.lastReadAt ?? epoch),
-      ]..sort((a, b) => b.lastReadAt.compareTo(a.lastReadAt));
-      setState(() => _continueItems = merged.take(12).toList());
-    } catch (_) {
-      // Continue rail is best-effort.
     }
   }
 
@@ -655,9 +617,6 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
     final c = context.colors;
     final mangaState = ref.watch(globalSearchProvider);
     final library = ref.watch(libraryProvider);
-    ref.listen(libraryProvider, (_, _) {
-      _loadContinue();
-    });
     final mangaItemCount = mangaState.mangaHitCount;
     final hasMangaUi =
         mangaState.query.trim().isNotEmpty &&
@@ -1071,42 +1030,41 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
     bool searching, {
     required bool bleedHero,
   }) {
+    final cutoff = DateTime.now().subtract(const Duration(days: 7));
     final booksByCreated = [...library.books]
       ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
     final mangasByCreated = [...library.mangas]
       ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
-    final booksByUpdated = [...library.books]
-      ..sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
-    final mangasByUpdated = [...library.mangas]
-      ..sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
 
-    // Mixed newly-added / latest, newest first across books + manga.
+    // Mixed newly-added, newest first — library adds from the last 7 days only.
     final newlyAdded = <({Book? book, Manga? manga})>[
-      ...booksByCreated.map((b) => (book: b, manga: null)),
-      ...mangasByCreated.map((m) => (book: null, manga: m)),
+      for (final b in booksByCreated)
+        if (!b.createdAt.isBefore(cutoff)) (book: b, manga: null),
+      for (final m in mangasByCreated)
+        if (!m.createdAt.isBefore(cutoff)) (book: null, manga: m),
     ]..sort((a, b) {
         final ad = a.book?.createdAt ?? a.manga!.createdAt;
         final bd = b.book?.createdAt ?? b.manga!.createdAt;
         return bd.compareTo(ad);
       });
-    final latest = <({Book? book, Manga? manga})>[
-      ...booksByUpdated.map((b) => (book: b, manga: null)),
-      ...mangasByUpdated.map((m) => (book: null, manga: m)),
-    ]..sort((a, b) {
-        final ad = a.book?.updatedAt ?? a.manga!.updatedAt;
-        final bd = b.book?.updatedAt ?? b.manga!.updatedAt;
-        return bd.compareTo(ad);
-      });
 
-    final hasLibrary = newlyAdded.isNotEmpty;
+    final hasLibrary = library.books.isNotEmpty || library.mangas.isNotEmpty;
     final newlyPreview = newlyAdded.take(12).toList();
-    final latestPreview = latest.take(12).toList();
 
+    // Hero uses the most recently added title in the library (not limited to
+    // the 7-day rail), so Explore still has a cover when nothing is “new”.
     Book? recBook;
     Manga? recManga;
-    if (latest.isNotEmpty) {
-      recBook = latest.first.book;
-      recManga = latest.first.manga;
+    if (booksByCreated.isNotEmpty || mangasByCreated.isNotEmpty) {
+      final bookTop = booksByCreated.isEmpty ? null : booksByCreated.first;
+      final mangaTop = mangasByCreated.isEmpty ? null : mangasByCreated.first;
+      if (bookTop != null &&
+          (mangaTop == null ||
+              !bookTop.createdAt.isBefore(mangaTop.createdAt))) {
+        recBook = bookTop;
+      } else {
+        recManga = mangaTop;
+      }
     }
 
     final slivers = <Widget>[
@@ -1153,105 +1111,13 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
       return slivers;
     }
 
-    if (_continueItems.isNotEmpty) {
-      slivers.add(
-        SliverToBoxAdapter(
-          child: MediaRail(
-            title: 'Continue reading',
-            subtitle: '${_continueItems.length} in progress',
-            height: 200,
-            onViewAll: () => context.goNamed(Routes.library),
-            itemCount: _continueItems.length,
-            itemBuilder: (context, i) {
-              final item = _continueItems[i];
-              final book = item.book;
-              if (book != null) {
-                final path = book.coverPath;
-                return MediaRailCover(
-                  width: 118,
-                  child: StaggeredFadeScale(
-                    index: i + 1,
-                    child: CatalogCoverCard(
-                      title: book.title,
-                      subtitle: '${(book.progress * 100).round()}% · Resume',
-                      imageProvider:
-                          path != null &&
-                              path.isNotEmpty &&
-                              File(path).existsSync()
-                          ? FileImage(File(path))
-                          : null,
-                      variant: LibraryCardVariant.grid,
-                      onTap: () => openBookFromCollection(context, book.id),
-                    ),
-                  ),
-                );
-              }
-              final row = item.manga!;
-              final manga = row.manga;
-              final custom = manga.customCoverPath;
-              return MediaRailCover(
-                width: 118,
-                child: StaggeredFadeScale(
-                  index: i + 1,
-                  child: CatalogCoverCard(
-                    title: manga.name,
-                    subtitle: '${(row.progress * 100).round()}% · Resume',
-                    imageProvider:
-                        custom != null &&
-                            custom.isNotEmpty &&
-                            File(custom).existsSync()
-                        ? FileImage(File(custom))
-                        : null,
-                    imageUrl: manga.imageUrl,
-                    variant: LibraryCardVariant.grid,
-                    onTap: () => _openManga(manga),
-                  ),
-                ),
-              );
-            },
-          ),
-        ),
-      );
-    }
-
-    final trackerPicks = _trackerPicks;
-    if (trackerPicks != null && trackerPicks.items.isNotEmpty) {
-      final preview = trackerPicks.items
-          .take(PersonalizedCatalogPicksService.defaultPageSize)
-          .toList();
-      slivers.add(
-        SliverToBoxAdapter(
-          child: MediaRail(
-            title: 'Picks for you',
-            subtitle: trackerPicks.sourceName,
-            onViewAll: _openTrackerPicksViewAll,
-            itemCount: preview.length,
-            itemBuilder: (context, i) {
-              final hit = preview[i];
-              return MediaRailCover(
-                child: StaggeredFadeScale(
-                  index: i + 1,
-                  child: CatalogCoverCard(
-                    title: hit.title,
-                    subtitle: trackerPicks.sourceName,
-                    imageUrl: hit.coverUrl,
-                    variant: LibraryCardVariant.grid,
-                    onTap: () => _openTrackerPick(hit),
-                  ),
-                ),
-              );
-            },
-          ),
-        ),
-      );
-    }
-
+    // Order: Newly Added → Because you read → Picks for you.
     if (newlyPreview.isNotEmpty) {
       slivers.add(
         SliverToBoxAdapter(
           child: MediaRail(
             title: 'Newly Added',
-            subtitle: '${newlyAdded.length} recent',
+            subtitle: '${newlyAdded.length} in the last 7 days',
             onViewAll: () => context.goNamed(Routes.library),
             itemCount: newlyPreview.length,
             itemBuilder: (context, i) {
@@ -1303,7 +1169,6 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
       );
     }
 
-    // Because you read + Latest Titles stay below the fold as secondary rails.
     final because = _becauseYouRead;
     if (because != null && because.suggestions.isNotEmpty) {
       final seedTitle = because.seed.name;
@@ -1343,53 +1208,29 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
       );
     }
 
-    if (latestPreview.isNotEmpty) {
+    final trackerPicks = _trackerPicks;
+    if (trackerPicks != null && trackerPicks.items.isNotEmpty) {
+      final preview = trackerPicks.items
+          .take(PersonalizedCatalogPicksService.defaultPageSize)
+          .toList();
       slivers.add(
         SliverToBoxAdapter(
           child: MediaRail(
-            title: 'Latest Titles',
-            onViewAll: () => context.goNamed(Routes.library),
-            itemCount: latestPreview.length,
+            title: 'Picks for you',
+            subtitle: trackerPicks.sourceName,
+            onViewAll: _openTrackerPicksViewAll,
+            itemCount: preview.length,
             itemBuilder: (context, i) {
-              final item = latestPreview[i];
-              final book = item.book;
-              if (book != null) {
-                final path = book.coverPath;
-                return MediaRailCover(
-                  child: StaggeredFadeScale(
-                    index: i + 1,
-                    child: CatalogCoverCard(
-                      title: book.title,
-                      subtitle: book.author,
-                      imageProvider:
-                          path != null &&
-                              path.isNotEmpty &&
-                              File(path).existsSync()
-                          ? FileImage(File(path))
-                          : null,
-                      variant: LibraryCardVariant.grid,
-                      onTap: () => openBookFromCollection(context, book.id),
-                    ),
-                  ),
-                );
-              }
-              final manga = item.manga!;
-              final custom = manga.customCoverPath;
+              final hit = preview[i];
               return MediaRailCover(
                 child: StaggeredFadeScale(
                   index: i + 1,
                   child: CatalogCoverCard(
-                    title: manga.name,
-                    subtitle: manga.author,
-                    imageProvider:
-                        custom != null &&
-                            custom.isNotEmpty &&
-                            File(custom).existsSync()
-                        ? FileImage(File(custom))
-                        : null,
-                    imageUrl: manga.imageUrl,
+                    title: hit.title,
+                    subtitle: trackerPicks.sourceName,
+                    imageUrl: hit.coverUrl,
                     variant: LibraryCardVariant.grid,
-                    onTap: () => _openManga(manga),
+                    onTap: () => _openTrackerPick(hit),
                   ),
                 ),
               );
@@ -1401,27 +1242,6 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
 
     return slivers;
   }
-}
-
-class _ExploreContinueItem {
-  const _ExploreContinueItem._({
-    required this.lastReadAt,
-    this.book,
-    this.manga,
-  });
-
-  factory _ExploreContinueItem.book(Book book, DateTime lastReadAt) =>
-      _ExploreContinueItem._(lastReadAt: lastReadAt, book: book);
-
-  factory _ExploreContinueItem.manga(
-    InProgressManga manga,
-    DateTime lastReadAt,
-  ) =>
-      _ExploreContinueItem._(lastReadAt: lastReadAt, manga: manga);
-
-  final DateTime lastReadAt;
-  final Book? book;
-  final InProgressManga? manga;
 }
 
 class _ExploreRecommendationHero extends ConsumerWidget {
