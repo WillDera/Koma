@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../core/providers.dart';
 import '../theme/app_theme.dart';
 import '../theme/tokens/app_spacing.dart';
+import 'glass_pill_nav.dart';
 import 'icon_button_round.dart';
 import 'library_book_card.dart';
 import 'segmented_control.dart';
@@ -28,7 +29,7 @@ class LibraryLayoutSheet extends ConsumerWidget {
     final library = ref.watch(libraryProvider);
     final ln = ref.read(libraryProvider.notifier);
     final bottomClearance =
-        72.0 + MediaQuery.paddingOf(context).bottom + 20;
+        AppBottomNav.bodyHeight + MediaQuery.paddingOf(context).bottom + 28;
     // Material must own the fill so SwitchListTile ink/splash isn't
     // obscured by an intermediate DecoratedBox background.
     return Material(
@@ -90,12 +91,7 @@ class LibraryLayoutSheet extends ConsumerWidget {
               ),
               const SizedBox(height: 10),
               SegmentedControl<int>(
-                segments: const {
-                  2: '2',
-                  3: '3',
-                  4: '4',
-                  5: '5',
-                },
+                segments: const {2: '2', 3: '3', 4: '4', 5: '5'},
                 value: library.gridColumns.clamp(2, 5),
                 onChanged: ln.setGridColumns,
               ),

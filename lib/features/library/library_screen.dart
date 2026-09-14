@@ -50,6 +50,7 @@ import '../../widgets/library_book_card.dart';
 import '../../widgets/library_group_stack_card.dart';
 import '../../widgets/library_header.dart';
 import '../../widgets/library_layout_sheet.dart';
+import '../../widgets/glass_pill_nav.dart';
 import '../../widgets/loading_skeleton.dart';
 import '../../widgets/media_rail.dart';
 import '../../widgets/one_hand_spacer.dart';
@@ -1997,7 +1998,7 @@ class _LibraryFilterSheet extends StatelessWidget {
     // Sheet sits in the tab navigator while [AppBottomNav] stays visible
     // (extendBody shell) — clear the 72px bar + system inset.
     final bottomClearance =
-        72.0 + MediaQuery.paddingOf(context).bottom + 20;
+        AppBottomNav.bodyHeight + MediaQuery.paddingOf(context).bottom + 28;
     return Container(
       padding: EdgeInsets.fromLTRB(20, 10, 20, bottomClearance),
       decoration: BoxDecoration(

@@ -3,7 +3,6 @@ import 'package:flutter/material.dart';
 import '../theme/app_icons.dart';
 import '../theme/app_theme.dart';
 import '../theme/tokens/app_motion.dart';
-import '../theme/tokens/app_spacing.dart';
 
 class NavItem {
   final AppIconData icon;
@@ -21,9 +20,15 @@ class NavItem {
   });
 }
 
-/// Flat bottom navigation — Kenji-inspired opaque bar with accent active
-/// tint. The optional profile tab shows an initials / photo avatar ("You").
+/// Floating animated pill bottom navigation.
+///
+/// Hugs its destinations (never full-width). The active destination expands;
+/// inactive ones shrink. Labels are semantic-only — nothing is drawn as text.
 class AppBottomNav extends StatelessWidget {
+  /// Approximate body height of the floating pill (excludes safe-area inset).
+  /// Used by screens that pad content above the bar.
+  static const double bodyHeight = 56;
+
   final List<NavItem> items;
   final int currentIndex;
   final ValueChanged<int> onTap;
@@ -41,77 +46,122 @@ class AppBottomNav extends StatelessWidget {
     this.profileImage,
   });
 
+  static const Duration _duration = AppMotion.base;
+  static const Curve _curve = Curves.easeOutCubic;
+
   @override
   Widget build(BuildContext context) {
     final c = context.colors;
-    return Container(
-      decoration: BoxDecoration(
-        color: c.bg,
-        border: Border(top: BorderSide(color: c.border, width: 1)),
-      ),
-      child: SafeArea(
-        top: false,
-        child: SizedBox(
-          height: 72,
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(8, 6, 8, 4),
-            child: Row(
-              children: List.generate(items.length, (i) {
-                final item = items[i];
-                final isActive = i == currentIndex;
-                return Expanded(
-                  child: GestureDetector(
-                    behavior: HitTestBehavior.opaque,
+    final bottomInset = MediaQuery.paddingOf(context).bottom;
+
+    return Padding(
+      padding: EdgeInsets.fromLTRB(16, 0, 16, 8 + bottomInset),
+      child: Align(
+        alignment: Alignment.bottomCenter,
+        child: Material(
+          color: c.surface,
+          elevation: 2,
+          shadowColor: c.textPrimary.withValues(alpha: 0.18),
+          borderRadius: BorderRadius.circular(28),
+          clipBehavior: Clip.antiAlias,
+          child: AnimatedSize(
+            duration: _duration,
+            curve: _curve,
+            alignment: Alignment.center,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 6),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: List.generate(items.length, (i) {
+                  final item = items[i];
+                  final isActive = i == currentIndex;
+                  return _PillDestination(
+                    key: ValueKey('nav-$i-${item.label}'),
+                    item: item,
+                    isActive: isActive,
                     onTap: () => onTap(i),
                     onLongPress: onLongPress == null
                         ? null
                         : () => onLongPress!(i),
-                    child: AnimatedContainer(
-                      duration: AppMotion.base,
-                      curve: Curves.easeOutBack,
-                      alignment: Alignment.center,
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          AnimatedScale(
-                            scale: isActive ? 1.0 : 0.9,
-                            duration: AppMotion.base,
-                            curve: Curves.easeOutBack,
-                            child: _NavGlyph(
-                              item: item,
-                              isActive: isActive,
-                              initials: item.profileTab
-                                  ? profileInitials
-                                  : null,
-                              image: item.profileTab ? profileImage : null,
-                            ),
-                          ),
-                          const SizedBox(height: 6),
-                          AnimatedDefaultTextStyle(
-                            duration: AppMotion.base,
-                            curve: Curves.easeOutBack,
-                            style: TextStyle(
-                              color: isActive
-                                  ? c.accent
-                                  : c.textTertiary,
-                              fontSize: 12,
-                              fontWeight: isActive
-                                  ? FontWeight.w600
-                                  : FontWeight.w500,
-                            ),
-                            child: Text(
-                              item.label,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                );
-              }),
+                    profileInitials: item.profileTab ? profileInitials : null,
+                    profileImage: item.profileTab ? profileImage : null,
+                  );
+                }),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _PillDestination extends StatelessWidget {
+  const _PillDestination({
+    super.key,
+    required this.item,
+    required this.isActive,
+    required this.onTap,
+    this.onLongPress,
+    this.profileInitials,
+    this.profileImage,
+  });
+
+  final NavItem item;
+  final bool isActive;
+  final VoidCallback onTap;
+  final VoidCallback? onLongPress;
+  final String? profileInitials;
+  final ImageProvider? profileImage;
+
+  static const Duration _duration = AppMotion.base;
+  static const Curve _curve = Curves.easeOutCubic;
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.colors;
+    final activeColor = c.accent;
+    final inactiveColor = c.textTertiary;
+
+    return Semantics(
+      button: true,
+      selected: isActive,
+      label: item.label,
+      child: Tooltip(
+        message: item.label,
+        child: Material(
+          color: Colors.transparent,
+          child: InkWell(
+            onTap: onTap,
+            onLongPress: onLongPress,
+            borderRadius: BorderRadius.circular(22),
+            splashColor: activeColor.withValues(alpha: 0.12),
+            highlightColor: activeColor.withValues(alpha: 0.06),
+            child: AnimatedContainer(
+              duration: _duration,
+              curve: _curve,
+              width: isActive ? 58 : 44,
+              height: 48,
+              alignment: Alignment.center,
+              decoration: BoxDecoration(
+                color: isActive
+                    ? activeColor.withValues(alpha: 0.16)
+                    : Colors.transparent,
+                borderRadius: BorderRadius.circular(22),
+              ),
+              child: AnimatedScale(
+                scale: isActive ? 1.0 : 0.82,
+                duration: _duration,
+                curve: _curve,
+                child: _NavGlyph(
+                  item: item,
+                  isActive: isActive,
+                  activeColor: activeColor,
+                  inactiveColor: inactiveColor,
+                  initials: profileInitials,
+                  image: profileImage,
+                ),
+              ),
             ),
           ),
         ),
@@ -124,14 +174,21 @@ class _NavGlyph extends StatelessWidget {
   const _NavGlyph({
     required this.item,
     required this.isActive,
+    required this.activeColor,
+    required this.inactiveColor,
     required this.initials,
     this.image,
   });
 
   final NavItem item;
   final bool isActive;
+  final Color activeColor;
+  final Color inactiveColor;
   final String? initials;
   final ImageProvider? image;
+
+  static const Duration _duration = AppMotion.base;
+  static const Curve _curve = Curves.easeOutCubic;
 
   @override
   Widget build(BuildContext context) {
@@ -139,17 +196,18 @@ class _NavGlyph extends StatelessWidget {
     if (initials != null || image != null) {
       final trimmed = (initials ?? '').trim();
       final letter = trimmed.isEmpty ? '?' : trimmed[0].toUpperCase();
+      final size = isActive ? 28.0 : 22.0;
       return AnimatedContainer(
-        duration: AppMotion.base,
-        curve: Curves.easeOutBack,
-        width: 28,
-        height: 28,
+        duration: _duration,
+        curve: _curve,
+        width: size,
+        height: size,
         alignment: Alignment.center,
         decoration: BoxDecoration(
           shape: BoxShape.circle,
-          color: isActive ? c.accent : c.surfaceMuted,
+          color: isActive ? activeColor : inactiveColor.withValues(alpha: 0.2),
           border: Border.all(
-            color: isActive ? c.accent : c.borderStrong,
+            color: isActive ? activeColor : inactiveColor,
             width: 1.5,
           ),
           image: image != null
@@ -161,30 +219,30 @@ class _NavGlyph extends StatelessWidget {
             : Text(
                 letter,
                 style: TextStyle(
-                  color: isActive ? c.onAccent : c.textSecondary,
-                  fontSize: 12,
+                  color: isActive ? c.onAccent : inactiveColor,
+                  fontSize: isActive ? 12 : 10,
                   fontWeight: FontWeight.w700,
                 ),
               ),
       );
     }
 
-    return AnimatedContainer(
-      duration: AppMotion.base,
-      curve: Curves.easeOutBack,
-      width: 32,
-      height: 32,
-      alignment: Alignment.center,
-      decoration: BoxDecoration(
-        color: isActive
-            ? c.accent.withValues(alpha: 0.26)
-            : Colors.transparent,
-        borderRadius: AppSpacing.brMd,
-      ),
+    final iconData = isActive ? (item.activeIcon ?? item.icon) : item.icon;
+    return AnimatedSwitcher(
+      duration: _duration,
+      switchInCurve: _curve,
+      switchOutCurve: _curve,
+      transitionBuilder: (child, animation) {
+        return FadeTransition(
+          opacity: animation,
+          child: ScaleTransition(scale: animation, child: child),
+        );
+      },
       child: AppIcon(
-        data: isActive ? (item.activeIcon ?? item.icon) : item.icon,
-        size: 22,
-        color: isActive ? c.accent : c.textTertiary,
+        key: ValueKey('${item.label}-$isActive'),
+        data: iconData,
+        size: isActive ? 24 : 20,
+        color: isActive ? activeColor : inactiveColor,
       ),
     );
   }
