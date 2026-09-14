@@ -392,12 +392,29 @@ class MangaRepository {
 
   Future<void> updateMangaChapterScrollPosition(
     int chapterId,
-    double position,
-  ) async {
+    double position, {
+    int? readingCharOffset,
+  }) async {
     await _isar.writeTxn(() async {
       final row = await _isar.mangaChapters.get(chapterId);
       if (row == null) return;
       row.scrollPosition = position;
+      if (readingCharOffset != null) {
+        row.readingCharOffset = readingCharOffset;
+      }
+      row.readAt = DateTime.now();
+      await _isar.mangaChapters.put(row);
+    });
+  }
+
+  Future<void> updateMangaChapterReadingOffset(
+    int chapterId,
+    int charOffset,
+  ) async {
+    await _isar.writeTxn(() async {
+      final row = await _isar.mangaChapters.get(chapterId);
+      if (row == null) return;
+      row.readingCharOffset = charOffset;
       row.readAt = DateTime.now();
       await _isar.mangaChapters.put(row);
     });
@@ -426,6 +443,7 @@ class MangaRepository {
         c.isOpened = false;
         c.lastPageRead = 0;
         c.scrollPosition = 0.0;
+        c.readingCharOffset = null;
         c.readAt = null;
       }
       await _isar.mangaChapters.putAll(chapters);
@@ -560,6 +578,7 @@ class MangaRepository {
     isRead: c.isRead,
     lastPageRead: c.lastPageRead,
     scrollPosition: c.scrollPosition,
+    readingCharOffset: c.readingCharOffset,
     chapterNumber: c.chapterNumber,
     isBookmarked: c.isBookmarked,
     isDownloaded: c.isDownloaded,
@@ -580,6 +599,7 @@ class MangaRepository {
     isRead: c.isRead,
     lastPageRead: c.lastPageRead,
     scrollPosition: c.scrollPosition,
+    readingCharOffset: c.readingCharOffset,
     chapterNumber: c.chapterNumber,
     isBookmarked: c.isBookmarked,
     isDownloaded: c.isDownloaded,

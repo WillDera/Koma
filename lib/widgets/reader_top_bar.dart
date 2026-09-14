@@ -3,7 +3,7 @@ import '../theme/app_theme.dart';
 import '../theme/tokens/app_motion.dart';
 import 'icon_button_round.dart';
 
-/// Kenji-style opaque top bar for the ebook reader.
+/// Opaque top bar for the ebook / novel readers.
 class ReaderTopBar extends StatelessWidget {
   final String bookTitle;
   final String? bookAuthor;
@@ -36,7 +36,7 @@ class ReaderTopBar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final c = context.colors;
-    final bg = background ?? const Color(0xFF0F0F0F);
+    final bg = background ?? c.bg;
     final chapter = chapterTitle?.trim();
     return AnimatedSlide(
       duration: AppMotion.base,

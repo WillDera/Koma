@@ -34,19 +34,25 @@ const HighlightSchema = CollectionSchema(
       name: r'endOffset',
       type: IsarType.long,
     ),
-    r'snippetId': PropertySchema(
+    r'mangaChapterId': PropertySchema(
       id: 5,
+      name: r'mangaChapterId',
+      type: IsarType.long,
+    ),
+    r'mangaId': PropertySchema(id: 6, name: r'mangaId', type: IsarType.long),
+    r'snippetId': PropertySchema(
+      id: 7,
       name: r'snippetId',
       type: IsarType.long,
     ),
     r'startOffset': PropertySchema(
-      id: 6,
+      id: 8,
       name: r'startOffset',
       type: IsarType.long,
     ),
-    r'text': PropertySchema(id: 7, name: r'text', type: IsarType.string),
+    r'text': PropertySchema(id: 9, name: r'text', type: IsarType.string),
     r'updatedAt': PropertySchema(
-      id: 8,
+      id: 10,
       name: r'updatedAt',
       type: IsarType.dateTime,
     ),
@@ -97,6 +103,32 @@ const HighlightSchema = CollectionSchema(
         ),
       ],
     ),
+    r'mangaId': IndexSchema(
+      id: 7466570075891278896,
+      name: r'mangaId',
+      unique: false,
+      replace: false,
+      properties: [
+        IndexPropertySchema(
+          name: r'mangaId',
+          type: IndexType.value,
+          caseSensitive: false,
+        ),
+      ],
+    ),
+    r'mangaChapterId': IndexSchema(
+      id: 4732923146288459175,
+      name: r'mangaChapterId',
+      unique: false,
+      replace: false,
+      properties: [
+        IndexPropertySchema(
+          name: r'mangaChapterId',
+          type: IndexType.value,
+          caseSensitive: false,
+        ),
+      ],
+    ),
   },
   links: {},
   embeddedSchemas: {},
@@ -129,10 +161,12 @@ void _highlightSerialize(
   writer.writeString(offsets[2], object.color);
   writer.writeDateTime(offsets[3], object.createdAt);
   writer.writeLong(offsets[4], object.endOffset);
-  writer.writeLong(offsets[5], object.snippetId);
-  writer.writeLong(offsets[6], object.startOffset);
-  writer.writeString(offsets[7], object.text);
-  writer.writeDateTime(offsets[8], object.updatedAt);
+  writer.writeLong(offsets[5], object.mangaChapterId);
+  writer.writeLong(offsets[6], object.mangaId);
+  writer.writeLong(offsets[7], object.snippetId);
+  writer.writeLong(offsets[8], object.startOffset);
+  writer.writeString(offsets[9], object.text);
+  writer.writeDateTime(offsets[10], object.updatedAt);
 }
 
 Highlight _highlightDeserialize(
@@ -142,16 +176,18 @@ Highlight _highlightDeserialize(
   Map<Type, List<int>> allOffsets,
 ) {
   final object = Highlight(
-    bookId: reader.readLong(offsets[0]),
-    chapterId: reader.readLong(offsets[1]),
+    bookId: reader.readLongOrNull(offsets[0]),
+    chapterId: reader.readLongOrNull(offsets[1]),
     color: reader.readStringOrNull(offsets[2]) ?? 'yellow',
     createdAt: reader.readDateTimeOrNull(offsets[3]),
     endOffset: reader.readLong(offsets[4]),
     id: id,
-    snippetId: reader.readLongOrNull(offsets[5]),
-    startOffset: reader.readLong(offsets[6]),
-    text: reader.readString(offsets[7]),
-    updatedAt: reader.readDateTimeOrNull(offsets[8]),
+    mangaChapterId: reader.readLongOrNull(offsets[5]),
+    mangaId: reader.readLongOrNull(offsets[6]),
+    snippetId: reader.readLongOrNull(offsets[7]),
+    startOffset: reader.readLong(offsets[8]),
+    text: reader.readString(offsets[9]),
+    updatedAt: reader.readDateTimeOrNull(offsets[10]),
   );
   return object;
 }
@@ -164,9 +200,9 @@ P _highlightDeserializeProp<P>(
 ) {
   switch (propertyId) {
     case 0:
-      return (reader.readLong(offset)) as P;
+      return (reader.readLongOrNull(offset)) as P;
     case 1:
-      return (reader.readLong(offset)) as P;
+      return (reader.readLongOrNull(offset)) as P;
     case 2:
       return (reader.readStringOrNull(offset) ?? 'yellow') as P;
     case 3:
@@ -176,10 +212,14 @@ P _highlightDeserializeProp<P>(
     case 5:
       return (reader.readLongOrNull(offset)) as P;
     case 6:
-      return (reader.readLong(offset)) as P;
+      return (reader.readLongOrNull(offset)) as P;
     case 7:
-      return (reader.readString(offset)) as P;
+      return (reader.readLongOrNull(offset)) as P;
     case 8:
+      return (reader.readLong(offset)) as P;
+    case 9:
+      return (reader.readString(offset)) as P;
+    case 10:
       return (reader.readDateTimeOrNull(offset)) as P;
     default:
       throw IsarError('Unknown property with id $propertyId');
@@ -226,6 +266,22 @@ extension HighlightQueryWhereSort
     return QueryBuilder.apply(this, (query) {
       return query.addWhereClause(
         const IndexWhereClause.any(indexName: r'chapterId'),
+      );
+    });
+  }
+
+  QueryBuilder<Highlight, Highlight, QAfterWhere> anyMangaId() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addWhereClause(
+        const IndexWhereClause.any(indexName: r'mangaId'),
+      );
+    });
+  }
+
+  QueryBuilder<Highlight, Highlight, QAfterWhere> anyMangaChapterId() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addWhereClause(
+        const IndexWhereClause.any(indexName: r'mangaChapterId'),
       );
     });
   }
@@ -427,8 +483,29 @@ extension HighlightQueryWhere
     });
   }
 
+  QueryBuilder<Highlight, Highlight, QAfterWhereClause> bookIdIsNull() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addWhereClause(
+        IndexWhereClause.equalTo(indexName: r'bookId', value: [null]),
+      );
+    });
+  }
+
+  QueryBuilder<Highlight, Highlight, QAfterWhereClause> bookIdIsNotNull() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addWhereClause(
+        IndexWhereClause.between(
+          indexName: r'bookId',
+          lower: [null],
+          includeLower: false,
+          upper: [],
+        ),
+      );
+    });
+  }
+
   QueryBuilder<Highlight, Highlight, QAfterWhereClause> bookIdEqualTo(
-    int bookId,
+    int? bookId,
   ) {
     return QueryBuilder.apply(this, (query) {
       return query.addWhereClause(
@@ -438,7 +515,7 @@ extension HighlightQueryWhere
   }
 
   QueryBuilder<Highlight, Highlight, QAfterWhereClause> bookIdNotEqualTo(
-    int bookId,
+    int? bookId,
   ) {
     return QueryBuilder.apply(this, (query) {
       if (query.whereSort == Sort.asc) {
@@ -482,7 +559,7 @@ extension HighlightQueryWhere
   }
 
   QueryBuilder<Highlight, Highlight, QAfterWhereClause> bookIdGreaterThan(
-    int bookId, {
+    int? bookId, {
     bool include = false,
   }) {
     return QueryBuilder.apply(this, (query) {
@@ -498,7 +575,7 @@ extension HighlightQueryWhere
   }
 
   QueryBuilder<Highlight, Highlight, QAfterWhereClause> bookIdLessThan(
-    int bookId, {
+    int? bookId, {
     bool include = false,
   }) {
     return QueryBuilder.apply(this, (query) {
@@ -514,8 +591,8 @@ extension HighlightQueryWhere
   }
 
   QueryBuilder<Highlight, Highlight, QAfterWhereClause> bookIdBetween(
-    int lowerBookId,
-    int upperBookId, {
+    int? lowerBookId,
+    int? upperBookId, {
     bool includeLower = true,
     bool includeUpper = true,
   }) {
@@ -532,8 +609,29 @@ extension HighlightQueryWhere
     });
   }
 
+  QueryBuilder<Highlight, Highlight, QAfterWhereClause> chapterIdIsNull() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addWhereClause(
+        IndexWhereClause.equalTo(indexName: r'chapterId', value: [null]),
+      );
+    });
+  }
+
+  QueryBuilder<Highlight, Highlight, QAfterWhereClause> chapterIdIsNotNull() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addWhereClause(
+        IndexWhereClause.between(
+          indexName: r'chapterId',
+          lower: [null],
+          includeLower: false,
+          upper: [],
+        ),
+      );
+    });
+  }
+
   QueryBuilder<Highlight, Highlight, QAfterWhereClause> chapterIdEqualTo(
-    int chapterId,
+    int? chapterId,
   ) {
     return QueryBuilder.apply(this, (query) {
       return query.addWhereClause(
@@ -543,7 +641,7 @@ extension HighlightQueryWhere
   }
 
   QueryBuilder<Highlight, Highlight, QAfterWhereClause> chapterIdNotEqualTo(
-    int chapterId,
+    int? chapterId,
   ) {
     return QueryBuilder.apply(this, (query) {
       if (query.whereSort == Sort.asc) {
@@ -587,7 +685,7 @@ extension HighlightQueryWhere
   }
 
   QueryBuilder<Highlight, Highlight, QAfterWhereClause> chapterIdGreaterThan(
-    int chapterId, {
+    int? chapterId, {
     bool include = false,
   }) {
     return QueryBuilder.apply(this, (query) {
@@ -603,7 +701,7 @@ extension HighlightQueryWhere
   }
 
   QueryBuilder<Highlight, Highlight, QAfterWhereClause> chapterIdLessThan(
-    int chapterId, {
+    int? chapterId, {
     bool include = false,
   }) {
     return QueryBuilder.apply(this, (query) {
@@ -619,8 +717,8 @@ extension HighlightQueryWhere
   }
 
   QueryBuilder<Highlight, Highlight, QAfterWhereClause> chapterIdBetween(
-    int lowerChapterId,
-    int upperChapterId, {
+    int? lowerChapterId,
+    int? upperChapterId, {
     bool includeLower = true,
     bool includeUpper = true,
   }) {
@@ -636,12 +734,281 @@ extension HighlightQueryWhere
       );
     });
   }
+
+  QueryBuilder<Highlight, Highlight, QAfterWhereClause> mangaIdIsNull() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addWhereClause(
+        IndexWhereClause.equalTo(indexName: r'mangaId', value: [null]),
+      );
+    });
+  }
+
+  QueryBuilder<Highlight, Highlight, QAfterWhereClause> mangaIdIsNotNull() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addWhereClause(
+        IndexWhereClause.between(
+          indexName: r'mangaId',
+          lower: [null],
+          includeLower: false,
+          upper: [],
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<Highlight, Highlight, QAfterWhereClause> mangaIdEqualTo(
+    int? mangaId,
+  ) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addWhereClause(
+        IndexWhereClause.equalTo(indexName: r'mangaId', value: [mangaId]),
+      );
+    });
+  }
+
+  QueryBuilder<Highlight, Highlight, QAfterWhereClause> mangaIdNotEqualTo(
+    int? mangaId,
+  ) {
+    return QueryBuilder.apply(this, (query) {
+      if (query.whereSort == Sort.asc) {
+        return query
+            .addWhereClause(
+              IndexWhereClause.between(
+                indexName: r'mangaId',
+                lower: [],
+                upper: [mangaId],
+                includeUpper: false,
+              ),
+            )
+            .addWhereClause(
+              IndexWhereClause.between(
+                indexName: r'mangaId',
+                lower: [mangaId],
+                includeLower: false,
+                upper: [],
+              ),
+            );
+      } else {
+        return query
+            .addWhereClause(
+              IndexWhereClause.between(
+                indexName: r'mangaId',
+                lower: [mangaId],
+                includeLower: false,
+                upper: [],
+              ),
+            )
+            .addWhereClause(
+              IndexWhereClause.between(
+                indexName: r'mangaId',
+                lower: [],
+                upper: [mangaId],
+                includeUpper: false,
+              ),
+            );
+      }
+    });
+  }
+
+  QueryBuilder<Highlight, Highlight, QAfterWhereClause> mangaIdGreaterThan(
+    int? mangaId, {
+    bool include = false,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addWhereClause(
+        IndexWhereClause.between(
+          indexName: r'mangaId',
+          lower: [mangaId],
+          includeLower: include,
+          upper: [],
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<Highlight, Highlight, QAfterWhereClause> mangaIdLessThan(
+    int? mangaId, {
+    bool include = false,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addWhereClause(
+        IndexWhereClause.between(
+          indexName: r'mangaId',
+          lower: [],
+          upper: [mangaId],
+          includeUpper: include,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<Highlight, Highlight, QAfterWhereClause> mangaIdBetween(
+    int? lowerMangaId,
+    int? upperMangaId, {
+    bool includeLower = true,
+    bool includeUpper = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addWhereClause(
+        IndexWhereClause.between(
+          indexName: r'mangaId',
+          lower: [lowerMangaId],
+          includeLower: includeLower,
+          upper: [upperMangaId],
+          includeUpper: includeUpper,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<Highlight, Highlight, QAfterWhereClause> mangaChapterIdIsNull() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addWhereClause(
+        IndexWhereClause.equalTo(indexName: r'mangaChapterId', value: [null]),
+      );
+    });
+  }
+
+  QueryBuilder<Highlight, Highlight, QAfterWhereClause>
+  mangaChapterIdIsNotNull() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addWhereClause(
+        IndexWhereClause.between(
+          indexName: r'mangaChapterId',
+          lower: [null],
+          includeLower: false,
+          upper: [],
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<Highlight, Highlight, QAfterWhereClause> mangaChapterIdEqualTo(
+    int? mangaChapterId,
+  ) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addWhereClause(
+        IndexWhereClause.equalTo(
+          indexName: r'mangaChapterId',
+          value: [mangaChapterId],
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<Highlight, Highlight, QAfterWhereClause>
+  mangaChapterIdNotEqualTo(int? mangaChapterId) {
+    return QueryBuilder.apply(this, (query) {
+      if (query.whereSort == Sort.asc) {
+        return query
+            .addWhereClause(
+              IndexWhereClause.between(
+                indexName: r'mangaChapterId',
+                lower: [],
+                upper: [mangaChapterId],
+                includeUpper: false,
+              ),
+            )
+            .addWhereClause(
+              IndexWhereClause.between(
+                indexName: r'mangaChapterId',
+                lower: [mangaChapterId],
+                includeLower: false,
+                upper: [],
+              ),
+            );
+      } else {
+        return query
+            .addWhereClause(
+              IndexWhereClause.between(
+                indexName: r'mangaChapterId',
+                lower: [mangaChapterId],
+                includeLower: false,
+                upper: [],
+              ),
+            )
+            .addWhereClause(
+              IndexWhereClause.between(
+                indexName: r'mangaChapterId',
+                lower: [],
+                upper: [mangaChapterId],
+                includeUpper: false,
+              ),
+            );
+      }
+    });
+  }
+
+  QueryBuilder<Highlight, Highlight, QAfterWhereClause>
+  mangaChapterIdGreaterThan(int? mangaChapterId, {bool include = false}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addWhereClause(
+        IndexWhereClause.between(
+          indexName: r'mangaChapterId',
+          lower: [mangaChapterId],
+          includeLower: include,
+          upper: [],
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<Highlight, Highlight, QAfterWhereClause> mangaChapterIdLessThan(
+    int? mangaChapterId, {
+    bool include = false,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addWhereClause(
+        IndexWhereClause.between(
+          indexName: r'mangaChapterId',
+          lower: [],
+          upper: [mangaChapterId],
+          includeUpper: include,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<Highlight, Highlight, QAfterWhereClause> mangaChapterIdBetween(
+    int? lowerMangaChapterId,
+    int? upperMangaChapterId, {
+    bool includeLower = true,
+    bool includeUpper = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addWhereClause(
+        IndexWhereClause.between(
+          indexName: r'mangaChapterId',
+          lower: [lowerMangaChapterId],
+          includeLower: includeLower,
+          upper: [upperMangaChapterId],
+          includeUpper: includeUpper,
+        ),
+      );
+    });
+  }
 }
 
 extension HighlightQueryFilter
     on QueryBuilder<Highlight, Highlight, QFilterCondition> {
+  QueryBuilder<Highlight, Highlight, QAfterFilterCondition> bookIdIsNull() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        const FilterCondition.isNull(property: r'bookId'),
+      );
+    });
+  }
+
+  QueryBuilder<Highlight, Highlight, QAfterFilterCondition> bookIdIsNotNull() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        const FilterCondition.isNotNull(property: r'bookId'),
+      );
+    });
+  }
+
   QueryBuilder<Highlight, Highlight, QAfterFilterCondition> bookIdEqualTo(
-    int value,
+    int? value,
   ) {
     return QueryBuilder.apply(this, (query) {
       return query.addFilterCondition(
@@ -651,7 +1018,7 @@ extension HighlightQueryFilter
   }
 
   QueryBuilder<Highlight, Highlight, QAfterFilterCondition> bookIdGreaterThan(
-    int value, {
+    int? value, {
     bool include = false,
   }) {
     return QueryBuilder.apply(this, (query) {
@@ -666,7 +1033,7 @@ extension HighlightQueryFilter
   }
 
   QueryBuilder<Highlight, Highlight, QAfterFilterCondition> bookIdLessThan(
-    int value, {
+    int? value, {
     bool include = false,
   }) {
     return QueryBuilder.apply(this, (query) {
@@ -681,8 +1048,8 @@ extension HighlightQueryFilter
   }
 
   QueryBuilder<Highlight, Highlight, QAfterFilterCondition> bookIdBetween(
-    int lower,
-    int upper, {
+    int? lower,
+    int? upper, {
     bool includeLower = true,
     bool includeUpper = true,
   }) {
@@ -699,8 +1066,25 @@ extension HighlightQueryFilter
     });
   }
 
+  QueryBuilder<Highlight, Highlight, QAfterFilterCondition> chapterIdIsNull() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        const FilterCondition.isNull(property: r'chapterId'),
+      );
+    });
+  }
+
+  QueryBuilder<Highlight, Highlight, QAfterFilterCondition>
+  chapterIdIsNotNull() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        const FilterCondition.isNotNull(property: r'chapterId'),
+      );
+    });
+  }
+
   QueryBuilder<Highlight, Highlight, QAfterFilterCondition> chapterIdEqualTo(
-    int value,
+    int? value,
   ) {
     return QueryBuilder.apply(this, (query) {
       return query.addFilterCondition(
@@ -710,7 +1094,7 @@ extension HighlightQueryFilter
   }
 
   QueryBuilder<Highlight, Highlight, QAfterFilterCondition>
-  chapterIdGreaterThan(int value, {bool include = false}) {
+  chapterIdGreaterThan(int? value, {bool include = false}) {
     return QueryBuilder.apply(this, (query) {
       return query.addFilterCondition(
         FilterCondition.greaterThan(
@@ -723,7 +1107,7 @@ extension HighlightQueryFilter
   }
 
   QueryBuilder<Highlight, Highlight, QAfterFilterCondition> chapterIdLessThan(
-    int value, {
+    int? value, {
     bool include = false,
   }) {
     return QueryBuilder.apply(this, (query) {
@@ -738,8 +1122,8 @@ extension HighlightQueryFilter
   }
 
   QueryBuilder<Highlight, Highlight, QAfterFilterCondition> chapterIdBetween(
-    int lower,
-    int upper, {
+    int? lower,
+    int? upper, {
     bool includeLower = true,
     bool includeUpper = true,
   }) {
@@ -1099,6 +1483,154 @@ extension HighlightQueryFilter
       return query.addFilterCondition(
         FilterCondition.between(
           property: r'id',
+          lower: lower,
+          includeLower: includeLower,
+          upper: upper,
+          includeUpper: includeUpper,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<Highlight, Highlight, QAfterFilterCondition>
+  mangaChapterIdIsNull() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        const FilterCondition.isNull(property: r'mangaChapterId'),
+      );
+    });
+  }
+
+  QueryBuilder<Highlight, Highlight, QAfterFilterCondition>
+  mangaChapterIdIsNotNull() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        const FilterCondition.isNotNull(property: r'mangaChapterId'),
+      );
+    });
+  }
+
+  QueryBuilder<Highlight, Highlight, QAfterFilterCondition>
+  mangaChapterIdEqualTo(int? value) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.equalTo(property: r'mangaChapterId', value: value),
+      );
+    });
+  }
+
+  QueryBuilder<Highlight, Highlight, QAfterFilterCondition>
+  mangaChapterIdGreaterThan(int? value, {bool include = false}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.greaterThan(
+          include: include,
+          property: r'mangaChapterId',
+          value: value,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<Highlight, Highlight, QAfterFilterCondition>
+  mangaChapterIdLessThan(int? value, {bool include = false}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.lessThan(
+          include: include,
+          property: r'mangaChapterId',
+          value: value,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<Highlight, Highlight, QAfterFilterCondition>
+  mangaChapterIdBetween(
+    int? lower,
+    int? upper, {
+    bool includeLower = true,
+    bool includeUpper = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.between(
+          property: r'mangaChapterId',
+          lower: lower,
+          includeLower: includeLower,
+          upper: upper,
+          includeUpper: includeUpper,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<Highlight, Highlight, QAfterFilterCondition> mangaIdIsNull() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        const FilterCondition.isNull(property: r'mangaId'),
+      );
+    });
+  }
+
+  QueryBuilder<Highlight, Highlight, QAfterFilterCondition> mangaIdIsNotNull() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        const FilterCondition.isNotNull(property: r'mangaId'),
+      );
+    });
+  }
+
+  QueryBuilder<Highlight, Highlight, QAfterFilterCondition> mangaIdEqualTo(
+    int? value,
+  ) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.equalTo(property: r'mangaId', value: value),
+      );
+    });
+  }
+
+  QueryBuilder<Highlight, Highlight, QAfterFilterCondition> mangaIdGreaterThan(
+    int? value, {
+    bool include = false,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.greaterThan(
+          include: include,
+          property: r'mangaId',
+          value: value,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<Highlight, Highlight, QAfterFilterCondition> mangaIdLessThan(
+    int? value, {
+    bool include = false,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.lessThan(
+          include: include,
+          property: r'mangaId',
+          value: value,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<Highlight, Highlight, QAfterFilterCondition> mangaIdBetween(
+    int? lower,
+    int? upper, {
+    bool includeLower = true,
+    bool includeUpper = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.between(
+          property: r'mangaId',
           lower: lower,
           includeLower: includeLower,
           upper: upper,
@@ -1527,6 +2059,30 @@ extension HighlightQuerySortBy on QueryBuilder<Highlight, Highlight, QSortBy> {
     });
   }
 
+  QueryBuilder<Highlight, Highlight, QAfterSortBy> sortByMangaChapterId() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'mangaChapterId', Sort.asc);
+    });
+  }
+
+  QueryBuilder<Highlight, Highlight, QAfterSortBy> sortByMangaChapterIdDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'mangaChapterId', Sort.desc);
+    });
+  }
+
+  QueryBuilder<Highlight, Highlight, QAfterSortBy> sortByMangaId() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'mangaId', Sort.asc);
+    });
+  }
+
+  QueryBuilder<Highlight, Highlight, QAfterSortBy> sortByMangaIdDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'mangaId', Sort.desc);
+    });
+  }
+
   QueryBuilder<Highlight, Highlight, QAfterSortBy> sortBySnippetId() {
     return QueryBuilder.apply(this, (query) {
       return query.addSortBy(r'snippetId', Sort.asc);
@@ -1650,6 +2206,30 @@ extension HighlightQuerySortThenBy
     });
   }
 
+  QueryBuilder<Highlight, Highlight, QAfterSortBy> thenByMangaChapterId() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'mangaChapterId', Sort.asc);
+    });
+  }
+
+  QueryBuilder<Highlight, Highlight, QAfterSortBy> thenByMangaChapterIdDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'mangaChapterId', Sort.desc);
+    });
+  }
+
+  QueryBuilder<Highlight, Highlight, QAfterSortBy> thenByMangaId() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'mangaId', Sort.asc);
+    });
+  }
+
+  QueryBuilder<Highlight, Highlight, QAfterSortBy> thenByMangaIdDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'mangaId', Sort.desc);
+    });
+  }
+
   QueryBuilder<Highlight, Highlight, QAfterSortBy> thenBySnippetId() {
     return QueryBuilder.apply(this, (query) {
       return query.addSortBy(r'snippetId', Sort.asc);
@@ -1733,6 +2313,18 @@ extension HighlightQueryWhereDistinct
     });
   }
 
+  QueryBuilder<Highlight, Highlight, QDistinct> distinctByMangaChapterId() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addDistinctBy(r'mangaChapterId');
+    });
+  }
+
+  QueryBuilder<Highlight, Highlight, QDistinct> distinctByMangaId() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addDistinctBy(r'mangaId');
+    });
+  }
+
   QueryBuilder<Highlight, Highlight, QDistinct> distinctBySnippetId() {
     return QueryBuilder.apply(this, (query) {
       return query.addDistinctBy(r'snippetId');
@@ -1768,13 +2360,13 @@ extension HighlightQueryProperty
     });
   }
 
-  QueryBuilder<Highlight, int, QQueryOperations> bookIdProperty() {
+  QueryBuilder<Highlight, int?, QQueryOperations> bookIdProperty() {
     return QueryBuilder.apply(this, (query) {
       return query.addPropertyName(r'bookId');
     });
   }
 
-  QueryBuilder<Highlight, int, QQueryOperations> chapterIdProperty() {
+  QueryBuilder<Highlight, int?, QQueryOperations> chapterIdProperty() {
     return QueryBuilder.apply(this, (query) {
       return query.addPropertyName(r'chapterId');
     });
@@ -1795,6 +2387,18 @@ extension HighlightQueryProperty
   QueryBuilder<Highlight, int, QQueryOperations> endOffsetProperty() {
     return QueryBuilder.apply(this, (query) {
       return query.addPropertyName(r'endOffset');
+    });
+  }
+
+  QueryBuilder<Highlight, int?, QQueryOperations> mangaChapterIdProperty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addPropertyName(r'mangaChapterId');
+    });
+  }
+
+  QueryBuilder<Highlight, int?, QQueryOperations> mangaIdProperty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addPropertyName(r'mangaId');
     });
   }
 

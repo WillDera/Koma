@@ -56,8 +56,12 @@ class AppBottomNav extends StatelessWidget {
 
     return Padding(
       padding: EdgeInsets.fromLTRB(16, 0, 16, 8 + bottomInset),
+      // heightFactor keeps this as tall as the pill. Plain [Align] expands to
+      // the Scaffold's max bottom-nav height, which then makes floating
+      // SnackBars assert "presented off screen".
       child: Align(
         alignment: Alignment.bottomCenter,
+        heightFactor: 1,
         child: Material(
           color: c.surface,
           elevation: 2,

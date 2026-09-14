@@ -20,14 +20,17 @@ import '../../widgets/empty_state.dart';
 import '../../widgets/reader_bottom_bar.dart';
 import '../../widgets/reader_settings_sheet.dart';
 import '../../widgets/reader_top_bar.dart';
+import '../../widgets/reading_progress_pill.dart';
 import '../../widgets/text_selection_toolbar.dart';
 import '../../widgets/toast.dart';
 import '../../widgets/tts_controls.dart';
+import '../../widgets/tts_controls_overlay.dart';
 import 'pagination/highlight_range.dart';
 import 'pagination/paginated_reader_body.dart';
 import 'pagination/reading_position.dart';
 import 'pagination/reading_spans.dart';
 import 'pagination/rich_chapter_body.dart';
+import 'text_progress_pill_prefs.dart';
 import 'reader_provider.dart';
 import 'scene/scene_chrome.dart';
 import 'scene/scene_chrome_layer.dart';
@@ -119,6 +122,9 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
   TtsProvider? _ttsProvider;
   bool _ttsListening = false;
   int _highlightVersion = 0;
+  double _textProgress = 0;
+  int _progressActivityTick = 0;
+  int _lastProgressActivityMs = 0;
 
   /// Last mark/remove so the toast Undo can restore the previous marks.
   ({List<Highlight> removed, Highlight? added})? _highlightUndo;
@@ -610,6 +616,9 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
       final currentOffset = _scrollController.offset;
       _provider?.updateScrollPosition(currentOffset);
       _syncCharOffsetFromScroll();
+      _noteTextProgress(
+        readingProgressFromScroll(_scrollController.position),
+      );
 
       // Hide UI chrome while scrolling down. Tap toggles it back; do not
       // show again on scroll-up (that fought tap-to-toggle).
@@ -627,6 +636,20 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
       _lastScrollOffset = currentOffset;
     }
     return false;
+  }
+
+  void _noteTextProgress(double progress) {
+    final clamped = progress.clamp(0.0, 1.0);
+    final now = DateTime.now().millisecondsSinceEpoch;
+    final progressChanged = (clamped - _textProgress).abs() > 0.005;
+    if (progressChanged) _textProgress = clamped;
+    if (now - _lastProgressActivityMs > 80) {
+      _lastProgressActivityMs = now;
+      _progressActivityTick++;
+      if (mounted) setState(() {});
+    } else if (progressChanged && mounted) {
+      setState(() {});
+    }
   }
 
   static const _tapSlop = 18.0;
@@ -819,6 +842,17 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
             onPositionChanged: (pos, charOffset, {required exact, pageEnd}) {
               _provider?.updateReadingOffset(charOffset);
               _armSnippetFocusIfNeeded();
+              // Approximate chapter progress from character offset vs chapter length.
+              final text = TextExtractor.extractCached(
+                chapter.id,
+                chapter.content,
+                kir: provider.currentKir,
+              );
+              if (text.isNotEmpty) {
+                _noteTextProgress(
+                  (charOffset / text.length).clamp(0.0, 1.0),
+                );
+              }
             },
           ),
         ),
@@ -1021,6 +1055,13 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
                       ),
               ),
             ),
+            // Edge reading progress pill (ebook scroll + page modes).
+            ReadingProgressPillOverlay(
+              progress: _textProgress,
+              enabled: ref.watch(textProgressPillPrefsProvider).enabled,
+              placement: ref.watch(textProgressPillPrefsProvider).placement,
+              activityTick: _progressActivityTick,
+            ),
             // Top bar
             Positioned(
               top: 0,
@@ -1052,54 +1093,42 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
               ),
             ),
 
-            // Bottom chrome: TTS panel above chapter bar when both are shown,
-            // so the chapter bar sits under the TTS controls at the screen edge.
+            // Bottom chapter bar. TTS is a separate overlay so bottom-mode
+            // media can drop into this slot when chrome hides.
             Positioned(
               left: 0,
               right: 0,
               bottom: 0,
-              child: ListenableBuilder(
-                listenable: _ttsProvider!,
-                builder: (_, _) {
-                  final ttsActive = _ttsProvider!.isActive;
-                  return ValueListenableBuilder<bool>(
-                    valueListenable: _showUI,
-                    builder: (_, showUI, _) {
-                      final showBar = showUI && !_toolbarVisible;
-                      return Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          if (ttsActive)
-                            TtsControls(
-                              provider: _ttsProvider!,
-                              // Bottom bar owns the home-indicator inset when
-                              // both are visible.
-                              padBottomSafeArea: !showBar,
-                            ),
-                          if (showBar)
-                            ReaderBottomBar(
-                              visible: true,
-                              onChapters: () => _openChapters(
-                                context,
-                                ref.read(readerProvider.notifier),
-                              ),
-                              onPrevious: () =>
-                                  _goAdjacentChapter(next: false),
-                              onNext: () => _goAdjacentChapter(next: true),
-                              canGoNext: provider.currentIndex <
-                                  provider.chapters.length - 1,
-                              canGoPrevious: provider.currentIndex > 0,
-                              currentIndex: provider.currentIndex,
-                              totalChapters: provider.chapters.length,
-                              readingTimeRemaining: readingTime,
-                            ),
-                        ],
-                      );
-                    },
+              child: ValueListenableBuilder<bool>(
+                valueListenable: _showUI,
+                builder: (_, showUI, _) {
+                  final showBar = showUI && !_toolbarVisible;
+                  return ReaderBottomBar(
+                    visible: showBar,
+                    onChapters: () => _openChapters(
+                      context,
+                      ref.read(readerProvider.notifier),
+                    ),
+                    onPrevious: () => _goAdjacentChapter(next: false),
+                    onNext: () => _goAdjacentChapter(next: true),
+                    canGoNext:
+                        provider.currentIndex < provider.chapters.length - 1,
+                    canGoPrevious: provider.currentIndex > 0,
+                    currentIndex: provider.currentIndex,
+                    totalChapters: provider.chapters.length,
+                    readingTimeRemaining: readingTime,
                   );
                 },
               ),
             ),
+            if (_ttsProvider != null)
+              ValueListenableBuilder<bool>(
+                valueListenable: _showUI,
+                builder: (_, showUI, _) => TtsControlsOverlay(
+                  provider: _ttsProvider!,
+                  chromeVisible: showUI && !_toolbarVisible,
+                ),
+              ),
 
             // Selection toolbar overlay. Positioned must be a direct Stack
             // child — the pill used to wrap itself in Positioned, which broke

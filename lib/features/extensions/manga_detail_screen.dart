@@ -407,6 +407,7 @@ class _MangaDetailScreenState extends ConsumerState<MangaDetailScreen> {
               'date_upload': c.dateUpload,
               'is_read': c.isRead,
               'last_page_read': c.lastPageRead,
+              'scroll_position': c.scrollPosition,
               'is_opened': c.isOpened,
               'is_downloaded': c.isDownloaded,
               if (c.readAt != null) 'read_at': c.readAt!.toIso8601String(),
@@ -420,6 +421,7 @@ class _MangaDetailScreenState extends ConsumerState<MangaDetailScreen> {
             c.url: {
               'is_read': c.isRead,
               'last_page_read': c.lastPageRead,
+              'scroll_position': c.scrollPosition,
               'is_downloaded': c.isDownloaded,
               'is_opened': c.isOpened,
               'read_at': c.readAt?.toIso8601String(),
@@ -743,6 +745,7 @@ class _MangaDetailScreenState extends ConsumerState<MangaDetailScreen> {
         'id': lc.id,
         'is_read': lc.isRead,
         'last_page_read': lc.lastPageRead,
+        'scroll_position': lc.scrollPosition,
         'is_downloaded': lc.isDownloaded,
         'is_opened': lc.isOpened,
         'is_bookmarked': lc.isBookmarked,
@@ -770,6 +773,7 @@ class _MangaDetailScreenState extends ConsumerState<MangaDetailScreen> {
               'id': c.id,
               'is_read': c.isRead,
               'last_page_read': c.lastPageRead,
+              'scroll_position': c.scrollPosition,
               'is_opened': c.isOpened,
               'is_downloaded': c.isDownloaded,
               'is_bookmarked': c.isBookmarked,
@@ -788,6 +792,7 @@ class _MangaDetailScreenState extends ConsumerState<MangaDetailScreen> {
           'id': local['id'],
           'is_read': local['is_read'],
           'last_page_read': local['last_page_read'],
+          'scroll_position': local['scroll_position'],
           'is_downloaded': local['is_downloaded'],
           'is_opened': local['is_opened'],
           'is_bookmarked': local['is_bookmarked'],
@@ -1325,8 +1330,10 @@ class _MangaDetailScreenState extends ConsumerState<MangaDetailScreen> {
 
     if (targets.isEmpty) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('No chapters match the selection')),
+        StashToast.show(
+          context,
+          message: 'No chapters match the selection',
+          icon: Icons.info_outline,
         );
       }
       return;
@@ -1342,8 +1349,10 @@ class _MangaDetailScreenState extends ConsumerState<MangaDetailScreen> {
     }).toList();
     if (targets.isEmpty) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Selected chapters are already downloaded')),
+        StashToast.show(
+          context,
+          message: 'Selected chapters are already downloaded',
+          icon: Icons.check,
         );
       }
       return;
@@ -1362,16 +1371,13 @@ class _MangaDetailScreenState extends ConsumerState<MangaDetailScreen> {
     );
     _syncDownloadProgressFromQueue(mgr.manager);
     if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
+      StashToast.show(
+        context,
+        message:
             'Queued ${targets.length} chapter${targets.length == 1 ? '' : 's'}',
-          ),
-          action: SnackBarAction(
-            label: 'Queue',
-            onPressed: () => context.pushNamed(Routes.downloadQueue),
-          ),
-        ),
+        icon: Icons.download_rounded,
+        actionLabel: 'Queue',
+        onAction: () => context.pushNamed(Routes.downloadQueue),
       );
     }
   }
@@ -1561,15 +1567,44 @@ class _MangaDetailScreenState extends ConsumerState<MangaDetailScreen> {
     final url = ch['url'] as String? ?? '';
     if (url.isEmpty) return;
     final repos = ref.read(repositoriesProvider);
-    final row = await repos.manga.getMangaChapterByUrl(mangaId, url);
+    var row = await repos.manga.getMangaChapterByUrl(mangaId, url);
+    if (row == null) {
+      final mangaTitle = _preferTitle(
+        detail.details?['title'] as String?,
+        widget.title,
+      );
+      final model = MangaChapter.withRecognition(
+        id: 0,
+        mangaId: mangaId,
+        mangaTitle: mangaTitle,
+        name: ch['name'] as String? ?? '',
+        url: url,
+        scanlator: ch['scanlator'] as String?,
+        dateUpload: asIntOr(ch['date_upload']),
+        index: asIntOr(ch['index']),
+        sourceChapterNumber: ch['chapter_number'] as num?,
+        memo: ch['memo'] as String?,
+      );
+      await repos.manga.insertMangaChapters(mangaId, [model]);
+      row = await repos.manga.getMangaChapterByUrl(mangaId, url);
+    }
     if (row == null) return;
     final next = !row.isBookmarked;
     await repos.manga.setMangaChapterBookmarked(row.id, next);
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(next ? 'Chapter bookmarked' : 'Bookmark removed'),
-      ),
+    final local = Map<String, Map<String, dynamic>>.from(
+      ref.read(mangaDetailProvider).localChapters,
+    );
+    local[url] = {
+      ...?local[url],
+      'is_bookmarked': next,
+      'url': url,
+    };
+    ref.read(mangaDetailProvider.notifier).setLocalChapters(local);
+    StashToast.show(
+      context,
+      message: next ? 'Chapter bookmarked' : 'Bookmark removed',
+      icon: next ? Icons.bookmark : Icons.bookmark_border,
     );
   }
 
@@ -1628,6 +1663,14 @@ class _MangaDetailScreenState extends ConsumerState<MangaDetailScreen> {
           ref.read(mangaDetailProvider).details?['memo'] as String?,
     );
     _syncDownloadProgressFromQueue(mgr);
+    if (!mounted) return;
+    StashToast.show(
+      context,
+      message: 'Download queued',
+      icon: Icons.download_rounded,
+      actionLabel: 'Queue',
+      onAction: () => context.pushNamed(Routes.downloadQueue),
+    );
   }
 
   void _syncDownloadProgressFromQueue(DownloadManager mgr) {
@@ -1998,7 +2041,8 @@ class _MangaDetailScreenState extends ConsumerState<MangaDetailScreen> {
     for (final ch in chapters) {
       final isRead = ch['is_read'] as bool? ?? false;
       final lastPage = asIntOr(ch['last_page_read']);
-      if (!isRead && lastPage > 0) {
+      final scroll = (ch['scroll_position'] as num?)?.toDouble() ?? 0.0;
+      if (!isRead && (lastPage > 0 || scroll > 0)) {
         inProgress ??= ch;
       }
       if (!isRead) {
@@ -2011,6 +2055,7 @@ class _MangaDetailScreenState extends ConsumerState<MangaDetailScreen> {
   bool _hasContinueProgress(List<Map<String, dynamic>> chapters) {
     for (final ch in chapters) {
       if (asIntOr(ch['last_page_read']) > 0) return true;
+      if (((ch['scroll_position'] as num?)?.toDouble() ?? 0) > 0) return true;
       if (ch['is_read'] as bool? ?? false) return true;
     }
     return false;
@@ -2056,6 +2101,8 @@ class _MangaDetailScreenState extends ConsumerState<MangaDetailScreen> {
         mangaName: widget.title,
         chapterUrl: url,
         chapterName: ch['name'] as String? ?? '',
+        seekStartOffset: null,
+        seekEndOffset: null,
       );
       await context.pushNamed(Routes.novelReader, extra: novelArgs);
     } else {
@@ -2077,6 +2124,7 @@ class _MangaDetailScreenState extends ConsumerState<MangaDetailScreen> {
         chMapNorm[_normalizeUrl(lc.url)] = {
           'is_read': lc.isRead,
           'last_page_read': lc.lastPageRead,
+          'scroll_position': lc.scrollPosition,
           'is_downloaded': lc.isDownloaded,
           'is_opened': lc.isOpened,
           'is_bookmarked': lc.isBookmarked,
@@ -2089,6 +2137,7 @@ class _MangaDetailScreenState extends ConsumerState<MangaDetailScreen> {
         final cleaned = Map<String, dynamic>.from(row)
           ..remove('is_read')
           ..remove('last_page_read')
+          ..remove('scroll_position')
           ..remove('is_downloaded')
           ..remove('is_opened')
           ..remove('is_bookmarked')
@@ -2996,13 +3045,14 @@ class _MangaDetailScreenState extends ConsumerState<MangaDetailScreen> {
     final isOpened = ch['is_opened'] as bool? ?? false;
     final isBookmarked = ch['is_bookmarked'] as bool? ?? false;
     final lastPageRead = asIntOr(ch['last_page_read']);
+    final scrollPos = (ch['scroll_position'] as num?)?.toDouble() ?? 0.0;
     final name = ch['name'] as String? ?? '';
     final scanlator = (ch['scanlator'] as String?)?.trim();
     final dateUpload = asIntOr(ch['date_upload']);
     final dlStatus = downloadProgress[url];
     final pageProg = _parsePageProgress(dlStatus);
     // Opened OR fully read → dim + clear the "new" dot.
-    final seen = isOpened || isRead || lastPageRead > 0;
+    final seen = isOpened || isRead || lastPageRead > 0 || scrollPos > 0;
     final unreadNew = !seen;
 
     final dateStr = dateUpload > 0
@@ -3014,6 +3064,7 @@ class _MangaDetailScreenState extends ConsumerState<MangaDetailScreen> {
       if (dateStr.isNotEmpty) dateStr,
       if (scanlator != null && scanlator.isNotEmpty) scanlator,
       if (!isRead && lastPageRead > 0) 'Page ${lastPageRead + 1}',
+      if (!isRead && lastPageRead <= 0 && scrollPos > 0) 'In progress',
     ];
     final subtitle = subtitleParts.join(' · ');
 

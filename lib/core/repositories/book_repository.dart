@@ -389,6 +389,14 @@ class BookRepository {
     return rows.map(_highlightToModel).toList(growable: false);
   }
 
+  Future<List<Highlight>> getHighlightsForMangaChapter(int mangaChapterId) async {
+    final rows = await _isar.highlights
+        .filter()
+        .mangaChapterIdEqualTo(mangaChapterId)
+        .findAll();
+    return rows.map(_highlightToModel).toList(growable: false);
+  }
+
   /// Persists [hl] and returns the assigned row id, so callers holding an
   /// in-memory copy can keep it in step with the stored row rather than
   /// carrying a placeholder id.
@@ -481,6 +489,8 @@ class BookRepository {
     snippetId: h.snippetId,
     bookId: h.bookId,
     chapterId: h.chapterId,
+    mangaId: h.mangaId,
+    mangaChapterId: h.mangaChapterId,
     startOffset: h.startOffset,
     endOffset: h.endOffset,
     color: h.color,
@@ -494,6 +504,8 @@ class BookRepository {
     snippetId: h.snippetId,
     bookId: h.bookId,
     chapterId: h.chapterId,
+    mangaId: h.mangaId,
+    mangaChapterId: h.mangaChapterId,
     startOffset: h.startOffset,
     endOffset: h.endOffset,
     color: h.color,

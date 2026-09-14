@@ -15,6 +15,7 @@ import '../extension_source_resolve.dart';
 import '../download_prefs.dart';
 import '../keiyoushi_service.dart';
 import '../notification_service.dart';
+import '../novel_html_content_service.dart';
 import 'chapter_download.dart';
 import 'download_store.dart';
 
@@ -367,8 +368,11 @@ class DownloadManager extends ChangeNotifier {
       }
 
       final isJs = await _isJsSource(download.sourceId);
+      final isNovel = await _isNovelSource(download.sourceId);
       final bool ok;
-      if (isJs) {
+      if (isNovel) {
+        ok = await _downloadOneNovel(download, abort);
+      } else if (isJs) {
         ok = await _downloadOneJs(download, abort);
       } else {
         final sourceId = await _ensureDalvikSourceLoaded(download.sourceId);
@@ -450,6 +454,64 @@ class DownloadManager extends ChangeNotifier {
     if (repos == null) return false;
     final ext = await findInstalledExtension(repos, sourceId);
     return ext?.isJs ?? false;
+  }
+
+  Future<bool> _isNovelSource(String sourceId) async {
+    final repos = _repos;
+    if (repos == null) return false;
+    final ext = await findInstalledExtension(repos, sourceId);
+    return (ext?.itemType ?? '').toLowerCase() == 'novel';
+  }
+
+  /// Novel path: fetch + cache HTML via [NovelHtmlContentService] (no page JPGs).
+  Future<bool> _downloadOneNovel(
+    ChapterDownload download,
+    DownloadAbortController abort,
+  ) async {
+    final repos = _repos;
+    if (repos == null) return false;
+
+    download.pagesTotal = 1;
+    download.pagesDone = 0;
+    notifyListeners();
+    unawaited(
+      NotificationService.instance.notifyDownloadProgress(
+        mangaTitle: download.mangaTitle,
+        chapterName: download.chapterName,
+        done: 0,
+        total: 1,
+        pending: pendingCount,
+      ),
+    );
+
+    if (abort.isAborted || _paused) return false;
+
+    final html = await NovelHtmlContentService(
+      repos: repos,
+      dispatch: _dispatch,
+    ).load(
+      sourceId: download.sourceId,
+      mangaId: download.mangaId ?? 0,
+      mangaName: download.mangaTitle,
+      chapterUrl: download.chapterUrl,
+      forceNetwork: true,
+    );
+    if (abort.isAborted || _paused) return false;
+    if (html.trim().isEmpty) return false;
+
+    download.pagesDone = 1;
+    notifyListeners();
+    unawaited(
+      NotificationService.instance.notifyDownloadProgress(
+        mangaTitle: download.mangaTitle,
+        chapterName: download.chapterName,
+        done: 1,
+        total: 1,
+        pending: pendingCount,
+      ),
+    );
+    unawaited(_persist());
+    return true;
   }
 
   /// Resolve hex/Mihon id and load the APK into Dalvik before download.

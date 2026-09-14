@@ -54,17 +54,22 @@ const MangaChapterSchema = CollectionSchema(
     r'memo': PropertySchema(id: 10, name: r'memo', type: IsarType.string),
     r'name': PropertySchema(id: 11, name: r'name', type: IsarType.string),
     r'readAt': PropertySchema(id: 12, name: r'readAt', type: IsarType.dateTime),
-    r'scanlator': PropertySchema(
+    r'readingCharOffset': PropertySchema(
       id: 13,
+      name: r'readingCharOffset',
+      type: IsarType.long,
+    ),
+    r'scanlator': PropertySchema(
+      id: 14,
       name: r'scanlator',
       type: IsarType.string,
     ),
     r'scrollPosition': PropertySchema(
-      id: 14,
+      id: 15,
       name: r'scrollPosition',
       type: IsarType.double,
     ),
-    r'url': PropertySchema(id: 15, name: r'url', type: IsarType.string),
+    r'url': PropertySchema(id: 16, name: r'url', type: IsarType.string),
   },
 
   estimateSize: _mangaChapterEstimateSize,
@@ -151,9 +156,10 @@ void _mangaChapterSerialize(
   writer.writeString(offsets[10], object.memo);
   writer.writeString(offsets[11], object.name);
   writer.writeDateTime(offsets[12], object.readAt);
-  writer.writeString(offsets[13], object.scanlator);
-  writer.writeDouble(offsets[14], object.scrollPosition);
-  writer.writeString(offsets[15], object.url);
+  writer.writeLong(offsets[13], object.readingCharOffset);
+  writer.writeString(offsets[14], object.scanlator);
+  writer.writeDouble(offsets[15], object.scrollPosition);
+  writer.writeString(offsets[16], object.url);
 }
 
 MangaChapter _mangaChapterDeserialize(
@@ -177,9 +183,10 @@ MangaChapter _mangaChapterDeserialize(
     memo: reader.readStringOrNull(offsets[10]),
     name: reader.readString(offsets[11]),
     readAt: reader.readDateTimeOrNull(offsets[12]),
-    scanlator: reader.readStringOrNull(offsets[13]),
-    scrollPosition: reader.readDoubleOrNull(offsets[14]) ?? 0.0,
-    url: reader.readString(offsets[15]),
+    readingCharOffset: reader.readLongOrNull(offsets[13]),
+    scanlator: reader.readStringOrNull(offsets[14]),
+    scrollPosition: reader.readDoubleOrNull(offsets[15]) ?? 0.0,
+    url: reader.readString(offsets[16]),
   );
   return object;
 }
@@ -218,10 +225,12 @@ P _mangaChapterDeserializeProp<P>(
     case 12:
       return (reader.readDateTimeOrNull(offset)) as P;
     case 13:
-      return (reader.readStringOrNull(offset)) as P;
+      return (reader.readLongOrNull(offset)) as P;
     case 14:
-      return (reader.readDoubleOrNull(offset) ?? 0.0) as P;
+      return (reader.readStringOrNull(offset)) as P;
     case 15:
+      return (reader.readDoubleOrNull(offset) ?? 0.0) as P;
+    case 16:
       return (reader.readString(offset)) as P;
     default:
       throw IsarError('Unknown property with id $propertyId');
@@ -1343,6 +1352,79 @@ extension MangaChapterQueryFilter
   }
 
   QueryBuilder<MangaChapter, MangaChapter, QAfterFilterCondition>
+  readingCharOffsetIsNull() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        const FilterCondition.isNull(property: r'readingCharOffset'),
+      );
+    });
+  }
+
+  QueryBuilder<MangaChapter, MangaChapter, QAfterFilterCondition>
+  readingCharOffsetIsNotNull() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        const FilterCondition.isNotNull(property: r'readingCharOffset'),
+      );
+    });
+  }
+
+  QueryBuilder<MangaChapter, MangaChapter, QAfterFilterCondition>
+  readingCharOffsetEqualTo(int? value) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.equalTo(property: r'readingCharOffset', value: value),
+      );
+    });
+  }
+
+  QueryBuilder<MangaChapter, MangaChapter, QAfterFilterCondition>
+  readingCharOffsetGreaterThan(int? value, {bool include = false}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.greaterThan(
+          include: include,
+          property: r'readingCharOffset',
+          value: value,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<MangaChapter, MangaChapter, QAfterFilterCondition>
+  readingCharOffsetLessThan(int? value, {bool include = false}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.lessThan(
+          include: include,
+          property: r'readingCharOffset',
+          value: value,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<MangaChapter, MangaChapter, QAfterFilterCondition>
+  readingCharOffsetBetween(
+    int? lower,
+    int? upper, {
+    bool includeLower = true,
+    bool includeUpper = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.between(
+          property: r'readingCharOffset',
+          lower: lower,
+          includeLower: includeLower,
+          upper: upper,
+          includeUpper: includeUpper,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<MangaChapter, MangaChapter, QAfterFilterCondition>
   scanlatorIsNull() {
     return QueryBuilder.apply(this, (query) {
       return query.addFilterCondition(
@@ -1894,6 +1976,20 @@ extension MangaChapterQuerySortBy
     });
   }
 
+  QueryBuilder<MangaChapter, MangaChapter, QAfterSortBy>
+  sortByReadingCharOffset() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'readingCharOffset', Sort.asc);
+    });
+  }
+
+  QueryBuilder<MangaChapter, MangaChapter, QAfterSortBy>
+  sortByReadingCharOffsetDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'readingCharOffset', Sort.desc);
+    });
+  }
+
   QueryBuilder<MangaChapter, MangaChapter, QAfterSortBy> sortByScanlator() {
     return QueryBuilder.apply(this, (query) {
       return query.addSortBy(r'scanlator', Sort.asc);
@@ -2108,6 +2204,20 @@ extension MangaChapterQuerySortThenBy
     });
   }
 
+  QueryBuilder<MangaChapter, MangaChapter, QAfterSortBy>
+  thenByReadingCharOffset() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'readingCharOffset', Sort.asc);
+    });
+  }
+
+  QueryBuilder<MangaChapter, MangaChapter, QAfterSortBy>
+  thenByReadingCharOffsetDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'readingCharOffset', Sort.desc);
+    });
+  }
+
   QueryBuilder<MangaChapter, MangaChapter, QAfterSortBy> thenByScanlator() {
     return QueryBuilder.apply(this, (query) {
       return query.addSortBy(r'scanlator', Sort.asc);
@@ -2232,6 +2342,13 @@ extension MangaChapterQueryWhereDistinct
     });
   }
 
+  QueryBuilder<MangaChapter, MangaChapter, QDistinct>
+  distinctByReadingCharOffset() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addDistinctBy(r'readingCharOffset');
+    });
+  }
+
   QueryBuilder<MangaChapter, MangaChapter, QDistinct> distinctByScanlator({
     bool caseSensitive = true,
   }) {
@@ -2339,6 +2456,13 @@ extension MangaChapterQueryProperty
   QueryBuilder<MangaChapter, DateTime?, QQueryOperations> readAtProperty() {
     return QueryBuilder.apply(this, (query) {
       return query.addPropertyName(r'readAt');
+    });
+  }
+
+  QueryBuilder<MangaChapter, int?, QQueryOperations>
+  readingCharOffsetProperty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addPropertyName(r'readingCharOffset');
     });
   }
 

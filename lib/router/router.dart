@@ -97,6 +97,8 @@ typedef NovelReaderArgs = ({
   String mangaName,
   String chapterUrl,
   String chapterName,
+  int? seekStartOffset,
+  int? seekEndOffset,
 });
 
 typedef MangaDetailArgs = ({
@@ -298,6 +300,8 @@ final GoRouter appRouter = GoRouter(
           mangaName: a.mangaName,
           chapterUrl: a.chapterUrl,
           chapterName: a.chapterName,
+          seekStartOffset: a.seekStartOffset,
+          seekEndOffset: a.seekEndOffset,
         );
       },
     ),

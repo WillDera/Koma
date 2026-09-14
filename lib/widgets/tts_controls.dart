@@ -1,10 +1,14 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../features/reader/tts/tts_engine.dart';
+import '../features/reader/tts_controls_prefs.dart';
 import '../features/reader/tts_provider.dart';
 import '../theme/app_theme.dart';
-import '../theme/tokens/glass_blur.dart';
 import 'icon_button_round.dart';
+import 'segmented_control.dart';
 
+/// Floating TTS transport — discrete circular pills like [ReaderBottomBar],
+/// no connecting strip behind them.
 class TtsControls extends StatelessWidget {
   final TtsProvider provider;
 
@@ -12,104 +16,158 @@ class TtsControls extends StatelessWidget {
   /// above another chrome bar that already clears the home indicator.
   final bool padBottomSafeArea;
 
+  /// Horizontal row (bottom) or vertical stack (left / right edge).
+  final Axis axis;
+
   const TtsControls({
     super.key,
     required this.provider,
     this.padBottomSafeArea = true,
+    this.axis = Axis.horizontal,
   });
 
   @override
   Widget build(BuildContext context) {
     final c = context.colors;
+    final chromeBg = c.surface;
+    final vertical = axis == Axis.vertical;
     return ListenableBuilder(
       listenable: provider,
       builder: (context, _) {
-        return GlassBlur.layer(
-          child: Container(
-            color: c.bg.withValues(alpha: 0.82),
-            child: SafeArea(
-              top: false,
-              bottom: padBottomSafeArea,
-              child: Padding(
-                // Match [ReaderBottomBar] inset so the two rows align.
-                padding: const EdgeInsets.fromLTRB(20, 8, 20, 8),
-                child: Row(
-                  children: [
-                    IconButtonRound(
-                      icon: Icons.close,
-                      size: 40,
-                      variant: IconButtonVariant.tonal,
-                      onPressed: () => provider.stop(),
-                    ),
-                    const SizedBox(width: 8),
-                    IconButtonRound(
-                      icon: Icons.skip_previous,
-                      size: 40,
-                      variant: IconButtonVariant.tonal,
-                      onPressed: provider.currentIndex > 0
-                          ? () => provider.previousSentence()
-                          : null,
-                    ),
-                    const SizedBox(width: 8),
-                    provider.isBuffering
-                        ? SizedBox(
-                            width: 40,
-                            height: 40,
-                            child: CircularProgressIndicator(
-                              strokeWidth: 2,
-                              color: c.accent,
-                            ),
-                          )
-                        : IconButtonRound(
-                            icon: provider.isPaused
-                                ? Icons.play_arrow
-                                : Icons.pause,
-                            size: 40,
-                            variant: IconButtonVariant.filled,
-                            iconColor: c.onAccent,
-                            backgroundColor: c.accent,
-                            onPressed: () {
-                              if (provider.isPaused) {
-                                provider.playFromCurrent();
-                              } else {
-                                provider.pause();
-                              }
-                            },
-                          ),
-                    const SizedBox(width: 8),
-                    IconButtonRound(
-                      icon: Icons.skip_next,
-                      size: 40,
-                      variant: IconButtonVariant.tonal,
-                      onPressed:
-                          provider.currentIndex < provider.totalSentences - 1
-                          ? () => provider.nextSentence()
-                          : null,
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Text(
-                        '${provider.currentIndex + 1} / ${provider.totalSentences}',
-                        style: TextStyle(color: c.textSecondary, fontSize: 12),
+        final canPrev = provider.currentIndex > 0;
+        final canNext = provider.currentIndex < provider.totalSentences - 1;
+
+        Widget gap() => vertical
+            ? const SizedBox(height: 10)
+            : const SizedBox(width: 10);
+
+        final play = provider.isBuffering
+            ? SizedBox(
+                width: 48,
+                height: 48,
+                child: Material(
+                  color: chromeBg,
+                  shape: const CircleBorder(),
+                  child: Center(
+                    child: SizedBox(
+                      width: 22,
+                      height: 22,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2.5,
+                        color: c.accent,
                       ),
                     ),
-                    IconButtonRound(
-                      icon: Icons.tune,
-                      size: 40,
-                      variant: IconButtonVariant.tonal,
-                      onPressed: () => TtsSettingsSheet.show(
-                        context,
-                        provider,
-                        startOnClose: false,
-                      ),
-                    ),
-                  ],
+                  ),
                 ),
-              ),
-            ),
+              )
+            : _TtsCircle(
+                icon: provider.isPaused
+                    ? Icons.play_arrow_rounded
+                    : Icons.pause_rounded,
+                chromeBg: chromeBg,
+                filled: true,
+                onTap: () {
+                  if (provider.isPaused) {
+                    provider.playFromCurrent();
+                  } else {
+                    provider.pause();
+                  }
+                },
+              );
+
+        final transport = <Widget>[
+          _TtsCircle(
+            icon: Icons.close,
+            chromeBg: chromeBg,
+            onTap: () => provider.stop(),
+          ),
+          gap(),
+          _TtsCircle(
+            icon: Icons.skip_previous_rounded,
+            chromeBg: chromeBg,
+            enabled: canPrev,
+            onTap: () => provider.previousSentence(),
+          ),
+          gap(),
+          play,
+          gap(),
+          _TtsCircle(
+            icon: Icons.skip_next_rounded,
+            chromeBg: chromeBg,
+            enabled: canNext,
+            onTap: () => provider.nextSentence(),
+          ),
+        ];
+
+        final tune = _TtsCircle(
+          icon: Icons.tune_rounded,
+          chromeBg: chromeBg,
+          onTap: () => TtsSettingsSheet.show(
+            context,
+            provider,
+            startOnClose: false,
+          ),
+        );
+
+        final body = vertical
+            ? Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [...transport, gap(), tune],
+              )
+            : Row(
+                children: [...transport, const Spacer(), tune],
+              );
+
+        return SafeArea(
+          top: false,
+          bottom: padBottomSafeArea,
+          child: Padding(
+            padding: vertical
+                ? const EdgeInsets.symmetric(vertical: 8)
+                : const EdgeInsets.fromLTRB(16, 8, 16, 8),
+            child: body,
           ),
         );
       },
+    );
+  }
+}
+
+/// Same silhouette as [ReaderBottomBar]'s circular nav buttons.
+class _TtsCircle extends StatelessWidget {
+  const _TtsCircle({
+    required this.icon,
+    required this.chromeBg,
+    required this.onTap,
+    this.enabled = true,
+    this.filled = false,
+  });
+
+  final IconData icon;
+  final Color chromeBg;
+  final VoidCallback onTap;
+  final bool enabled;
+  final bool filled;
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.colors;
+    final bg = filled && enabled ? c.accent : chromeBg;
+    final fg = filled && enabled
+        ? c.onAccent
+        : (enabled ? c.textPrimary : c.textTertiary.withValues(alpha: 0.45));
+    return Material(
+      color: bg,
+      shape: const CircleBorder(),
+      child: InkWell(
+        customBorder: const CircleBorder(),
+        onTap: enabled ? onTap : null,
+        child: SizedBox(
+          width: 48,
+          height: 48,
+          child: Icon(icon, color: fg, size: 26),
+        ),
+      ),
     );
   }
 }
@@ -241,6 +299,38 @@ class _TtsSettingsSheetState extends State<TtsSettingsSheet> {
               ),
             ),
             const SizedBox(height: 8),
+
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 20),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Controls placement',
+                    style: TextStyle(color: c.textSecondary, fontSize: 13),
+                  ),
+                  const SizedBox(height: 6),
+                  Consumer(
+                    builder: (context, ref, _) {
+                      final media = ref.watch(ttsControlsPrefsProvider);
+                      return SegmentedControl<TtsControlsPlacement>(
+                        value: media.placement,
+                        onChanged: (v) => ref
+                            .read(ttsControlsPrefsProvider.notifier)
+                            .setPlacement(v),
+                        segments: const {
+                          TtsControlsPlacement.left: 'Left',
+                          TtsControlsPlacement.bottom: 'Bottom',
+                          TtsControlsPlacement.right: 'Right',
+                        },
+                      );
+                    },
+                  ),
+                ],
+              ),
+            ),
+
+            const SizedBox(height: 12),
 
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 20),

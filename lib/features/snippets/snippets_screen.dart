@@ -328,6 +328,8 @@ class _SnippetsScreenState extends ConsumerState<SnippetsScreen> {
                           startOffset: entry.$2.startOffset,
                           endOffset: entry.$2.endOffset,
                         )
+                      : entry.$2.isNovelBacked
+                      ? () => _openNovelReader(context, entry.$2)
                       : null,
                 ),
               ),
@@ -454,6 +456,44 @@ class _SnippetsScreenState extends ConsumerState<SnippetsScreen> {
         snippetScrollOffset: scrollOffset,
         snippetStartOffset: startOffset,
         snippetEndOffset: endOffset,
+      ),
+    );
+  }
+
+  Future<void> _openNovelReader(BuildContext context, Snippet snippet) async {
+    final mangaId = snippet.mangaId;
+    final chapterId = snippet.mangaChapterId;
+    if (mangaId == null || chapterId == null) {
+      StashToast.show(
+        context,
+        message: 'Cannot open this snippet source',
+        icon: Icons.error_outline,
+      );
+      return;
+    }
+    final repos = ref.read(repositoriesProvider);
+    final manga = await repos.manga.getMangaById(mangaId);
+    final chapter = await repos.manga.getMangaChapter(chapterId);
+    if (!context.mounted) return;
+    if (manga == null || chapter == null) {
+      StashToast.show(
+        context,
+        message: 'Novel no longer in library',
+        icon: Icons.error_outline,
+      );
+      return;
+    }
+    context.pushNamed(
+      Routes.novelReader,
+      extra: (
+        mangaId: manga.id,
+        sourceId: manga.sourceId,
+        mangaUrl: manga.url,
+        mangaName: manga.name,
+        chapterUrl: chapter.url,
+        chapterName: chapter.name,
+        seekStartOffset: snippet.startOffset,
+        seekEndOffset: snippet.endOffset,
       ),
     );
   }

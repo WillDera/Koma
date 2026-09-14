@@ -98,6 +98,36 @@ void main() {
       expect(stored.single.id, id);
     });
 
+    test('insertHighlight supports novel manga FKs without book ids', () async {
+      final books = BookRepository(isar);
+      final manga = MangaRepository(isar);
+      final mid = await manga.insertManga(
+        Manga(id: 0, name: 'LN', url: '/ln', sourceId: 's'),
+      );
+      await manga.insertMangaChapters(mid, [
+        MangaChapter(id: 0, mangaId: mid, name: 'c1', url: '/c1', index: 0),
+      ]);
+      final chId = (await manga.getMangaChapters(mid)).first.id;
+
+      final id = await books.insertHighlight(
+        Highlight(
+          id: 0,
+          bookId: null,
+          chapterId: null,
+          mangaId: mid,
+          mangaChapterId: chId,
+          startOffset: 0,
+          endOffset: 12,
+          color: 'yellow',
+          text: 'novel passage',
+        ),
+      );
+      expect(id, greaterThan(0));
+      final stored = await books.getHighlightsForMangaChapter(chId);
+      expect(stored.single.text, 'novel passage');
+      expect(stored.single.isNovelBacked, isTrue);
+    });
+
     test('a caller can append to the highlights it fetched', () async {
       // Regression: getHighlightsForChapter returns toList(growable: false),
       // and the reader assigned that list straight to its mutable field, so
@@ -353,6 +383,24 @@ void main() {
       expect(counts.first, 0);
       expect(counts.last, 1);
     });
+
+    test('createSnippet stores manga FKs for novel passages', () async {
+      final repo = SnippetRepository(isar);
+      final id = await repo.createSnippet(
+        text: 'a novel line',
+        mangaId: 42,
+        mangaChapterId: 7,
+        startOffset: 10,
+        endOffset: 22,
+        sourceTitle: 'Ch 1',
+        sourceUrl: 'https://example/c1',
+      );
+      final snip = (await repo.getSnippets()).singleWhere((s) => s.id == id);
+      expect(snip.mangaId, 42);
+      expect(snip.mangaChapterId, 7);
+      expect(snip.isNovelBacked, isTrue);
+      expect(snip.startOffset, 10);
+    });
   });
 
   group('MangaRepository', () {
@@ -508,6 +556,36 @@ void main() {
       expect(found, isNotNull);
       expect(found!.name, 'M');
       expect(await repo.getMangaByKey('srcX', '/missing'), isNull);
+    });
+
+    test('updateMangaChapterScrollPosition round-trips scroll + char offset',
+        () async {
+      final repo = MangaRepository(isar);
+      final mid = await repo.insertManga(
+        Manga(id: 0, name: 'Novel', url: '/n', sourceId: 's'),
+      );
+      await repo.insertMangaChapters(mid, [
+        MangaChapter(id: 0, mangaId: mid, name: 'c1', url: '/c1', index: 0),
+      ]);
+      final chapters = await repo.getMangaChapters(mid);
+      final chId = chapters.first.id;
+
+      expect(chapters.first.scrollPosition, 0);
+      expect(chapters.first.readingCharOffset, isNull);
+
+      await repo.updateMangaChapterScrollPosition(
+        chId,
+        640.5,
+        readingCharOffset: 1800,
+      );
+      final after = await repo.getMangaChapterByUrl(mid, '/c1');
+      expect(after!.scrollPosition, 640.5);
+      expect(after.readingCharOffset, 1800);
+
+      await repo.updateMangaChapterReadingOffset(chId, 2200);
+      final offsetOnly = await repo.getMangaChapterByUrl(mid, '/c1');
+      expect(offsetOnly!.scrollPosition, 640.5);
+      expect(offsetOnly.readingCharOffset, 2200);
     });
   });
 }

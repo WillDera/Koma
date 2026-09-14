@@ -1,8 +1,10 @@
 class Highlight {
   final int id;
   final int? snippetId;
-  final int bookId;
-  final int chapterId;
+  final int? bookId;
+  final int? chapterId;
+  final int? mangaId;
+  final int? mangaChapterId;
   final int startOffset;
   final int endOffset;
   final String color;
@@ -10,11 +12,15 @@ class Highlight {
   final DateTime createdAt;
   final DateTime updatedAt;
 
+  bool get isNovelBacked => mangaId != null && mangaChapterId != null;
+
   Highlight({
     required this.id,
     this.snippetId,
-    required this.bookId,
-    required this.chapterId,
+    this.bookId,
+    this.chapterId,
+    this.mangaId,
+    this.mangaChapterId,
     required this.startOffset,
     required this.endOffset,
     this.color = 'yellow',
@@ -29,6 +35,8 @@ class Highlight {
     'snippet_id': snippetId,
     'book_id': bookId,
     'chapter_id': chapterId,
+    'manga_id': mangaId,
+    'manga_chapter_id': mangaChapterId,
     'start_offset': startOffset,
     'end_offset': endOffset,
     'color': color,
@@ -40,8 +48,10 @@ class Highlight {
   factory Highlight.fromJson(Map<String, dynamic> json) => Highlight(
     id: json['id'] as int,
     snippetId: json['snippet_id'] as int?,
-    bookId: json['book_id'] as int,
-    chapterId: json['chapter_id'] as int,
+    bookId: json['book_id'] as int?,
+    chapterId: json['chapter_id'] as int?,
+    mangaId: json['manga_id'] as int?,
+    mangaChapterId: json['manga_chapter_id'] as int?,
     startOffset: json['start_offset'] as int,
     endOffset: json['end_offset'] as int,
     color: json['color'] as String? ?? 'yellow',
