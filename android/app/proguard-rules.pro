@@ -51,7 +51,10 @@
 -keep class com.flutter_rust_bridge.** { *; }
 -keep class dev.fluttercommunity.** { *; }
 -keep class io.flutter.plugins.** { *; }
--keep class io.flutter.embedding.** { *; }
+# Do NOT -keep io.flutter.embedding.** — that retains
+# PlayStoreDeferredComponentManager / FlutterPlayStoreSplitApplication, which
+# reference Play Core split-install APIs we do not ship. R8 full mode then
+# fails on those missing classes during minifyReleaseWithR8.
 -keepclasseswithmembernames class * {
     native <methods>;
 }
@@ -77,3 +80,7 @@
 -dontwarn org.bouncycastle.**
 -dontwarn org.conscrypt.**
 -dontwarn org.openjsse.**
+
+# Flutter embedding references Play Core for optional deferred components.
+# We do not use dynamic feature modules — suppress R8 missing-class errors.
+-dontwarn com.google.android.play.core.**

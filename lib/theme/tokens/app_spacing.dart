@@ -65,13 +65,8 @@ class AppSpacing {
     return [
       BoxShadow(
         color: isDark ? const Color(0x40000000) : const Color(0x0F000000),
-        blurRadius: 12,
-        offset: const Offset(0, 4),
-      ),
-      BoxShadow(
-        color: isDark ? const Color(0x1A000000) : const Color(0x08000000),
-        blurRadius: 2,
-        offset: const Offset(0, 1),
+        blurRadius: 6,
+        offset: const Offset(0, 2),
       ),
     ];
   }
@@ -80,13 +75,8 @@ class AppSpacing {
     return [
       BoxShadow(
         color: isDark ? const Color(0x55000000) : const Color(0x14000000),
-        blurRadius: 32,
-        offset: const Offset(0, 12),
-      ),
-      BoxShadow(
-        color: isDark ? const Color(0x28000000) : const Color(0x0A000000),
-        blurRadius: 4,
-        offset: const Offset(0, 1),
+        blurRadius: 12,
+        offset: const Offset(0, 4),
       ),
     ];
   }
@@ -95,13 +85,8 @@ class AppSpacing {
     return [
       BoxShadow(
         color: isDark ? const Color(0x66000000) : const Color(0x1F000000),
-        blurRadius: 60,
-        offset: const Offset(0, 24),
-      ),
-      BoxShadow(
-        color: isDark ? const Color(0x33000000) : const Color(0x0A000000),
-        blurRadius: 8,
-        offset: const Offset(0, 2),
+        blurRadius: 20,
+        offset: const Offset(0, 8),
       ),
     ];
   }

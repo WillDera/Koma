@@ -64,33 +64,43 @@ class AppBottomNav extends StatelessWidget {
         heightFactor: 1,
         child: Material(
           color: c.surface,
-          elevation: 2,
-          shadowColor: c.textPrimary.withValues(alpha: 0.18),
+          elevation: 0,
+          shadowColor: Colors.transparent,
           borderRadius: BorderRadius.circular(28),
           clipBehavior: Clip.antiAlias,
-          child: AnimatedSize(
-            duration: _duration,
-            curve: _curve,
-            alignment: Alignment.center,
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 6),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: List.generate(items.length, (i) {
-                  final item = items[i];
-                  final isActive = i == currentIndex;
-                  return _PillDestination(
-                    key: ValueKey('nav-$i-${item.label}'),
-                    item: item,
-                    isActive: isActive,
-                    onTap: () => onTap(i),
-                    onLongPress: onLongPress == null
-                        ? null
-                        : () => onLongPress!(i),
-                    profileInitials: item.profileTab ? profileInitials : null,
-                    profileImage: item.profileTab ? profileImage : null,
-                  );
-                }),
+          child: DecoratedBox(
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(28),
+              border: Border.all(
+                color: c.border.withValues(alpha: 0.55),
+                width: 0.5,
+              ),
+            ),
+            child: AnimatedSize(
+              duration: _duration,
+              curve: _curve,
+              alignment: Alignment.center,
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 6),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: List.generate(items.length, (i) {
+                    final item = items[i];
+                    final isActive = i == currentIndex;
+                    return _PillDestination(
+                      key: ValueKey('nav-$i-${item.label}'),
+                      item: item,
+                      isActive: isActive,
+                      onTap: () => onTap(i),
+                      onLongPress: onLongPress == null
+                          ? null
+                          : () => onLongPress!(i),
+                      profileInitials:
+                          item.profileTab ? profileInitials : null,
+                      profileImage: item.profileTab ? profileImage : null,
+                    );
+                  }),
+                ),
               ),
             ),
           ),

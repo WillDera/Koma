@@ -1,7 +1,8 @@
 plugins {
-    id("com.android.application") version "8.11.1"
+    // Versions come from android/settings.gradle.kts (AGP 8.11.1 / Kotlin 2.4.10).
+    id("com.android.application")
+    id("org.jetbrains.kotlin.android")
     id("dev.flutter.flutter-gradle-plugin")
-    kotlin("android") version "2.4.10"
 }
 
 android {

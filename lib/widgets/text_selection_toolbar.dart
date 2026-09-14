@@ -3,7 +3,6 @@ import 'package:flutter/material.dart';
 import '../theme/app_theme.dart';
 import '../theme/tokens/app_colors.dart';
 import '../theme/tokens/app_motion.dart';
-import '../theme/tokens/glass_blur.dart';
 import '../theme/tokens/app_spacing.dart';
 import 'animated_press.dart';
 import 'highlight_color_picker.dart';
@@ -35,59 +34,56 @@ class ReaderSelectionToolbar extends StatelessWidget {
     final isSepia = c.bg == AppColors.sepiaBg;
     final brightness = Theme.of(context).brightness;
     return Center(
-      child: GlassBlur.layer(
-        borderRadius: AppSpacing.brPill,
-        child: AnimatedContainer(
-          duration: AppMotion.base,
-          curve: AppMotion.standard,
-          padding: const EdgeInsets.all(6),
-          decoration: BoxDecoration(
-            color: c.textPrimary.withValues(alpha: 0.92),
-            borderRadius: AppSpacing.brPill,
-            boxShadow: AppSpacing.shadow3(
-              isDark: c.bg.computeLuminance() < 0.5,
-            ),
+      child: AnimatedContainer(
+        duration: AppMotion.base,
+        curve: AppMotion.standard,
+        padding: const EdgeInsets.all(6),
+        decoration: BoxDecoration(
+          color: c.textPrimary.withValues(alpha: 0.92),
+          borderRadius: AppSpacing.brPill,
+          boxShadow: AppSpacing.shadow2(
+            isDark: c.bg.computeLuminance() < 0.5,
           ),
-          child: FittedBox(
-            fit: BoxFit.scaleDown,
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                for (final key in HighlightColorPicker.palette)
-                  _ColorSwatch(
-                    colorKey: key,
-                    color: AppColors.highlight(
-                      key,
-                      brightness,
-                      isSepia: isSepia,
-                    ),
-                    selected: selectedColor == key,
-                    onTap: () => onHighlight(key),
+        ),
+        child: FittedBox(
+          fit: BoxFit.scaleDown,
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              for (final key in HighlightColorPicker.palette)
+                _ColorSwatch(
+                  colorKey: key,
+                  color: AppColors.highlight(
+                    key,
+                    brightness,
+                    isSepia: isSepia,
                   ),
-                if (onRemove != null) ...[
-                  _Divider(),
-                  _ToolAction(
-                    icon: Icons.format_color_reset,
-                    label: 'Remove',
-                    onTap: onRemove!,
-                  ),
-                ],
-                _Divider(),
-                _ToolAction(
-                  icon: Icons.edit_note,
-                  label: 'Snippet',
-                  onTap: onNote,
+                  selected: selectedColor == key,
+                  onTap: () => onHighlight(key),
                 ),
-                _Divider(),
-                _ToolAction(icon: Icons.copy, label: 'Copy', onTap: onCopy),
+              if (onRemove != null) ...[
                 _Divider(),
                 _ToolAction(
-                  icon: Icons.ios_share,
-                  label: 'Share',
-                  onTap: onShare,
+                  icon: Icons.format_color_reset,
+                  label: 'Remove',
+                  onTap: onRemove!,
                 ),
               ],
-            ),
+              _Divider(),
+              _ToolAction(
+                icon: Icons.edit_note,
+                label: 'Snippet',
+                onTap: onNote,
+              ),
+              _Divider(),
+              _ToolAction(icon: Icons.copy, label: 'Copy', onTap: onCopy),
+              _Divider(),
+              _ToolAction(
+                icon: Icons.ios_share,
+                label: 'Share',
+                onTap: onShare,
+              ),
+            ],
           ),
         ),
       ),

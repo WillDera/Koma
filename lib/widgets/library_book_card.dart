@@ -49,11 +49,12 @@ class LibraryBookCard extends StatelessWidget {
   /// title (not overlaid on the cover).
   Widget _grid(BuildContext context) {
     final c = context.colors;
-    return AnimatedPress(
-      onTap: onTap,
-      onLongPress: onLongPress,
-      scaleDown: 0.97,
-      child: Column(
+    return RepaintBoundary(
+      child: AnimatedPress(
+        onTap: onTap,
+        onLongPress: onLongPress,
+        scaleDown: 0.97,
+        child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Expanded(
@@ -131,6 +132,7 @@ class LibraryBookCard extends StatelessWidget {
               style: TextStyle(color: c.textSecondary, fontSize: 11),
             ),
         ],
+      ),
       ),
     );
   }

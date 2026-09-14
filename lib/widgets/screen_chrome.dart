@@ -117,16 +117,18 @@ class _StaggeredFadeScaleState extends State<StaggeredFadeScale>
     with SingleTickerProviderStateMixin {
   late final AnimationController _controller;
   late final Animation<double> _fade;
-  late final Animation<double> _scale;
+  bool _done = false;
 
   @override
   void initState() {
     super.initState();
     _controller = AnimationController(vsync: this, duration: widget.duration);
-    _fade = CurvedAnimation(parent: _controller, curve: Curves.easeIn);
-    _scale = Tween<double>(begin: widget.scaleBegin, end: 1).animate(
-      CurvedAnimation(parent: _controller, curve: Curves.easeOutBack),
-    );
+    _fade = CurvedAnimation(parent: _controller, curve: Curves.easeOut);
+    _controller.addStatusListener((status) {
+      if (status == AnimationStatus.completed && mounted) {
+        setState(() => _done = true);
+      }
+    });
     final delayMs = (widget.index * widget.delayStepMs).clamp(
       0,
       widget.maxDelayMs,
@@ -144,11 +146,12 @@ class _StaggeredFadeScaleState extends State<StaggeredFadeScale>
 
   @override
   Widget build(BuildContext context) {
-    if (MediaQuery.disableAnimationsOf(context)) return widget.child;
-    return FadeTransition(
-      opacity: _fade,
-      child: ScaleTransition(scale: _scale, child: widget.child),
-    );
+    if (MediaQuery.disableAnimationsOf(context) || _done) {
+      return widget.child;
+    }
+    // Fade only — ScaleTransition kept a transform layer on every list cell
+    // during entrance and was a common raster hitch while scrolling.
+    return FadeTransition(opacity: _fade, child: widget.child);
   }
 }
 
@@ -181,7 +184,7 @@ class FeaturePanel extends StatelessWidget {
             color: c.border.withValues(alpha: isDark ? 0.9 : 0.72),
             width: 0.5,
           ),
-          boxShadow: AppSpacing.shadow3(isDark: isDark),
+          boxShadow: AppSpacing.shadow2(isDark: isDark),
           gradient: LinearGradient(
             begin: Alignment.topLeft,
             end: Alignment.bottomRight,

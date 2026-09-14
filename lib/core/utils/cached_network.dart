@@ -61,7 +61,9 @@ ImageProvider coverProvider(
 }) {
   if (_isLocalCoverPath(url)) {
     final path = _localCoverFsPath(url);
-    return FileImage(File(path));
+    // Local covers were decoded at full source resolution (often 2–5 MB RGBA
+    // each). Cap the long edge so library/browse grids stay scrollable.
+    return ResizeImage(FileImage(File(path)), width: 600);
   }
   return ExtendedResizeImage(
     CustomExtendedNetworkImageProvider(

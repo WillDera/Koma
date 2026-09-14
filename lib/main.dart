@@ -39,6 +39,12 @@ void main() {
 
   runZonedGuarded(() async {
     final widgetsBinding = WidgetsFlutterBinding.ensureInitialized();
+    // Prefer more, smaller decoded covers over a few full-res bitmaps.
+    // Thumbnail paths now decode near display size (see coverProvider /
+    // BookCover.cacheWidth); this budget fits ~a couple screens of grid.
+    final images = PaintingBinding.instance.imageCache;
+    images.maximumSize = 250;
+    images.maximumSizeBytes = 120 << 20; // 120 MiB
     // Keep the native LaunchTheme visible until startup work finishes
     // (flutter_native_splash is dev-only for asset generation).
     widgetsBinding.deferFirstFrame();

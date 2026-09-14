@@ -31,6 +31,24 @@ subprojects {
     project.evaluationDependsOn(":app")
 }
 
+// Older Flutter plugins still use buildscript { classpath "kotlin-gradle-plugin" }
+// with a pinned 1.x/2.2.x. Force 2.4.10 so they can read kotlin-stdlib 2.4 metadata
+// pulled in by the app (coroutines / serialization).
+subprojects {
+    buildscript {
+        configurations.named("classpath").configure {
+            resolutionStrategy.eachDependency {
+                if (requested.group == "org.jetbrains.kotlin" &&
+                    requested.name == "kotlin-gradle-plugin"
+                ) {
+                    useVersion("2.4.10")
+                    because("Align plugin Kotlin compilers with app stdlib 2.4.10")
+                }
+            }
+        }
+    }
+}
+
 // AGP 8.x requires every Android module to declare a `namespace`.
 // Some older Flutter plugins (e.g. flutter_native_splash 2.2.16) don't,
 // so we patch them. Using `plugins.withId` (rather than afterEvaluate)

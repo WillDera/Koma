@@ -82,6 +82,8 @@ class CatalogCoverCard extends StatelessWidget {
         image: imageProvider!,
         width: double.infinity,
         fit: BoxFit.cover,
+        filterQuality: FilterQuality.low,
+        gaplessPlayback: true,
         errorBuilder: (_, _, _) => _placeholder(c),
       );
     }
@@ -94,6 +96,8 @@ class CatalogCoverCard extends StatelessWidget {
         ),
         width: double.infinity,
         fit: BoxFit.cover,
+        filterQuality: FilterQuality.low,
+        gaplessPlayback: true,
         errorBuilder: (_, _, _) => _placeholder(c),
       );
     }
@@ -214,11 +218,12 @@ class CatalogCoverCard extends StatelessWidget {
     final chip = _badgeChip();
     final metaPills = _coverMetaPills();
     final heart = _inLibraryHeart(c);
-    return AnimatedPress(
-      onTap: _busy ? null : onTap,
-      onLongPress: onLongPress,
-      scaleDown: 0.97,
-      child: Column(
+    return RepaintBoundary(
+      child: AnimatedPress(
+        onTap: _busy ? null : onTap,
+        onLongPress: onLongPress,
+        scaleDown: 0.97,
+        child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Expanded(
@@ -277,6 +282,7 @@ class CatalogCoverCard extends StatelessWidget {
             ),
           ],
         ],
+      ),
       ),
     );
   }
