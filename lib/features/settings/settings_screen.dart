@@ -292,11 +292,50 @@ class _SettingsHub extends StatelessWidget {
   }
 }
 
-class _SettingsDestinationScreen extends StatelessWidget {
+class _SettingsDestinationScreen extends StatefulWidget {
   final String title;
   final Widget child;
 
   const _SettingsDestinationScreen({required this.title, required this.child});
+
+  @override
+  State<_SettingsDestinationScreen> createState() =>
+      _SettingsDestinationScreenState();
+}
+
+class _SettingsDestinationScreenState extends State<_SettingsDestinationScreen> {
+  /// Heavy section trees (theme packs, stats queries, About art decode, …)
+  /// must not build on every slide frame — they stall the transition. Mount
+  /// after the route animation completes; header alone slides in fluidly.
+  bool _bodyReady = false;
+  Animation<double>? _routeAnimation;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final animation = ModalRoute.of(context)?.animation;
+    if (identical(animation, _routeAnimation)) return;
+    _routeAnimation?.removeStatusListener(_onRouteStatus);
+    _routeAnimation = animation;
+    if (animation == null ||
+        animation.status == AnimationStatus.completed ||
+        animation.value >= 1.0) {
+      _bodyReady = true;
+      return;
+    }
+    animation.addStatusListener(_onRouteStatus);
+  }
+
+  void _onRouteStatus(AnimationStatus status) {
+    if (status != AnimationStatus.completed || !mounted || _bodyReady) return;
+    setState(() => _bodyReady = true);
+  }
+
+  @override
+  void dispose() {
+    _routeAnimation?.removeStatusListener(_onRouteStatus);
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -316,15 +355,17 @@ class _SettingsDestinationScreen extends StatelessWidget {
                 children: [
                   const OneHandSpacer(),
                   LibraryHeader(
-                    title: title,
+                    title: widget.title,
                     showBackButton: true,
                     padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
                   ),
-                  StaggeredFadeScale(
-                    index: 0,
-                    scaleBegin: 0.97,
-                    child: child,
-                  ),
+                  if (_bodyReady)
+                    StaggeredFadeScale(
+                      index: 0,
+                      scaleBegin: 0.97,
+                      duration: AppMotion.base,
+                      child: widget.child,
+                    ),
                 ],
               ),
             ),
@@ -604,8 +645,13 @@ class _ThemeModePicker extends StatelessWidget {
     ];
     // Match SettingsSection card corners (brLg) on the end cells.
     final endRadius = Radius.circular(AppSpacing.radiusLg);
-    return IntrinsicHeight(
+    // Fixed height — IntrinsicHeight forces an extra layout pass on open.
+    // Icon (20) + label (~16) + vertical padding (14×2) ≈ 64; leave headroom
+    // for text scale so the Column does not overflow.
+    return SizedBox(
+      height: 84,
       child: Row(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           for (var i = 0; i < options.length; i++) ...[
             Expanded(
@@ -614,9 +660,8 @@ class _ThemeModePicker extends StatelessWidget {
                 child: AnimatedContainer(
                   duration: AppMotion.base,
                   curve: AppMotion.standard,
-                  padding: const EdgeInsets.symmetric(vertical: 16),
-                  decoration: BoxDecoration(
-                    color: value == options[i].$1
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                  decoration: BoxDecoration(                    color: value == options[i].$1
                         ? c.accent.withValues(alpha: 0.16)
                         : Colors.transparent,
                     borderRadius: BorderRadius.only(
@@ -627,6 +672,7 @@ class _ThemeModePicker extends StatelessWidget {
                     ),
                   ),
                   child: Column(
+                    mainAxisSize: MainAxisSize.min,
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
                       Icon(
@@ -2683,7 +2729,26 @@ class _SourcesSectionState extends ConsumerState<_SourcesSection> {
 
   @override
   Widget build(BuildContext context) {
-    if (_loading) return const SizedBox.shrink();
+    if (_loading) {
+      return SettingsSection(
+        title: 'Ebook sources',
+        padding: const EdgeInsets.symmetric(horizontal: 16),
+        children: [
+          SettingsRow(
+            icon: Icons.cloud_outlined,
+            title: 'Loading sources…',
+            trailing: SizedBox(
+              width: 18,
+              height: 18,
+              child: CircularProgressIndicator(
+                strokeWidth: 2,
+                color: context.colors.accent,
+              ),
+            ),
+          ),
+        ],
+      );
+    }
     if (_error != null) {
       return SettingsSection(
         title: 'Ebook sources',
@@ -3861,6 +3926,11 @@ class _AboutSection extends ConsumerWidget {
                   child: Image.asset(
                     'assets/branding/hon.png',
                     fit: BoxFit.cover,
+                    // Asset is 1024²; decode near the 72 logical display box.
+                    cacheWidth:
+                        (72 * MediaQuery.devicePixelRatioOf(context)).round(),
+                    cacheHeight:
+                        (72 * MediaQuery.devicePixelRatioOf(context)).round(),
                     errorBuilder: (_, error, stackTrace) => Container(
                       decoration: BoxDecoration(
                         gradient: LinearGradient(
