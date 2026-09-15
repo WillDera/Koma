@@ -81,8 +81,14 @@ android {
                 "**/libc++_shared.so",
             )
             // Vulkan validation is a debug engine artifact; never ship it.
+            // Sideload APKs are arm64-only — strip other ABIs even if a plugin
+            // (isar / qjs / pdfrx / cargokit) still emits them.
             excludes += setOf(
                 "**/libVkLayer_khronos_validation.so",
+                "**/armeabi-v7a/**",
+                "**/armeabi/**",
+                "**/x86/**",
+                "**/x86_64/**",
             )
         }
         resources {
@@ -113,6 +119,9 @@ dependencies {
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.11.0")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.11.0")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-guava:1.11.0")
+    // Explicit stdlib so extension PathClassLoaders always have kotlin.text.Regex
+    // etc. on the host classpath (not only as a transitive of the Kotlin plugin).
+    implementation("org.jetbrains.kotlin:kotlin-stdlib:2.4.10")
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.11.0")
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json-okio:1.11.0")
     // Keiyoushi / Mihon extensions often pull protobuf codecs (e.g. ProtoBuf).

@@ -318,7 +318,11 @@ class MainActivity : FlutterFragmentActivity() {
                     try {
                         val url = call.argument<String>("url")
                             ?: throw IllegalArgumentException("missing url")
-                        AppUpdateDownloadJob.start(applicationContext, url)
+                        val expected = when (val raw = call.argument<Any?>("expectedBytes")) {
+                            is Number -> raw.toLong()
+                            else -> -1L
+                        }
+                        AppUpdateDownloadJob.start(applicationContext, url, expected)
                         result.success(null)
                     } catch (e: Throwable) {
                         Log.e("AppUpdate", "startAppUpdateDownload failed", e)

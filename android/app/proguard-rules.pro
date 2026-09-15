@@ -1,34 +1,46 @@
 # Keep host Kotlin that extensions / Dalvik load by reflection or ClassLoader.
+# Sideloaded Keiyoushi APKs do not ship kotlin-stdlib — they resolve
+# kotlin.text.Regex etc. through the host ClassLoader. R8 must not shrink or
+# rename those symbols (Mihon parity: -keep class kotlin.**).
 
-# Serialization (extensions + host JSON bridges)
--keep class kotlinx.serialization.** { *; }
--keepclassmembers class kotlinx.serialization.** { *; }
--keep class kotlinx.coroutines.** { *; }
+# Kotlin stdlib + coroutines + serialization (extensions + host JSON bridges)
+-keep,allowoptimization class kotlin.** { public protected *; }
+-keep,allowoptimization class kotlin.Metadata { *; }
+-keep,allowoptimization class kotlinx.coroutines.** { public protected *; }
 -keepclassmembers class kotlinx.coroutines.** { *; }
+-keep,allowoptimization class kotlinx.serialization.** { public protected *; }
+-keepclassmembers class kotlinx.serialization.** { *; }
+-keepattributes *Annotation*, InnerClasses, Signature, EnclosingMethod
+-keepclassmembers class kotlinx.serialization.json.** {
+    *** Companion;
+}
+-keepclasseswithmembers class kotlinx.serialization.json.** {
+    kotlinx.serialization.KSerializer serializer(...);
+}
 
 # App + MethodChannel entry points
 -keep class com.koma.koma.** { *; }
 -keepclassmembers class com.koma.koma.** { *; }
 
 # OkHttp / Okio / Jsoup (extension HTTP stack)
--keep class com.squareup.okhttp3.** { *; }
--keep class okhttp3.** { *; }
--keep class okio.** { *; }
--keep class org.jsoup.** { *; }
+-keep,allowoptimization class com.squareup.okhttp3.** { public protected *; }
+-keep,allowoptimization class okhttp3.** { public protected *; }
+-keep,allowoptimization class okio.** { public protected *; }
+-keep,allowoptimization class org.jsoup.** { public protected *; }
 
 # RxJava 1 (legacy CatalogueSource APIs)
--keep class io.reactivex.** { *; }
--keep class rx.** { *; }
+-keep,allowoptimization class io.reactivex.** { public protected *; }
+-keep,allowoptimization class rx.** { public protected *; }
 
 # Mihon / Tachiyomi / Keiyoushi surfaces used by sideloaded extension DEX
 -keep class mihon.** { *; }
 -keep class eu.kanade.** { *; }
 -keep class tachiyomi.** { *; }
 -keep class keiyoushi.** { *; }
--keep class uy.kohesive.injekt.** { *; }
+-keep,allowoptimization class uy.kohesive.injekt.** { public protected *; }
 
 # Preferences UI for ConfigurableSource
--keep class androidx.preference.** { *; }
+-keep,allowoptimization class androidx.preference.** { public protected *; }
 -keep class androidx.appcompat.** { *; }
 -keep class androidx.work.** { *; }
 
@@ -40,7 +52,6 @@
 -keepclassmembers class * {
     @com.google.gson.annotations.SerializedName <fields>;
 }
--keep class kotlin.Metadata { *; }
 -keep class javax.inject.** { *; }
 -keep class dagger.** { *; }
 -keepclassmembers,allowobfuscation class * {
@@ -62,7 +73,9 @@
 # PathClassLoader / reflection used when loading extension APKs
 -keep class dalvik.system.PathClassLoader { *; }
 -keep class dalvik.system.DexClassLoader { *; }
+-keep class eu.kanade.tachiyomi.util.system.ChildFirstPathClassLoader { *; }
 
+-dontwarn kotlin.**
 -dontwarn kotlinx.serialization.**
 -dontwarn kotlinx.coroutines.**
 -dontwarn okhttp3.**
