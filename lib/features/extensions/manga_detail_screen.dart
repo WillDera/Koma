@@ -2799,8 +2799,7 @@ class _MangaDetailScreenState extends ConsumerState<MangaDetailScreen> {
                             borderRadius: AppSpacing.brPill,
                           ),
                           child: Text(
-                            '${filteredChapters.length} '
-                            '${filteredChapters.length == 1 ? 'Chapter' : 'Chapters'}',
+                            '${filteredChapters.length}',
                             style: TextStyle(
                               color: c.textSecondary,
                               fontSize: 12,

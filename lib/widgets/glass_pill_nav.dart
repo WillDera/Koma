@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../theme/app_icons.dart';
 import '../theme/app_theme.dart';
 import '../theme/tokens/app_motion.dart';
+import 'animated_press.dart';
 
 class NavItem {
   final AppIconData icon;
@@ -24,10 +25,16 @@ class NavItem {
 ///
 /// Hugs its destinations (never full-width). The active destination expands;
 /// inactive ones shrink. Labels are semantic-only — nothing is drawn as text.
+///
+/// Optional [satellite] sits in the same vertical band as the pill (Library
+/// add / hide), matching surface + hairline chrome — not a Material FAB glow.
 class AppBottomNav extends StatelessWidget {
   /// Approximate body height of the floating pill (excludes safe-area inset).
   /// Used by screens that pad content above the bar.
   static const double bodyHeight = 56;
+
+  /// Diameter of [NavSatelliteButton] (matches destination row height).
+  static const double satelliteSize = 48;
 
   final List<NavItem> items;
   final int currentIndex;
@@ -35,6 +42,12 @@ class AppBottomNav extends StatelessWidget {
   final ValueChanged<int>? onLongPress;
   final String? profileInitials;
   final ImageProvider? profileImage;
+
+  /// Docked action(s) beside the pill (e.g. Library +).
+  final Widget? satellite;
+
+  /// When true, [satellite] is placed to the left of the pill (left-handed).
+  final bool satelliteLeading;
 
   const AppBottomNav({
     super.key,
@@ -44,6 +57,8 @@ class AppBottomNav extends StatelessWidget {
     this.onLongPress,
     this.profileInitials,
     this.profileImage,
+    this.satellite,
+    this.satelliteLeading = false,
   });
 
   static const Duration _duration = AppMotion.base;
@@ -54,6 +69,74 @@ class AppBottomNav extends StatelessWidget {
     final c = context.colors;
     final bottomInset = MediaQuery.paddingOf(context).bottom;
 
+    final pill = Material(
+      color: c.surface,
+      elevation: 0,
+      shadowColor: Colors.transparent,
+      borderRadius: BorderRadius.circular(28),
+      clipBehavior: Clip.antiAlias,
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(28),
+          border: Border.all(
+            color: c.border.withValues(alpha: 0.55),
+            width: 0.5,
+          ),
+        ),
+        child: AnimatedSize(
+          duration: _duration,
+          curve: _curve,
+          alignment: Alignment.center,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 6),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: List.generate(items.length, (i) {
+                final item = items[i];
+                final isActive = i == currentIndex;
+                return _PillDestination(
+                  key: ValueKey('nav-$i-${item.label}'),
+                  item: item,
+                  isActive: isActive,
+                  onTap: () => onTap(i),
+                  onLongPress: onLongPress == null
+                      ? null
+                      : () => onLongPress!(i),
+                  profileInitials:
+                      item.profileTab ? profileInitials : null,
+                  profileImage: item.profileTab ? profileImage : null,
+                );
+              }),
+            ),
+          ),
+        ),
+      ),
+    );
+
+    // Bottom-align so a stacked satellite (hide above +) shares the pill's
+    // baseline instead of floating the pill between buttons. A small lift
+    // compensates for the 48px circle vs ~56px pill so + centers optically.
+    Widget dock(Widget child) => Padding(
+          padding: const EdgeInsets.only(bottom: 4),
+          child: child,
+        );
+
+    final cluster = Row(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.end,
+      children: [
+        if (satellite != null && satelliteLeading) ...[
+          dock(satellite!),
+          const SizedBox(width: 10),
+        ],
+        pill,
+        if (satellite != null && !satelliteLeading) ...[
+          const SizedBox(width: 10),
+          dock(satellite!),
+        ],
+      ],
+    );
+
     return Padding(
       padding: EdgeInsets.fromLTRB(16, 0, 16, 8 + bottomInset),
       // heightFactor keeps this as tall as the pill. Plain [Align] expands to
@@ -62,51 +145,60 @@ class AppBottomNav extends StatelessWidget {
       child: Align(
         alignment: Alignment.bottomCenter,
         heightFactor: 1,
-        child: Material(
-          color: c.surface,
-          elevation: 0,
-          shadowColor: Colors.transparent,
-          borderRadius: BorderRadius.circular(28),
-          clipBehavior: Clip.antiAlias,
-          child: DecoratedBox(
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(28),
-              border: Border.all(
-                color: c.border.withValues(alpha: 0.55),
-                width: 0.5,
-              ),
-            ),
-            child: AnimatedSize(
-              duration: _duration,
-              curve: _curve,
-              alignment: Alignment.center,
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 6),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: List.generate(items.length, (i) {
-                    final item = items[i];
-                    final isActive = i == currentIndex;
-                    return _PillDestination(
-                      key: ValueKey('nav-$i-${item.label}'),
-                      item: item,
-                      isActive: isActive,
-                      onTap: () => onTap(i),
-                      onLongPress: onLongPress == null
-                          ? null
-                          : () => onLongPress!(i),
-                      profileInitials:
-                          item.profileTab ? profileInitials : null,
-                      profileImage: item.profileTab ? profileImage : null,
-                    );
-                  }),
-                ),
-              ),
-            ),
+        child: cluster,
+      ),
+    );
+  }
+}
+
+/// Circular control matching [AppBottomNav] chrome (surface + hairline).
+class NavSatelliteButton extends StatelessWidget {
+  const NavSatelliteButton({
+    super.key,
+    required this.icon,
+    required this.onPressed,
+    this.tooltip,
+    this.emphasized = false,
+  });
+
+  final AppIconData icon;
+  final VoidCallback onPressed;
+  final String? tooltip;
+
+  /// When true, accent fill (primary +); otherwise tonal surface (secondary).
+  final bool emphasized;
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.colors;
+    final size = AppBottomNav.satelliteSize;
+    final button = AnimatedPress(
+      onTap: onPressed,
+      scaleDown: 0.92,
+      child: Container(
+        width: size,
+        height: size,
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          color: emphasized ? c.accent : c.surface,
+          border: Border.all(
+            color: emphasized
+                ? c.accent.withValues(alpha: 0.9)
+                : c.border.withValues(alpha: 0.55),
+            width: 0.5,
+          ),
+        ),
+        child: Center(
+          child: AppIcon(
+            data: icon,
+            size: 22,
+            color: emphasized ? c.onAccent : c.textPrimary,
           ),
         ),
       ),
     );
+    if (tooltip == null) return button;
+    return Tooltip(message: tooltip!, child: button);
   }
 }
 

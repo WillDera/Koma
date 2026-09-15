@@ -7,9 +7,11 @@ import 'package:go_router/go_router.dart';
 import '../core/app_version.dart';
 import '../core/services/security_prefs.dart';
 import '../core/services/user_profile.dart';
+import '../features/library/library_nav_satellite.dart';
 import '../theme/app_icons.dart';
 import '../theme/app_theme.dart';
 import '../theme/theme_provider.dart';
+import '../theme/theme_state.dart';
 import '../widgets/app_update_gate.dart';
 import '../widgets/glass_pill_nav.dart';
 import '../widgets/nav_drawer.dart';
@@ -98,6 +100,8 @@ class MainShell extends ConsumerWidget {
     final onLibrary = navigationShell.currentIndex == 0;
     final incognito = ref.watch(incognitoProvider);
     final tabConsumesBack = ref.watch(shellBackInterceptorProvider);
+    final leftHanded = ref.watch(themeProvider).handMode == HandMode.left;
+    final satellite = ref.watch(libraryNavSatelliteProvider);
     final c = context.colors;
     return AppUpdateGate(
       child: PopScope(
@@ -167,6 +171,10 @@ class MainShell extends ConsumerWidget {
             },
             profileInitials: initials,
             profileImage: profileImage,
+            satelliteLeading: leftHanded,
+            satellite: onLibrary && satellite.hasAny
+                ? _LibraryNavSatelliteCluster(satellite: satellite)
+                : null,
           ),
           drawer: NavDrawer(
             currentIndex: navigationShell.currentIndex,
@@ -175,6 +183,38 @@ class MainShell extends ConsumerWidget {
           ),
         ),
       ),
+    );
+  }
+}
+
+class _LibraryNavSatelliteCluster extends StatelessWidget {
+  const _LibraryNavSatelliteCluster({required this.satellite});
+
+  final LibraryNavSatellite satellite;
+
+  @override
+  Widget build(BuildContext context) {
+    final hide = satellite.onHideSelected;
+    final add = satellite.onAdd;
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        if (hide != null) ...[
+          NavSatelliteButton(
+            icon: const MaterialIconData(Icons.visibility_off_outlined),
+            tooltip: 'Hide selected',
+            onPressed: hide,
+          ),
+          if (add != null) const SizedBox(height: 10),
+        ],
+        if (add != null)
+          NavSatelliteButton(
+            icon: AppIcons.add,
+            tooltip: 'Add',
+            emphasized: true,
+            onPressed: add,
+          ),
+      ],
     );
   }
 }

@@ -26,7 +26,9 @@ import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.sync.withPermit
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
@@ -53,6 +55,7 @@ import java.net.ServerSocket
 import java.net.Socket
 import java.nio.charset.StandardCharsets
 import java.security.MessageDigest
+import java.util.concurrent.ConcurrentHashMap
 
 class DalvikServer(
     private val context: Context,
@@ -91,12 +94,29 @@ class DalvikServer(
 
     private val loadedExtensions = mutableMapOf<String, LoadedExtension>()
     private val loadedApkPaths = mutableMapOf<String, File>()
+    /**
+     * Per-manga lock for [HttpSource.getMangaUpdate]. Extensions (e.g. AllManga)
+     * throw if details+chapters refresh overlap for the same title — library
+     * Updates and the detail screen often race.
+     */
+    private val mangaUpdateLocks = ConcurrentHashMap<String, Mutex>()
     /** HttpSources from the most recent SourceFactory load (cleared after aliasing). */
     @Volatile
     private var lastFactorySiblings: List<HttpSource> = emptyList()
     private val extensionsCacheDir: File by lazy {
         File(context.cacheDir, "dex-extensions").also { it.mkdirs() }
     }
+
+    private fun mangaUpdateMutex(sourceId: String?, url: String): Mutex {
+        val key = "${sourceId.orEmpty()}\u0000$url"
+        return mangaUpdateLocks.getOrPut(key) { Mutex() }
+    }
+
+    private suspend fun <T> withMangaUpdateLock(
+        sourceId: String?,
+        url: String,
+        block: suspend () -> T,
+    ): T = mangaUpdateMutex(sourceId, url).withLock { block() }
 
     /**
      * Looks up a loaded [HttpSource] by hex bridge id or Mihon numeric
@@ -648,12 +668,22 @@ class DalvikServer(
                 }
                 "getMangaDetails" -> {
                     val url = root.str("url") ?: return errorJson("missing url")
-                    withLoadedExtension(root.str("sourceId"), data) { src ->
+                    val sourceId = root.str("sourceId")
+                    withLoadedExtension(sourceId, data) { src ->
                         // Mihon parity: hydrate catalogue fields (title/memo/…) before
                         // getMangaUpdate — AllAnime and similar sources NPE on empty memo.
                         val manga = hydrateSManga(root)
                         val result = try {
-                            runBlocking { src.getMangaUpdate(manga, emptyList(), fetchDetails = true, fetchChapters = false) }
+                            runBlocking {
+                                withMangaUpdateLock(sourceId, url) {
+                                    src.getMangaUpdate(
+                                        manga,
+                                        emptyList(),
+                                        fetchDetails = true,
+                                        fetchChapters = false,
+                                    )
+                                }
+                            }
                         } catch (e: Exception) {
                             Log.e(TAG, "getMangaDetails failed for $url", e)
                             return@withLoadedExtension errorJson("getMangaDetails failed: ${e.message}")
@@ -665,10 +695,20 @@ class DalvikServer(
                 }
                 "getMangaUpdate" -> {
                     val url = root.str("url") ?: return errorJson("missing url")
-                    withLoadedExtension(root.str("sourceId"), data) { src ->
+                    val sourceId = root.str("sourceId")
+                    withLoadedExtension(sourceId, data) { src ->
                         val manga = hydrateSManga(root)
                         val update = try {
-                            runBlocking { src.getMangaUpdate(manga, emptyList(), fetchDetails = true, fetchChapters = true) }
+                            runBlocking {
+                                withMangaUpdateLock(sourceId, url) {
+                                    src.getMangaUpdate(
+                                        manga,
+                                        emptyList(),
+                                        fetchDetails = true,
+                                        fetchChapters = true,
+                                    )
+                                }
+                            }
                         } catch (e: Exception) {
                             Log.e(TAG, "getMangaUpdate failed for $url", e)
                             // Do not return a fake empty manga — Dart treats that as
@@ -683,10 +723,20 @@ class DalvikServer(
                 }
                 "getChapterList" -> {
                     val url = root.str("url") ?: return errorJson("missing url")
-                    withLoadedExtension(root.str("sourceId"), data) { src ->
+                    val sourceId = root.str("sourceId")
+                    withLoadedExtension(sourceId, data) { src ->
                         val manga = hydrateSManga(root)
                         val update = try {
-                            runBlocking { src.getMangaUpdate(manga, emptyList(), fetchDetails = false, fetchChapters = true) }
+                            runBlocking {
+                                withMangaUpdateLock(sourceId, url) {
+                                    src.getMangaUpdate(
+                                        manga,
+                                        emptyList(),
+                                        fetchDetails = false,
+                                        fetchChapters = true,
+                                    )
+                                }
+                            }
                         } catch (e: Exception) {
                             Log.e(TAG, "getChapterList failed for $url", e)
                             return@withLoadedExtension errorJson("getChapterList failed: ${e.message}")

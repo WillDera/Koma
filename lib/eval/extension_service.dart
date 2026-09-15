@@ -36,23 +36,19 @@ abstract class ExtensionService {
     String? title,
   });
 
-  /// Combined detail + chapter fetch. Default calls [getDetail] then
-  /// [getChapterList]; implementations may override for efficiency
-  /// (e.g. Keiyoushi's combined method-channel call).
+  /// Combined detail + chapter fetch. Default runs sequentially so sources
+  /// that share one network path (or forbid concurrent refresh) do not race.
+  /// Implementations may override for a single round-trip (e.g. Keiyoushi).
   Future<({MManga? manga, List<MChapter> chapters})> getMangaDetail(
     MSource source,
     String url, {
     String? memo,
     String? title,
   }) async {
-    final results = await Future.wait([
-      getDetail(source, url, memo: memo, title: title),
-      getChapterList(source, url, memo: memo, title: title),
-    ]);
-    return (
-      manga: results[0] as MManga?,
-      chapters: results[1] as List<MChapter>,
-    );
+    final manga = await getDetail(source, url, memo: memo, title: title);
+    final chapters =
+        await getChapterList(source, url, memo: memo, title: title);
+    return (manga: manga, chapters: chapters);
   }
 
   Future<List<MPages>> getPageList(MSource source, MChapter chapter);

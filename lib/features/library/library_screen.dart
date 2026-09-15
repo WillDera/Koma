@@ -37,8 +37,6 @@ import '../../router/book_navigation.dart';
 import '../../router/router.dart';
 import '../../theme/app_icons.dart';
 import '../../theme/app_theme.dart';
-import '../../theme/theme_provider.dart';
-import '../../theme/tokens/app_motion.dart';
 import '../../theme/tokens/app_spacing.dart';
 import '../../widgets/animated_press.dart';
 import '../../widgets/catalog_card_layout.dart';
@@ -61,6 +59,7 @@ import '../../core/repositories/manga_repository.dart' show InProgressManga;
 import 'ebook_export_flow.dart';
 import 'hidden_library_screen.dart';
 import 'library_group_modal.dart';
+import 'library_nav_satellite.dart';
 import 'library_provider.dart';
 
 class LibraryScreen extends ConsumerStatefulWidget {
@@ -95,6 +94,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> with RouteAware {
       ref.read(libraryProvider.notifier).loadBooks();
       _loadThumbnails();
       _loadContinue();
+      _syncNavSatellite(ref.read(libraryProvider));
     });
     // In-app notification when an auto poll discovers new chapters. Cleared
     // by checkForNewChapters' loadBooks rebuild; a system notification is
@@ -114,6 +114,9 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> with RouteAware {
     });
     ref.listenManual(historyRevisionProvider, (prev, next) {
       _loadContinue();
+    });
+    ref.listenManual(libraryProvider, (prev, next) {
+      _syncNavSatellite(next);
     });
   }
 
@@ -176,6 +179,10 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> with RouteAware {
 
   @override
   void dispose() {
+    // Provider may already be disposed if the whole tree is tearing down.
+    try {
+      ref.read(libraryNavSatelliteProvider.notifier).clear();
+    } catch (_) {}
     _scrollCtrl.dispose();
     _bookSearchCtrl.dispose();
     _mangaSearchCtrl.dispose();
@@ -196,10 +203,25 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> with RouteAware {
     _loadContinue();
   }
 
+  void _onSatelliteAdd() => _showImportOptions(context);
+
+  void _onSatelliteHide() {
+    _hideSelected(context, ref.read(libraryProvider));
+  }
+
+  void _syncNavSatellite(LibraryState provider) {
+    final showActions = !provider.loading &&
+        (provider.books.isNotEmpty || provider.mangas.isNotEmpty);
+    final showHide =
+        showActions && provider.selectionMode && provider.selectedIds.isNotEmpty;
+    ref.read(libraryNavSatelliteProvider.notifier).configure(
+          onAdd: showActions ? _onSatelliteAdd : null,
+          onHideSelected: showHide ? _onSatelliteHide : null,
+        );
+  }
+
   @override
   Widget build(BuildContext context) {
-    final leftHanded = ref.watch(themeProvider).handMode == HandMode.left;
-    final navClearance = MediaQuery.paddingOf(context).bottom + 84;
     final provider = ref.watch(libraryProvider);
     // View-all is in-tab UI (not a route). Shell allows Library root to exit,
     // so intercept system/back-swipe here and return to rails instead.
@@ -213,54 +235,6 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> with RouteAware {
         child: Stack(
           children: [
             SafeArea(bottom: false, child: _body(context, provider)),
-            if (!provider.loading &&
-                (provider.books.isNotEmpty || provider.mangas.isNotEmpty))
-              Positioned(
-                left: leftHanded ? 20 : null,
-                right: leftHanded ? null : 20,
-                bottom: navClearance,
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    AnimatedSwitcher(
-                      duration: AppMotion.fast,
-                      switchInCurve: Curves.easeOutCubic,
-                      switchOutCurve: Curves.easeInCubic,
-                      transitionBuilder: (child, animation) {
-                        return FadeTransition(
-                          opacity: animation,
-                          child: SizeTransition(
-                            sizeFactor: animation,
-                            axis: Axis.vertical,
-                            alignment: Alignment.bottomCenter,
-                            child: child,
-                          ),
-                        );
-                      },
-                      child: provider.selectionMode &&
-                              provider.selectedIds.isNotEmpty
-                          ? Padding(
-                              key: const ValueKey('hide-fab'),
-                              padding: const EdgeInsets.only(bottom: 12),
-                              child: _AethelgardFab(
-                                iconData: const MaterialIconData(
-                                  Icons.visibility_off_outlined,
-                                ),
-                                tonal: true,
-                                tooltip: 'Hide selected',
-                                onPressed: () =>
-                                    _hideSelected(context, provider),
-                              ),
-                            )
-                          : const SizedBox.shrink(key: ValueKey('no-hide-fab')),
-                    ),
-                    _AethelgardFab(
-                      iconData: AppIcons.add,
-                      onPressed: () => _showImportOptions(context),
-                    ),
-                  ],
-                ),
-              ),
             if (_importingFile)
               Positioned.fill(
                 child: AbsorbPointer(
@@ -3232,57 +3206,5 @@ class _NewChapterBadge extends StatelessWidget {
         ),
       ),
     );
-  }
-}
-
-/// Aethelgard-style FAB — circular, primary-colored, with the signature
-/// soft outer glow (`0 0 20px rgba(accent, 0.3)`). Uses Hugeicons.
-class _AethelgardFab extends StatelessWidget {
-  final AppIconData iconData;
-  final VoidCallback? onPressed;
-  final bool tonal;
-  final String? tooltip;
-
-  const _AethelgardFab({
-    required this.iconData,
-    this.onPressed,
-    this.tonal = false,
-    this.tooltip,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final c = context.colors;
-    final fab = AnimatedPress(
-      onTap: onPressed,
-      scaleDown: 0.90,
-      child: Container(
-        width: 56,
-        height: 56,
-        decoration: BoxDecoration(
-          color: tonal ? c.surface : c.accent,
-          shape: BoxShape.circle,
-          border: tonal ? Border.all(color: c.border, width: 0.5) : null,
-          boxShadow: tonal
-              ? [
-                  BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.18),
-                    blurRadius: 12,
-                    offset: const Offset(0, 4),
-                  ),
-                ]
-              : AppSpacing.fabGlow(accent: c.accent),
-        ),
-        child: Center(
-          child: AppIcon(
-            data: iconData,
-            size: 26,
-            color: tonal ? c.textPrimary : c.onAccent,
-          ),
-        ),
-      ),
-    );
-    if (tooltip == null) return fab;
-    return Tooltip(message: tooltip!, child: fab);
   }
 }
