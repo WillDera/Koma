@@ -62,6 +62,16 @@ class SettingsScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final dpr = MediaQuery.devicePixelRatioOf(context);
+    final px = (72 * dpr).round();
+    precacheImage(
+      ResizeImage(
+        const AssetImage('assets/branding/hon.png'),
+        width: px,
+        height: px,
+      ),
+      context,
+    );
     return ScreenBackdrop(
       child: SafeArea(
         bottom: false,
@@ -292,56 +302,22 @@ class _SettingsHub extends StatelessWidget {
   }
 }
 
-class _SettingsDestinationScreen extends StatefulWidget {
+class _SettingsDestinationScreen extends StatelessWidget {
   final String title;
   final Widget child;
 
   const _SettingsDestinationScreen({required this.title, required this.child});
 
   @override
-  State<_SettingsDestinationScreen> createState() =>
-      _SettingsDestinationScreenState();
-}
-
-class _SettingsDestinationScreenState extends State<_SettingsDestinationScreen> {
-  /// Heavy section trees (theme packs, stats queries, About art decode, …)
-  /// must not build on every slide frame — they stall the transition. Mount
-  /// after the route animation completes; header alone slides in fluidly.
-  bool _bodyReady = false;
-  Animation<double>? _routeAnimation;
-
-  @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-    final animation = ModalRoute.of(context)?.animation;
-    if (identical(animation, _routeAnimation)) return;
-    _routeAnimation?.removeStatusListener(_onRouteStatus);
-    _routeAnimation = animation;
-    if (animation == null ||
-        animation.status == AnimationStatus.completed ||
-        animation.value >= 1.0) {
-      _bodyReady = true;
-      return;
-    }
-    animation.addStatusListener(_onRouteStatus);
-  }
-
-  void _onRouteStatus(AnimationStatus status) {
-    if (status != AnimationStatus.completed || !mounted || _bodyReady) return;
-    setState(() => _bodyReady = true);
-  }
-
-  @override
-  void dispose() {
-    _routeAnimation?.removeStatusListener(_onRouteStatus);
-    super.dispose();
-  }
-
-  @override
   Widget build(BuildContext context) {
     // Own ScaffoldMessenger so SnackBars from this sub-page (Tracking,
     // Security, etc.) paint here — not on the Settings list underneath.
     // Pushed with rootNavigator:true, so MaterialApp's messenger is the shell.
+    //
+    // Body is in the tree for the whole slide (same as Profile / Typography).
+    // RepaintBoundary keeps the expensive first layout as one layer so later
+    // transition frames only composite. Do not wrap in StaggeredFadeScale —
+    // that second animation fought the route slide and felt like hitch.
     return ScaffoldMessenger(
       child: Scaffold(
         backgroundColor: Colors.transparent,
@@ -355,17 +331,11 @@ class _SettingsDestinationScreenState extends State<_SettingsDestinationScreen> 
                 children: [
                   const OneHandSpacer(),
                   LibraryHeader(
-                    title: widget.title,
+                    title: title,
                     showBackButton: true,
                     padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
                   ),
-                  if (_bodyReady)
-                    StaggeredFadeScale(
-                      index: 0,
-                      scaleBegin: 0.97,
-                      duration: AppMotion.base,
-                      child: widget.child,
-                    ),
+                  RepaintBoundary(child: child),
                 ],
               ),
             ),
@@ -3909,22 +3879,12 @@ class _AboutSection extends ConsumerWidget {
             ),
             child: Column(
               children: [
-                Container(
-                  width: 72,
-                  height: 72,
-                  decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(22),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withValues(alpha: 0.18),
-                        blurRadius: 12,
-                        offset: const Offset(0, 4),
-                      ),
-                    ],
-                  ),
-                  clipBehavior: Clip.antiAlias,
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(22),
                   child: Image.asset(
                     'assets/branding/hon.png',
+                    width: 72,
+                    height: 72,
                     fit: BoxFit.cover,
                     // Asset is 1024²; decode near the 72 logical display box.
                     cacheWidth:
@@ -3932,6 +3892,8 @@ class _AboutSection extends ConsumerWidget {
                     cacheHeight:
                         (72 * MediaQuery.devicePixelRatioOf(context)).round(),
                     errorBuilder: (_, error, stackTrace) => Container(
+                      width: 72,
+                      height: 72,
                       decoration: BoxDecoration(
                         gradient: LinearGradient(
                           begin: Alignment.topLeft,
@@ -4004,53 +3966,23 @@ class _AboutSection extends ConsumerWidget {
                   ),
                 ),
               ),
-              GridView.count(
-                crossAxisCount: 2,
-                shrinkWrap: true,
-                physics: const NeverScrollableScrollPhysics(),
-                mainAxisSpacing: 8,
-                crossAxisSpacing: 8,
-                childAspectRatio: 2.6,
-                children: [
-                  for (final f in features)
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 10,
-                        vertical: 8,
-                      ),
-                      decoration: BoxDecoration(
-                        color: c.surface,
-                        borderRadius: AppSpacing.brMd,
-                        border: Border.all(color: c.border, width: 0.5),
-                      ),
-                      child: Row(
-                        children: [
-                          Container(
-                            width: 28,
-                            height: 28,
-                            decoration: BoxDecoration(
-                              color: f.$3.withValues(alpha: 0.13),
-                              borderRadius: BorderRadius.circular(8),
-                            ),
-                            child: Icon(f.$1, size: 14, color: f.$3),
-                          ),
-                          const SizedBox(width: 8),
-                          Expanded(
-                            child: Text(
-                              f.$2,
-                              style: TextStyle(
-                                color: c.textPrimary,
-                                fontSize: 12,
-                                fontWeight: FontWeight.w500,
-                                height: 1.25,
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
+              ...[
+                for (var i = 0; i < features.length; i += 2)
+                  Padding(
+                    padding: EdgeInsets.only(top: i == 0 ? 0 : 8),
+                    child: Row(
+                      children: [
+                        Expanded(child: _AboutFeatureTile(feature: features[i])),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: i + 1 < features.length
+                              ? _AboutFeatureTile(feature: features[i + 1])
+                              : const SizedBox.shrink(),
+                        ),
+                      ],
                     ),
-                ],
-              ),
+                  ),
+              ],
             ],
           ),
         ),
@@ -4124,6 +4056,50 @@ class _AboutSection extends ConsumerWidget {
           ),
         ),
       ],
+    );
+  }
+}
+
+class _AboutFeatureTile extends StatelessWidget {
+  const _AboutFeatureTile({required this.feature});
+
+  final (IconData, String, Color) feature;
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.colors;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+      decoration: BoxDecoration(
+        color: c.surface,
+        borderRadius: AppSpacing.brMd,
+        border: Border.all(color: c.border, width: 0.5),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 28,
+            height: 28,
+            decoration: BoxDecoration(
+              color: feature.$3.withValues(alpha: 0.13),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Icon(feature.$1, size: 14, color: feature.$3),
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              feature.$2,
+              style: TextStyle(
+                color: c.textPrimary,
+                fontSize: 12,
+                fontWeight: FontWeight.w500,
+                height: 1.25,
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

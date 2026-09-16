@@ -28,6 +28,26 @@
 -keep,allowoptimization class okio.** { public protected *; }
 -keep,allowoptimization class org.jsoup.** { public protected *; }
 
+# okhttp-zstd JNI looks up these by name from libzstd-kmp.so
+# (FindClass "com.squareup.zstd.ZstdCompressor" / GetFieldID
+# inputBytesProcessed, outputBytesProcessed). If R8 strips or renames
+# them, ART aborts: "No pending exception expected: ClassNotFoundException"
+# on zstd Content-Encoding (Explore search / some Keiyoushi sources).
+-keep,includedescriptorclasses class com.squareup.zstd.** { *; }
+-keepclassmembers class com.squareup.zstd.** { *; }
+-keepclassmembers class com.squareup.zstd.ZstdCompressor {
+    int inputBytesProcessed;
+    int outputBytesProcessed;
+}
+-keepclassmembers class com.squareup.zstd.ZstdDecompressor {
+    int inputBytesProcessed;
+    int outputBytesProcessed;
+}
+-keep class com.squareup.zstd.JniZstdKt { *; }
+-keep class com.squareup.zstd.JniZstdCompressor { *; }
+-keep class com.squareup.zstd.JniZstdDecompressor { *; }
+-keep class com.koma.koma.ZstdJniKeep { *; }
+
 # RxJava 1 (legacy CatalogueSource APIs)
 -keep,allowoptimization class io.reactivex.** { public protected *; }
 -keep,allowoptimization class rx.** { public protected *; }
@@ -80,6 +100,7 @@
 -dontwarn kotlinx.coroutines.**
 -dontwarn okhttp3.**
 -dontwarn okio.**
+-dontwarn com.squareup.zstd.**
 -dontwarn org.jsoup.**
 -dontwarn io.reactivex.**
 -dontwarn rx.**

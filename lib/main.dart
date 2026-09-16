@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart' as webview;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path/path.dart' as p;
+import 'package:pdfrx/pdfrx.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:workmanager/workmanager.dart';
 
@@ -56,6 +57,10 @@ void main() {
       // Rust metadata engine (Open Library / Google Books) via flutter_rust_bridge.
       await RustLib.init();
       await AppStorage.init();
+      // PDFium worker isolate — PdfViewer.file hangs forever if this never
+      // finishes (default loading banner is null, so it looks like a spinner
+      // from the book FutureProvider, or a blank grey viewer).
+      unawaited(pdfrxFlutterInitialize());
 
       // WorkManager periodic polling (library updates). Initialized once so the
       // native side can wake the Dart callback in a background isolate.

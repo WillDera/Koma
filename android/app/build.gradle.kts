@@ -111,6 +111,11 @@ dependencies {
     implementation("com.squareup.okhttp3:okhttp:5.4.0")
     implementation("com.squareup.okhttp3:okhttp-brotli:5.4.0")
     implementation("com.squareup.okhttp3:okhttp-zstd:5.4.0")
+    // Direct so R8's program set includes ZstdCompressor (okhttp-zstd only
+    // depends on zstd-kmp-okio-jvm at runtime; keep rules cannot keep a
+    // class that never entered the merge).
+    implementation("com.squareup.zstd:zstd-kmp:0.4.0")
+    implementation("com.squareup.zstd:zstd-kmp-okio:0.4.0")
     implementation("com.squareup.okio:okio:3.9.0")
     // Keiyoushi extensions are compiled against mihon's coroutines bundle (1.11.0).
     // Newer extensions use `BuildersKt.runBlockingK` (concurrent source set), which

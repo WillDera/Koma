@@ -11,6 +11,7 @@ import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody
 import okhttp3.RequestBody.Companion.toRequestBody
+import okhttp3.brotli.BrotliInterceptor
 import java.util.concurrent.TimeUnit
 
 /**
@@ -38,6 +39,10 @@ class NetworkHelper(private val context: Context) {
         .writeTimeout(30, TimeUnit.SECONDS)
         .callTimeout(2, TimeUnit.MINUTES)
         .addInterceptor(UncaughtExceptionInterceptor())
+        // Outer gzip+br so inner extension CompressionInterceptor(Zstd, …)
+        // sees Accept-Encoding already set and never advertises zstd.
+        // libzstd-kmp.so FindClass of a stripped ZstdCompressor aborts ART.
+        .addInterceptor(BrotliInterceptor)
         .addInterceptor(UserAgentInterceptor(::defaultUserAgentProvider))
         .addInterceptor(
             CloudflareInterceptor(context, cookieJar, ::defaultUserAgentProvider),
@@ -62,6 +67,7 @@ fun defaultClient(context: Context? = null): OkHttpClient {
         .writeTimeout(30, TimeUnit.SECONDS)
         .callTimeout(2, TimeUnit.MINUTES)
         .addInterceptor(UncaughtExceptionInterceptor())
+        .addInterceptor(BrotliInterceptor)
         .addInterceptor(UserAgentInterceptor { NetworkHelper.FALLBACK_USER_AGENT })
         .build()
 }
