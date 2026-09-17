@@ -193,12 +193,18 @@
                 android:name="android.support.FILE_PROVIDER_PATHS"
                 android:resource="@xml/file_paths" />
         </provider>
+        <!-- Explicit PendingIntent from PackageInstallerHelper — not exported. -->
         <receiver
             android:name=".ExtensionInstallReceiver"
-            android:exported="true">
+            android:exported="false">
             <intent-filter>
                 <action android:name="com.koma.koma.INSTALL_STATUS" />
             </intent-filter>
+        </receiver>
+        <!-- System PACKAGE_* broadcasts require an exported receiver. -->
+        <receiver
+            android:name=".ExtensionPackageChangeReceiver"
+            android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.PACKAGE_ADDED" />
                 <action android:name="android.intent.action.PACKAGE_REPLACED" />

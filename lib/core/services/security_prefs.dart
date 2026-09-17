@@ -10,22 +10,35 @@ class SecurityPrefs {
   static const _kUpdateProgressAfterReading =
       'tracker_update_progress_after_reading';
 
+  static bool incognitoCached = false;
+  static bool appLockCached = false;
+  static int secureScreenCached = 1;
+
+  static Future<void> load() async {
+    final p = await SharedPreferences.getInstance();
+    incognitoCached = p.getBool(_kIncognito) ?? false;
+    appLockCached = p.getBool(_kAppLock) ?? false;
+    secureScreenCached = p.getInt(_kSecureScreen) ?? 1;
+  }
+
   static Future<bool> isIncognito() async {
     final p = await SharedPreferences.getInstance();
-    return p.getBool(_kIncognito) ?? false;
+    return incognitoCached = p.getBool(_kIncognito) ?? false;
   }
 
   static Future<void> setIncognito(bool v) async {
+    incognitoCached = v;
     final p = await SharedPreferences.getInstance();
     await p.setBool(_kIncognito, v);
   }
 
   static Future<bool> isAppLockEnabled() async {
     final p = await SharedPreferences.getInstance();
-    return p.getBool(_kAppLock) ?? false;
+    return appLockCached = p.getBool(_kAppLock) ?? false;
   }
 
   static Future<void> setAppLockEnabled(bool v) async {
+    appLockCached = v;
     final p = await SharedPreferences.getInstance();
     await p.setBool(_kAppLock, v);
   }
@@ -33,12 +46,13 @@ class SecurityPrefs {
   /// 0 = never, 1 = when incognito, 2 = always (FLAG_SECURE / hide recents).
   static Future<int> secureScreenMode() async {
     final p = await SharedPreferences.getInstance();
-    return p.getInt(_kSecureScreen) ?? 1;
+    return secureScreenCached = p.getInt(_kSecureScreen) ?? 1;
   }
 
   static Future<void> setSecureScreenMode(int v) async {
+    secureScreenCached = v.clamp(0, 2);
     final p = await SharedPreferences.getInstance();
-    await p.setInt(_kSecureScreen, v.clamp(0, 2));
+    await p.setInt(_kSecureScreen, secureScreenCached);
   }
 
   static Future<bool> hideNotificationContent() async {
@@ -64,14 +78,7 @@ class SecurityPrefs {
 
 class IncognitoNotifier extends Notifier<bool> {
   @override
-  bool build() {
-    Future.microtask(_load);
-    return false;
-  }
-
-  Future<void> _load() async {
-    state = await SecurityPrefs.isIncognito();
-  }
+  bool build() => SecurityPrefs.incognitoCached;
 
   Future<void> set(bool value) async {
     state = value;
@@ -86,14 +93,7 @@ final incognitoProvider =
 
 class AppLockEnabledNotifier extends Notifier<bool> {
   @override
-  bool build() {
-    Future.microtask(_load);
-    return false;
-  }
-
-  Future<void> _load() async {
-    state = await SecurityPrefs.isAppLockEnabled();
-  }
+  bool build() => SecurityPrefs.appLockCached;
 
   Future<void> set(bool value) async {
     state = value;
@@ -133,14 +133,7 @@ final appUnlockedProvider =
 
 class SecureScreenNotifier extends Notifier<int> {
   @override
-  int build() {
-    Future.microtask(_load);
-    return 1;
-  }
-
-  Future<void> _load() async {
-    state = await SecurityPrefs.secureScreenMode();
-  }
+  int build() => SecurityPrefs.secureScreenCached;
 
   Future<void> set(int value) async {
     state = value.clamp(0, 2);

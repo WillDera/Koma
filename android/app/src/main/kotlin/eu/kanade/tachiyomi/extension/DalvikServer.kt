@@ -51,6 +51,7 @@ import java.io.File
 import java.io.IOException
 import java.io.InputStreamReader
 import java.io.OutputStream
+import java.net.InetAddress
 import java.net.ServerSocket
 import java.net.Socket
 import java.nio.charset.StandardCharsets
@@ -171,7 +172,9 @@ class DalvikServer(
     fun start(): Int {
         if (isRunning) return _port
         ensureInjekt()
-        serverSocket = ServerSocket(0)
+        // Loopback only — Dart talks to 127.0.0.1, and a wildcard bind would
+        // expose unauthenticated extension RPC to the LAN / other apps.
+        serverSocket = ServerSocket(0, 50, InetAddress.getByName("127.0.0.1"))
         _port = serverSocket!!.localPort
         isRunning = true
         Log.d(TAG, "start: listening on port $_port")

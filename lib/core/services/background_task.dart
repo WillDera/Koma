@@ -57,7 +57,7 @@ Future<void> _pollLibraryAndNotify() async {
   );
   final report = await service.checkForNewChapters();
   if (report.totalNew > 0) {
-    await NotificationService.instance.init();
+    await NotificationService.instance.init(requestPermission: false);
     await NotificationService.instance.notifyNewChapters(report);
 
     // Auto-queue newly discovered chapters (Mihon LibraryUpdateJob parity).

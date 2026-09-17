@@ -30,6 +30,7 @@ import '../../core/services/local_cbz_prefs.dart';
 import '../../core/services/local_cbz_scanner.dart';
 import '../../core/services/annas_archive_prefs.dart';
 import '../../core/services/metadata_enrichment_service.dart';
+import '../../core/services/security_prefs.dart';
 import '../../core/services/user_profile.dart';
 import '../../router/router.dart';
 import '../reader/reader_settings_provider.dart';
@@ -2375,12 +2376,12 @@ class _DataSectionState extends ConsumerState<_DataSection> {
       title: 'Backup & restore',
       padding: const EdgeInsets.symmetric(horizontal: 16),
       footer:
-          'Koma backups are JSON. You can also restore Mihon .tachibk and Mangayomi .backup files. Downloads and extension APKs are not inside those backups.',
+          'Koma backups are JSON: library, progress, snippets, themes, settings, repos, and installed sources. JS/Dart sources restore in place; Mihon APKs are reinstalled from the same repo when possible. Chapter image downloads and ebook files are not inside the file.',
       children: [
         SettingsRow(
           icon: Icons.file_upload_outlined,
           title: 'Export',
-          subtitle: 'Save books, manga, and snippets as JSON',
+          subtitle: 'Library, settings, sources, and progress as JSON',
           trailing: _exporting
               ? const SizedBox(
                   width: 18,
@@ -2550,6 +2551,13 @@ class _DataSectionState extends ConsumerState<_DataSection> {
       }
       final imported = await svc.importBytes(bytes, filename: file.name);
       if (mounted) {
+        await SecurityPrefs.load();
+        try {
+          await ref.read(themeProvider.notifier).init();
+        } catch (_) {}
+        try {
+          await ref.read(userProfileProvider.notifier).load();
+        } catch (_) {}
         ref.read(libraryProvider.notifier).loadBooks();
         StashToast.show(
           context,

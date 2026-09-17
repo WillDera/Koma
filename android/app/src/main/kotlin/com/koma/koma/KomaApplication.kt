@@ -26,6 +26,7 @@ class KomaApplication : Application() {
         // Shared with OkHttp [AndroidCookieJar] + extension runWebView.
         runCatching { CookieManager.getInstance().setAcceptCookie(true) }
         DalvikRuntimeManager.initialize(this)
+        DeviceConstraintsPublisher.start(this)
         if (isAutoUpdateEnabled()) {
             try {
                 DalvikRuntimeManager.getOrStartServer()

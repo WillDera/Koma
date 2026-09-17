@@ -1,5 +1,4 @@
 import 'dart:convert';
-import 'dart:io';
 
 import 'package:d4rt/d4rt.dart' hide Logger;
 import 'package:flutter/foundation.dart';
@@ -373,7 +372,7 @@ class MProviderBridged {
       (visitor, positionalArgs, namedArgs, _) => http
           .post(
             Uri.parse('http://localhost:$cfPort/evaluateJavascriptViaWebview'),
-            headers: {HttpHeaders.contentTypeHeader: 'application/json'},
+            headers: cfLoopbackHeaders(),
             body: jsonEncode({
               'url': positionalArgs[0] as String,
               'headers': (positionalArgs[1] as Map).cast<String, String>(),

@@ -77,24 +77,28 @@ class ThemeNotifier extends Notifier<ThemeState> {
         : kDefaultThemePackId;
 
     state = ThemeState(
-      themeMode: ThemeMode.values[prefs.getInt(_keyThemeMode) ?? 0],
+      themeMode: _enumAt(ThemeMode.values, prefs.getInt(_keyThemeMode), ThemeMode.system),
       sepiaMode: prefs.getBool(_keySepiaMode) ?? false,
       themePackId: packId,
       fontFamily: prefs.getString(_keyFontFamily) ?? state.fontFamily,
       googleFont: _nonEmpty(prefs.getString(_keyGoogleFont)),
-      fontSize: prefs.getDouble(_keyFontSize) ?? 17.0,
-      lineHeight: prefs.getDouble(_keyLineHeight) ?? 1.65,
-      accent: AccentPreset.values[prefs.getInt(_keyAccentIndex) ?? 0],
+      fontSize: (prefs.getDouble(_keyFontSize) ?? 17.0).clamp(13.0, 26.0).toDouble(),
+      lineHeight: (prefs.getDouble(_keyLineHeight) ?? 1.65).clamp(1.2, 2.2).toDouble(),
+      accent: _enumAt(AccentPreset.values, prefs.getInt(_keyAccentIndex), AccentPreset.indigo),
       customAccentHex: prefs.getString(_keyCustomAccentHex),
       accentFromPack: prefs.getBool(_keyAccentFromPack) ?? false,
       followSystemAccent: prefs.getBool(_keyFollowSystemAccent) ?? true,
-      readingFont: ReadingFont.values[prefs.getInt(_keyReadingFont) ?? 0],
-      pageWidth: prefs.getDouble(_keyPageWidth) ?? 680,
-      textAlign: TextAlign.values[prefs.getInt(_keyTextAlign) ?? 0],
+      readingFont: _enumAt(
+        ReadingFont.values,
+        prefs.getInt(_keyReadingFont),
+        ReadingFont.system,
+      ),
+      pageWidth: (prefs.getDouble(_keyPageWidth) ?? 680).clamp(520.0, 760.0).toDouble(),
+      textAlign: _enumAt(TextAlign.values, prefs.getInt(_keyTextAlign), TextAlign.left),
       hyphenation: prefs.getBool(_keyHyphenation) ?? true,
       reducedMotion: prefs.getBool(_keyReducedMotion) ?? false,
       defaultHighlight: prefs.getString(_keyDefaultHighlight) ?? 'yellow',
-      handMode: HandMode.values[prefs.getInt(_keyHandMode) ?? 1],
+      handMode: _enumAt(HandMode.values, prefs.getInt(_keyHandMode), HandMode.right),
       oneHandMode: prefs.getBool(_keyOneHandMode) ?? false,
       bionicReading: prefs.getBool(_keyBionicReading) ?? false,
       amoledMode: prefs.getBool(_keyAmoledMode) ?? false,
@@ -116,6 +120,11 @@ class ThemeNotifier extends Notifier<ThemeState> {
   }
 
   static String? _nonEmpty(String? s) => s != null && s.isNotEmpty ? s : null;
+
+  static T _enumAt<T>(List<T> values, int? index, T fallback) {
+    if (index == null || index < 0 || index >= values.length) return fallback;
+    return values[index];
+  }
 
   static String? _validFontId(String? id, List<CustomFont> catalog) {
     if (id == null) return null;

@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter/services.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 /// Live device network / power state for download gating (Mihon parity).
 class DeviceConstraintsSnapshot {
@@ -36,10 +37,21 @@ class DeviceConstraints {
       final raw = await _channel.invokeMethod<Map<Object?, Object?>>(
         'getDeviceConstraints',
       );
-      if (raw == null) return DeviceConstraintsSnapshot.allAllowed;
+      if (raw != null) {
+        return DeviceConstraintsSnapshot(
+          unmetered: raw['unmetered'] == true,
+          charging: raw['charging'] == true,
+        );
+      }
+    } catch (_) {
+      // WorkManager's engine has no MainActivity channel.
+    }
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.reload();
       return DeviceConstraintsSnapshot(
-        unmetered: raw['unmetered'] == true,
-        charging: raw['charging'] == true,
+        unmetered: prefs.getBool('device_unmetered') ?? true,
+        charging: prefs.getBool('device_charging') ?? true,
       );
     } catch (_) {
       return DeviceConstraintsSnapshot.allAllowed;

@@ -109,11 +109,15 @@ class DownloadManager extends ChangeNotifier {
       }
       if (d.order >= _orderCounter) _orderCounter = d.order + 1;
     }
-    await _store.setRunner('none');
+    final currentRunner = await _store.runner();
+    if (currentRunner != 'wm') {
+      await _store.setRunner('none');
+    }
     notifyListeners();
     if (autoStart &&
         !_paused &&
         _queue.any((d) => d.status == DownloadState.queue)) {
+      if (currentRunner == 'wm') return;
       await startDownloads(retryErrors: false);
     }
   }

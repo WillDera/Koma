@@ -113,7 +113,7 @@ class ReaderNotifier extends Notifier<ReaderState> {
     _kirEnabled = false;
     _kirBookId = null;
     state = state.copyWith(loading: true, error: () => null);
-    final repos = ref.watch(repositoriesProvider);
+    final repos = ref.read(repositoriesProvider);
 
     try {
       final book = await repos.books.getBook(bookId);
@@ -153,7 +153,7 @@ class ReaderNotifier extends Notifier<ReaderState> {
           currentKir: kir,
           currentScene: kir == null ? null : _sceneByIndex[currentIndex],
         );
-        await repos.books.markChapterRead(currentChapter.id);
+        await _markChapterReadIfAllowed(currentChapter.id);
         _startReadingTimer();
         _prefetchKirNeighbours(currentIndex, chapters.length);
       } else {
@@ -184,8 +184,7 @@ class ReaderNotifier extends Notifier<ReaderState> {
       currentScene: () =>
           _kirByIndex[index] == null ? null : _sceneByIndex[index],
     );
-    final repos = ref.read(repositoriesProvider);
-    repos.books.markChapterRead(chapter.id);
+    unawaited(_markChapterReadIfAllowed(chapter.id));
     _updateBookProgress();
     _prefetchKirNeighbours(index, state.chapters.length);
   }
@@ -247,7 +246,7 @@ class ReaderNotifier extends Notifier<ReaderState> {
     final ch = state.currentChapter;
     if (off == null || ch == null) return;
     _pendingOffset = null;
-    final repos = ref.watch(repositoriesProvider);
+    final repos = ref.read(repositoriesProvider);
     await repos.books.updateChapterReadingOffset(ch.id, off);
   }
 
@@ -293,7 +292,8 @@ class ReaderNotifier extends Notifier<ReaderState> {
     final book = state.book;
     if (book != null &&
         state.currentIndex == state.chapters.length - 1 &&
-        book.progress < 1.0) {
+        book.progress < 1.0 &&
+        !await SecurityPrefs.isIncognito()) {
       final updated = book.copyWith(
         progress: 1.0,
         scrollPosition: scrollPosition,
@@ -308,6 +308,12 @@ class ReaderNotifier extends Notifier<ReaderState> {
       stats.trackCompletion(book.id);
     }
     await _updateBookProgress();
+  }
+
+  Future<void> _markChapterReadIfAllowed(int chapterId) async {
+    if (await SecurityPrefs.isIncognito()) return;
+    final repos = ref.read(repositoriesProvider);
+    await repos.books.markChapterRead(chapterId);
   }
 
   Future<void> _prepareKir(int bookId, int chapterCount) async {

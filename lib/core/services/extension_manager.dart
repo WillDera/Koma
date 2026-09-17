@@ -62,6 +62,9 @@ class ExtensionManager {
   final TrustExtension _trust = TrustExtension();
   final ApkSignatureService _apkSignatures = ApkSignatureService();
 
+  Future<void>? _reloadAllInFlight;
+  Future<int>? _autoInstallInFlight;
+
   ExtensionManager(this._repos, this._keiyoushi, {http.Client? httpClient})
     : _http = httpClient ?? http.Client();
 
@@ -919,7 +922,19 @@ class ExtensionManager {
   /// When [autoInstall] is enabled (Mangayomi `autoUpdateExtensions` parity),
   /// download and reload every installed source whose `versionLast` differs
   /// from `version`. Skipped sources (missing index entry) are left as-is.
-  Future<int> autoInstallAvailableUpdates() async {
+  Future<int> autoInstallAvailableUpdates() {
+    final inFlight = _autoInstallInFlight;
+    if (inFlight != null) return inFlight;
+    final future = _autoInstallAvailableUpdatesBody();
+    _autoInstallInFlight = future;
+    return future.whenComplete(() {
+      if (identical(_autoInstallInFlight, future)) {
+        _autoInstallInFlight = null;
+      }
+    });
+  }
+
+  Future<int> _autoInstallAvailableUpdatesBody() async {
     final installed = await listInstalled();
     final outdated = installed.where((s) => s.isUpdateAvailable).toList();
     if (outdated.isEmpty) return 0;
@@ -1156,7 +1171,19 @@ class ExtensionManager {
     return sourceId;
   }
 
-  Future<void> reloadAll() async {
+  Future<void> reloadAll() {
+    final inFlight = _reloadAllInFlight;
+    if (inFlight != null) return inFlight;
+    final future = _reloadAllBody();
+    _reloadAllInFlight = future;
+    return future.whenComplete(() {
+      if (identical(_reloadAllInFlight, future)) {
+        _reloadAllInFlight = null;
+      }
+    });
+  }
+
+  Future<void> _reloadAllBody() async {
     // Refresh repo signing keys + demote Untrusted before touching Dalvik.
     await reconcileTrust();
     final installed = await listInstalled();
