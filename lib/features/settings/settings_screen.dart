@@ -33,6 +33,7 @@ import '../../core/services/metadata_enrichment_service.dart';
 import '../../core/services/security_prefs.dart';
 import '../../core/services/user_profile.dart';
 import '../../router/router.dart';
+import '../discover/explore_view_prefs.dart';
 import '../reader/reader_settings_provider.dart';
 import '../reader/reader_settings_sheet.dart' show ReadingMode;
 import '../snippets/snippets_screen.dart';
@@ -183,7 +184,7 @@ class _SettingsHub extends StatelessWidget {
           SettingsRow(
             icon: Icons.person_outline_rounded,
             title: 'Profile',
-            subtitle: 'Name, photo, genres',
+            subtitle: 'Name, photo, genres, stats',
             onTap: () => _open(context, 'Profile', const _ProfileSection()),
           ),
         ),
@@ -224,7 +225,7 @@ class _SettingsHub extends StatelessWidget {
             icon: Icons.storage_outlined,
             title: 'Data',
             subtitle: 'Backup, downloads, library updates',
-            onTap: () => _open(context, 'Data', const _DataAndStatsPage()),
+            onTap: () => _open(context, 'Data', const _DataPage()),
           ),
         ),
         row(
@@ -347,8 +348,8 @@ class _SettingsDestinationScreen extends StatelessWidget {
   }
 }
 
-class _DataAndStatsPage extends StatelessWidget {
-  const _DataAndStatsPage();
+class _DataPage extends StatelessWidget {
+  const _DataPage();
 
   @override
   Widget build(BuildContext context) {
@@ -359,8 +360,6 @@ class _DataAndStatsPage extends StatelessWidget {
         _DownloadQueueSection(),
         SizedBox(height: 20),
         _LibraryUpdateSection(),
-        SizedBox(height: 20),
-        LibraryStatsPanel(),
       ],
     );
   }
@@ -1535,12 +1534,27 @@ class _BookMetadataSectionState extends ConsumerState<_BookMetadataSection> {
     final discoverEnrich =
         ref.watch(discoverMetadataEnabledProvider).value ??
         kDiscoverMetadataEnabledDefault;
+    final compactMangaRails = ref.watch(exploreCompactMangaRailsProvider);
     return SettingsSection(
       title: 'Book metadata',
       padding: const EdgeInsets.symmetric(horizontal: 16),
       footer:
           'Looks up author, cover, genres, and release date via Open Library (primary) and Google Books (fallback). An API key improves Google Books rate limits but is optional.',
       children: [
+        SettingsRow(
+          icon: Icons.view_week_outlined,
+          title: 'Compact Explore manga results',
+          subtitle: compactMangaRails
+              ? 'Each source shows up to 5 covers in a horizontal row'
+              : 'Each source lists every hit in a vertical grid',
+          trailing: Switch(
+            value: compactMangaRails,
+            activeThumbColor: c.accent,
+            onChanged: (v) => ref
+                .read(exploreCompactMangaRailsProvider.notifier)
+                .setEnabled(v),
+          ),
+        ),
         SettingsRow(
           icon: Icons.travel_explore_outlined,
           title: 'Enrich Discover book covers',
@@ -1807,19 +1821,21 @@ class _LibraryUpdateSection extends ConsumerWidget {
         SettingsRow(
           icon: Icons.schedule_outlined,
           title: 'Check every',
-          subtitle:
-              '${update.interval.inHours} hour${update.interval.inHours == 1 ? '' : 's'}',
+          subtitle: LibraryUpdatePrefs.formatInterval(update.interval),
           trailing: PopupMenuButton<int>(
             icon: Icon(Icons.keyboard_arrow_down, color: c.textSecondary),
             tooltip: 'Interval',
-            onSelected: (hours) => ref
+            onSelected: (minutes) => ref
                 .read(libraryUpdateProvider.notifier)
-                .setInterval(Duration(hours: hours)),
+                .setInterval(Duration(minutes: minutes)),
             itemBuilder: (_) => const [
-              PopupMenuItem(value: 1, child: Text('1 hour')),
-              PopupMenuItem(value: 6, child: Text('6 hours')),
-              PopupMenuItem(value: 12, child: Text('12 hours')),
-              PopupMenuItem(value: 24, child: Text('24 hours')),
+              PopupMenuItem(value: 5, child: Text('5 minutes')),
+              PopupMenuItem(value: 15, child: Text('15 minutes')),
+              PopupMenuItem(value: 30, child: Text('30 minutes')),
+              PopupMenuItem(value: 60, child: Text('1 hour')),
+              PopupMenuItem(value: 6 * 60, child: Text('6 hours')),
+              PopupMenuItem(value: 12 * 60, child: Text('12 hours')),
+              PopupMenuItem(value: 24 * 60, child: Text('24 hours')),
             ],
           ),
         ),
@@ -3328,11 +3344,14 @@ class _ProfileSectionState extends ConsumerState<_ProfileSection> {
         ? 'Add your name'
         : profile.displayName.trim();
 
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(20, 4, 20, 24),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(20, 4, 20, 0),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
           // ── Identity hero ──────────────────────────────────────────
           Center(
             child: Column(
@@ -3574,8 +3593,13 @@ class _ProfileSectionState extends ConsumerState<_ProfileSection> {
               ),
             ),
           ),
-        ],
-      ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 20),
+        const LibraryStatsPanel(),
+        const SizedBox(height: 24),
+      ],
     );
   }
 

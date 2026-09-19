@@ -56,6 +56,7 @@ Future<void> _pollLibraryAndNotify() async {
     extensionManager: extensionManager,
   );
   final report = await service.checkForNewChapters();
+  await LibraryUpdatePrefs.saveLastCheckedAt(DateTime.now());
   if (report.totalNew > 0) {
     await NotificationService.instance.init(requestPermission: false);
     await NotificationService.instance.notifyNewChapters(report);

@@ -551,7 +551,9 @@ class LibraryUpdateState {
 
   const LibraryUpdateState({
     this.enabled = false,
-    this.interval = const Duration(hours: 6),
+    this.interval = const Duration(
+      minutes: LibraryUpdatePrefs.defaultIntervalMinutes,
+    ),
     this.lastCheckedAt,
     this.lastNewChapterCount = 0,
     this.checking = false,
@@ -586,9 +588,6 @@ class LibraryUpdateState {
 }
 
 class LibraryUpdateNotifier extends Notifier<LibraryUpdateState> {
-  static const _keyEnabled = 'library_auto_update_enabled';
-  static const _keyIntervalHours = 'library_auto_update_interval_hours';
-
   Timer? _timer;
 
   @override
@@ -596,20 +595,23 @@ class LibraryUpdateNotifier extends Notifier<LibraryUpdateState> {
     ref.onDispose(() {
       _timer?.cancel();
     });
-    return const LibraryUpdateState();
+    return const LibraryUpdateState(
+      interval: Duration(minutes: LibraryUpdatePrefs.defaultIntervalMinutes),
+    );
   }
 
   Future<void> init() async {
     final prefs = await SharedPreferences.getInstance();
-    final enabled = prefs.getBool(_keyEnabled) ?? false;
-    final intervalHours =
-        prefs.getInt(_keyIntervalHours) ?? state.interval.inHours;
+    final enabled = prefs.getBool(LibraryUpdatePrefs.keyEnabled) ?? false;
+    final intervalMinutes = await LibraryUpdatePrefs.loadIntervalMinutes();
     final device = await LibraryUpdatePrefs.loadDeviceConstraints();
+    final lastChecked = await LibraryUpdatePrefs.loadLastCheckedAt();
     state = state.copyWith(
       enabled: enabled,
-      interval: Duration(hours: intervalHours),
+      interval: Duration(minutes: intervalMinutes),
       wifiOnly: device.wifiOnly,
       chargingOnly: device.chargingOnly,
+      lastCheckedAt: () => lastChecked,
     );
     _reschedule();
     await _syncBackgroundTask();
@@ -617,17 +619,16 @@ class LibraryUpdateNotifier extends Notifier<LibraryUpdateState> {
 
   Future<void> setEnabled(bool value) async {
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setBool(_keyEnabled, value);
+    await prefs.setBool(LibraryUpdatePrefs.keyEnabled, value);
     state = state.copyWith(enabled: value);
     _reschedule();
     await _syncBackgroundTask();
   }
 
   Future<void> setInterval(Duration value) async {
-    final prefs = await SharedPreferences.getInstance();
-    final hours = value.inHours < 1 ? 1 : value.inHours;
-    await prefs.setInt(_keyIntervalHours, hours);
-    state = state.copyWith(interval: Duration(hours: hours));
+    final minutes = value.inMinutes < 5 ? 5 : value.inMinutes;
+    await LibraryUpdatePrefs.saveIntervalMinutes(minutes);
+    state = state.copyWith(interval: Duration(minutes: minutes));
     _reschedule();
     await _syncBackgroundTask();
   }
@@ -655,8 +656,7 @@ class LibraryUpdateNotifier extends Notifier<LibraryUpdateState> {
 
   /// Mirror the in-app timer into a WorkManager periodic task so polling keeps
   /// happening while the app is backgrounded (or killed). Android's minimum
-  /// period is 15 minutes; our smallest interval is 1h so the value passes
-  /// through unchanged.
+  /// period is 15 minutes — shorter in-app intervals still use the Timer.
   ///
   /// Device constraints (Wi‑Fi / charging) apply only here — manual "Check
   /// now" and the foreground timer stay unconstrained (Mihon manual job
@@ -670,7 +670,7 @@ class LibraryUpdateNotifier extends Notifier<LibraryUpdateState> {
         await Workmanager().registerPeriodicTask(
           kLibraryPollTaskName,
           kLibraryPollTaskName,
-          frequency: state.interval,
+          frequency: LibraryUpdatePrefs.workFrequency(state.interval),
           existingWorkPolicy: ExistingPeriodicWorkPolicy.update,
           constraints: LibraryUpdatePrefs.workConstraints(
             LibraryUpdateDeviceConstraints(
@@ -722,9 +722,11 @@ class LibraryUpdateNotifier extends Notifier<LibraryUpdateState> {
           ),
         );
       }
+      final checkedAt = DateTime.now();
+      await LibraryUpdatePrefs.saveLastCheckedAt(checkedAt);
       state = state.copyWith(
         checking: false,
-        lastCheckedAt: () => DateTime.now(),
+        lastCheckedAt: () => checkedAt,
         lastNewChapterCount: report.totalNew,
       );
     } catch (e) {

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../core/models/manga.dart';
 import '../../core/providers.dart';
 import '../../core/services/migrate_manga_use_case.dart';
 import '../../theme/app_theme.dart';
@@ -65,48 +66,22 @@ class _MigrateSearchScreenState extends ConsumerState<MigrateSearchScreen> {
     final title = manga['title'] as String? ?? widget.currentTitle;
     final memo = manga['memo'] as String?;
 
-    final choice = await showDialog<_MigrateChoice>(
-      context: context,
-      useRootNavigator: false,
-      barrierColor: Colors.black.withValues(alpha: 0.4),
-      builder: (ctx) => _MigrateConfirmDialog(
-        currentTitle: widget.currentTitle,
-        targetTitle: title,
-        targetSourceName: item.source.name,
-      ),
-    );
-    if (choice == null || !mounted) return;
-
-    setState(() => _busy = true);
     try {
-      final repos = ref.read(repositoriesProvider);
-      final current = await repos.manga.getMangaById(widget.currentMangaId);
-      if (current == null) {
-        throw StateError('Current manga not found');
-      }
-      final useCase = MigrateMangaUseCase(
-        repositories: repos,
-        dispatch: ref.read(extensionServiceProvider),
-        keiyoushi: ref.read(keiyoushiServiceProvider),
-      );
-      final target = await useCase.invoke(
-        current: current,
+      final target = await confirmAndMigrate(
+        context: context,
+        ref: ref,
+        currentMangaId: widget.currentMangaId,
+        currentTitle: widget.currentTitle,
         targetSourceId: item.source.sourceId,
+        targetSourceName: item.source.name,
         targetUrl: url,
         targetTitle: title,
         targetMemo: memo,
-        replace: choice.replace,
-        flags: MigrationFlags(
-          chapters: choice.chapters,
-          removeDownloads: choice.removeDownloads,
-          categories: choice.categories,
-          notes: choice.notes,
-          customCover: choice.customCover,
-          tracks: choice.tracks,
-        ),
+        onConfirmed: () {
+          if (mounted) setState(() => _busy = true);
+        },
       );
-      if (!mounted) return;
-      ref.read(libraryProvider.notifier).loadBooks();
+      if (target == null || !mounted) return;
       ref.read(globalSearchProvider.notifier).setExcludeSourceId(null);
       Navigator.of(context).pop(target);
     } catch (e) {
@@ -172,7 +147,23 @@ class _MigrateSearchScreenState extends ConsumerState<MigrateSearchScreen> {
           if (_busy)
             const ColoredBox(
               color: Color(0x99000000),
-              child: Center(child: CircularProgressIndicator()),
+              child: Center(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    CircularProgressIndicator(),
+                    SizedBox(height: 16),
+                    Text(
+                      'Migrating…',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 15,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
             ),
         ],
       ),
@@ -180,8 +171,8 @@ class _MigrateSearchScreenState extends ConsumerState<MigrateSearchScreen> {
   }
 }
 
-class _MigrateChoice {
-  const _MigrateChoice({
+class MigrateChoice {
+  const MigrateChoice({
     required this.replace,
     required this.chapters,
     required this.removeDownloads,
@@ -198,6 +189,66 @@ class _MigrateChoice {
   final bool notes;
   final bool customCover;
   final bool tracks;
+}
+
+/// Shows the migrate confirm sheet, then runs [MigrateMangaUseCase].
+/// Returns the target library row, or null if the user cancelled.
+///
+/// [onConfirmed] fires after the user accepts (Copy/Migrate) and before the
+/// network/DB work — use it to show a busy overlay.
+Future<Manga?> confirmAndMigrate({
+  required BuildContext context,
+  required WidgetRef ref,
+  required int currentMangaId,
+  required String currentTitle,
+  required String targetSourceId,
+  required String targetSourceName,
+  required String targetUrl,
+  required String targetTitle,
+  String? targetMemo,
+  void Function()? onConfirmed,
+}) async {
+  final choice = await showDialog<MigrateChoice>(
+    context: context,
+    useRootNavigator: false,
+    barrierColor: Colors.black.withValues(alpha: 0.4),
+    builder: (ctx) => _MigrateConfirmDialog(
+      currentTitle: currentTitle,
+      targetTitle: targetTitle,
+      targetSourceName: targetSourceName,
+    ),
+  );
+  if (choice == null || !context.mounted) return null;
+  onConfirmed?.call();
+
+  final repos = ref.read(repositoriesProvider);
+  final current = await repos.manga.getMangaById(currentMangaId);
+  if (current == null) {
+    throw StateError('Current manga not found');
+  }
+  final useCase = MigrateMangaUseCase(
+    repositories: repos,
+    dispatch: ref.read(extensionServiceProvider),
+    keiyoushi: ref.read(keiyoushiServiceProvider),
+  );
+  final target = await useCase.invoke(
+    current: current,
+    targetSourceId: targetSourceId,
+    targetUrl: targetUrl,
+    targetTitle: targetTitle,
+    targetMemo: targetMemo,
+    replace: choice.replace,
+    flags: MigrationFlags(
+      chapters: choice.chapters,
+      removeDownloads: choice.removeDownloads,
+      categories: choice.categories,
+      notes: choice.notes,
+      customCover: choice.customCover,
+      tracks: choice.tracks,
+    ),
+  );
+  ref.read(libraryProvider.notifier).loadBooks();
+  return target;
 }
 
 class _MigrateConfirmDialog extends StatefulWidget {
@@ -316,7 +367,7 @@ class _MigrateConfirmDialogState extends State<_MigrateConfirmDialog> {
         TextButton(
           onPressed: () => Navigator.pop(
             context,
-            _MigrateChoice(
+            MigrateChoice(
               replace: false,
               chapters: _chapters,
               removeDownloads: _removeDownloads,
@@ -331,7 +382,7 @@ class _MigrateConfirmDialogState extends State<_MigrateConfirmDialog> {
         TextButton(
           onPressed: () => Navigator.pop(
             context,
-            _MigrateChoice(
+            MigrateChoice(
               replace: true,
               chapters: _chapters,
               removeDownloads: _removeDownloads,

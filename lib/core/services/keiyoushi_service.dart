@@ -126,14 +126,32 @@ class KeiyoushiService {
     /// Mihon numeric [Source.id] — used to pick the right entry from a
     /// multi-source APK (SourceFactory) and to alias the load cache.
     String? preferredSourceId,
+    /// Flutter Source URL override — applied to the loaded [HttpSource.baseUrl].
+    String? baseUrlOverride,
   }) async {
     final body = <String, dynamic>{
       'method': 'loadExtension',
       'apkPath': apkPath,
       'className': ?className,
       'preferredSourceId': ?preferredSourceId,
+      'baseUrlOverride': ?baseUrlOverride,
     };
     return _postChecked(body);
+  }
+
+  /// Push a Source URL override onto an already-loaded Mihon [HttpSource].
+  ///
+  /// When the source is not loaded yet, the override is remembered and applied
+  /// on the next [loadExtension]. Returns the native response map.
+  Future<Map<String, dynamic>> setBaseUrlOverride({
+    required String sourceId,
+    required String baseUrl,
+  }) async {
+    return _postChecked({
+      'method': 'setBaseUrlOverride',
+      'sourceId': sourceId,
+      'baseUrl': baseUrl,
+    });
   }
 
   Future<void> unloadExtension(String sourceId) async {

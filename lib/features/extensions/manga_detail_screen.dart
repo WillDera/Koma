@@ -23,6 +23,7 @@ import '../../core/services/download/download_manager.dart';
 import '../../core/services/extension_source_resolve.dart';
 import '../../core/services/keiyoushi_service.dart';
 import '../../core/services/merge_manga_use_case.dart';
+import '../../core/services/migrate_suggestion_service.dart';
 import '../../core/services/local_cbz_prefs.dart';
 import '../../core/services/local_cbz_source.dart';
 import '../../core/services/trackers/track_chapter_use_case.dart';
@@ -50,6 +51,7 @@ import '../../widgets/tracker_brand_icon.dart';
 import '../library/cbz_export_flow.dart';
 import 'manga_detail_providers.dart';
 import 'migrate_search_screen.dart';
+import 'migrate_suggestion_provider.dart';
 import 'track_manga_screen.dart';
 
 enum _DownloadMode { all, unread, range, next1, next5, next10 }
@@ -121,6 +123,12 @@ class _MangaDetailScreenState extends ConsumerState<MangaDetailScreen> {
   final Set<String> _selectedChapterUrls = {};
   List<Track> _linkedTracks = const [];
   String? _notes;
+
+  MigrateSuggestion? _migrateSuggestion;
+  bool _migrateSuggestLoading = false;
+  bool _migrateSuggestUserRequested = false;
+  bool _migrating = false;
+  int _migrateSuggestGen = 0;
 
   /// Bumped on every [_init] so in-flight network/Isar work from a previous
   /// open (or a superseded refresh) cannot mutate the current screen.
@@ -280,6 +288,10 @@ class _MangaDetailScreenState extends ConsumerState<MangaDetailScreen> {
     _inLibrary = false;
     _viewerFlags = widget.manga?.viewerFlags ?? 0;
     _localThumbnail = null;
+    _migrateSuggestion = null;
+    _migrateSuggestLoading = false;
+    _migrateSuggestUserRequested = false;
+    _migrateSuggestGen++;
     if (mounted) setState(() => _sessionReady = true);
 
     final m = widget.manga;
@@ -427,6 +439,114 @@ class _MangaDetailScreenState extends ConsumerState<MangaDetailScreen> {
               'read_at': c.readAt?.toIso8601String(),
             },
         });
+    }
+    if (m.inLibrary) {
+      _scheduleMigrateSuggestionScan();
+    }
+  }
+
+  void _scheduleMigrateSuggestionScan({bool force = false}) {
+    final mangaId = _mangaId;
+    if (mangaId == null || !_inLibrary) return;
+    if (LocalCbzSource.isLocal(widget.sourceId)) return;
+    final gen = ++_migrateSuggestGen;
+    setState(() {
+      _migrateSuggestLoading = true;
+      if (force) {
+        _migrateSuggestion = null;
+        _migrateSuggestUserRequested = true;
+      }
+    });
+    unawaited(() async {
+      try {
+        final service = ref.read(migrateSuggestionServiceProvider);
+        if (force) await service.clearDismiss(mangaId);
+        final manga = await ref.read(repositoriesProvider).manga.getMangaById(
+          mangaId,
+        );
+        if (manga == null || !manga.inLibrary) return;
+        final suggestion = await service.findBetterSource(
+          manga,
+          force: force,
+        );
+        if (!mounted || gen != _migrateSuggestGen) return;
+        setState(() {
+          _migrateSuggestion = suggestion;
+          _migrateSuggestLoading = false;
+          if (suggestion != null) _migrateSuggestUserRequested = false;
+        });
+        if (force && suggestion == null && mounted) {
+          StashToast.show(
+            context,
+            message: 'No fuller source found for this title',
+            icon: Icons.info_outline,
+          );
+        }
+      } catch (_) {
+        if (!mounted || gen != _migrateSuggestGen) return;
+        setState(() => _migrateSuggestLoading = false);
+      }
+    }());
+  }
+
+  Future<void> _dismissMigrateSuggestion() async {
+    final sug = _migrateSuggestion;
+    final mangaId = _mangaId;
+    if (sug == null || mangaId == null) return;
+    await ref
+        .read(migrateSuggestionServiceProvider)
+        .dismiss(mangaId, sug.fingerprint);
+    if (!mounted) return;
+    setState(() => _migrateSuggestion = null);
+  }
+
+  Future<void> _applyMigrateSuggestion() async {
+    final sug = _migrateSuggestion;
+    final mangaId = _mangaId;
+    if (sug == null || mangaId == null || !mounted || _migrating) return;
+    final title = _preferTitle(
+      ref.read(mangaDetailProvider).details?['title'] as String?,
+      widget.title,
+    );
+    try {
+      final target = await confirmAndMigrate(
+        context: context,
+        ref: ref,
+        currentMangaId: mangaId,
+        currentTitle: title,
+        targetSourceId: sug.targetSourceId,
+        targetSourceName: sug.targetSourceName,
+        targetUrl: sug.targetUrl,
+        targetTitle: sug.targetTitle,
+        targetMemo: sug.targetMemo,
+        onConfirmed: () {
+          if (mounted) setState(() => _migrating = true);
+        },
+      );
+      if (target == null || !mounted) {
+        if (mounted) setState(() => _migrating = false);
+        return;
+      }
+      await ref
+          .read(migrateSuggestionServiceProvider)
+          .dismiss(mangaId, sug.fingerprint);
+      if (!mounted) return;
+      context.pushReplacementNamed(
+        Routes.mangaDetail,
+        extra: (
+          sourceId: target.sourceId,
+          url: target.url,
+          title: target.name,
+          manga: target,
+          memo: target.memo,
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _migrating = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Migrate failed: $e')),
+      );
     }
   }
 
@@ -725,12 +845,16 @@ class _MangaDetailScreenState extends ConsumerState<MangaDetailScreen> {
       })
       ..setError(null);
     // Do not touch loading — Isar stream updates must not hide the fetch banner.
+    final becameLibrary = !_inLibrary && manga.inLibrary;
     setState(() {
       _mangaId = manga.id;
       _inLibrary = manga.inLibrary;
       _viewerFlags = manga.viewerFlags;
     });
     unawaited(_reloadLinkedTracks());
+    if (becameLibrary) {
+      _scheduleMigrateSuggestionScan();
+    }
   }
 
   /// Merges chapter progress from Isar stream into the display chapter maps.
@@ -880,6 +1004,7 @@ class _MangaDetailScreenState extends ConsumerState<MangaDetailScreen> {
       if (!mounted || gen != _loadGen) return;
       setState(() => _inLibrary = true);
       if (mounted) ref.read(libraryProvider.notifier).loadBooks();
+      _scheduleMigrateSuggestionScan();
     } else {
       // First time insertion — ensure chapters exist before creating manga row
       var detail = ref.read(mangaDetailProvider);
@@ -941,6 +1066,7 @@ class _MangaDetailScreenState extends ConsumerState<MangaDetailScreen> {
       unawaited(_reloadLinkedTracks());
       ref.read(mangaDetailProvider.notifier).setInLibrary(true, id);
       if (mounted) ref.read(libraryProvider.notifier).loadBooks();
+      _scheduleMigrateSuggestionScan();
     }
     if (!mounted) return;
     StashToast.show(
@@ -962,7 +1088,13 @@ class _MangaDetailScreenState extends ConsumerState<MangaDetailScreen> {
       await repos.manga.clearMangaChapterHistory(_mangaId!);
     }
     if (mounted) {
-      setState(() => _inLibrary = false);
+      setState(() {
+        _inLibrary = false;
+        _migrateSuggestion = null;
+        _migrateSuggestLoading = false;
+        _migrateSuggestUserRequested = false;
+        _migrateSuggestGen++;
+      });
       ref.read(libraryProvider.notifier).loadBooks();
       ref.read(historyRevisionProvider.notifier).bump();
     }
@@ -2222,6 +2354,10 @@ class _MangaDetailScreenState extends ConsumerState<MangaDetailScreen> {
             memo: target.memo,
           ),
         );
+      case 'find_better_source':
+        if (LocalCbzSource.isLocal(widget.sourceId)) return;
+        if (_mangaId == null || !_inLibrary) return;
+        _scheduleMigrateSuggestionScan(force: true);
       case 'merge':
         await _mergeDuplicate();
       case 'track':
@@ -2590,7 +2726,7 @@ class _MangaDetailScreenState extends ConsumerState<MangaDetailScreen> {
     final selectedOnly = showBulkBar ? _selectedChapters() : const <Map<String, dynamic>>[];
     final singleSelected = selectedOnly.length == 1 ? selectedOnly.first : null;
 
-    return Scaffold(
+    final scaffold = Scaffold(
       backgroundColor: c.bg,
       bottomNavigationBar: _KenjiDetailButtonGroup(
         c: c,
@@ -2699,6 +2835,13 @@ class _MangaDetailScreenState extends ConsumerState<MangaDetailScreen> {
                             value: 'migrate',
                             child: Text('Migrate'),
                           ),
+                        if (_inLibrary &&
+                            _mangaId != null &&
+                            !LocalCbzSource.isLocal(widget.sourceId))
+                          const PopupMenuItem(
+                            value: 'find_better_source',
+                            child: Text('Find better source…'),
+                          ),
                         if (_inLibrary && _mangaId != null)
                           const PopupMenuItem(
                             value: 'merge',
@@ -2760,6 +2903,110 @@ class _MangaDetailScreenState extends ConsumerState<MangaDetailScreen> {
                                   ),
                                 ),
                               ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                if (_inLibrary &&
+                    !LocalCbzSource.isLocal(widget.sourceId) &&
+                    (_migrateSuggestion != null ||
+                        (_migrateSuggestLoading &&
+                            _migrateSuggestUserRequested)))
+                  SliverToBoxAdapter(
+                    child: Padding(
+                      padding: const EdgeInsets.fromLTRB(24, 0, 24, 12),
+                      child: Material(
+                        color: c.surfaceMuted,
+                        borderRadius: BorderRadius.circular(10),
+                        child: Padding(
+                          padding: const EdgeInsets.fromLTRB(14, 10, 8, 10),
+                          child: Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Padding(
+                                padding: const EdgeInsets.only(top: 2),
+                                child: Icon(
+                                  Icons.swap_horiz_rounded,
+                                  size: 18,
+                                  color: c.accent,
+                                ),
+                              ),
+                              const SizedBox(width: 10),
+                              Expanded(
+                                child: _migrateSuggestLoading &&
+                                        _migrateSuggestion == null
+                                    ? Text(
+                                        'Looking for a source with more chapters…',
+                                        style: TextStyle(
+                                          color: c.textSecondary,
+                                          fontSize: 13,
+                                          height: 1.35,
+                                        ),
+                                      )
+                                    : Column(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
+                                        children: [
+                                          Text(
+                                            _migrateSuggestion!.message,
+                                            style: TextStyle(
+                                              color: c.textPrimary,
+                                              fontSize: 13,
+                                              fontWeight: FontWeight.w600,
+                                              height: 1.35,
+                                            ),
+                                          ),
+                                          const SizedBox(height: 2),
+                                          Text(
+                                            'Migrate to keep reading with a fuller catalogue.',
+                                            style: TextStyle(
+                                              color: c.textTertiary,
+                                              fontSize: 12,
+                                              height: 1.3,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                              ),
+                              if (_migrateSuggestion != null) ...[
+                                TextButton(
+                                  onPressed: _migrating
+                                      ? null
+                                      : _applyMigrateSuggestion,
+                                  child: Text(
+                                    'Migrate',
+                                    style: TextStyle(color: c.accent),
+                                  ),
+                                ),
+                                IconButton(
+                                  tooltip: 'Dismiss',
+                                  visualDensity: VisualDensity.compact,
+                                  onPressed: _migrating
+                                      ? null
+                                      : _dismissMigrateSuggestion,
+                                  icon: Icon(
+                                    Icons.close,
+                                    size: 18,
+                                    color: c.textTertiary,
+                                  ),
+                                ),
+                              ] else
+                                Padding(
+                                  padding: const EdgeInsets.only(
+                                    top: 2,
+                                    right: 6,
+                                  ),
+                                  child: SizedBox(
+                                    width: 14,
+                                    height: 14,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                      color: c.accent,
+                                    ),
+                                  ),
+                                ),
                             ],
                           ),
                         ),
@@ -3023,6 +3270,34 @@ class _MangaDetailScreenState extends ConsumerState<MangaDetailScreen> {
               ),
             )
           : const Center(child: Text('Failed to load manga details')),
+    );
+
+    if (!_migrating) return scaffold;
+
+    return Stack(
+      children: [
+        scaffold,
+        const ColoredBox(
+          color: Color(0x99000000),
+          child: Center(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                CircularProgressIndicator(),
+                SizedBox(height: 16),
+                Text(
+                  'Migrating…',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 15,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ],
     );
   }
 

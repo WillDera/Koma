@@ -1,9 +1,11 @@
 package eu.kanade.tachiyomi.network
 
 import android.content.Context
+import eu.kanade.tachiyomi.network.interceptor.BaseUrlRewriteInterceptor
 import eu.kanade.tachiyomi.network.interceptor.CloudflareInterceptor
 import eu.kanade.tachiyomi.network.interceptor.UncaughtExceptionInterceptor
 import eu.kanade.tachiyomi.network.interceptor.UserAgentInterceptor
+import eu.kanade.tachiyomi.network.interceptor.WebViewHtmlFallbackInterceptor
 import eu.kanade.tachiyomi.util.system.WebViewUtil
 import okhttp3.Headers
 import okhttp3.MediaType.Companion.toMediaType
@@ -39,11 +41,16 @@ class NetworkHelper(private val context: Context) {
         .writeTimeout(30, TimeUnit.SECONDS)
         .callTimeout(2, TimeUnit.MINUTES)
         .addInterceptor(UncaughtExceptionInterceptor())
+        // Rewrite packaged→override hosts before UA/CF (Source URL override).
+        .addInterceptor(BaseUrlRewriteInterceptor())
         // Outer gzip+br so inner extension CompressionInterceptor(Zstd, …)
         // sees Accept-Encoding already set and never advertises zstd.
         // libzstd-kmp.so FindClass of a stripped ZstdCompressor aborts ART.
         .addInterceptor(BrotliInterceptor)
         .addInterceptor(UserAgentInterceptor(::defaultUserAgentProvider))
+        // Outer: if CF leaves a bare 403/503, fetch HTML via Chromium WebView.
+        .addInterceptor(WebViewHtmlFallbackInterceptor(::defaultUserAgentProvider))
+        // Inner (closer to network): Mihon CF challenge solve via cf-mitigated.
         .addInterceptor(
             CloudflareInterceptor(context, cookieJar, ::defaultUserAgentProvider),
         )

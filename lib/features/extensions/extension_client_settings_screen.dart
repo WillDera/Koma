@@ -6,9 +6,11 @@ import '../../core/providers.dart';
 import '../../core/services/extension_client_settings.dart';
 import '../../core/services/source_webview_bridge.dart';
 import '../../core/utils/language.dart';
+import '../../core/utils/source_base_url.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/page_transitions.dart';
 import 'extension_code_editor_screen.dart';
+import 'extensions_catalog_provider.dart';
 
 /// App-owned extension client settings (URL, UA, language, cover, code, web).
 /// Separate from Mihon/JS source preference screens.
@@ -67,27 +69,27 @@ class _ExtensionClientSettingsScreenState
   }
 
   Future<void> _saveBaseUrl() async {
-    final url = _urlCtrl.text.trim();
-    final updated = _source.copyWith(
-      baseUrl: url.isEmpty ? null : url,
-      updatedAt: DateTime.now(),
-    );
-    await ref
-        .read(repositoriesProvider)
-        .extensions
-        .insertExtensionSource(updated);
+    final updated = await ref
+        .read(extensionManagerProvider)
+        .applySourceBaseUrl(_source, _urlCtrl.text);
+    await ref.read(extensionsCatalogProvider.notifier).refreshInstalled();
     if (!mounted) return;
-    setState(() => _source = updated);
+    setState(() {
+      _source = updated;
+      _urlCtrl.text = updated.baseUrl ?? '';
+    });
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(content: Text('Source URL saved')),
     );
   }
 
   Future<void> _openWebsite() async {
-    final url = (_urlCtrl.text.trim().isNotEmpty
-            ? _urlCtrl.text.trim()
-            : (_source.baseUrl ?? ''))
-        .trim();
+    final url = normalizeSourceBaseUrl(
+          _urlCtrl.text.trim().isNotEmpty
+              ? _urlCtrl.text
+              : (_source.baseUrl ?? ''),
+        ) ??
+        '';
     if (url.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('No website URL set')),
@@ -123,6 +125,7 @@ class _ExtensionClientSettingsScreenState
     );
     if (updated != null && mounted) {
       setState(() => _source = updated);
+      await ref.read(extensionsCatalogProvider.notifier).refreshInstalled();
     }
   }
 
@@ -134,28 +137,40 @@ class _ExtensionClientSettingsScreenState
         backgroundColor: c.bg,
         appBar: AppBar(
           backgroundColor: c.bg,
-          title: Text('Client settings', style: TextStyle(color: c.textPrimary)),
+          title: Text(
+            'Client settings',
+            style: TextStyle(color: c.textPrimary),
+          ),
           iconTheme: IconThemeData(color: c.textPrimary),
         ),
         body: const Center(child: CircularProgressIndicator()),
       );
     }
 
-    return Scaffold(
-      backgroundColor: c.bg,
-      appBar: AppBar(
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, _) {
+        if (didPop) return;
+        Navigator.pop(context, _source);
+      },
+      child: Scaffold(
         backgroundColor: c.bg,
-        title: Text('Client settings', style: TextStyle(color: c.textPrimary)),
-        iconTheme: IconThemeData(color: c.textPrimary),
-        actions: [
-          IconButton(
-            tooltip: 'Open website',
-            onPressed: _openWebsite,
-            icon: Icon(Icons.public, color: c.accent),
+        appBar: AppBar(
+          backgroundColor: c.bg,
+          title: Text(
+            'Client settings',
+            style: TextStyle(color: c.textPrimary),
           ),
-        ],
-      ),
-      body: ListView(
+          iconTheme: IconThemeData(color: c.textPrimary),
+          actions: [
+            IconButton(
+              tooltip: 'Open website',
+              onPressed: _openWebsite,
+              icon: Icon(Icons.public, color: c.accent),
+            ),
+          ],
+        ),
+        body: ListView(
         padding: const EdgeInsets.fromLTRB(16, 8, 16, 32),
         children: [
           Text(
@@ -246,6 +261,9 @@ class _ExtensionClientSettingsScreenState
                         .read(repositoriesProvider)
                         .extensions
                         .insertExtensionSource(updated);
+                    await ref
+                        .read(extensionsCatalogProvider.notifier)
+                        .refreshInstalled();
                     if (mounted) setState(() => _source = updated);
                   }
                   if (!mounted) return;
@@ -320,6 +338,7 @@ class _ExtensionClientSettingsScreenState
             onTap: _openWebsite,
           ),
         ],
+      ),
       ),
     );
   }

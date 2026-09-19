@@ -184,49 +184,62 @@ class LibraryGroupStackCard extends StatelessWidget {
       onLongPress: onLongPress,
       scaleDown: 0.97,
       child: _overlayTitle
-          ? ClipRRect(
-              borderRadius: AppSpacing.brMd,
-              child: Stack(
-                fit: StackFit.expand,
-                children: [
-                  fan,
-                  if (_showTitle)
-                    const DecoratedBox(
-                      decoration: BoxDecoration(
-                        gradient: LinearGradient(
-                          begin: Alignment.bottomCenter,
-                          end: Alignment.topCenter,
-                          colors: [
-                            Color(0xBF000000),
-                            Color(0x59000000),
-                            Color(0x00000000),
+          ? Stack(
+              clipBehavior: Clip.none,
+              fit: StackFit.expand,
+              children: [
+                fan,
+                if (_showTitle)
+                  Positioned(
+                    left: 0,
+                    right: 0,
+                    bottom: 0,
+                    child: AspectRatio(
+                      aspectRatio: AppSpacing.coverAspectRatio,
+                      child: ClipRRect(
+                        borderRadius: AppSpacing.brMd,
+                        child: Stack(
+                          fit: StackFit.expand,
+                          children: [
+                            const DecoratedBox(
+                              decoration: BoxDecoration(
+                                gradient: LinearGradient(
+                                  begin: Alignment.bottomCenter,
+                                  end: Alignment.topCenter,
+                                  colors: [
+                                    Color(0xBF000000),
+                                    Color(0x59000000),
+                                    Color(0x00000000),
+                                  ],
+                                  stops: [0.0, 0.35, 1.0],
+                                ),
+                              ),
+                            ),
+                            Positioned(
+                              left: 8,
+                              right: 8,
+                              bottom: 8,
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Text(
+                                    name,
+                                    maxLines: 2,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: titleStyle,
+                                  ),
+                                  const SizedBox(height: 2),
+                                  Text('$count titles', style: subtitleStyle),
+                                ],
+                              ),
+                            ),
                           ],
-                          stops: [0.0, 0.35, 1.0],
                         ),
                       ),
                     ),
-                  if (_showTitle)
-                    Positioned(
-                      left: 8,
-                      right: 8,
-                      bottom: 8,
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Text(
-                            name,
-                            maxLines: 2,
-                            overflow: TextOverflow.ellipsis,
-                            style: titleStyle,
-                          ),
-                          const SizedBox(height: 2),
-                          Text('$count titles', style: subtitleStyle),
-                        ],
-                      ),
-                    ),
-                ],
-              ),
+                  ),
+              ],
             )
           : Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -299,12 +312,11 @@ class _FanStack extends StatelessWidget {
     }
 
     final n = covers.length;
-    final spread = math.min(width * 0.14, 18.0);
-    final coverW = math.max(width - spread * (n - 1), width * 0.62);
-    final coverH = math.min(
-      height * 0.96,
-      coverW / AppSpacing.coverAspectRatio,
-    );
+    // Front cover matches other rail covers (full tile width × 2:3 height).
+    // Rear covers fan out and may paint past the card bounds.
+    final coverW = width;
+    final coverH = math.min(height, coverW / AppSpacing.coverAspectRatio);
+    final spread = math.min(coverW * 0.14, 18.0);
 
     return Stack(
       clipBehavior: Clip.none,

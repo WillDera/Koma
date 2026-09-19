@@ -41,8 +41,10 @@ fun Call.asObservable(): Observable<Response> = Observable.create { subscriber -
 
 fun Call.asObservableSuccess(): Observable<Response> = asObservable().map { response ->
     if (!response.isSuccessful) {
+        val url = response.request.url.toString()
+        val code = response.code
         response.close()
-        throw HttpException(response.code)
+        throw HttpException(code, url)
     }
     response
 }
@@ -63,13 +65,20 @@ suspend fun Call.await(): Response = suspendCancellableCoroutine { continuation 
 suspend fun Call.awaitSuccess(): Response {
     val response = await()
     if (!response.isSuccessful) {
+        val url = response.request.url.toString()
+        val code = response.code
         response.close()
-        throw HttpException(response.code)
+        throw HttpException(code, url)
     }
     return response
 }
 
-class HttpException(val code: Int) : IllegalStateException("HTTP error $code")
+class HttpException(
+    val code: Int,
+    val url: String? = null,
+) : IllegalStateException(
+    if (url.isNullOrBlank()) "HTTP error $code" else "HTTP error $code for $url",
+)
 
 /**
  * RxJava 1's [rx.exceptions.Exceptions.throwIfFatal] rethrows Errors onto the

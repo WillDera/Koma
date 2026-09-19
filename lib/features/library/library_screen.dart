@@ -19,6 +19,7 @@ import '../../core/providers.dart';
 import '../../core/services/cache_service.dart';
 import '../../core/services/ebook_media_store.dart';
 import '../../core/services/ebook_service.dart';
+import '../../core/services/group_display_prefs.dart';
 import '../../core/services/hidden_titles_prefs.dart';
 import '../../core/services/koma_package_store.dart';
 import '../../core/services/local_cbz_prefs.dart';
@@ -35,6 +36,7 @@ import '../../core/utils/image_headers.dart';
 import '../../features/reader/reader_settings_sheet.dart';
 import '../../router/book_navigation.dart';
 import '../../router/router.dart';
+import '../../router/shell.dart';
 import '../../theme/app_icons.dart';
 import '../../theme/app_theme.dart';
 import '../../theme/tokens/app_spacing.dart';
@@ -183,6 +185,9 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> with RouteAware {
     try {
       ref.read(libraryNavSatelliteProvider.notifier).clear();
     } catch (_) {}
+    try {
+      ref.read(shellBackInterceptorProvider.notifier).set(false);
+    } catch (_) {}
     _scrollCtrl.dispose();
     _bookSearchCtrl.dispose();
     _mangaSearchCtrl.dispose();
@@ -223,10 +228,18 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> with RouteAware {
   @override
   Widget build(BuildContext context) {
     final provider = ref.watch(libraryProvider);
-    // View-all is in-tab UI (not a route). Shell allows Library root to exit,
-    // so intercept system/back-swipe here and return to rails instead.
+    // View-all is in-tab UI (not a route). MainShell allows Library root to
+    // exit the app — claim the shell interceptor so back returns to rails.
+    final interceptBack = _viewAllSection != null;
+    final claimed = ref.read(shellBackInterceptorProvider);
+    if (claimed != interceptBack) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        ref.read(shellBackInterceptorProvider.notifier).set(interceptBack);
+      });
+    }
     return PopScope(
-      canPop: _viewAllSection == null,
+      canPop: !interceptBack,
       onPopInvokedWithResult: (didPop, _) {
         if (didPop) return;
         if (_viewAllSection != null) _backToRails();
@@ -389,10 +402,12 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> with RouteAware {
 
   void _openViewAll(_LibrarySection section) {
     setState(() => _viewAllSection = section);
+    ref.read(shellBackInterceptorProvider.notifier).set(true);
   }
 
   void _backToRails() {
     setState(() => _viewAllSection = null);
+    ref.read(shellBackInterceptorProvider.notifier).set(false);
   }
 
   Widget _combined(BuildContext context, LibraryState provider) {
@@ -420,7 +435,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> with RouteAware {
                 title: switch (_viewAllSection) {
                   _LibrarySection.books => 'Books',
                   _LibrarySection.novels => 'Novels',
-                  _LibrarySection.manga => 'Manga',
+                  _LibrarySection.manga => 'Manga/Comics',
                   null => 'Library',
                 },
                 countLabel: switch (_viewAllSection) {
@@ -439,7 +454,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> with RouteAware {
               _BookShelf(
                 key: const ValueKey('books-shelf'),
                 books: _visibleBooks(provider),
-                groups: _visibleBookGroups(provider),
+                groups: const [],
                 provider: provider,
                 notifier: ref.read(libraryProvider.notifier),
                 mangaThumbnails: _mangaThumbnails,
@@ -453,7 +468,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> with RouteAware {
               _MangaShelf(
                 key: const ValueKey('novels-shelf'),
                 mangas: _visibleNovels(provider),
-                groups: _visibleNovelGroups(provider),
+                groups: const [],
                 provider: provider,
                 notifier: ref.read(libraryProvider.notifier),
                 extensionNames: provider.extensionNames,
@@ -498,7 +513,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> with RouteAware {
               _MangaShelf(
                 key: const ValueKey('manga-shelf'),
                 mangas: _visibleMangas(provider),
-                groups: _visibleMangaGroups(provider),
+                groups: const [],
                 provider: provider,
                 notifier: ref.read(libraryProvider.notifier),
                 extensionNames: provider.extensionNames,
@@ -662,7 +677,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> with RouteAware {
       slivers.add(
         SliverToBoxAdapter(
           child: MediaRail(
-            title: 'Manga',
+            title: 'Manga/Comics',
             subtitle: '${mangas.length} titles',
             onViewAll: () => _openViewAll(_LibrarySection.manga),
             itemCount: preview.length,
@@ -692,21 +707,26 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> with RouteAware {
 
     if (uniqueGroups.isNotEmpty) {
       final preview = uniqueGroups.take(10).toList();
+      final groupLabel =
+          uniqueGroups.length == 1 ? '1 group' : '${uniqueGroups.length} groups';
+      final groupDisplay =
+          ref.watch(groupDisplayProvider).value ??
+          const GroupDisplaySettings();
+      final stackVariant = switch (groupDisplay.mode) {
+        GroupDisplayMode.overlay => LibraryCardVariant.overlay,
+        GroupDisplayMode.coverOnly => LibraryCardVariant.coverOnly,
+      };
       slivers.add(
         SliverToBoxAdapter(
           child: MediaRail(
             title: 'Collections',
-            subtitle: '${uniqueGroups.length} groups',
-            // Match Books/Manga rail height so the fan stack can breathe like
-            // the Collections grid (not a cramped grey list tile).
-            height: 200,
+            subtitle: groupLabel,
             onViewAll: () => context.pushNamed(Routes.collections),
             itemCount: preview.length,
             itemBuilder: (context, i) {
               final g = preview[i];
               final covers = _groupCovers(g, provider);
               return MediaRailCover(
-                width: 128,
                 child: StaggeredFadeScale(
                   index: i,
                   child: LibraryGroupStackCard(
@@ -714,7 +734,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> with RouteAware {
                     name: g.name,
                     memberCount: g.members.length,
                     covers: covers,
-                    variant: CatalogCardLayout.gridVariant(provider.cardVariant),
+                    variant: stackVariant,
                     minimalChrome: provider.minimalCards,
                     showSourcePills: provider.showCardChrome,
                     onTap: () => _openGroup(context, g),
@@ -886,7 +906,8 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> with RouteAware {
           : switch (_viewAllSection!) {
               _LibrarySection.books => _booksSectionSubtitle(provider),
               _LibrarySection.novels => _novelsSectionSubtitle(provider),
-              _LibrarySection.manga => '${provider.comicMangas.length} manga',
+              _LibrarySection.manga =>
+                '${provider.comicMangas.length} manga/comics',
             },
       titleFontSize: 28,
       titleFontWeight: FontWeight.w600,
@@ -1850,7 +1871,7 @@ String _libraryHomeSubtitle(LibraryState provider) {
   if (provider.novelMangas.isNotEmpty) {
     parts.add('${provider.novelMangas.length} novels');
   }
-  parts.add('${provider.comicMangas.length} manga');
+  parts.add('${provider.comicMangas.length} manga/comics');
   return parts.join(' · ');
 }
 

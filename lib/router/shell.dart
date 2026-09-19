@@ -17,9 +17,10 @@ import '../widgets/glass_pill_nav.dart';
 import '../widgets/nav_drawer.dart';
 import '../widgets/stats_popup.dart';
 
-/// When true, Explore is consuming system back for in-tab history (view-all /
-/// search). [MainShell] must not also jump to Library — nested [PopScope]s with
-/// `canPop: false` all receive the same pop attempt.
+/// When true, a tab is consuming system back for in-tab history (Library
+/// section view-all, Explore search / view-all, …). [MainShell] must not exit
+/// the app or jump tabs — nested [PopScope]s with `canPop: false` alone are
+/// not enough because the shell route is a separate navigator entry.
 class ShellBackInterceptor extends Notifier<bool> {
   @override
   bool build() => false;
@@ -105,14 +106,16 @@ class MainShell extends ConsumerWidget {
     final c = context.colors;
     return AppUpdateGate(
       child: PopScope(
-        canPop: onLibrary,
+        // Library root may exit the app, unless Library itself is consuming
+        // back for section view-all (via [shellBackInterceptorProvider]).
+        canPop: onLibrary && !tabConsumesBack,
         onPopInvokedWithResult: (didPop, _) {
           if (didPop) return;
-          // Explore (and similar) may consume back for in-tab history. Only
-          // honor that while that branch is actually showing — IndexedStack
-          // keeps other tabs alive with a stale interceptor flag.
-          if (navigationShell.currentIndex == 3 && tabConsumesBack) return;
-          if (navigationShell.currentIndex != 0) {
+          // IndexedStack keeps other tabs alive — only honor the interceptor
+          // for the tab that actually claims it (Library / Explore).
+          final i = navigationShell.currentIndex;
+          if (tabConsumesBack && (i == 0 || i == 3)) return;
+          if (i != 0) {
             navigationShell.goBranch(0);
           }
         },

@@ -778,7 +778,10 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
                   ),
                 ),
                 const SliverToBoxAdapter(
-                  child: GlobalSearchFilterBar(compact: true),
+                  child: GlobalSearchFilterBar(
+                    compact: true,
+                    showCompactRailsToggle: true,
+                  ),
                 ),
                 const GlobalSearchResultsSliver(),
               ],

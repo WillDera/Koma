@@ -11,11 +11,8 @@ abstract final class CatalogCardLayout {
       variant == LibraryCardVariant.list ? LibraryCardVariant.grid : variant;
 
   static EdgeInsetsGeometry paddingFor(LibraryCardVariant variant) {
-    final v = gridVariant(variant);
-    final tight = v == LibraryCardVariant.compact ||
-        v == LibraryCardVariant.overlay ||
-        v == LibraryCardVariant.coverOnly;
-    return EdgeInsets.symmetric(horizontal: tight ? 12 : 24);
+    // Cover grids share the same 12px inset as MediaRail headings.
+    return const EdgeInsets.symmetric(horizontal: 12);
   }
 
   static double mainAxisSpacing(LibraryCardVariant variant) {

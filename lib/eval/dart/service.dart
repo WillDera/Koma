@@ -47,7 +47,8 @@ class DartExtensionService implements ExtensionService {
         'Dart extension ${source.name} has empty sourceCode — reinstall it',
       );
     }
-    final key = '${source.id}|${source.sourceId}|${code.hashCode}';
+    final key =
+        '${source.id}|${source.sourceId}|${source.baseUrl}|${source.lang}|${code.hashCode}';
     if (_boundSourceKey == key && _interpreter != null) return;
 
     _interpreter = null;

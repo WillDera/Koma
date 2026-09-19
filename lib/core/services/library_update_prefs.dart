@@ -32,6 +32,17 @@ class LibraryUpdatePrefs {
   /// Manga in any of these category ids are skipped.
   static const keyExcludeCategoryIds = 'library_update_exclude_category_ids';
 
+  /// Epoch millis of the last successful library chapter poll (any path).
+  static const keyLastCheckedAtMs = 'library_update_last_checked_at_ms';
+
+  /// Auto-check interval in minutes (replaces legacy hours key).
+  static const keyIntervalMinutes = 'library_auto_update_interval_minutes';
+
+  /// Legacy hours key — migrated once into [keyIntervalMinutes].
+  static const keyIntervalHoursLegacy = 'library_auto_update_interval_hours';
+
+  static const keyEnabled = 'library_auto_update_enabled';
+
   /// Mihon defaults: Wi‑Fi only on; charging off.
   static const defaultWifiOnly = true;
   static const defaultChargingOnly = false;
@@ -42,6 +53,12 @@ class LibraryUpdatePrefs {
   static const defaultSkipNotStarted = true;
 
   static const defaultDownloadNew = false;
+
+  /// Default auto-check cadence (6 hours).
+  static const defaultIntervalMinutes = 6 * 60;
+
+  /// Android WorkManager periodic minimum.
+  static const workManagerMinMinutes = 15;
 
   static Future<LibraryUpdateMangaRestrictions> loadMangaRestrictions() async {
     final prefs = await SharedPreferences.getInstance();
@@ -88,6 +105,37 @@ class LibraryUpdatePrefs {
     );
   }
 
+  static Future<DateTime?> loadLastCheckedAt() async {
+    final prefs = await SharedPreferences.getInstance();
+    final ms = prefs.getInt(keyLastCheckedAtMs);
+    if (ms == null || ms <= 0) return null;
+    return DateTime.fromMillisecondsSinceEpoch(ms);
+  }
+
+  static Future<void> saveLastCheckedAt(DateTime when) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setInt(keyLastCheckedAtMs, when.millisecondsSinceEpoch);
+  }
+
+  /// Resolves interval minutes, migrating the legacy hours preference once.
+  static Future<int> loadIntervalMinutes() async {
+    final prefs = await SharedPreferences.getInstance();
+    final minutes = prefs.getInt(keyIntervalMinutes);
+    if (minutes != null && minutes > 0) return minutes;
+    final hours = prefs.getInt(keyIntervalHoursLegacy);
+    if (hours != null && hours > 0) {
+      final migrated = hours * 60;
+      await prefs.setInt(keyIntervalMinutes, migrated);
+      return migrated;
+    }
+    return defaultIntervalMinutes;
+  }
+
+  static Future<void> saveIntervalMinutes(int minutes) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setInt(keyIntervalMinutes, minutes);
+  }
+
   static List<int> _readIdList(SharedPreferences prefs, String key) {
     final raw = prefs.getString(key);
     if (raw == null || raw.isEmpty) return const [];
@@ -108,6 +156,22 @@ class LibraryUpdatePrefs {
           c.wifiOnly ? NetworkType.unmetered : NetworkType.connected,
       requiresCharging: c.chargingOnly,
     );
+  }
+
+  /// WorkManager frequency — Android rejects periods under 15 minutes.
+  static Duration workFrequency(Duration interval) {
+    final min = const Duration(minutes: workManagerMinMinutes);
+    return interval < min ? min : interval;
+  }
+
+  static String formatInterval(Duration interval) {
+    final m = interval.inMinutes;
+    if (m < 60) return '$m min';
+    final h = interval.inHours;
+    if (m == h * 60) {
+      return '$h hour${h == 1 ? '' : 's'}';
+    }
+    return '$m min';
   }
 }
 

@@ -537,6 +537,10 @@ class DownloadManager extends ChangeNotifier {
       apkPath: ext.apkPath,
       className: ext.className.isEmpty ? null : ext.className,
       preferredSourceId: preferred,
+      baseUrlOverride:
+          (ext.baseUrl != null && ext.baseUrl!.trim().isNotEmpty)
+              ? ext.baseUrl!.trim()
+              : null,
     );
     final loadedSid = (desc['sourceId'] as String?)?.trim();
     if (loadedSid != null && loadedSid.isNotEmpty) return loadedSid;

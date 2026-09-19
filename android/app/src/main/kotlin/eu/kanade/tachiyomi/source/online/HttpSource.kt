@@ -123,8 +123,7 @@ abstract class HttpSource : CatalogueSource {
 
     @Deprecated("Override the request method directly")
     open fun mangaDetailsRequest(manga: SManga): Request {
-        val url = if (manga.url.startsWith("http")) manga.url else baseUrl + manga.url
-        return GET(url, headers)
+        return GET(absoluteOrJoin(baseUrl, manga.url), headers)
     }
 
     @Deprecated("Override the request/parse methods directly")
@@ -140,8 +139,7 @@ abstract class HttpSource : CatalogueSource {
 
     @Deprecated("Override the request/parse methods directly")
     protected open fun chapterListRequest(manga: SManga): Request {
-        val url = if (manga.url.startsWith("http")) manga.url else baseUrl + manga.url
-        return GET(url, headers)
+        return GET(absoluteOrJoin(baseUrl, manga.url), headers)
     }
 
     @Deprecated("Override the request/parse methods directly")
@@ -157,7 +155,7 @@ abstract class HttpSource : CatalogueSource {
 
     @Deprecated("Override the request/parse methods directly")
     protected open fun pageListRequest(chapter: SChapter): Request {
-        return GET(baseUrl + chapter.url, headers)
+        return GET(absoluteOrJoin(baseUrl, chapter.url), headers)
     }
 
     @Deprecated("Override the request/parse methods directly")
@@ -194,6 +192,17 @@ abstract class HttpSource : CatalogueSource {
     }
 
     // ---- URL helpers (strip domain so URLs survive baseUrl migration) ----
+
+    /** Join [base] + [path] unless [path] is already absolute. */
+    protected fun absoluteOrJoin(base: String, path: String): String {
+        val p = path.trim()
+        if (p.startsWith("http://", ignoreCase = true) ||
+            p.startsWith("https://", ignoreCase = true)
+        ) {
+            return p
+        }
+        return base + p
+    }
 
     fun SChapter.setUrlWithoutDomain(url: String) {
         this.url = getUrlWithoutDomain(url)

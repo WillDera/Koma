@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/models/extension_source.dart';
+import '../../core/providers.dart';
 import '../../core/services/extension_icon_cache.dart';
 import '../../core/services/source_preferences_bridge.dart';
 import '../../core/services/source_webview_bridge.dart';
@@ -39,7 +41,7 @@ String _extractPkgFromApkPath(String apkPath) {
 ///
 /// Shows the extension icon, name, version, language, source settings
 /// (when ConfigurableSource), and uninstall action.
-class ExtensionDetailScreen extends StatelessWidget {
+class ExtensionDetailScreen extends ConsumerStatefulWidget {
   final ExtensionSource source;
   final VoidCallback onUninstall;
 
@@ -50,9 +52,75 @@ class ExtensionDetailScreen extends StatelessWidget {
   });
 
   @override
+  ConsumerState<ExtensionDetailScreen> createState() =>
+      _ExtensionDetailScreenState();
+}
+
+class _ExtensionDetailScreenState extends ConsumerState<ExtensionDetailScreen> {
+  late ExtensionSource _source;
+
+  @override
+  void initState() {
+    super.initState();
+    _source = widget.source;
+    WidgetsBinding.instance.addPostFrameCallback((_) => _reloadFromDb());
+  }
+
+  Future<void> _reloadFromDb() async {
+    final repos = ref.read(repositoriesProvider);
+    final fresh = await repos.extensions.getBySourceId(_source.sourceId);
+    if (!mounted || fresh == null) return;
+    if (fresh.updatedAt != _source.updatedAt ||
+        fresh.baseUrl != _source.baseUrl ||
+        fresh.lang != _source.lang ||
+        fresh.sourceCode != _source.sourceCode) {
+      setState(() => _source = fresh);
+    }
+  }
+
+  Future<void> _openClientSettings() async {
+    final updated = await Navigator.push<ExtensionSource>(
+      context,
+      _scaleFadeRoute(ExtensionClientSettingsScreen(source: _source)),
+    );
+    if (!mounted) return;
+    if (updated != null) {
+      setState(() => _source = updated);
+    } else {
+      await _reloadFromDb();
+    }
+  }
+
+  Future<void> _openSourceSettings() async {
+    final source = _source;
+    if (source.isJs || source.isDart) {
+      await Navigator.push<void>(
+        context,
+        _scaleFadeRoute(JsSourcePreferencesScreen(source: source)),
+      );
+      return;
+    }
+    if (source.apkPath.isEmpty) return;
+    try {
+      await SourcePreferencesBridge.open(
+        sourceId: source.sourceId,
+        apkPath: source.apkPath,
+        title: source.name,
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Could not open settings: $e')),
+      );
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
     final c = context.colors;
+    final source = _source;
     final hasApk = source.apkPath.isNotEmpty;
+    final showJsDartPrefs = source.isJs || source.isDart;
     return ScreenBackdrop(
       child: Scaffold(
         backgroundColor: Colors.transparent,
@@ -88,14 +156,7 @@ class ExtensionDetailScreen extends StatelessWidget {
             IconButton(
               tooltip: 'Client settings',
               icon: Icon(Icons.settings_outlined, color: c.textPrimary),
-              onPressed: () {
-                Navigator.push(
-                  context,
-                  _scaleFadeRoute(
-                    ExtensionClientSettingsScreen(source: source),
-                  ),
-                );
-              },
+              onPressed: _openClientSettings,
             ),
           ],
         ),
@@ -103,7 +164,6 @@ class ExtensionDetailScreen extends StatelessWidget {
           child: Column(
             children: [
               const SizedBox(height: 20),
-              // Icon — JS sources use stored iconUrl (no APK pkg); Mihon uses pkg cache.
               Container(
                 decoration: BoxDecoration(
                   color: c.surfaceMuted,
@@ -116,7 +176,6 @@ class ExtensionDetailScreen extends StatelessWidget {
                 ),
               ),
               const SizedBox(height: 12),
-              // Name
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 16),
                 child: Text(
@@ -130,7 +189,6 @@ class ExtensionDetailScreen extends StatelessWidget {
                 ),
               ),
               const SizedBox(height: 12),
-              // Info cards: Version + Language
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 16),
                 child: Container(
@@ -152,7 +210,6 @@ class ExtensionDetailScreen extends StatelessWidget {
                   ),
                 ),
               ),
-              // Base URL
               if (source.baseUrl != null && source.baseUrl!.isNotEmpty)
                 Padding(
                   padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
@@ -183,7 +240,6 @@ class ExtensionDetailScreen extends StatelessWidget {
                 ),
               if (source.versionLast != null) ...[
                 const SizedBox(height: 16),
-                // Browse button
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 16),
                   child: SizedBox(
@@ -213,14 +269,7 @@ class ExtensionDetailScreen extends StatelessWidget {
                 child: SizedBox(
                   width: double.infinity,
                   child: OutlinedButton.icon(
-                    onPressed: () {
-                      Navigator.push(
-                        context,
-                        _scaleFadeRoute(
-                          ExtensionClientSettingsScreen(source: source),
-                        ),
-                      );
-                    },
+                    onPressed: _openClientSettings,
                     icon: Icon(Icons.settings_outlined, color: c.accent),
                     label: Text(
                       'Client settings',
@@ -229,20 +278,13 @@ class ExtensionDetailScreen extends StatelessWidget {
                   ),
                 ),
               ),
-              if (source.isJs)
+              if (showJsDartPrefs)
                 Padding(
                   padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
                   child: SizedBox(
                     width: double.infinity,
                     child: OutlinedButton.icon(
-                      onPressed: () {
-                        Navigator.push(
-                          context,
-                          _scaleFadeRoute(
-                            JsSourcePreferencesScreen(source: source),
-                          ),
-                        );
-                      },
+                      onPressed: _openSourceSettings,
                       icon: Icon(Icons.tune_rounded, color: c.accent),
                       label: Text(
                         'Source settings',
@@ -264,22 +306,7 @@ class ExtensionDetailScreen extends StatelessWidget {
                       child: SizedBox(
                         width: double.infinity,
                         child: OutlinedButton.icon(
-                          onPressed: () async {
-                            try {
-                              await SourcePreferencesBridge.open(
-                                sourceId: source.sourceId,
-                                apkPath: source.apkPath,
-                                title: source.name,
-                              );
-                            } catch (e) {
-                              if (!context.mounted) return;
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                SnackBar(
-                                  content: Text('Could not open settings: $e'),
-                                ),
-                              );
-                            }
-                          },
+                          onPressed: _openSourceSettings,
                           icon: Icon(Icons.tune_rounded, color: c.accent),
                           label: Text(
                             'Source settings',
@@ -291,7 +318,6 @@ class ExtensionDetailScreen extends StatelessWidget {
                   },
                 ),
               const SizedBox(height: 16),
-              // Uninstall button
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 16),
                 child: SizedBox(
@@ -339,6 +365,7 @@ class ExtensionDetailScreen extends StatelessWidget {
 
   void _confirmUninstall(BuildContext context) {
     final c = context.colors;
+    final source = _source;
     StashDialog.show<void>(
       context,
       title: source.name,
@@ -353,7 +380,7 @@ class ExtensionDetailScreen extends StatelessWidget {
           onPressed: () {
             Navigator.pop(context);
             Navigator.pop(context);
-            onUninstall();
+            widget.onUninstall();
           },
           child: const Text('OK', style: TextStyle(color: Colors.redAccent)),
         ),
@@ -394,11 +421,25 @@ class _LargePkgExtensionIconState extends State<_LargePkgExtensionIcon> {
     _resolveFromCache();
   }
 
+  @override
+  void didUpdateWidget(covariant _LargePkgExtensionIcon oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.iconUrl != widget.iconUrl || oldWidget.pkg != widget.pkg) {
+      if (widget.iconUrl != null && widget.iconUrl!.isNotEmpty) {
+        _url = widget.iconUrl;
+      } else if (widget.pkg.isNotEmpty) {
+        _url = ExtensionIconCache.iconUrlForPkg(widget.pkg);
+      } else {
+        _url = null;
+      }
+      _resolveFromCache();
+    }
+  }
+
   Future<void> _resolveFromCache() async {
     if (widget.pkg.isEmpty) return;
     final cached = await ExtensionIconCache.instance.cachedIconUrl(widget.pkg);
     if (!mounted) return;
-    // Don't override a working JS/index iconUrl with a pkg-derived miss.
     if (widget.iconUrl != null && widget.iconUrl!.isNotEmpty) return;
     if (cached != null && cached.isNotEmpty && cached != _url) {
       setState(() => _url = cached);

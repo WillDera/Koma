@@ -156,6 +156,8 @@ class SourceWebViewActivity : AppCompatActivity() {
 
         var headerMap = emptyMap<String, String>()
         var pageUrl = rawUrl
+        val alreadyAbsolute =
+            rawUrl.startsWith("http://") || rawUrl.startsWith("https://")
 
         if (sourceId.isNotBlank()) {
             try {
@@ -164,16 +166,22 @@ class SourceWebViewActivity : AppCompatActivity() {
                     headerMap = source.headers.toMultimap()
                         .mapValues { it.value.firstOrNull().orEmpty() }
                         .filterValues { it.isNotEmpty() }
-                    val manga = SManga.create().apply {
-                        url = rawUrl
-                        title = intent.getStringExtra(EXTRA_TITLE).orEmpty()
-                        if (!memoJson.isNullOrBlank()) {
-                            memo = runCatching {
-                                Json.parseToJsonElement(memoJson).jsonObject
-                            }.getOrDefault(JsonObject.EMPTY)
+                    // Absolute URLs (Source URL / Open website) must not go through
+                    // getMangaUrl — many extensions do `baseUrl + manga.url` without
+                    // an http-prefix check, which yields host+host concat like
+                    // https://old.lihttps://new.xyz.
+                    if (!alreadyAbsolute) {
+                        val manga = SManga.create().apply {
+                            url = rawUrl
+                            title = intent.getStringExtra(EXTRA_TITLE).orEmpty()
+                            if (!memoJson.isNullOrBlank()) {
+                                memo = runCatching {
+                                    Json.parseToJsonElement(memoJson).jsonObject
+                                }.getOrDefault(JsonObject.EMPTY)
+                            }
                         }
+                        pageUrl = source.getMangaUrl(manga)
                     }
-                    pageUrl = source.getMangaUrl(manga)
                 }
             } catch (e: Throwable) {
                 Log.e(TAG, "resolve manga url failed", e)

@@ -6,6 +6,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../core/models/library_group.dart';
 import '../../core/providers.dart';
+import '../../core/services/group_display_prefs.dart';
 import '../../core/utils/image_cache.dart';
 import '../../router/book_navigation.dart';
 import '../../router/router.dart';
@@ -14,10 +15,17 @@ import '../../theme/app_theme.dart';
 import '../../widgets/catalog_card_layout.dart';
 import '../../widgets/empty_state.dart';
 import '../../widgets/icon_button_round.dart';
+import '../../widgets/library_book_card.dart';
 import '../../widgets/library_group_stack_card.dart';
 import '../../widgets/screen_chrome.dart';
 import 'library_group_modal.dart';
 import 'library_provider.dart';
+
+LibraryCardVariant _groupStackVariant(GroupDisplayMode mode) =>
+    switch (mode) {
+      GroupDisplayMode.overlay => LibraryCardVariant.overlay,
+      GroupDisplayMode.coverOnly => LibraryCardVariant.coverOnly,
+    };
 
 /// Kenji-style Collections hub over [LibraryGroupInfo] stacks.
 class CollectionsScreen extends ConsumerStatefulWidget {
@@ -75,6 +83,10 @@ class _CollectionsScreenState extends ConsumerState<CollectionsScreen> {
   Widget build(BuildContext context) {
     final c = context.colors;
     final library = ref.watch(libraryProvider);
+    final groupDisplay =
+        ref.watch(groupDisplayProvider).value ??
+        const GroupDisplaySettings();
+    final stackVariant = _groupStackVariant(groupDisplay.mode);
     final groups = library.groups;
     final visible = _filtered(groups);
 
@@ -84,16 +96,16 @@ class _CollectionsScreenState extends ConsumerState<CollectionsScreen> {
         child: Column(
           children: [
             Padding(
-              padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
+              padding: const EdgeInsets.fromLTRB(4, 0, 12, 8),
               child: Row(
                 children: [
                   IconButtonRound(
-                    icon: Icons.arrow_back_ios_new,
+                    icon: Icons.arrow_back_rounded,
                     size: 40,
                     variant: IconButtonVariant.plain,
                     onPressed: () => Navigator.pop(context),
                   ),
-                  const SizedBox(width: 8),
+                  const SizedBox(width: 4),
                   Expanded(
                     child: _searching
                         ? TextField(
@@ -111,9 +123,9 @@ class _CollectionsScreenState extends ConsumerState<CollectionsScreen> {
                             'Collections',
                             style: TextStyle(
                               color: c.textPrimary,
-                              fontSize: 20,
-                              fontWeight: FontWeight.w500,
-                              letterSpacing: -0.5,
+                              fontSize: 18,
+                              fontWeight: FontWeight.w600,
+                              letterSpacing: -0.3,
                             ),
                           ),
                   ),
@@ -128,7 +140,7 @@ class _CollectionsScreenState extends ConsumerState<CollectionsScreen> {
                       }
                     }),
                   ),
-                  const SizedBox(width: 8),
+                  const SizedBox(width: 4),
                   Material(
                     color: c.surfaceMuted,
                     borderRadius: BorderRadius.circular(64),
@@ -177,14 +189,13 @@ class _CollectionsScreenState extends ConsumerState<CollectionsScreen> {
                           : 'Try another search.',
                     )
                   : GridView.builder(
-                      padding: const EdgeInsets.fromLTRB(24, 8, 24, 100),
-                      gridDelegate:
-                          const SliverGridDelegateWithFixedCrossAxisCount(
-                            crossAxisCount: 2,
-                            mainAxisSpacing: 16,
-                            crossAxisSpacing: 14,
-                            childAspectRatio: 0.72,
-                          ),
+                      padding: (CatalogCardLayout.paddingFor(stackVariant)
+                              as EdgeInsets)
+                          .copyWith(top: 8, bottom: 100),
+                      gridDelegate: CatalogCardLayout.gridDelegate(
+                        columns: groupDisplay.columns,
+                        variant: stackVariant,
+                      ),
                       itemCount: visible.length,
                       itemBuilder: (context, i) {
                         final g = visible[i];
@@ -195,9 +206,7 @@ class _CollectionsScreenState extends ConsumerState<CollectionsScreen> {
                             name: g.name,
                             memberCount: g.members.length,
                             covers: _covers(g, library),
-                            variant: CatalogCardLayout.gridVariant(
-                              library.cardVariant,
-                            ),
+                            variant: stackVariant,
                             minimalChrome: library.minimalCards,
                             showSourcePills: library.showCardChrome,
                             onTap: () => showLibraryGroupModal(

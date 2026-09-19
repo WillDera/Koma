@@ -14,7 +14,7 @@ import 'settings_section.dart';
 
 /// Interactive reading stats (streak + library breakdown).
 ///
-/// Used in You → Data and the long-press You nav popup.
+/// Used in Settings → Profile and the long-press You nav popup.
 class LibraryStatsPanel extends ConsumerStatefulWidget {
   const LibraryStatsPanel({
     super.key,
@@ -140,11 +140,13 @@ class _LibraryStatsPanelState extends ConsumerState<LibraryStatsPanel> {
           currentStreak: _streak,
           onTap: _openCalendar,
         ),
+        const SizedBox(height: 8),
         _StatsReadingTimeRow(
           totalMinutes: _totalReadingMinutes,
           monthMinutes: _monthReadingMinutes,
           chaptersRead: _chaptersRead,
         ),
+        const SizedBox(height: 8),
         _StatsLibraryBreakdown(
           completed: _completed,
           totalBooks: _totalBooks,
@@ -191,7 +193,7 @@ class _StatsReadingTimeRow extends StatelessWidget {
   Widget build(BuildContext context) {
     final c = context.colors;
     return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+      padding: const EdgeInsets.fromLTRB(16, 0, 16, 0),
       child: Container(
         padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
         decoration: BoxDecoration(
@@ -252,7 +254,7 @@ class _StatsLibraryBreakdown extends StatelessWidget {
   Widget build(BuildContext context) {
     final c = context.colors;
     return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 4, 16, 16),
+      padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
       child: Container(
         padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
         decoration: BoxDecoration(

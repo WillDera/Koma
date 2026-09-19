@@ -13,6 +13,7 @@ import '../models/extension_repo.dart';
 import '../models/extension_source.dart';
 import '../repositories/repositories.dart';
 import '../utils/language.dart';
+import '../utils/source_base_url.dart';
 import '../../eval/javascript/js_source_meta.dart';
 import 'apk_signature_service.dart';
 import 'extension_icon_cache.dart';
@@ -675,6 +676,127 @@ class ExtensionManager {
     } catch (_) {}
   }
 
+  /// Save Source URL to Isar and apply it to a live Mihon [HttpSource].
+  ///
+  /// JS/Dart pick up [ExtensionSource.baseUrl] on the next eval bind. Mihon
+  /// needs an explicit Dalvik override — the APK's `baseUrl` field is otherwise
+  /// immutable from Flutter.
+  Future<ExtensionSource> applySourceBaseUrl(
+    ExtensionSource src,
+    String? rawUrl,
+  ) async {
+    final normalized = normalizeSourceBaseUrl(rawUrl);
+    final updated = ExtensionSource(
+      id: src.id,
+      sourceId: src.sourceId,
+      name: src.name,
+      version: src.version,
+      versionLast: src.versionLast,
+      lang: src.lang,
+      apkPath: src.apkPath,
+      className: src.className,
+      iconUrl: src.iconUrl,
+      baseUrl: normalized,
+      sourceCodeUrl: src.sourceCodeUrl,
+      repoUrl: src.repoUrl,
+      apiUrl: src.apiUrl,
+      hasCloudflare: src.hasCloudflare,
+      itemType: src.itemType,
+      sourceCode: src.sourceCode,
+      sourceCodeLanguage: src.sourceCodeLanguage,
+      pkgName: src.pkgName,
+      versionCode: src.versionCode,
+      signatureHash: src.signatureHash,
+      isInstalled: src.isInstalled,
+      isActive: src.isActive,
+      isNsfw: src.isNsfw,
+      isPinned: src.isPinned,
+      isObsolete: src.isObsolete,
+      createdAt: src.createdAt,
+      updatedAt: DateTime.now(),
+    );
+    await _repos.extensions.insertExtensionSource(updated);
+
+    if (src.isJs || src.isDart || src.apkPath.isEmpty) {
+      return updated;
+    }
+
+    final sid = src.sourceId.isNotEmpty ? src.sourceId : src.id;
+    if (normalized == null) {
+      // Cleared — reload APK without override to restore the packaged domain.
+      try {
+        await _keiyoushi.unloadExtension(sid);
+      } catch (_) {}
+      try {
+        final desc = await _keiyoushi.loadExtension(
+          apkPath: src.apkPath,
+          className: src.className.isEmpty ? null : src.className,
+          preferredSourceId: src.id.isNotEmpty ? src.id : null,
+        );
+        final native = (desc['nativeBaseUrl'] as String?) ??
+            (desc['baseUrl'] as String?);
+        if (native != null && native.trim().isNotEmpty) {
+          final restored = ExtensionSource(
+            id: updated.id,
+            sourceId: updated.sourceId,
+            name: updated.name,
+            version: updated.version,
+            versionLast: updated.versionLast,
+            lang: updated.lang,
+            apkPath: updated.apkPath,
+            className: updated.className,
+            iconUrl: updated.iconUrl,
+            baseUrl: native.trim(),
+            sourceCodeUrl: updated.sourceCodeUrl,
+            repoUrl: updated.repoUrl,
+            apiUrl: updated.apiUrl,
+            hasCloudflare: updated.hasCloudflare,
+            itemType: updated.itemType,
+            sourceCode: updated.sourceCode,
+            sourceCodeLanguage: updated.sourceCodeLanguage,
+            pkgName: updated.pkgName,
+            versionCode: updated.versionCode,
+            signatureHash: updated.signatureHash,
+            isInstalled: updated.isInstalled,
+            isActive: updated.isActive,
+            isNsfw: updated.isNsfw,
+            isPinned: updated.isPinned,
+            isObsolete: updated.isObsolete,
+            createdAt: updated.createdAt,
+            updatedAt: DateTime.now(),
+          );
+          await _repos.extensions.insertExtensionSource(restored);
+          return restored;
+        }
+      } catch (_) {}
+      return updated;
+    }
+
+    // Always unload+reload with override so Dalvik captures the APK's packaged
+    // host (for OkHttp rewrite) before applying the new URL. Live field mutation
+    // alone misses extensions that hardcode the old domain in request builders.
+    try {
+      await _keiyoushi.unloadExtension(sid);
+    } catch (_) {}
+    try {
+      await _keiyoushi.loadExtension(
+        apkPath: src.apkPath,
+        className: src.className.isEmpty ? null : src.className,
+        preferredSourceId: src.id.isNotEmpty ? src.id : null,
+        baseUrlOverride: normalized,
+      );
+    } catch (_) {
+      // Fall back to live override if reload fails (source may still be loaded).
+      try {
+        await _keiyoushi.setBaseUrlOverride(
+          sourceId: sid,
+          baseUrl: normalized,
+        );
+      } catch (_) {}
+    }
+    return updated;
+  }
+
   Future<void> updateSource(
     ExtensionSource src,
     ExtensionIndexEntry entry,
@@ -816,10 +938,16 @@ class ExtensionManager {
       apkPath: newApkPath,
       className: entry.className,
       preferredSourceId: src.id.isNotEmpty ? src.id : null,
+      // Keep the user's Source URL override across APK updates.
+      baseUrlOverride: (src.baseUrl != null && src.baseUrl!.trim().isNotEmpty)
+          ? src.baseUrl!.trim()
+          : null,
     );
     final newSourceId = (desc['sourceId'] as String?) ?? '';
     final nativeId = (desc['id'] as String?) ?? '';
-    final nativeBaseUrl = (desc['baseUrl'] as String?) ?? '';
+    final nativeBaseUrl = (desc['nativeBaseUrl'] as String?) ??
+        (desc['baseUrl'] as String?) ??
+        '';
 
     // The new APK can report a different sourceId (keiyoushi rotates IDs on
     // release). delete-then-insert rather than relying on Isar's
@@ -828,6 +956,9 @@ class ExtensionManager {
     if (src.sourceId.isNotEmpty) {
       await _repos.extensions.deleteExtensionSource(src.sourceId);
     }
+    final preservedBase = (src.baseUrl != null && src.baseUrl!.trim().isNotEmpty)
+        ? src.baseUrl!.trim()
+        : (nativeBaseUrl.isNotEmpty ? nativeBaseUrl : src.baseUrl);
     await _repos.extensions.insertExtensionSource(
       src.copyWith(
         id: nativeId.isNotEmpty ? nativeId : newSourceId,
@@ -841,9 +972,7 @@ class ExtensionManager {
         signatureHash: signing.primarySignature ?? '',
         isActive: true,
         iconUrl: await _iconUrlForEntry(entry),
-        // Backfill the extension's authoritative baseUrl when the index entry
-        // didn't carry one (see install() for the v2-format rationale).
-        baseUrl: nativeBaseUrl.isNotEmpty ? nativeBaseUrl : src.baseUrl,
+        baseUrl: preservedBase,
       ),
     );
   }
@@ -1086,6 +1215,10 @@ class ExtensionManager {
                   apkPath: apkPath,
                   className: src.className.isEmpty ? null : src.className,
                   preferredSourceId: src.id.isNotEmpty ? src.id : null,
+                  baseUrlOverride:
+                      (src.baseUrl != null && src.baseUrl!.trim().isNotEmpty)
+                          ? src.baseUrl!.trim()
+                          : null,
                 );
               } catch (_) {}
               next = next.copyWith(isActive: true);
@@ -1138,6 +1271,10 @@ class ExtensionManager {
           apkPath: src.apkPath,
           className: src.className.isEmpty ? null : src.className,
           preferredSourceId: src.id.isNotEmpty ? src.id : null,
+          baseUrlOverride:
+              (src.baseUrl != null && src.baseUrl!.trim().isNotEmpty)
+                  ? src.baseUrl!.trim()
+                  : null,
         );
       } catch (_) {}
       await _repos.extensions.insertExtensionSource(
@@ -1200,6 +1337,10 @@ class ExtensionManager {
           apkPath: src.apkPath,
           className: src.className.isEmpty ? null : src.className,
           preferredSourceId: src.id.isNotEmpty ? src.id : null,
+          baseUrlOverride:
+              (src.baseUrl != null && src.baseUrl!.trim().isNotEmpty)
+                  ? src.baseUrl!.trim()
+                  : null,
         );
         final nativeId = (desc['id'] as String?) ?? '';
         final newSourceId = (desc['sourceId'] as String?) ?? '';
