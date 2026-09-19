@@ -39,6 +39,8 @@ import '../../widgets/one_hand_spacer.dart';
 import '../../widgets/screen_chrome.dart';
 import '../../widgets/segmented_control.dart';
 import '../../widgets/toast.dart';
+import '../extensions/catalog_multi_select.dart';
+import '../extensions/catalog_multi_select_bar.dart';
 import '../extensions/global_search_provider.dart';
 import '../extensions/global_search_widgets.dart';
 import '../library/library_provider.dart';
@@ -329,6 +331,7 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
     final q = _ctrl.text.trim();
     if (q.isEmpty) return;
     _unfocusSearch();
+    ref.read(catalogMultiSelectProvider.notifier).clear();
     setState(() {
       _searching = true;
       _loaded = true;
@@ -671,7 +674,10 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
         child: SafeArea(
           top: !idleHasHero || _viewingAllPicks,
           bottom: false,
-          child: CustomScrollView(
+          child: Column(
+            children: [
+              Expanded(
+                child: CustomScrollView(
             controller: _scrollCtrl,
             physics: const AlwaysScrollableScrollPhysics(),
             slivers: [
@@ -789,6 +795,10 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
             const SliverToBoxAdapter(child: SizedBox(height: 100)),
           ],
         ),
+              ),
+              const CatalogMultiSelectBar(),
+            ],
+          ),
         ),
       ),
       ),

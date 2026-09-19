@@ -6,6 +6,7 @@ import '../theme/tokens/app_motion.dart';
 import '../theme/tokens/app_spacing.dart';
 import 'animated_press.dart';
 import 'library_book_card.dart';
+import 'new_chapter_badge.dart';
 import 'progress_ring.dart';
 
 /// Generic cover card used outside the Book model — Discover / Global Search /
@@ -31,6 +32,9 @@ class CatalogCoverCard extends StatelessWidget {
     this.coverMaxBytes,
     this.variant = LibraryCardVariant.grid,
     this.downloadProgress,
+    this.newChapterCount = 0,
+    this.showNewChapterBadge = true,
+    this.enriching = false,
   });
 
   final String title;
@@ -57,8 +61,14 @@ class CatalogCoverCard extends StatelessWidget {
   final VoidCallback onTap;
   final VoidCallback? onLongPress;
   final double? downloadProgress;
+  final int newChapterCount;
+  final bool showNewChapterBadge;
+  /// Dim cover + spinner (e.g. Fetch metadata).
+  final bool enriching;
 
-  bool get _busy => downloadProgress != null;
+  bool get _busy => downloadProgress != null || enriching;
+  bool get _showNewBadge =>
+      showNewChapterBadge && newChapterCount > 0 && !selectionMode;
 
   @override
   Widget build(BuildContext context) {
@@ -235,8 +245,14 @@ class CatalogCoverCard extends StatelessWidget {
                   child: _coverImage(c),
                 ),
                 if (chip != null) Positioned(top: 6, left: 6, child: chip),
-                if (heart != null)
+                if (heart != null && !_showNewBadge)
                   Positioned(top: 6, right: 6, child: heart),
+                if (_showNewBadge)
+                  Positioned(
+                    top: 6,
+                    right: 6,
+                    child: NewChapterCountBadge(count: newChapterCount),
+                  ),
                 if (selectionMode)
                   Positioned(
                     top: 8,
@@ -245,7 +261,14 @@ class CatalogCoverCard extends StatelessWidget {
                   ),
                 if (metaPills != null)
                   Positioned(bottom: 6, left: 6, child: metaPills),
-                if (_busy)
+                if (enriching)
+                  Positioned.fill(
+                    child: ClipRRect(
+                      borderRadius: AppSpacing.brMd,
+                      child: CoverWorkingOverlay(),
+                    ),
+                  ),
+                if (downloadProgress != null)
                   Positioned(
                     left: 0,
                     right: 0,
@@ -308,8 +331,17 @@ class CatalogCoverCard extends StatelessWidget {
                   child: _coverImage(c),
                 ),
                 if (chip != null) Positioned(top: 4, left: 4, child: chip),
-                if (heart != null)
+                if (heart != null && !_showNewBadge)
                   Positioned(top: 4, right: 4, child: heart),
+                if (_showNewBadge)
+                  Positioned(
+                    top: 4,
+                    right: 4,
+                    child: NewChapterCountBadge(
+                      count: newChapterCount,
+                      small: true,
+                    ),
+                  ),
                 if (selectionMode)
                   Positioned(
                     top: 6,
@@ -318,7 +350,14 @@ class CatalogCoverCard extends StatelessWidget {
                   ),
                 if (metaPills != null)
                   Positioned(bottom: 4, left: 4, child: metaPills),
-                if (_busy)
+                if (enriching)
+                  Positioned.fill(
+                    child: ClipRRect(
+                      borderRadius: AppSpacing.brSm,
+                      child: CoverWorkingOverlay(),
+                    ),
+                  ),
+                if (downloadProgress != null)
                   Positioned(
                     left: 0,
                     right: 0,
@@ -381,8 +420,14 @@ class CatalogCoverCard extends StatelessWidget {
                 ),
               ),
             if (chip != null) Positioned(top: 6, left: 6, child: chip),
-            if (heart != null)
+            if (heart != null && !_showNewBadge)
               Positioned(top: 6, right: 6, child: heart),
+            if (_showNewBadge)
+              Positioned(
+                top: 6,
+                right: 6,
+                child: NewChapterCountBadge(count: newChapterCount),
+              ),
             if (selectionMode)
               Positioned(
                 top: 8,
@@ -419,7 +464,8 @@ class CatalogCoverCard extends StatelessWidget {
                   ),
                 ),
               ),
-            if (_busy)
+            if (enriching) Positioned.fill(child: CoverWorkingOverlay()),
+            if (downloadProgress != null)
               Positioned(
                 left: 0,
                 right: 0,
@@ -465,8 +511,17 @@ class CatalogCoverCard extends StatelessWidget {
                   ),
                 ),
                 if (chip != null) Positioned(top: 2, left: 2, child: chip),
-                if (heart != null)
+                if (heart != null && !_showNewBadge)
                   Positioned(top: 2, right: 2, child: heart),
+                if (_showNewBadge)
+                  Positioned(
+                    top: 2,
+                    right: 2,
+                    child: NewChapterCountBadge(
+                      count: newChapterCount,
+                      small: true,
+                    ),
+                  ),
                 if (selectionMode)
                   Positioned(
                     top: 2,
@@ -475,6 +530,13 @@ class CatalogCoverCard extends StatelessWidget {
                   ),
                 if (sizeChip != null)
                   Positioned(bottom: 2, left: 2, child: sizeChip),
+                if (enriching)
+                  Positioned.fill(
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.all(Radius.circular(6)),
+                      child: CoverWorkingOverlay(label: '…'),
+                    ),
+                  ),
               ],
             ),
             const SizedBox(width: 16),

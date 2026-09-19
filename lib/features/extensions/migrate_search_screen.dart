@@ -136,11 +136,20 @@ class _MigrateSearchScreenState extends ConsumerState<MigrateSearchScreen> {
                 ),
                 bottom: PreferredSize(
                   preferredSize: Size.fromHeight(state.searching ? 52 : 48),
-                  child: const GlobalSearchFilterBar(),
+                  child: const GlobalSearchFilterBar(
+                    showCompactRailsToggle: true,
+                  ),
                 ),
               ),
-              body: GlobalSearchResultsList(
-                onMangaTap: _onMangaTap,
+              body: Column(
+                children: [
+                  Expanded(
+                    child: GlobalSearchResultsList(
+                      onMangaTap: _onMangaTap,
+                      enableMultiSelect: false,
+                    ),
+                  ),
+                ],
               ),
             ),
           ),

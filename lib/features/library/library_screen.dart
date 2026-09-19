@@ -53,6 +53,7 @@ import '../../widgets/library_layout_sheet.dart';
 import '../../widgets/glass_pill_nav.dart';
 import '../../widgets/loading_skeleton.dart';
 import '../../widgets/media_rail.dart';
+import '../../widgets/new_chapter_badge.dart';
 import '../../widgets/one_hand_spacer.dart';
 import '../../widgets/premium_button.dart';
 import '../../widgets/screen_chrome.dart';
@@ -459,6 +460,8 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> with RouteAware {
                 notifier: ref.read(libraryProvider.notifier),
                 mangaThumbnails: _mangaThumbnails,
                 showSourcePills: provider.showCardChrome,
+                enrichingBookId:
+                    ref.watch(metadataEnrichmentProvider).activeBookId,
                 onOpen: (id) => openBookFromCollection(context, id),
                 onBookLongPress: _showBookActions,
                 onOpenGroup: (g) => _openGroup(context, g),
@@ -537,6 +540,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> with RouteAware {
     final books = _visibleBooks(provider);
     final novels = _visibleNovels(provider);
     final mangas = _visibleMangas(provider);
+    final enrichment = ref.watch(metadataEnrichmentProvider);
     final groups = [
       ..._visibleBookGroups(provider),
       ..._visibleNovelGroups(provider),
@@ -628,6 +632,8 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> with RouteAware {
                     imageProvider: _bookCoverProvider(item),
                     formatBadge: ext.isNotEmpty ? ext.toUpperCase() : null,
                     variant: variant,
+                    enriching: enrichment.running &&
+                        enrichment.activeBookId == item.id,
                     onTap: () => openBookFromCollection(context, item.id),
                   ),
                 ),
@@ -662,6 +668,8 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> with RouteAware {
                     imageUrl: manga.imageUrl,
                     formatBadge: 'Novel',
                     variant: variant,
+                    newChapterCount: provider.newChapters[manga.id] ?? 0,
+                    showNewChapterBadge: provider.showUnreadBadge,
                     onTap: () => _openManga(context, manga),
                   ),
                 ),
@@ -695,6 +703,8 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> with RouteAware {
                     imageProvider: _mangaCoverProvider(manga),
                     imageUrl: manga.imageUrl,
                     variant: variant,
+                    newChapterCount: provider.newChapters[manga.id] ?? 0,
+                    showNewChapterBadge: provider.showUnreadBadge,
                     onTap: () => _openManga(context, manga),
                   ),
                 ),
@@ -2315,6 +2325,9 @@ class _BookShelf extends StatelessWidget {
   /// When novels are also shown below this shelf, skip the empty state here.
   final bool emptyWhenNoNovels;
 
+  /// Book id currently fetching metadata, if any.
+  final int? enrichingBookId;
+
   const _BookShelf({
     super.key,
     required this.books,
@@ -2327,6 +2340,7 @@ class _BookShelf extends StatelessWidget {
     required this.onOpenGroup,
     this.showSourcePills = true,
     this.emptyWhenNoNovels = true,
+    this.enrichingBookId,
   });
 
   int get _total => groups.length + books.length;
@@ -2420,6 +2434,7 @@ class _BookShelf extends StatelessWidget {
       selectionMode: provider.selectionMode,
       showSourcePills: provider.showCardChrome,
       minimalChrome: provider.minimalCards,
+      enriching: enrichingBookId == book.id,
       onTap: () => provider.selectionMode
           ? notifier.toggleSelection('b:${book.id}')
           : onOpen(book.id),
@@ -2807,7 +2822,7 @@ class _MangaLibraryCard extends ConsumerWidget {
                   Positioned(
                     top: 6,
                     right: 6,
-                    child: _NewChapterBadge(count: newChapterCount),
+                    child: NewChapterCountBadge(count: newChapterCount),
                   ),
                 if (showContinueButton &&
                     newChapterCount > 0 &&
@@ -2924,7 +2939,7 @@ class _MangaLibraryCard extends ConsumerWidget {
                   Positioned(
                     top: 6,
                     right: 6,
-                    child: _NewChapterBadge(count: newChapterCount),
+                    child: NewChapterCountBadge(count: newChapterCount),
                   ),
                 if (showContinueButton &&
                     newChapterCount > 0 &&
@@ -3103,7 +3118,7 @@ class _MangaLibraryRow extends ConsumerWidget {
                     Positioned(
                       top: 2,
                       right: 2,
-                      child: _NewChapterBadge(
+                      child: NewChapterCountBadge(
                         count: newChapterCount,
                         small: true,
                       ),
@@ -3147,7 +3162,7 @@ class _MangaLibraryRow extends ConsumerWidget {
                 ),
               ),
               if (newChapterCount > 0)
-                _NewChapterBadge(count: newChapterCount)
+                NewChapterCountBadge(count: newChapterCount)
               else
                 Icon(Icons.chevron_right, size: 16, color: c.textTertiary),
             ],
@@ -3167,8 +3182,7 @@ class _MangaLibraryRow extends ConsumerWidget {
   );
 }
 
-/// Accent "N" pill shown on library manga cards when a poll has discovered
-/// chapters that haven't been opened yet.
+/// Continue FAB overlaid on manga covers when new chapters are waiting.
 class _ContinueFab extends StatelessWidget {
   const _ContinueFab({required this.onTap});
 
@@ -3187,43 +3201,6 @@ class _ContinueFab extends StatelessWidget {
         child: Padding(
           padding: const EdgeInsets.all(8),
           child: Icon(Icons.play_arrow_rounded, size: 18, color: c.onAccent),
-        ),
-      ),
-    );
-  }
-}
-
-class _NewChapterBadge extends StatelessWidget {
-  final int count;
-  final bool small;
-
-  const _NewChapterBadge({required this.count, this.small = false});
-
-  @override
-  Widget build(BuildContext context) {
-    final c = context.colors;
-    return Container(
-      padding: EdgeInsets.symmetric(
-        horizontal: small ? 5 : 7,
-        vertical: small ? 1 : 2,
-      ),
-      decoration: BoxDecoration(
-        color: c.accent,
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(
-          color: Colors.white.withValues(alpha: 0.6),
-          width: 0.8,
-        ),
-        boxShadow: const [
-          BoxShadow(color: Colors.black45, blurRadius: 4, offset: Offset(0, 1)),
-        ],
-      ),
-      child: Text(
-        '$count',
-        style: TextStyle(
-          color: c.onAccent,
-          fontSize: small ? 9 : 11,
-          fontWeight: FontWeight.bold,
         ),
       ),
     );

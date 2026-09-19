@@ -20,6 +20,7 @@ import '../../widgets/page_transitions.dart';
 import '../../widgets/progress_ring.dart';
 import '../../widgets/screen_chrome.dart';
 import '../discover/explore_view_prefs.dart';
+import 'catalog_multi_select.dart';
 import 'global_search_provider.dart';
 import 'source_browse_screen.dart';
 
@@ -147,16 +148,24 @@ class GlobalSearchFilterChip extends StatelessWidget {
 
 /// Full scrolling body used by [GlobalSearchScreen].
 class GlobalSearchResultsList extends ConsumerWidget {
-  const GlobalSearchResultsList({super.key, this.padding, this.onMangaTap});
+  const GlobalSearchResultsList({
+    super.key,
+    this.padding,
+    this.onMangaTap,
+    this.enableMultiSelect = true,
+  });
 
   final EdgeInsetsGeometry? padding;
   final void Function(GlobalSearchSourceItem item, Map<String, dynamic> manga)?
   onMangaTap;
+  final bool enableMultiSelect;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final state = ref.watch(globalSearchProvider);
     final visible = state.visibleItems;
+    final compactRails = ref.watch(exploreCompactMangaRailsProvider);
+    final selection = ref.watch(catalogMultiSelectProvider);
 
     if (visible.isEmpty) {
       final q = state.query.trim();
@@ -196,14 +205,38 @@ class GlobalSearchResultsList extends ConsumerWidget {
           index: i,
           child: GlobalSearchSourceSection(
             item: item,
+            compactRails: compactRails,
+            selectionActive: selection.isSelecting,
+            selectedKeys: selection.byKey.keys.toSet(),
             onHeaderTap: () => openGlobalSearchSource(context, ref, item),
+            onSeeAll: () => openGlobalSearchSource(context, ref, item),
             onMangaTap: (m) {
+              final hit = CatalogHit.fromSearchMap(
+                sourceId: item.source.sourceId,
+                manga: m,
+              );
+              if (enableMultiSelect &&
+                  ref
+                      .read(catalogMultiSelectProvider.notifier)
+                      .handleTap(hit)) {
+                return;
+              }
               if (onMangaTap != null) {
                 onMangaTap!(item, m);
               } else {
                 openGlobalSearchManga(context, item, m);
               }
             },
+            onMangaLongPress: !enableMultiSelect
+                ? null
+                : (m) {
+                    ref.read(catalogMultiSelectProvider.notifier).longPress(
+                          CatalogHit.fromSearchMap(
+                            sourceId: item.source.sourceId,
+                            manga: m,
+                          ),
+                        );
+                  },
           ),
         );
       },
@@ -220,6 +253,7 @@ class GlobalSearchResultsSliver extends ConsumerWidget {
     final state = ref.watch(globalSearchProvider);
     final visible = state.visibleItems;
     final compactRails = ref.watch(exploreCompactMangaRailsProvider);
+    final selection = ref.watch(catalogMultiSelectProvider);
 
     if (visible.isEmpty) {
       final q = state.query.trim();
@@ -258,8 +292,29 @@ class GlobalSearchResultsSliver extends ConsumerWidget {
           child: GlobalSearchSourceSection(
             item: item,
             compactRails: compactRails,
+            selectionActive: selection.isSelecting,
+            selectedKeys: selection.byKey.keys.toSet(),
             onHeaderTap: () => openGlobalSearchSource(context, ref, item),
-            onMangaTap: (m) => openGlobalSearchManga(context, item, m),
+            onMangaTap: (m) {
+              final hit = CatalogHit.fromSearchMap(
+                sourceId: item.source.sourceId,
+                manga: m,
+              );
+              if (ref
+                  .read(catalogMultiSelectProvider.notifier)
+                  .handleTap(hit)) {
+                return;
+              }
+              openGlobalSearchManga(context, item, m);
+            },
+            onMangaLongPress: (m) {
+              ref.read(catalogMultiSelectProvider.notifier).longPress(
+                    CatalogHit.fromSearchMap(
+                      sourceId: item.source.sourceId,
+                      manga: m,
+                    ),
+                  );
+            },
             onSeeAll: () => openGlobalSearchSource(context, ref, item),
           ),
         );
@@ -274,8 +329,11 @@ class GlobalSearchSourceSection extends ConsumerWidget {
     required this.item,
     required this.onHeaderTap,
     required this.onMangaTap,
+    this.onMangaLongPress,
     this.onSeeAll,
     this.compactRails = false,
+    this.selectionActive = false,
+    this.selectedKeys = const {},
   });
 
   static const _railPreviewCount = 5;
@@ -285,10 +343,16 @@ class GlobalSearchSourceSection extends ConsumerWidget {
   final GlobalSearchSourceItem item;
   final VoidCallback onHeaderTap;
   final void Function(Map<String, dynamic> manga) onMangaTap;
+  final void Function(Map<String, dynamic> manga)? onMangaLongPress;
   final VoidCallback? onSeeAll;
 
   /// Explore compact mode: horizontal rail of up to 5 covers + See all.
   final bool compactRails;
+  final bool selectionActive;
+  final Set<String> selectedKeys;
+
+  String _hitKey(Map<String, dynamic> manga) =>
+      '${item.source.sourceId}\u001f${(manga['url'] as String? ?? '').trim()}';
 
   String? _thumb(Map<String, dynamic> manga, String? baseUrl) {
     final raw = manga['thumbnail_url'] as String?;
@@ -406,6 +470,7 @@ class GlobalSearchSourceSection extends ConsumerWidget {
                     itemCount: item.mangas.length,
                     itemBuilder: (_, i) {
                       final manga = item.mangas[i];
+                      final key = _hitKey(manga);
                       return StaggeredFadeScale(
                         index: i,
                         child: CatalogCoverCard(
@@ -416,7 +481,12 @@ class GlobalSearchSourceSection extends ConsumerWidget {
                           showBadge: showPills,
                           minimalChrome: minimalChrome,
                           variant: variant,
+                          selectionMode: selectionActive,
+                          selected: selectedKeys.contains(key),
                           onTap: () => onMangaTap(manga),
+                          onLongPress: onMangaLongPress == null
+                              ? null
+                              : () => onMangaLongPress!(manga),
                         ),
                       );
                     },
@@ -437,7 +507,14 @@ class GlobalSearchSourceSection extends ConsumerWidget {
                             showBadge: showPills,
                             minimalChrome: minimalChrome,
                             variant: LibraryCardVariant.list,
+                            selectionMode: selectionActive,
+                            selected: selectedKeys.contains(
+                              _hitKey(item.mangas[i]),
+                            ),
                             onTap: () => onMangaTap(item.mangas[i]),
+                            onLongPress: onMangaLongPress == null
+                                ? null
+                                : () => onMangaLongPress!(item.mangas[i]),
                           ),
                         ),
                     ],
@@ -478,6 +555,7 @@ class GlobalSearchSourceSection extends ConsumerWidget {
               );
             }
             final manga = preview[i];
+            final key = _hitKey(manga);
             return SizedBox(
               width: _railCoverWidth,
               child: CatalogCoverCard(
@@ -488,7 +566,12 @@ class GlobalSearchSourceSection extends ConsumerWidget {
                 showBadge: showPills,
                 minimalChrome: minimalChrome,
                 variant: LibraryCardVariant.grid,
+                selectionMode: selectionActive,
+                selected: selectedKeys.contains(key),
                 onTap: () => onMangaTap(manga),
+                onLongPress: onMangaLongPress == null
+                    ? null
+                    : () => onMangaLongPress!(manga),
               ),
             );
           },

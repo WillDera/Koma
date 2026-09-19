@@ -541,6 +541,7 @@ class _EditBookInfoFormState extends ConsumerState<_EditBookInfoForm> {
         genre: _genres.text.trim(),
         description: _description.text.trim(),
       );
+      await ref.read(libraryProvider.notifier).loadBooks();
       if (mounted) Navigator.pop(context);
     } catch (e) {
       if (mounted) {

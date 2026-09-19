@@ -6,6 +6,7 @@ import '../theme/tokens/app_motion.dart';
 import '../theme/tokens/app_spacing.dart';
 import 'animated_press.dart';
 import 'book_cover.dart';
+import 'new_chapter_badge.dart';
 import 'progress_ring.dart';
 
 enum LibraryCardVariant { grid, list, compact, overlay, coverOnly }
@@ -19,6 +20,7 @@ class LibraryBookCard extends StatelessWidget {
   final LibraryCardVariant variant;
   final bool showSourcePills;
   final bool minimalChrome;
+  final bool enriching;
 
   const LibraryBookCard({
     super.key,
@@ -30,6 +32,7 @@ class LibraryBookCard extends StatelessWidget {
     this.variant = LibraryCardVariant.grid,
     this.showSourcePills = true,
     this.minimalChrome = false,
+    this.enriching = false,
   });
 
   bool get _showSource => !minimalChrome && showSourcePills;
@@ -94,6 +97,13 @@ class LibraryBookCard extends StatelessWidget {
                     top: 8,
                     right: 8,
                     child: _selectionBadge(c),
+                  ),
+                if (enriching)
+                  Positioned.fill(
+                    child: ClipRRect(
+                      borderRadius: AppSpacing.brMd,
+                      child: CoverWorkingOverlay(),
+                    ),
                   ),
               ],
             ),
@@ -265,6 +275,13 @@ class LibraryBookCard extends StatelessWidget {
                     right: 6,
                     child: _selectionBadge(c, size: 20),
                   ),
+                if (enriching)
+                  Positioned.fill(
+                    child: ClipRRect(
+                      borderRadius: AppSpacing.brSm,
+                      child: CoverWorkingOverlay(),
+                    ),
+                  ),
               ],
             ),
           ),
@@ -349,6 +366,7 @@ class LibraryBookCard extends StatelessWidget {
                 right: 8,
                 child: _selectionBadge(c),
               ),
+            if (enriching) Positioned.fill(child: CoverWorkingOverlay()),
           ],
         ),
       ),

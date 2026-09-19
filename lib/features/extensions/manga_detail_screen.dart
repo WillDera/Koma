@@ -44,6 +44,7 @@ import '../../theme/tokens/app_type.dart';
 import '../../widgets/animated_press.dart';
 import '../../widgets/dialog_sheet.dart';
 import '../../widgets/icon_button_round.dart';
+import '../../widgets/new_chapter_badge.dart';
 import '../../widgets/page_transitions.dart';
 import '../../widgets/screen_chrome.dart';
 import '../../widgets/toast.dart';
@@ -422,6 +423,7 @@ class _MangaDetailScreenState extends ConsumerState<MangaDetailScreen> {
               'scroll_position': c.scrollPosition,
               'is_opened': c.isOpened,
               'is_downloaded': c.isDownloaded,
+              'date_fetch': c.dateFetch,
               if (c.readAt != null) 'read_at': c.readAt!.toIso8601String(),
             },
           )
@@ -436,6 +438,7 @@ class _MangaDetailScreenState extends ConsumerState<MangaDetailScreen> {
               'scroll_position': c.scrollPosition,
               'is_downloaded': c.isDownloaded,
               'is_opened': c.isOpened,
+              'date_fetch': c.dateFetch,
               'read_at': c.readAt?.toIso8601String(),
             },
         });
@@ -873,6 +876,7 @@ class _MangaDetailScreenState extends ConsumerState<MangaDetailScreen> {
         'is_downloaded': lc.isDownloaded,
         'is_opened': lc.isOpened,
         'is_bookmarked': lc.isBookmarked,
+        'date_fetch': lc.dateFetch,
         'read_at': lc.readAt?.toIso8601String(),
       };
       // Index by both raw and normalized URL — remote rows and Isar can differ
@@ -901,6 +905,7 @@ class _MangaDetailScreenState extends ConsumerState<MangaDetailScreen> {
               'is_opened': c.isOpened,
               'is_downloaded': c.isDownloaded,
               'is_bookmarked': c.isBookmarked,
+              'date_fetch': c.dateFetch,
               'memo': c.memo,
               if (c.readAt != null) 'read_at': c.readAt!.toIso8601String(),
             },
@@ -2260,6 +2265,7 @@ class _MangaDetailScreenState extends ConsumerState<MangaDetailScreen> {
           'is_downloaded': lc.isDownloaded,
           'is_opened': lc.isOpened,
           'is_bookmarked': lc.isBookmarked,
+          'date_fetch': lc.dateFetch,
         };
       }
       final latest = ref.read(mangaDetailProvider);
@@ -2273,6 +2279,7 @@ class _MangaDetailScreenState extends ConsumerState<MangaDetailScreen> {
           ..remove('is_downloaded')
           ..remove('is_opened')
           ..remove('is_bookmarked')
+          ..remove('date_fetch')
           ..remove('read_at');
         if (local != null) cleaned.addAll(local);
         return cleaned;
@@ -3323,11 +3330,13 @@ class _MangaDetailScreenState extends ConsumerState<MangaDetailScreen> {
     final name = ch['name'] as String? ?? '';
     final scanlator = (ch['scanlator'] as String?)?.trim();
     final dateUpload = asIntOr(ch['date_upload']);
+    final dateFetch = asIntOr(ch['date_fetch']);
     final dlStatus = downloadProgress[url];
     final pageProg = _parsePageProgress(dlStatus);
-    // Opened OR fully read → dim + clear the "new" dot.
+    // Opened OR fully read → dim + clear the "new" tag.
     final seen = isOpened || isRead || lastPageRead > 0 || scrollPos > 0;
-    final unreadNew = !seen;
+    // Only update-discovered chapters (dateFetch stamped) get the NEW tag.
+    final unreadNew = !seen && dateFetch > 0;
 
     final dateStr = dateUpload > 0
         ? DateFormat.yMMMd().format(
@@ -3364,16 +3373,9 @@ class _MangaDetailScreenState extends ConsumerState<MangaDetailScreen> {
                 ),
               )
             else if (unreadNew)
-              Padding(
-                padding: const EdgeInsets.only(right: 10),
-                child: Container(
-                  width: 6,
-                  height: 6,
-                  decoration: BoxDecoration(
-                    color: c.accent,
-                    shape: BoxShape.circle,
-                  ),
-                ),
+              const Padding(
+                padding: EdgeInsets.only(right: 10),
+                child: NewChapterTag(),
               )
             else
               const SizedBox(width: 16),

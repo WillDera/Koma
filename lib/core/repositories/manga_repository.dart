@@ -269,8 +269,8 @@ class MangaRepository {
 
   /// Insert only the chapters whose URL is not already persisted, keeping
   /// existing rows (and their read/download/open state) untouched. Returns
-  /// the newly added chapters — these are "new" (`isOpened == false`) and
-  /// drive the library badge. Used by the library chapter poller.
+  /// the newly added chapters — these are "new" (`isOpened == false`,
+  /// `dateFetch` stamped) and drive the library badge.
   Future<List<MangaChapter>> mergeNewChapters(
     int mangaId,
     List<MangaChapter> incoming,
@@ -280,8 +280,16 @@ class MangaRepository {
       for (final c in existing)
         if (c.url.isNotEmpty) c.url.trim(),
     };
+    final now = DateTime.now().millisecondsSinceEpoch;
     final fresh = incoming
         .where((c) => !existingUrls.contains(c.url.trim()))
+        .map(
+          (c) => c.copyWith(
+            mangaId: mangaId,
+            dateFetch: c.dateFetch > 0 ? c.dateFetch : now,
+            isOpened: false,
+          ),
+        )
         .toList(growable: false);
     if (fresh.isNotEmpty) {
       await _isar.writeTxn(
@@ -291,13 +299,14 @@ class MangaRepository {
     return fresh;
   }
 
-  /// mangaId → count of chapters that have never been opened. A chapter is
-  /// "new" when `isOpened == false`; the reader flips it on first open, which
-  /// clears the library badge (mangayomi first-open parity).
+  /// mangaId → count of update-discovered chapters not yet opened.
+  /// Chapters from the initial library add keep `dateFetch == 0` and are
+  /// excluded so badges only mark titles that gained chapters on a poll.
   Future<Map<int, int>> countNewChaptersByManga() async {
     final rows = await _isar.mangaChapters
         .filter()
         .isOpenedEqualTo(false)
+        .dateFetchGreaterThan(0)
         .findAll();
     final map = <int, int>{};
     for (final r in rows) {
