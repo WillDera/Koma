@@ -79,6 +79,7 @@ class AppUpdateManager extends ChangeNotifier {
     try {
       await _installer.downloadApk(
         release.downloadLink,
+        expectedBytes: release.downloadBytes,
         onProgress: (p) {
           _progress = p;
           notifyListeners();
@@ -90,17 +91,27 @@ class AppUpdateManager extends ChangeNotifier {
           );
         },
       );
-      _progress = 100;
-      _stage = AppUpdateStage.downloaded;
-      notifyListeners();
-      await _persistRelease(release);
-      await NotificationService.instance.notifyAppUpdateReady(release.version);
-    } catch (_) {
+    } catch (e, st) {
+      debugPrint('AppUpdate download failed: $e\n$st');
       await _installer.deleteDownloadedApk();
       _stage = AppUpdateStage.failed;
       _progress = 0;
       notifyListeners();
       await NotificationService.instance.notifyAppUpdateError();
+      _downloadRunning = false;
+      notifyListeners();
+      return;
+    }
+
+    // Download finished — never fold notification / prefs errors into Retry.
+    _progress = 100;
+    _stage = AppUpdateStage.downloaded;
+    notifyListeners();
+    try {
+      await _persistRelease(release);
+      await NotificationService.instance.notifyAppUpdateReady(release.version);
+    } catch (e, st) {
+      debugPrint('AppUpdate post-download notify failed: $e\n$st');
     } finally {
       _downloadRunning = false;
       notifyListeners();
@@ -170,16 +181,25 @@ class AppUpdateManager extends ChangeNotifier {
           );
         },
       );
-      _progress = 100;
-      _stage = AppUpdateStage.downloaded;
-      notifyListeners();
-      await _persistRelease(release);
-      await NotificationService.instance.notifyAppUpdateReady(release.version);
-    } catch (_) {
+    } catch (e, st) {
+      debugPrint('AppUpdate await native failed: $e\n$st');
       _stage = AppUpdateStage.failed;
       _progress = 0;
       notifyListeners();
       await NotificationService.instance.notifyAppUpdateError();
+      _downloadRunning = false;
+      notifyListeners();
+      return;
+    }
+
+    _progress = 100;
+    _stage = AppUpdateStage.downloaded;
+    notifyListeners();
+    try {
+      await _persistRelease(release);
+      await NotificationService.instance.notifyAppUpdateReady(release.version);
+    } catch (e, st) {
+      debugPrint('AppUpdate post-download notify failed: $e\n$st');
     } finally {
       _downloadRunning = false;
       notifyListeners();

@@ -42,9 +42,11 @@ class LibraryState {
     this.gridColumns = 2,
     this.cardVariant = LibraryCardVariant.grid,
     this.showSourcePills = true,
+    this.minimalCards = false,
     this.showUnreadBadge = true,
     this.showContinueButton = false,
     this.extensionNames = const {},
+    this.extensionItemTypes = const {},
     this.newChapters = const {},
   });
 
@@ -63,14 +65,38 @@ class LibraryState {
   final int gridColumns;
   final LibraryCardVariant cardVariant;
   final bool showSourcePills;
+
+  /// Hide source / type / size pills on library and explore cover cards.
+  final bool minimalCards;
+
   final bool showUnreadBadge;
   final bool showContinueButton;
   final Map<String, String> extensionNames;
 
+  /// sourceId / extension id → `manga` / `anime` / `novel`.
+  final Map<String, String> extensionItemTypes;
+
   /// mangaId → count of unopened (new) chapters. Populated by loadBooks.
   final Map<int, int> newChapters;
 
+  /// Whether chrome pills (source / type / size) should render on cards.
+  bool get showCardChrome => !minimalCards && showSourcePills;
+
   int get totalNewChapters => newChapters.values.fold(0, (a, b) => a + b);
+
+  /// Web-novel sources (Mangayomi itemType 2) — shown on the Books shelf.
+  bool isNovelSource(String sourceId) {
+    final t = (extensionItemTypes[sourceId] ?? '').toLowerCase();
+    return t == 'novel';
+  }
+
+  bool isNovelManga(Manga m) => isNovelSource(m.sourceId);
+
+  List<Manga> get novelMangas =>
+      mangas.where(isNovelManga).toList(growable: false);
+
+  List<Manga> get comicMangas =>
+      mangas.where((m) => !isNovelManga(m)).toList(growable: false);
 
   /// Member keys currently assigned to any group.
   Set<String> get groupedMemberKeys => {
@@ -92,9 +118,11 @@ class LibraryState {
     int? gridColumns,
     LibraryCardVariant? cardVariant,
     bool? showSourcePills,
+    bool? minimalCards,
     bool? showUnreadBadge,
     bool? showContinueButton,
     Map<String, String>? extensionNames,
+    Map<String, String>? extensionItemTypes,
     Map<int, int>? newChapters,
   }) {
     return LibraryState(
@@ -111,9 +139,11 @@ class LibraryState {
       gridColumns: gridColumns ?? this.gridColumns,
       cardVariant: cardVariant ?? this.cardVariant,
       showSourcePills: showSourcePills ?? this.showSourcePills,
+      minimalCards: minimalCards ?? this.minimalCards,
       showUnreadBadge: showUnreadBadge ?? this.showUnreadBadge,
       showContinueButton: showContinueButton ?? this.showContinueButton,
       extensionNames: extensionNames ?? this.extensionNames,
+      extensionItemTypes: extensionItemTypes ?? this.extensionItemTypes,
       newChapters: newChapters ?? this.newChapters,
     );
   }
@@ -122,6 +152,7 @@ class LibraryState {
 class LibraryNotifier extends Notifier<LibraryState> {
   static const _keyIsGridView = 'library_is_grid_view';
   static const _keyShowSourcePills = 'library_show_source_pills';
+  static const _keyMinimalCards = 'library_minimal_cards';
   static const _keyShowUnreadBadge = 'library_show_unread_badge';
   static const _keyShowContinueButton = 'library_show_continue_button';
   static const _keyGridColumns = 'library_grid_columns';
@@ -149,6 +180,7 @@ class LibraryNotifier extends Notifier<LibraryState> {
     state = state.copyWith(
       isGridView: isGrid,
       showSourcePills: prefs.getBool(_keyShowSourcePills) ?? true,
+      minimalCards: prefs.getBool(_keyMinimalCards) ?? false,
       showUnreadBadge: prefs.getBool(_keyShowUnreadBadge) ?? true,
       showContinueButton: prefs.getBool(_keyShowContinueButton) ?? false,
       gridColumns: (prefs.getInt(_keyGridColumns) ?? 2).clamp(2, 5),
@@ -169,6 +201,13 @@ class LibraryNotifier extends Notifier<LibraryState> {
     state = state.copyWith(showSourcePills: value);
     SharedPreferences.getInstance().then(
       (prefs) => prefs.setBool(_keyShowSourcePills, value),
+    );
+  }
+
+  void setMinimalCards(bool value) {
+    state = state.copyWith(minimalCards: value);
+    SharedPreferences.getInstance().then(
+      (prefs) => prefs.setBool(_keyMinimalCards, value),
     );
   }
 
@@ -224,8 +263,14 @@ class LibraryNotifier extends Notifier<LibraryState> {
       final extNames = <String, String>{
         LocalCbzSource.sourceId: LocalCbzSource.displayName,
       };
+      final extTypes = <String, String>{};
       final extensions = await repos.extensions.getInstalledExtensions();
       for (final ext in extensions) {
+        final type = ext.itemType.trim().toLowerCase();
+        if (type.isNotEmpty) {
+          if (ext.sourceId.isNotEmpty) extTypes[ext.sourceId] = type;
+          if (ext.id.isNotEmpty) extTypes[ext.id] = type;
+        }
         if (ext.name.isEmpty) continue;
         // Manga.sourceId may be the bridge hex id OR Mihon Source.id.
         if (ext.sourceId.isNotEmpty) extNames[ext.sourceId] = ext.name;
@@ -238,6 +283,7 @@ class LibraryNotifier extends Notifier<LibraryState> {
         categories: categories,
         groups: groups,
         extensionNames: extNames,
+        extensionItemTypes: extTypes,
         newChapters: newChapters,
         loading: false,
       );
@@ -319,7 +365,11 @@ class LibraryNotifier extends Notifier<LibraryState> {
     state = state.copyWith(selectedIds: {}, selectionMode: false);
   }
 
-  void selectAll({bool books = true, bool mangas = true}) {
+  void selectAll({
+    bool books = true,
+    bool mangas = true,
+    bool novels = true,
+  }) {
     final grouped = state.groupedMemberKeys;
     final ids = <String>{};
     if (books) {
@@ -329,7 +379,13 @@ class LibraryNotifier extends Notifier<LibraryState> {
       }
     }
     if (mangas) {
-      for (final manga in state.mangas) {
+      for (final manga in state.comicMangas) {
+        final key = 'm:${manga.id}';
+        if (!grouped.contains(key)) ids.add(key);
+      }
+    }
+    if (novels) {
+      for (final manga in state.novelMangas) {
         final key = 'm:${manga.id}';
         if (!grouped.contains(key)) ids.add(key);
       }
@@ -495,7 +551,9 @@ class LibraryUpdateState {
 
   const LibraryUpdateState({
     this.enabled = false,
-    this.interval = const Duration(hours: 6),
+    this.interval = const Duration(
+      minutes: LibraryUpdatePrefs.defaultIntervalMinutes,
+    ),
     this.lastCheckedAt,
     this.lastNewChapterCount = 0,
     this.checking = false,
@@ -530,9 +588,6 @@ class LibraryUpdateState {
 }
 
 class LibraryUpdateNotifier extends Notifier<LibraryUpdateState> {
-  static const _keyEnabled = 'library_auto_update_enabled';
-  static const _keyIntervalHours = 'library_auto_update_interval_hours';
-
   Timer? _timer;
 
   @override
@@ -540,20 +595,23 @@ class LibraryUpdateNotifier extends Notifier<LibraryUpdateState> {
     ref.onDispose(() {
       _timer?.cancel();
     });
-    return const LibraryUpdateState();
+    return const LibraryUpdateState(
+      interval: Duration(minutes: LibraryUpdatePrefs.defaultIntervalMinutes),
+    );
   }
 
   Future<void> init() async {
     final prefs = await SharedPreferences.getInstance();
-    final enabled = prefs.getBool(_keyEnabled) ?? false;
-    final intervalHours =
-        prefs.getInt(_keyIntervalHours) ?? state.interval.inHours;
+    final enabled = prefs.getBool(LibraryUpdatePrefs.keyEnabled) ?? false;
+    final intervalMinutes = await LibraryUpdatePrefs.loadIntervalMinutes();
     final device = await LibraryUpdatePrefs.loadDeviceConstraints();
+    final lastChecked = await LibraryUpdatePrefs.loadLastCheckedAt();
     state = state.copyWith(
       enabled: enabled,
-      interval: Duration(hours: intervalHours),
+      interval: Duration(minutes: intervalMinutes),
       wifiOnly: device.wifiOnly,
       chargingOnly: device.chargingOnly,
+      lastCheckedAt: () => lastChecked,
     );
     _reschedule();
     await _syncBackgroundTask();
@@ -561,17 +619,16 @@ class LibraryUpdateNotifier extends Notifier<LibraryUpdateState> {
 
   Future<void> setEnabled(bool value) async {
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setBool(_keyEnabled, value);
+    await prefs.setBool(LibraryUpdatePrefs.keyEnabled, value);
     state = state.copyWith(enabled: value);
     _reschedule();
     await _syncBackgroundTask();
   }
 
   Future<void> setInterval(Duration value) async {
-    final prefs = await SharedPreferences.getInstance();
-    final hours = value.inHours < 1 ? 1 : value.inHours;
-    await prefs.setInt(_keyIntervalHours, hours);
-    state = state.copyWith(interval: Duration(hours: hours));
+    final minutes = value.inMinutes < 5 ? 5 : value.inMinutes;
+    await LibraryUpdatePrefs.saveIntervalMinutes(minutes);
+    state = state.copyWith(interval: Duration(minutes: minutes));
     _reschedule();
     await _syncBackgroundTask();
   }
@@ -599,8 +656,7 @@ class LibraryUpdateNotifier extends Notifier<LibraryUpdateState> {
 
   /// Mirror the in-app timer into a WorkManager periodic task so polling keeps
   /// happening while the app is backgrounded (or killed). Android's minimum
-  /// period is 15 minutes; our smallest interval is 1h so the value passes
-  /// through unchanged.
+  /// period is 15 minutes — shorter in-app intervals still use the Timer.
   ///
   /// Device constraints (Wi‑Fi / charging) apply only here — manual "Check
   /// now" and the foreground timer stay unconstrained (Mihon manual job
@@ -614,7 +670,7 @@ class LibraryUpdateNotifier extends Notifier<LibraryUpdateState> {
         await Workmanager().registerPeriodicTask(
           kLibraryPollTaskName,
           kLibraryPollTaskName,
-          frequency: state.interval,
+          frequency: LibraryUpdatePrefs.workFrequency(state.interval),
           existingWorkPolicy: ExistingPeriodicWorkPolicy.update,
           constraints: LibraryUpdatePrefs.workConstraints(
             LibraryUpdateDeviceConstraints(
@@ -666,9 +722,11 @@ class LibraryUpdateNotifier extends Notifier<LibraryUpdateState> {
           ),
         );
       }
+      final checkedAt = DateTime.now();
+      await LibraryUpdatePrefs.saveLastCheckedAt(checkedAt);
       state = state.copyWith(
         checking: false,
-        lastCheckedAt: () => DateTime.now(),
+        lastCheckedAt: () => checkedAt,
         lastNewChapterCount: report.totalNew,
       );
     } catch (e) {

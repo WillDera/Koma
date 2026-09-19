@@ -14,7 +14,13 @@ class DownloadStore {
   static const _pausedKey = 'chapter_downloads_paused';
   static const _runnerKey = 'chapter_download_runner'; // none | ui | wm
 
-  Future<SharedPreferences> get _prefs => SharedPreferences.getInstance();
+  Future<SharedPreferences> get _prefs async {
+    final prefs = await SharedPreferences.getInstance();
+    // Kotlin / the other isolate may have written runner/queue after this
+    // isolate cached SharedPreferences.
+    await prefs.reload();
+    return prefs;
+  }
 
   Future<List<ChapterDownload>> restore() async {
     final prefs = await _prefs;

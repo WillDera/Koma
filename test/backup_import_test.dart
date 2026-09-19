@@ -3,6 +3,7 @@ import 'dart:typed_data';
 
 import 'package:archive/archive.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:koma/core/models/extension_source.dart';
 import 'package:koma/core/models/library_category.dart';
 import 'package:koma/core/models/manga.dart';
 import 'package:koma/core/models/manga_chapter.dart';
@@ -255,6 +256,72 @@ void main() {
       final mangas = await repos.manga.getMangasInLibrary();
       expect(mangas.single.url, '/m');
       expect(mangas.single.status, SMangaStatus.ongoing);
+    });
+  });
+
+  group('Koma JSON backup v5', () {
+    test('round-trips settings, JS source, and manga source_name', () async {
+      SharedPreferences.setMockInitialValues({
+        'theme_mode': 1,
+        'font_size': 19.0,
+        'extension_auto_update_enabled': true,
+      });
+      final repos = await createTestRepositories();
+      addTearDown(() => repos.isar.close());
+
+      await repos.extensions.insertExtensionSource(
+        ExtensionSource(
+          id: 'js-1',
+          sourceId: 'js-1',
+          name: 'NovelBuddy',
+          version: '0.1.0',
+          lang: 'en',
+          apkPath: '/tmp/dead.apk',
+          className: '',
+          sourceCode: 'class NovelBuddy {}',
+          sourceCodeLanguage: 'js',
+          sourceCodeUrl: 'https://example.com/novelbuddy.js',
+          repoUrl: 'https://example.com/index.json',
+          itemType: 'novel',
+        ),
+      );
+      await repos.manga.insertManga(
+        Manga(
+          id: 0,
+          name: 'Buddy Title',
+          url: '/buddy',
+          sourceId: 'js-1',
+          inLibrary: true,
+        ),
+      );
+
+      final json = await ExportService(repos).exportToJson();
+      final data = jsonDecode(json) as Map<String, dynamic>;
+      expect(data['version'], 5);
+      expect(data['settings']['theme_mode'], 1);
+      expect((data['extensions'] as List).single['apk_path'], '');
+      expect((data['extensions'] as List).single['source_code'], contains('NovelBuddy'));
+      expect((data['manga'] as List).single['source_name'], 'NovelBuddy');
+
+      SharedPreferences.setMockInitialValues({});
+      final dest = await createTestRepositories();
+      addTearDown(() => dest.isar.close());
+      final result = await ExportService(dest).importFromJson(json);
+      expect(result.settingsRestored, greaterThan(0));
+      expect(result.extensionsRestored, 1);
+      expect(result.mangaImported, 1);
+
+      final prefs = await SharedPreferences.getInstance();
+      expect(prefs.getInt('theme_mode'), 1);
+      expect(prefs.getDouble('font_size'), 19.0);
+
+      final src = await dest.extensions.getBySourceId('js-1');
+      expect(src?.name, 'NovelBuddy');
+      expect(src?.sourceCode, contains('NovelBuddy'));
+      expect(src?.apkPath, '');
+
+      final manga = (await dest.manga.getMangasInLibrary()).single;
+      expect(manga.sourceId, 'js-1');
     });
   });
 }

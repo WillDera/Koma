@@ -1,5 +1,4 @@
 import 'dart:convert';
-import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:encrypt/encrypt.dart' as encrypt;
@@ -144,7 +143,7 @@ Future<void> injectCryptoBridge(JavascriptRuntime runtime) async {
     try {
       final res = await http.post(
         Uri.parse('http://localhost:$cfPort/evaluateJavascriptViaWebview'),
-        headers: {HttpHeaders.contentTypeHeader: 'application/json'},
+        headers: cfLoopbackHeaders(),
         body: jsonEncode({
           'url': url,
           'headers': headers,

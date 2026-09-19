@@ -17,6 +17,10 @@ import 'package:code_assets/code_assets.dart';
 
 void main(List<String> args) async {
   await build(args, (input, output) async {
+    // Flutter may invoke this hook for non-code asset phases (e.g. data
+    // assets / link). Accessing `input.config.code` then throws.
+    if (!input.config.buildCodeAssets) return;
+
     final builder = CBuilder.library(
       name: 'subsampling_scale_image_view',
       assetName: 'subsampling_scale_image_view.dart',

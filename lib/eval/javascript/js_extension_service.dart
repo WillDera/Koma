@@ -56,7 +56,8 @@ class JsExtensionService implements ExtensionService {
         'JS extension ${source.name} has empty sourceCode — reinstall it',
       );
     }
-    final key = '${source.id}|${source.sourceId}|${code.hashCode}';
+    final key =
+        '${source.id}|${source.sourceId}|${source.baseUrl}|${source.lang}|${code.hashCode}';
     if (_boundSourceKey == key && _runtime != null) return;
 
     // Tear down previous source's engine (mangayomi: one runtime per Source).

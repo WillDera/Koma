@@ -4,6 +4,7 @@ import '../models/book.dart';
 import '../models/bookmark.dart';
 import '../models/chapter.dart';
 import '../models/extension_repo.dart';
+import '../models/extension_source.dart';
 import '../models/highlight.dart';
 import '../models/library_category.dart';
 import '../models/manga.dart';
@@ -12,8 +13,10 @@ import '../models/reading_stat.dart';
 import '../models/snippet.dart';
 import '../models/snippet_collection.dart';
 import '../repositories/repositories.dart';
+import 'backup/backup_extensions.dart';
 import 'backup/backup_format.dart';
 import 'backup/backup_importer.dart';
+import 'backup/backup_settings.dart';
 import 'backup/import_result.dart';
 import 'backup/mangayomi_backup_decoder.dart';
 import 'backup/mihon_backup_decoder.dart';
@@ -95,27 +98,44 @@ class ExportService {
     }
     final categories = await _repos.categories.getCategories();
     final repos = await _repos.extensions.getExtensionRepos();
+    final extensions = await _repos.extensions.getInstalledExtensions();
     final cookies = await _repos.cookies.getAll();
     final bookmarks = await _repos.bookmarks.getAllBookmarks();
     final highlights = await _repos.books.getAllHighlights();
     final collections = await _repos.snippets.getCollections();
+    final settings = await BackupSettings.dump();
+
+    final bySourceId = <String, ExtensionSource>{
+      for (final e in extensions) e.sourceId: e,
+    };
 
     final export = {
-      'version': 4,
+      'version': 5,
       'exported_at': DateTime.now().toIso8601String(),
       'books': books.map((b) => b.toJson()).toList(),
       'chapters': chapters.map((ch) => ch.toJson()).toList(),
       'snippets': snippets.map((s) => s.toJson()).toList(),
       'tags': tags,
       'reading_stats': stats.map((s) => s.toJson()).toList(),
-      'manga': mangas.map((m) => m.toJson()).toList(),
+      'manga': mangas.map((m) {
+        final json = m.toJson();
+        final ext = bySourceId[m.sourceId];
+        if (ext != null) {
+          json['source_name'] = ext.name;
+          json['source_repo_url'] = ext.repoUrl;
+          json['source_pkg'] = ext.pkgName;
+        }
+        return json;
+      }).toList(),
       'manga_chapters': mangaChapters.map((c) => c.toJson()).toList(),
       'categories': categories.map((c) => c.toJson()).toList(),
       'extension_repos': repos.map((r) => r.toJson()).toList(),
+      'extensions': extensions.map(extensionToBackupJson).toList(),
       'cookies': cookies.map((c) => c.toJson()).toList(),
       'bookmarks': bookmarks.map((b) => b.toJson()).toList(),
       'highlights': highlights.map((h) => h.toJson()).toList(),
       'snippet_collections': collections.map((c) => c.toJson()).toList(),
+      'settings': settings,
     };
     return const JsonEncoder.withIndent('  ').convert(export);
   }
@@ -164,11 +184,13 @@ class ExportService {
     final mangaChaptersJson = (data['manga_chapters'] as List<dynamic>?) ?? [];
     final categoriesJson = (data['categories'] as List<dynamic>?) ?? [];
     final reposJson = (data['extension_repos'] as List<dynamic>?) ?? [];
+    final extensionsJson = (data['extensions'] as List<dynamic>?) ?? [];
     final cookiesJson = (data['cookies'] as List<dynamic>?) ?? [];
     final bookmarksJson = (data['bookmarks'] as List<dynamic>?) ?? [];
     final highlightsJson = (data['highlights'] as List<dynamic>?) ?? [];
     final collectionsJson =
         (data['snippet_collections'] as List<dynamic>?) ?? [];
+    final settingsJson = data['settings'];
 
     int booksImported = 0;
     int booksSkipped = 0;
@@ -182,6 +204,10 @@ class ExportService {
     int categoriesImported = 0;
     int reposImported = 0;
     int cookiesImported = 0;
+    int settingsRestored = 0;
+    var extensionsRestored = 0;
+    var extensionsInstalled = 0;
+    final missingSources = <String>{};
 
     final existingBooks = await _repos.books.getBooks();
     final bookKey = <String, Book>{
@@ -326,6 +352,24 @@ class ExportService {
     final oldToNewMangaId = <int, int>{};
     final oldCatToNew = <int, int>{};
     if (version >= 4) {
+      for (final raw in reposJson) {
+        await _repos.extensions.insertExtensionRepo(
+          ExtensionRepo.fromJson(raw as Map<String, dynamic>),
+        );
+        reposImported++;
+      }
+
+      if (extensionsJson.isNotEmpty) {
+        final extStats = await restoreBackupExtensions(
+          repos: _repos,
+          manager: _extensionManager,
+          rawList: extensionsJson,
+        );
+        extensionsRestored = extStats.restored;
+        extensionsInstalled = extStats.installed;
+        missingSources.addAll(extStats.missing);
+      }
+
       for (final raw in categoriesJson) {
         final cat = LibraryCategory.fromJson(raw as Map<String, dynamic>);
         if (cat.name.trim().isEmpty) continue;
@@ -341,9 +385,29 @@ class ExportService {
         categoriesImported++;
       }
 
+      final installedExts = await _repos.extensions.getInstalledExtensions();
       final seenTitles = <String, int>{};
       for (final raw in mangaJson) {
-        final manga = Manga.fromJson(raw as Map<String, dynamic>);
+        final map = raw as Map<String, dynamic>;
+        var manga = Manga.fromJson(map);
+        final sourceName = map['source_name'] as String?;
+        final resolved = resolveBackupSourceId(
+          installedExts,
+          manga.sourceId,
+          sourceName: sourceName,
+        );
+        if (resolved != manga.sourceId) {
+          manga = manga.copyWith(sourceId: resolved);
+        }
+        final sourcePresent = installedExts.any(
+          (e) => e.sourceId == manga.sourceId || e.id == manga.sourceId,
+        );
+        if (!sourcePresent) {
+          final label = (sourceName != null && sourceName.trim().isNotEmpty)
+              ? sourceName.trim()
+              : manga.sourceId;
+          if (label.isNotEmpty) missingSources.add(label);
+        }
         final catIds = [
           for (final id in manga.categoryIds)
             if (oldCatToNew[id] != null) oldCatToNew[id]!,
@@ -420,13 +484,6 @@ class ExportService {
         mangaChaptersImported++;
       }
 
-      for (final raw in reposJson) {
-        await _repos.extensions.insertExtensionRepo(
-          ExtensionRepo.fromJson(raw as Map<String, dynamic>),
-        );
-        reposImported++;
-      }
-
       for (final raw in cookiesJson) {
         final map = raw as Map<String, dynamic>;
         final host = map['host'] as String? ?? '';
@@ -470,6 +527,12 @@ class ExportService {
       }
     }
 
+    if (settingsJson is Map) {
+      settingsRestored = await BackupSettings.restore(
+        Map<String, dynamic>.from(settingsJson),
+      );
+    }
+
     return ImportResult(
       booksImported: booksImported,
       booksSkipped: booksSkipped,
@@ -483,6 +546,10 @@ class ExportService {
       categoriesImported: categoriesImported,
       reposImported: reposImported,
       cookiesImported: cookiesImported,
+      extensionsRestored: extensionsRestored,
+      extensionsInstalled: extensionsInstalled,
+      missingSources: missingSources.toList(),
+      settingsRestored: settingsRestored,
       version: version,
     );
   }

@@ -13,6 +13,7 @@ class PdfService {
       final file = File(filePath);
       if (!await file.exists()) return null;
 
+      await pdfrxFlutterInitialize();
       final doc = await PdfDocument.openFile(filePath);
       try {
         final pageCount = doc.pages.length;

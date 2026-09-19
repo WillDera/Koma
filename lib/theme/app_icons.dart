@@ -1,12 +1,9 @@
 import 'package:flutter/material.dart';
-import 'package:hugeicons/hugeicons.dart';
 
-/// A unified icon descriptor that can represent either a Material icon
-/// ([IconData]) or a Hugeicon ([List<List<dynamic>>]).
+/// Material-only icon descriptor used across the design system.
 ///
-/// This lets the design system use premium Hugeicons stroke-rounded icons
-/// for primary navigation and key UI, while still allowing Material icons
-/// anywhere a Hugeicon equivalent isn't available.
+/// Call-sites pass an [AppIconData]; [AppIcon] renders it. Hugeicons was
+/// removed to shrink the APK — every glyph maps to a built-in Material icon.
 sealed class AppIconData {
   const AppIconData();
 
@@ -34,35 +31,7 @@ class MaterialIconData extends AppIconData {
   int get hashCode => icon.hashCode;
 }
 
-/// A Hugeicon backed by SVG path data.
-class HugeIconData extends AppIconData {
-  final List<List<dynamic>> icon;
-  final double? strokeWidth;
-
-  const HugeIconData(this.icon, {this.strokeWidth});
-
-  @override
-  Widget render({double? size, Color? color, Key? key}) {
-    return HugeIcon(
-      key: key,
-      icon: icon,
-      size: size,
-      color: color,
-      strokeWidth: strokeWidth,
-    );
-  }
-
-  @override
-  bool operator ==(Object other) =>
-      identical(this, other) || (other is HugeIconData && other.icon == icon);
-
-  @override
-  int get hashCode => icon.hashCode;
-}
-
-/// A widget that renders any [AppIconData]. This is the single entry point
-/// for icon rendering throughout the app — call-sites pass an [AppIconData]
-/// and this widget handles the Material-vs-Hugeicon dispatch.
+/// Renders any [AppIconData]. Single entry point for icon rendering.
 class AppIcon extends StatelessWidget {
   final AppIconData data;
   final double? size;
@@ -76,240 +45,149 @@ class AppIcon extends StatelessWidget {
   }
 }
 
-// ─── Aethelgard icon set ────────────────────────────────────────────────
-// Canonical icon mappings for the redesign. All primary navigation and key
-// UI elements use Hugeicons stroke-rounded variants for a premium, consistent
-// line-icon aesthetic. These are the "source of truth" — screens should
-// reference these rather than raw HugeIcons/Material constants.
+/// Canonical Material icon mappings. Screens should reference these rather
+/// than raw [Icons] constants where a shared meaning already exists.
 class AppIcons {
   AppIcons._();
 
   // ── Navigation ──
-  static const AppIconData library = HugeIconData(
-    HugeIcons.strokeRoundedBookOpen01,
+  static const AppIconData library = MaterialIconData(Icons.menu_book_outlined);
+  static const AppIconData libraryActive = MaterialIconData(Icons.menu_book);
+  static const AppIconData history = MaterialIconData(Icons.history);
+  static const AppIconData historyActive = MaterialIconData(Icons.history);
+  static const AppIconData snippets = MaterialIconData(
+    Icons.bookmark_border_outlined,
   );
-  static const AppIconData libraryActive = HugeIconData(
-    HugeIcons.strokeRoundedBookOpen02,
+  static const AppIconData snippetsActive = MaterialIconData(Icons.bookmark);
+  static const AppIconData discover = MaterialIconData(Icons.explore_outlined);
+  static const AppIconData discoverActive = MaterialIconData(Icons.explore);
+  static const AppIconData updates = MaterialIconData(
+    Icons.notifications_outlined,
   );
-  static const AppIconData history = HugeIconData(
-    HugeIcons.strokeRoundedClock01,
+  static const AppIconData updatesActive = MaterialIconData(
+    Icons.notifications,
   );
-  static const AppIconData historyActive = HugeIconData(
-    HugeIcons.strokeRoundedClock02,
-  );
-  static const AppIconData snippets = HugeIconData(
-    HugeIcons.strokeRoundedBookmark01,
-  );
-  static const AppIconData snippetsActive = HugeIconData(
-    HugeIcons.strokeRoundedBookmark02,
-  );
-  static const AppIconData discover = HugeIconData(
-    HugeIcons.strokeRoundedCompass01,
-  );
-  static const AppIconData discoverActive = HugeIconData(
-    HugeIcons.strokeRoundedCompass,
-  );
-  static const AppIconData updates = HugeIconData(
-    HugeIcons.strokeRoundedBellDot,
-  );
-  static const AppIconData updatesActive = HugeIconData(
-    HugeIcons.strokeRoundedBellElectric,
-  );
-  static const AppIconData search = HugeIconData(
-    HugeIcons.strokeRoundedSearch01,
-  );
-  static const AppIconData searchActive = HugeIconData(
-    HugeIcons.strokeRoundedSearch02,
-  );
-  static const AppIconData settings = HugeIconData(
-    HugeIcons.strokeRoundedSettings01,
-  );
-  static const AppIconData settingsActive = HugeIconData(
-    HugeIcons.strokeRoundedSettings02,
-  );
+  static const AppIconData search = MaterialIconData(Icons.search);
+  static const AppIconData searchActive = MaterialIconData(Icons.search);
+  static const AppIconData settings = MaterialIconData(Icons.settings_outlined);
+  static const AppIconData settingsActive = MaterialIconData(Icons.settings);
 
   // ── Actions ──
-  static const AppIconData add = HugeIconData(HugeIcons.strokeRoundedAdd01);
-  static const AppIconData addCircle = HugeIconData(
-    HugeIcons.strokeRoundedAddCircle,
+  static const AppIconData add = MaterialIconData(Icons.add);
+  static const AppIconData addCircle = MaterialIconData(
+    Icons.add_circle_outline,
   );
-  static const AppIconData back = HugeIconData(
-    HugeIcons.strokeRoundedArrowLeft02,
+  static const AppIconData back = MaterialIconData(Icons.arrow_back);
+  static const AppIconData forward = MaterialIconData(Icons.arrow_forward);
+  static const AppIconData close = MaterialIconData(Icons.close);
+  static const AppIconData moreHorizontal = MaterialIconData(Icons.more_horiz);
+  static const AppIconData moreVertical = MaterialIconData(Icons.more_vert);
+  static const AppIconData share = MaterialIconData(Icons.share_outlined);
+  static const AppIconData play = MaterialIconData(Icons.play_arrow);
+  static const AppIconData playCircle = MaterialIconData(
+    Icons.play_circle_outline,
   );
-  static const AppIconData forward = HugeIconData(
-    HugeIcons.strokeRoundedArrowRight02,
-  );
-  static const AppIconData close = HugeIconData(
-    HugeIcons.strokeRoundedCancel01,
-  );
-  static const AppIconData moreHorizontal = HugeIconData(
-    HugeIcons.strokeRoundedMoreHorizontal,
-  );
-  static const AppIconData moreVertical = HugeIconData(
-    HugeIcons.strokeRoundedMoreVertical,
-  );
-  static const AppIconData share = HugeIconData(HugeIcons.strokeRoundedShare04);
-  static const AppIconData play = HugeIconData(HugeIcons.strokeRoundedPlay);
-  static const AppIconData playCircle = HugeIconData(
-    HugeIcons.strokeRoundedPlayCircle,
-  );
-  static const AppIconData refresh = HugeIconData(
-    HugeIcons.strokeRoundedRefresh01,
-  );
-  static const AppIconData reload = HugeIconData(HugeIcons.strokeRoundedReload);
-  static const AppIconData download = HugeIconData(
-    HugeIcons.strokeRoundedDownload04,
-  );
-  static const AppIconData upload = HugeIconData(
-    HugeIcons.strokeRoundedArrowUp01,
-  );
-  static const AppIconData delete = HugeIconData(
-    HugeIcons.strokeRoundedDelete02,
-  );
-  static const AppIconData edit = HugeIconData(
-    HugeIcons.strokeRoundedPencilEdit01,
-  );
-  static const AppIconData filter = HugeIconData(
-    HugeIcons.strokeRoundedFilterHorizontal,
-  );
-  static const AppIconData tune = HugeIconData(
-    HugeIcons.strokeRoundedSlidersVertical,
-  );
-  static const AppIconData sort = HugeIconData(
-    HugeIcons.strokeRoundedSortByUp01,
-  );
-  static const AppIconData grid = HugeIconData(HugeIcons.strokeRoundedGridView);
-  static const AppIconData list = HugeIconData(HugeIcons.strokeRoundedListView);
-  static const AppIconData menu = HugeIconData(HugeIcons.strokeRoundedMenu02);
-  static const AppIconData check = HugeIconData(
-    HugeIcons.strokeRoundedCheckmarkCircle02,
-  );
-  static const AppIconData expand = HugeIconData(HugeIcons.strokeRoundedExpand);
-  static const AppIconData next = HugeIconData(HugeIcons.strokeRoundedNext);
-  static const AppIconData previous = HugeIconData(
-    HugeIcons.strokeRoundedPrevious,
-  );
+  static const AppIconData refresh = MaterialIconData(Icons.refresh);
+  static const AppIconData reload = MaterialIconData(Icons.sync);
+  static const AppIconData download = MaterialIconData(Icons.download_outlined);
+  static const AppIconData upload = MaterialIconData(Icons.upload_outlined);
+  static const AppIconData delete = MaterialIconData(Icons.delete_outline);
+  static const AppIconData edit = MaterialIconData(Icons.edit_outlined);
+  static const AppIconData filter = MaterialIconData(Icons.filter_list);
+  static const AppIconData tune = MaterialIconData(Icons.tune);
+  static const AppIconData sort = MaterialIconData(Icons.sort);
+  static const AppIconData grid = MaterialIconData(Icons.grid_view);
+  static const AppIconData list = MaterialIconData(Icons.view_list);
+  static const AppIconData menu = MaterialIconData(Icons.menu);
+  static const AppIconData check = MaterialIconData(Icons.check_circle_outline);
+  static const AppIconData expand = MaterialIconData(Icons.open_in_full);
+  static const AppIconData next = MaterialIconData(Icons.skip_next);
+  static const AppIconData previous = MaterialIconData(Icons.skip_previous);
 
   // ── Content / status ──
-  static const AppIconData book = HugeIconData(HugeIcons.strokeRoundedBook02);
-  static const AppIconData bookOpen = HugeIconData(
-    HugeIcons.strokeRoundedBookOpen01,
+  static const AppIconData book = MaterialIconData(Icons.book_outlined);
+  static const AppIconData bookOpen = MaterialIconData(
+    Icons.menu_book_outlined,
   );
-  static const AppIconData bookmark = HugeIconData(
-    HugeIcons.strokeRoundedBookmark02,
+  static const AppIconData bookmark = MaterialIconData(Icons.bookmark);
+  static const AppIconData bookmarkAdd = MaterialIconData(
+    Icons.bookmark_add_outlined,
   );
-  static const AppIconData bookmarkAdd = HugeIconData(
-    HugeIcons.strokeRoundedBookmarkAdd01,
-  );
-  static const AppIconData star = HugeIconData(HugeIcons.strokeRoundedStar);
-  static const AppIconData starHalf = HugeIconData(
-    HugeIcons.strokeRoundedStarHalf,
-  );
-  static const AppIconData lock = HugeIconData(
-    HugeIcons.strokeRoundedLockPassword,
-  );
-  static const AppIconData clock = HugeIconData(HugeIcons.strokeRoundedClock01);
+  static const AppIconData star = MaterialIconData(Icons.star_outline);
+  static const AppIconData starHalf = MaterialIconData(Icons.star_half);
+  static const AppIconData lock = MaterialIconData(Icons.lock_outline);
+  static const AppIconData clock = MaterialIconData(Icons.schedule);
   static const AppIconData calendar = MaterialIconData(
     Icons.calendar_today_outlined,
   );
-  static const AppIconData schedule = HugeIconData(
-    HugeIcons.strokeRoundedClock02,
+  static const AppIconData schedule = MaterialIconData(Icons.access_time);
+  static const AppIconData person = MaterialIconData(Icons.person_outline);
+  static const AppIconData globe = MaterialIconData(Icons.public);
+  static const AppIconData translate = MaterialIconData(Icons.translate);
+  static const AppIconData note = MaterialIconData(
+    Icons.sticky_note_2_outlined,
   );
-  static const AppIconData person = HugeIconData(HugeIcons.strokeRoundedUser02);
-  static const AppIconData globe = HugeIconData(HugeIcons.strokeRoundedGlobe02);
-  static const AppIconData translate = HugeIconData(
-    HugeIcons.strokeRoundedTranslate,
-  );
-  static const AppIconData note = HugeIconData(
-    HugeIcons.strokeRoundedNotebook01,
-  );
-  static const AppIconData alert = HugeIconData(
-    HugeIcons.strokeRoundedAlertCircle,
-  );
-  static const AppIconData info = HugeIconData(
-    HugeIcons.strokeRoundedInformationCircle,
-  );
-  static const AppIconData hourglass = HugeIconData(
-    HugeIcons.strokeRoundedHourglass,
-  );
-  static const AppIconData loading = HugeIconData(
-    HugeIcons.strokeRoundedLoading03,
-  );
-  static const AppIconData cloudLoading = HugeIconData(
-    HugeIcons.strokeRoundedCloudLoading,
+  static const AppIconData alert = MaterialIconData(Icons.error_outline);
+  static const AppIconData info = MaterialIconData(Icons.info_outline);
+  static const AppIconData hourglass = MaterialIconData(Icons.hourglass_empty);
+  static const AppIconData loading = MaterialIconData(Icons.autorenew);
+  static const AppIconData cloudLoading = MaterialIconData(
+    Icons.cloud_sync_outlined,
   );
 
   // ── Reader ──
-  static const AppIconData textToSpeech = HugeIconData(
-    HugeIcons.strokeRoundedSpeaker01,
+  static const AppIconData textToSpeech = MaterialIconData(
+    Icons.record_voice_over_outlined,
   );
-  static const AppIconData volumeHigh = HugeIconData(
-    HugeIcons.strokeRoundedVolumeHigh,
+  static const AppIconData volumeHigh = MaterialIconData(Icons.volume_up);
+  static const AppIconData volumeLow = MaterialIconData(Icons.volume_down);
+  static const AppIconData fullscreen = MaterialIconData(Icons.fullscreen);
+  static const AppIconData fullscreenExit = MaterialIconData(
+    Icons.fullscreen_exit,
   );
-  static const AppIconData volumeLow = HugeIconData(
-    HugeIcons.strokeRoundedVolumeLow,
+  static const AppIconData chapterList = MaterialIconData(Icons.list);
+  static const AppIconData brightness = MaterialIconData(
+    Icons.wb_sunny_outlined,
   );
-  static const AppIconData fullscreen = HugeIconData(
-    HugeIcons.strokeRoundedMaximize01,
+  static const AppIconData fontSize = MaterialIconData(Icons.text_fields);
+  static const AppIconData textAlignLeft = MaterialIconData(
+    Icons.format_align_left,
   );
-  static const AppIconData fullscreenExit = HugeIconData(
-    HugeIcons.strokeRoundedMinimize01,
+  static const AppIconData textAlignCenter = MaterialIconData(
+    Icons.format_align_center,
   );
-  static const AppIconData chapterList = HugeIconData(
-    HugeIcons.strokeRoundedMenu01,
+  static const AppIconData textAlignRight = MaterialIconData(
+    Icons.format_align_right,
   );
-  static const AppIconData brightness = HugeIconData(
-    HugeIcons.strokeRoundedSun02,
-  );
-  static const AppIconData fontSize = HugeIconData(
-    HugeIcons.strokeRoundedTextFont,
-  );
-  static const AppIconData textAlignLeft = HugeIconData(
-    HugeIcons.strokeRoundedTextAlignLeft,
-  );
-  static const AppIconData textAlignCenter = HugeIconData(
-    HugeIcons.strokeRoundedTextAlignCenter,
-  );
-  static const AppIconData textAlignRight = HugeIconData(
-    HugeIcons.strokeRoundedTextAlignRight,
-  );
-  static const AppIconData letterSpacing = HugeIconData(
-    HugeIcons.strokeRoundedLetterSpacing,
-  );
-  static const AppIconData swatch = HugeIconData(HugeIcons.strokeRoundedSwatch);
+  static const AppIconData letterSpacing = MaterialIconData(Icons.space_bar);
+  static const AppIconData swatch = MaterialIconData(Icons.palette_outlined);
 
   // ── Theme/mode ──
-  static const AppIconData darkMode = HugeIconData(
-    HugeIcons.strokeRoundedMoon01,
+  static const AppIconData darkMode = MaterialIconData(
+    Icons.dark_mode_outlined,
   );
-  static const AppIconData lightMode = HugeIconData(
-    HugeIcons.strokeRoundedSun01,
+  static const AppIconData lightMode = MaterialIconData(
+    Icons.light_mode_outlined,
   );
-  static const AppIconData palette = HugeIconData(
-    HugeIcons.strokeRoundedSwatch,
-  );
-  static const AppIconData pin = HugeIconData(HugeIcons.strokeRoundedPin);
+  static const AppIconData palette = MaterialIconData(Icons.palette);
+  static const AppIconData pin = MaterialIconData(Icons.push_pin_outlined);
 
   // ── Connectivity ──
-  static const AppIconData wifi = HugeIconData(HugeIcons.strokeRoundedWifi01);
-  static const AppIconData wifiOff = HugeIconData(
-    HugeIcons.strokeRoundedWifiOff01,
-  );
-  static const AppIconData internet = HugeIconData(
-    HugeIcons.strokeRoundedInternet,
-  );
+  static const AppIconData wifi = MaterialIconData(Icons.wifi);
+  static const AppIconData wifiOff = MaterialIconData(Icons.wifi_off);
+  static const AppIconData internet = MaterialIconData(Icons.language);
 
   // ── Misc / fallbacks ──
-  static const AppIconData home = HugeIconData(HugeIcons.strokeRoundedHome02);
-  static const AppIconData bell = HugeIconData(HugeIcons.strokeRoundedBellDot);
-  static const AppIconData compass = HugeIconData(
-    HugeIcons.strokeRoundedCompass,
+  static const AppIconData home = MaterialIconData(Icons.home_outlined);
+  static const AppIconData bell = MaterialIconData(
+    Icons.notifications_outlined,
   );
-  static const AppIconData addressBook = HugeIconData(
-    HugeIcons.strokeRoundedAddressBook,
+  static const AppIconData compass = MaterialIconData(Icons.explore);
+  static const AppIconData addressBook = MaterialIconData(
+    Icons.contacts_outlined,
   );
-  static const AppIconData books = HugeIconData(HugeIcons.strokeRoundedBooks01);
-  static const AppIconData bookshelf = HugeIconData(
-    HugeIcons.strokeRoundedBookshelf01,
+  static const AppIconData books = MaterialIconData(
+    Icons.auto_stories_outlined,
   );
+  static const AppIconData bookshelf = MaterialIconData(Icons.library_books);
 }

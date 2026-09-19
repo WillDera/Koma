@@ -29,6 +29,10 @@ class MangaChapter {
   int lastPageRead;
   double scrollPosition;
 
+  /// Character offset into extracted plain text — survives font/viewport changes.
+  /// Null means never recorded (fall back to [scrollPosition]).
+  int? readingCharOffset;
+
   /// Mihon `chapterNumber` — recognized reading order key for migrate / sort.
   /// `-1` means unrecognized (see [ChapterRecognition]).
   double chapterNumber;
@@ -67,6 +71,7 @@ class MangaChapter {
     this.isRead = false,
     this.lastPageRead = 0,
     this.scrollPosition = 0.0,
+    this.readingCharOffset,
     this.chapterNumber = -1,
     this.isBookmarked = false,
     this.isDownloaded = false,
@@ -87,6 +92,7 @@ class MangaChapter {
     'is_read': isRead ? 1 : 0,
     'last_page_read': lastPageRead,
     'scroll_position': scrollPosition,
+    'reading_char_offset': readingCharOffset,
     'chapter_number': chapterNumber,
     'is_bookmarked': isBookmarked ? 1 : 0,
     'is_downloaded': isDownloaded ? 1 : 0,
@@ -107,6 +113,7 @@ class MangaChapter {
     isRead: asIntOr(json['is_read']) == 1,
     lastPageRead: asIntOr(json['last_page_read']),
     scrollPosition: asDoubleOr(json['scroll_position']),
+    readingCharOffset: asInt(json['reading_char_offset']),
     chapterNumber: asDouble(json['chapter_number']) ?? -1,
     isBookmarked: asIntOr(json['is_bookmarked']) == 1,
     isDownloaded: asIntOr(json['is_downloaded']) == 1,

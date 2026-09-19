@@ -36,6 +36,10 @@ class UpdatesScreen extends ConsumerWidget {
 
   String _lastUpdatedLabel(DateTime? when) {
     if (when == null) return 'Never';
+    final diff = DateTime.now().difference(when);
+    if (diff.inMinutes < 1) return 'Just now';
+    if (diff.inMinutes < 60) return '${diff.inMinutes}m ago';
+    if (diff.inHours < 24) return '${diff.inHours}h ago';
     return _relativeDay(when);
   }
 

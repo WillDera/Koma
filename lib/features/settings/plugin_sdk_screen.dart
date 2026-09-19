@@ -469,26 +469,44 @@ class _DocBlock extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final c = context.colors;
+    // Same inset as [SettingsRow]: 16 + 36 icon tile + 12 gap.
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-      child: Column(
+      child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            title,
-            style: TextStyle(
-              color: c.textPrimary,
-              fontWeight: FontWeight.w600,
-              fontSize: 14,
+          Container(
+            width: 36,
+            height: 36,
+            decoration: BoxDecoration(
+              color: c.accent.withValues(alpha: 0.13),
+              borderRadius: AppSpacing.brMd,
             ),
+            child: Icon(Icons.code_rounded, size: 18, color: c.accent),
           ),
-          const SizedBox(height: 6),
-          Text(
-            body,
-            style: TextStyle(
-              color: c.textSecondary,
-              fontSize: 13,
-              height: 1.4,
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: TextStyle(
+                    color: c.textPrimary,
+                    fontWeight: FontWeight.w600,
+                    fontSize: 14,
+                  ),
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  body,
+                  style: TextStyle(
+                    color: c.textSecondary,
+                    fontSize: 13,
+                    height: 1.4,
+                  ),
+                ),
+              ],
             ),
           ),
         ],

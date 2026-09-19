@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../theme/app_theme.dart';
 import '../theme/tokens/app_spacing.dart';
 import 'animated_press.dart';
+import 'icon_button_round.dart';
 
 /// Horizontal media rail with a title row and optional "View all" action.
 ///
@@ -17,7 +18,7 @@ class MediaRail extends StatelessWidget {
     this.onViewAll,
     this.viewAllLabel = 'View all',
     this.height = 200,
-    this.padding = const EdgeInsets.fromLTRB(20, 8, 20, 4),
+    this.padding = const EdgeInsets.fromLTRB(12, 8, 12, 4),
     this.separatorWidth = 12,
   });
 
@@ -146,14 +147,17 @@ class MediaRailViewAllBar extends StatelessWidget {
   Widget build(BuildContext context) {
     final c = context.colors;
     return Padding(
-      padding: const EdgeInsets.fromLTRB(12, 0, 20, 8),
+      padding: const EdgeInsets.fromLTRB(4, 0, 12, 8),
       child: Row(
         children: [
-          IconButton(
-            onPressed: onBack,
-            icon: Icon(Icons.arrow_back_rounded, color: c.textPrimary),
+          IconButtonRound(
+            icon: Icons.arrow_back_rounded,
+            size: 40,
+            variant: IconButtonVariant.plain,
             tooltip: 'Back',
+            onPressed: onBack,
           ),
+          const SizedBox(width: 4),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -203,7 +207,7 @@ class MediaRailEmptyHint extends StatelessWidget {
   Widget build(BuildContext context) {
     final c = context.colors;
     return Padding(
-      padding: const EdgeInsets.fromLTRB(20, 8, 20, 16),
+      padding: const EdgeInsets.fromLTRB(12, 8, 12, 16),
       child: Container(
         width: double.infinity,
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 18),

@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart' as webview;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path/path.dart' as p;
+import 'package:pdfrx/pdfrx.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:workmanager/workmanager.dart';
 
@@ -20,6 +21,7 @@ import 'core/services/extension_repo_deep_link_listener.dart';
 import 'core/services/file_open_intent_listener.dart';
 import 'core/services/source_pref_store.dart';
 import 'core/services/search_intent_listener.dart';
+import 'core/services/security_prefs.dart';
 import 'core/services/http/m_client.dart';
 import 'core/services/keiyoushi_service.dart';
 import 'core/services/notification_service.dart';
@@ -32,13 +34,17 @@ import 'eval/model/m_bridge.dart';
 void main() {
   FlutterError.onError = (details) {
     FlutterError.dumpErrorToConsole(details);
-    if (kReleaseMode) {
-      throw details.exception;
-    }
   };
 
   runZonedGuarded(() async {
     final widgetsBinding = WidgetsFlutterBinding.ensureInitialized();
+    await SecurityPrefs.load();
+    // Prefer more, smaller decoded covers over a few full-res bitmaps.
+    // Thumbnail paths now decode near display size (see coverProvider /
+    // BookCover.cacheWidth); this budget fits ~a couple screens of grid.
+    final images = PaintingBinding.instance.imageCache;
+    images.maximumSize = 250;
+    images.maximumSizeBytes = 120 << 20; // 120 MiB
     // Keep the native LaunchTheme visible until startup work finishes
     // (flutter_native_splash is dev-only for asset generation).
     widgetsBinding.deferFirstFrame();
@@ -50,6 +56,10 @@ void main() {
       // Rust metadata engine (Open Library / Google Books) via flutter_rust_bridge.
       await RustLib.init();
       await AppStorage.init();
+      // PDFium worker isolate — PdfViewer.file hangs forever if this never
+      // finishes (default loading banner is null, so it looks like a spinner
+      // from the book FutureProvider, or a blank grey viewer).
+      unawaited(pdfrxFlutterInitialize());
 
       // WorkManager periodic polling (library updates). Initialized once so the
       // native side can wake the Dart callback in a background isolate.
@@ -88,9 +98,6 @@ void main() {
       );
       ExtensionInstallListener.init(extensionManager);
       SearchIntentListener.init();
-      unawaited(extensionManager.reloadAll().then((_) {
-        unawaited(_checkExtensionUpdates(extensionManager));
-      }));
 
       final container = ProviderContainer(
         overrides: [
@@ -102,6 +109,17 @@ void main() {
       );
       FileOpenIntentListener.init(container);
       ExtensionRepoDeepLinkListener.init(container);
+
+      unawaited(extensionManager.reloadAll().then((_) async {
+        await _checkExtensionUpdates(extensionManager);
+        try {
+          await container.read(extensionUpdateCountProvider.notifier).refresh();
+          final count = container.read(extensionUpdateCountProvider);
+          if (count > 0) {
+            await NotificationService.instance.notifyExtensionUpdates(count);
+          }
+        } catch (_) {}
+      }));
 
       // Initialize Notifiers that need SharedPreferences loaded before
       // first paint. The Notifier instances are created by the container
@@ -137,19 +155,6 @@ void main() {
           child: const KomaApp(),
         ),
       );
-
-      // Surface the extension-update badge once the startup index check has
-      // written versionLast flags for every repo (mangayomi parity: it shows a
-      // system notification when updates are found on app start).
-      unawaited(_checkExtensionUpdates(extensionManager).then((_) async {
-        try {
-          await container.read(extensionUpdateCountProvider.notifier).refresh();
-          final count = container.read(extensionUpdateCountProvider);
-          if (count > 0) {
-            await NotificationService.instance.notifyExtensionUpdates(count);
-          }
-        } catch (_) {}
-      }));
     } catch (e, stack) {
       debugPrint('Startup failed: $e\n$stack');
       runApp(
@@ -172,11 +177,25 @@ void main() {
   });
 }
 
+Future<void>? _extensionUpdatesInFlight;
+
 /// Check all repos for extension updates and store versionLast flags.
 /// Ported from mangayomi's fetchItemSourcesListProvider on app start.
 /// When `extension_auto_update_enabled` is set, also downloads replacements
 /// (Mangayomi autoUpdateExtensions parity).
-Future<void> _checkExtensionUpdates(ExtensionManager mgr) async {
+Future<void> _checkExtensionUpdates(ExtensionManager mgr) {
+  final inFlight = _extensionUpdatesInFlight;
+  if (inFlight != null) return inFlight;
+  final future = _checkExtensionUpdatesBody(mgr);
+  _extensionUpdatesInFlight = future;
+  return future.whenComplete(() {
+    if (identical(_extensionUpdatesInFlight, future)) {
+      _extensionUpdatesInFlight = null;
+    }
+  });
+}
+
+Future<void> _checkExtensionUpdatesBody(ExtensionManager mgr) async {
   try {
     final repos = await mgr.listRepos();
     for (final repo in repos) {

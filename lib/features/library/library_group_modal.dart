@@ -8,6 +8,7 @@ import '../../core/models/book.dart';
 import '../../core/models/library_group.dart';
 import '../../core/models/manga.dart';
 import '../../core/providers.dart';
+import '../../core/services/group_display_prefs.dart';
 import '../../core/utils/image_cache.dart';
 import '../../core/utils/image_headers.dart';
 import '../../theme/app_theme.dart';
@@ -19,6 +20,14 @@ import '../../widgets/book_cover.dart';
 import '../../widgets/catalog_card_layout.dart';
 import '../../widgets/library_book_card.dart';
 import '../../widgets/library_group_stack_card.dart';
+
+enum _GroupMemberSort { readingOrder, alphabetical, author }
+
+LibraryCardVariant _groupCardVariant(GroupDisplayMode mode) =>
+    switch (mode) {
+      GroupDisplayMode.overlay => LibraryCardVariant.overlay,
+      GroupDisplayMode.coverOnly => LibraryCardVariant.coverOnly,
+    };
 
 Future<void> showLibraryGroupModal({
   required BuildContext context,
@@ -90,6 +99,7 @@ class _LibraryGroupModalState extends ConsumerState<_LibraryGroupModal> {
   late final TextEditingController _nameCtrl;
   bool _editingName = false;
   bool _reorderMode = false;
+  _GroupMemberSort _sort = _GroupMemberSort.readingOrder;
 
   @override
   void initState() {
@@ -115,6 +125,52 @@ class _LibraryGroupModalState extends ConsumerState<_LibraryGroupModal> {
     if (name.isEmpty) return;
     await ref.read(libraryProvider.notifier).renameGroup(widget.groupId, name);
     if (mounted) setState(() => _editingName = false);
+  }
+
+  Future<void> _showDisplaySheet() async {
+    final current =
+        ref.read(groupDisplayProvider).value ??
+        const GroupDisplaySettings();
+    final result = await showModalBottomSheet<GroupDisplaySettings>(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) => _GroupDisplaySheet(settings: current),
+    );
+    if (result == null || !mounted) return;
+    await ref.read(groupDisplayProvider.notifier).setSettings(result);
+  }
+
+  List<LibraryGroupMemberInfo> _sortedMembers(
+    LibraryGroupInfo group,
+    Map<int, Book> booksById,
+    Map<int, Manga> mangasById,
+  ) {
+    final members = List<LibraryGroupMemberInfo>.from(group.orderedMembers);
+    if (_sort == _GroupMemberSort.readingOrder) return members;
+
+    String titleOf(LibraryGroupMemberInfo m) {
+      if (m.isBook) return booksById[m.itemId]?.title ?? '';
+      return mangasById[m.itemId]?.name ?? '';
+    }
+
+    String authorOf(LibraryGroupMemberInfo m) {
+      if (m.isBook) return booksById[m.itemId]?.author ?? '';
+      final manga = mangasById[m.itemId];
+      return manga?.author ?? manga?.artist ?? '';
+    }
+
+    members.sort((a, b) {
+      final cmp = switch (_sort) {
+        _GroupMemberSort.alphabetical =>
+          titleOf(a).toLowerCase().compareTo(titleOf(b).toLowerCase()),
+        _GroupMemberSort.author =>
+          authorOf(a).toLowerCase().compareTo(authorOf(b).toLowerCase()),
+        _GroupMemberSort.readingOrder => 0,
+      };
+      if (cmp != 0) return cmp;
+      return titleOf(a).toLowerCase().compareTo(titleOf(b).toLowerCase());
+    });
+    return members;
   }
 
   Future<void> _setOrder(LibraryGroupMemberInfo member) async {
@@ -158,9 +214,15 @@ class _LibraryGroupModalState extends ConsumerState<_LibraryGroupModal> {
     }
 
     final openGroup = group;
-    final ordered = openGroup.orderedMembers;
     final booksById = {for (final b in provider.books) b.id: b};
     final mangasById = {for (final m in provider.mangas) m.id: m};
+    final ordered = _reorderMode
+        ? openGroup.orderedMembers
+        : _sortedMembers(openGroup, booksById, mangasById);
+    final groupDisplay =
+        ref.watch(groupDisplayProvider).value ??
+        const GroupDisplaySettings();
+    final cardVariant = _groupCardVariant(groupDisplay.mode);
     return HeroMode(
       enabled: !widget.reducedMotion,
       child: Material(
@@ -208,15 +270,26 @@ class _LibraryGroupModalState extends ConsumerState<_LibraryGroupModal> {
                                 nameCtrl: _nameCtrl,
                                 editingName: _editingName,
                                 reorderMode: _reorderMode,
+                                sort: _sort,
                                 groupName: openGroup.name,
                                 colors: c,
                                 onToggleEdit: () => setState(
                                   () => _editingName = !_editingName,
                                 ),
                                 onCommitName: _commitName,
-                                onToggleReorder: () => setState(
-                                  () => _reorderMode = !_reorderMode,
-                                ),
+                                onSortChanged: (s) => setState(() {
+                                  _sort = s;
+                                  if (s != _GroupMemberSort.readingOrder) {
+                                    _reorderMode = false;
+                                  }
+                                }),
+                                onOpenLayout: _showDisplaySheet,
+                                onToggleReorder: () => setState(() {
+                                  _reorderMode = !_reorderMode;
+                                  if (_reorderMode) {
+                                    _sort = _GroupMemberSort.readingOrder;
+                                  }
+                                }),
                                 onDissolve: () async {
                                   final nav = Navigator.of(context);
                                   await ref
@@ -237,7 +310,9 @@ class _LibraryGroupModalState extends ConsumerState<_LibraryGroupModal> {
                               child: Text(
                                 _reorderMode
                                     ? 'Drag to set reading order'
-                                    : 'Long-press a cover to set reading order',
+                                    : _editingName
+                                        ? 'Edit the name, then tap the check'
+                                        : 'Tap the title to rename · long-press a cover for reading order',
                                 style: TextStyle(
                                   color: c.textSecondary.withValues(
                                     alpha: 0.9,
@@ -253,7 +328,7 @@ class _LibraryGroupModalState extends ConsumerState<_LibraryGroupModal> {
                                 ? GestureDetector(
                                     onTap: () {},
                                     child: _ReorderList(
-                                      ordered: ordered,
+                                      ordered: openGroup.orderedMembers,
                                       booksById: booksById,
                                       mangasById: mangasById,
                                       colors: c,
@@ -274,8 +349,8 @@ class _LibraryGroupModalState extends ConsumerState<_LibraryGroupModal> {
                                     ),
                                     gridDelegate:
                                         CatalogCardLayout.gridDelegate(
-                                      columns: 3,
-                                      variant: LibraryCardVariant.grid,
+                                      columns: groupDisplay.columns,
+                                      variant: cardVariant,
                                     ),
                                     itemCount: ordered.length,
                                     itemBuilder: (ctx, i) {
@@ -283,6 +358,7 @@ class _LibraryGroupModalState extends ConsumerState<_LibraryGroupModal> {
                                       return _MemberTile(
                                         groupId: widget.groupId,
                                         member: member,
+                                        display: groupDisplay.mode,
                                         enableHero: !widget.reducedMotion,
                                         book: member.isBook
                                             ? booksById[member.itemId]
@@ -299,19 +375,22 @@ class _LibraryGroupModalState extends ConsumerState<_LibraryGroupModal> {
                                             final b =
                                                 booksById[member.itemId];
                                             if (b != null) {
-                                              Navigator.of(context).maybePop();
+                                              Navigator.of(context)
+                                                  .maybePop();
                                               widget.onOpenBook(b);
                                             }
                                           } else {
                                             final m =
                                                 mangasById[member.itemId];
                                             if (m != null) {
-                                              Navigator.of(context).maybePop();
+                                              Navigator.of(context)
+                                                  .maybePop();
                                               widget.onOpenManga(m);
                                             }
                                           }
                                         },
-                                        onLongPress: () => _setOrder(member),
+                                        onLongPress: () =>
+                                            _setOrder(member),
                                       );
                                     },
                                   ),
@@ -400,10 +479,13 @@ class _HeaderBar extends StatelessWidget {
     required this.nameCtrl,
     required this.editingName,
     required this.reorderMode,
+    required this.sort,
     required this.groupName,
     required this.colors,
     required this.onToggleEdit,
     required this.onCommitName,
+    required this.onSortChanged,
+    required this.onOpenLayout,
     required this.onToggleReorder,
     required this.onDissolve,
     required this.onClose,
@@ -412,10 +494,13 @@ class _HeaderBar extends StatelessWidget {
   final TextEditingController nameCtrl;
   final bool editingName;
   final bool reorderMode;
+  final _GroupMemberSort sort;
   final String groupName;
   final KomaColors colors;
   final VoidCallback onToggleEdit;
   final VoidCallback onCommitName;
+  final ValueChanged<_GroupMemberSort> onSortChanged;
+  final VoidCallback onOpenLayout;
   final VoidCallback onToggleReorder;
   final VoidCallback onDissolve;
   final VoidCallback onClose;
@@ -466,20 +551,43 @@ class _HeaderBar extends StatelessWidget {
                 icon: Icon(Icons.check, color: colors.accent),
                 onPressed: onCommitName,
               )
-            else
+            else ...[
+              PopupMenuButton<_GroupMemberSort>(
+                tooltip: 'Sort titles',
+                icon: Icon(Icons.sort_rounded, color: colors.textSecondary),
+                onSelected: onSortChanged,
+                itemBuilder: (ctx) => [
+                  CheckedPopupMenuItem(
+                    value: _GroupMemberSort.readingOrder,
+                    checked: sort == _GroupMemberSort.readingOrder,
+                    child: const Text('Reading order'),
+                  ),
+                  CheckedPopupMenuItem(
+                    value: _GroupMemberSort.alphabetical,
+                    checked: sort == _GroupMemberSort.alphabetical,
+                    child: const Text('A–Z'),
+                  ),
+                  CheckedPopupMenuItem(
+                    value: _GroupMemberSort.author,
+                    checked: sort == _GroupMemberSort.author,
+                    child: const Text('Author'),
+                  ),
+                ],
+              ),
               IconButton(
-                icon: Icon(Icons.edit_outlined, color: colors.textSecondary),
-                tooltip: 'Rename group',
-                onPressed: onToggleEdit,
+                icon: Icon(Icons.grid_view_rounded, color: colors.textSecondary),
+                tooltip: 'Group display',
+                onPressed: onOpenLayout,
               ),
-            IconButton(
-              icon: Icon(
-                reorderMode ? Icons.check_circle_outline : Icons.swap_vert,
-                color: colors.textSecondary,
+              IconButton(
+                icon: Icon(
+                  reorderMode ? Icons.check_circle_outline : Icons.swap_vert,
+                  color: colors.textSecondary,
+                ),
+                tooltip: reorderMode ? 'Done reordering' : 'Reorder by drag',
+                onPressed: onToggleReorder,
               ),
-              tooltip: reorderMode ? 'Done reordering' : 'Reorder by drag',
-              onPressed: onToggleReorder,
-            ),
+            ],
             IconButton(
               icon: Icon(Icons.delete_outline, color: colors.textTertiary),
               tooltip: 'Dissolve group',
@@ -558,6 +666,7 @@ class _MemberTile extends ConsumerWidget {
     required this.onOpen,
     required this.onLongPress,
     required this.enableHero,
+    required this.display,
     this.book,
     this.manga,
     this.localThumb,
@@ -571,6 +680,7 @@ class _MemberTile extends ConsumerWidget {
   final VoidCallback onOpen;
   final VoidCallback onLongPress;
   final bool enableHero;
+  final GroupDisplayMode display;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -579,6 +689,7 @@ class _MemberTile extends ConsumerWidget {
     final headers = manga != null
         ? ref.watch(sourceImageHeadersProvider(manga!.sourceId)).value
         : null;
+    final showTitle = display == GroupDisplayMode.overlay;
 
     final cover = ClipRRect(
       borderRadius: AppSpacing.brMd,
@@ -622,36 +733,176 @@ class _MemberTile extends ConsumerWidget {
       onTap: onOpen,
       onLongPress: onLongPress,
       scaleDown: 0.97,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Expanded(
-            child: Stack(
-              fit: StackFit.expand,
-              children: [
-                heroCover,
-                if (member.readingOrder != null)
-                  Positioned(
-                    top: 6,
-                    left: 6,
-                    child: ReadingOrderPill(order: member.readingOrder!),
+      child: ClipRRect(
+        borderRadius: AppSpacing.brMd,
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            heroCover,
+            if (showTitle) ...[
+              const DecoratedBox(
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.bottomCenter,
+                    end: Alignment.topCenter,
+                    colors: [
+                      Color(0xBF000000),
+                      Color(0x59000000),
+                      Color(0x00000000),
+                    ],
+                    stops: [0.0, 0.4, 1.0],
                   ),
-              ],
-            ),
+                ),
+              ),
+              Positioned(
+                left: 8,
+                right: 8,
+                bottom: 8,
+                child: Text(
+                  title,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                    height: 1.2,
+                    decoration: TextDecoration.none,
+                    shadows: [
+                      Shadow(
+                        blurRadius: 4,
+                        color: Colors.black54,
+                        offset: Offset(0, 1),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+            if (member.readingOrder != null)
+              Positioned(
+                top: 6,
+                left: 6,
+                child: ReadingOrderPill(order: member.readingOrder!),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Minimal group-only layout sheet: columns (2/3) + overlay / cover-only.
+class _GroupDisplaySheet extends StatefulWidget {
+  const _GroupDisplaySheet({required this.settings});
+
+  final GroupDisplaySettings settings;
+
+  @override
+  State<_GroupDisplaySheet> createState() => _GroupDisplaySheetState();
+}
+
+class _GroupDisplaySheetState extends State<_GroupDisplaySheet> {
+  late int _columns = widget.settings.columns;
+  late GroupDisplayMode _display = widget.settings.mode;
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.colors;
+    return Material(
+      color: c.surface,
+      borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+      clipBehavior: Clip.antiAlias,
+      child: SafeArea(
+        top: false,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(20, 12, 20, 24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Center(
+                child: Container(
+                  width: 36,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: c.border,
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 16),
+              Text(
+                'Group display',
+                style: TextStyle(
+                  color: c.textPrimary,
+                  fontSize: 17,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              const SizedBox(height: 16),
+              Text(
+                'Columns',
+                style: TextStyle(
+                  color: c.textSecondary,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+              const SizedBox(height: 8),
+              SegmentedButton<int>(
+                segments: const [
+                  ButtonSegment(value: 2, label: Text('2')),
+                  ButtonSegment(value: 3, label: Text('3')),
+                ],
+                selected: {_columns},
+                onSelectionChanged: (s) => setState(() => _columns = s.first),
+              ),
+              const SizedBox(height: 18),
+              Text(
+                'Display mode',
+                style: TextStyle(
+                  color: c.textSecondary,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+              const SizedBox(height: 8),
+              SegmentedButton<GroupDisplayMode>(
+                segments: const [
+                  ButtonSegment(
+                    value: GroupDisplayMode.overlay,
+                    label: Text('Overlay'),
+                    icon: Icon(Icons.title_rounded, size: 18),
+                  ),
+                  ButtonSegment(
+                    value: GroupDisplayMode.coverOnly,
+                    label: Text('Cover only'),
+                    icon: Icon(Icons.image_outlined, size: 18),
+                  ),
+                ],
+                selected: {_display},
+                onSelectionChanged: (s) => setState(() => _display = s.first),
+              ),
+              const SizedBox(height: 20),
+              FilledButton(
+                onPressed: () => Navigator.pop(
+                  context,
+                  GroupDisplaySettings(columns: _columns, mode: _display),
+                ),
+                style: FilledButton.styleFrom(
+                  backgroundColor: c.accent,
+                  foregroundColor: c.onAccent,
+                  minimumSize: const Size.fromHeight(44),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                ),
+                child: const Text('Done'),
+              ),
+            ],
           ),
-          const SizedBox(height: 6),
-          Text(
-            title,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: TextStyle(
-              color: c.textPrimary,
-              fontSize: 12,
-              fontWeight: FontWeight.w600,
-              decoration: TextDecoration.none,
-            ),
-          ),
-        ],
+        ),
       ),
     );
   }

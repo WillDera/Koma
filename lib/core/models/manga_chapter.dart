@@ -12,6 +12,10 @@ class MangaChapter {
   final bool isRead;
   final int lastPageRead;
   final double scrollPosition;
+
+  /// Character offset into extracted plain text — survives font/viewport changes.
+  final int? readingCharOffset;
+
   final double chapterNumber;
   final bool isBookmarked;
   final bool isDownloaded;
@@ -40,6 +44,7 @@ class MangaChapter {
     this.isRead = false,
     this.lastPageRead = 0,
     this.scrollPosition = 0.0,
+    this.readingCharOffset,
     this.chapterNumber = -1,
     this.isBookmarked = false,
     this.isDownloaded = false,
@@ -62,6 +67,7 @@ class MangaChapter {
     bool isRead = false,
     int lastPageRead = 0,
     double scrollPosition = 0.0,
+    int? readingCharOffset,
     num? sourceChapterNumber,
     bool isBookmarked = false,
     bool isDownloaded = false,
@@ -81,6 +87,7 @@ class MangaChapter {
       isRead: isRead,
       lastPageRead: lastPageRead,
       scrollPosition: scrollPosition,
+      readingCharOffset: readingCharOffset,
       chapterNumber: ChapterRecognition.parseChapterNumber(
         mangaTitle,
         name,
@@ -106,6 +113,7 @@ class MangaChapter {
     bool? isRead,
     int? lastPageRead,
     double? scrollPosition,
+    int? readingCharOffset,
     double? chapterNumber,
     bool? isBookmarked,
     bool? isDownloaded,
@@ -125,6 +133,7 @@ class MangaChapter {
       isRead: isRead ?? this.isRead,
       lastPageRead: lastPageRead ?? this.lastPageRead,
       scrollPosition: scrollPosition ?? this.scrollPosition,
+      readingCharOffset: readingCharOffset ?? this.readingCharOffset,
       chapterNumber: chapterNumber ?? this.chapterNumber,
       isBookmarked: isBookmarked ?? this.isBookmarked,
       isDownloaded: isDownloaded ?? this.isDownloaded,
@@ -146,6 +155,7 @@ class MangaChapter {
     'is_read': isRead ? 1 : 0,
     'last_page_read': lastPageRead,
     'scroll_position': scrollPosition,
+    'reading_char_offset': readingCharOffset,
     'chapter_number': chapterNumber,
     'is_bookmarked': isBookmarked ? 1 : 0,
     'is_downloaded': isDownloaded ? 1 : 0,
@@ -166,6 +176,7 @@ class MangaChapter {
     isRead: asIntOr(json['is_read']) == 1,
     lastPageRead: asIntOr(json['last_page_read']),
     scrollPosition: asDoubleOr(json['scroll_position']),
+    readingCharOffset: asInt(json['reading_char_offset']),
     chapterNumber: asDouble(json['chapter_number']) ?? -1,
     isBookmarked: asIntOr(json['is_bookmarked']) == 1,
     isDownloaded: asIntOr(json['is_downloaded']) == 1,

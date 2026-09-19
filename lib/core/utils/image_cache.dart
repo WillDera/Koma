@@ -23,7 +23,7 @@ ImageProvider cachedCover(
     if (width != null || height != null) {
       return ResizeImage(fileImage, width: width, height: height);
     }
-    return fileImage;
+    return ResizeImage(fileImage, width: 600);
   }
 
   // Network: keep the previous sized-thumbnail path (ResizeImage + custom

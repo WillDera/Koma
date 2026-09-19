@@ -10,6 +10,8 @@ import '../../widgets/screen_chrome.dart';
 import '../../widgets/text_field.dart';
 import 'global_search_provider.dart';
 import 'global_search_widgets.dart';
+import 'catalog_multi_select.dart';
+import 'catalog_multi_select_bar.dart';
 
 /// Mihon-parity catalogue Global Search: per-source horizontal rows,
 /// Pinned/All + Has-results chips, progressive Loading/Success/Error.
@@ -35,6 +37,7 @@ class _GlobalSearchScreenState extends ConsumerState<GlobalSearchScreen> {
       if (!mounted) return;
       // Ensure migrate-only source exclude does not leak into Global Search.
       ref.read(globalSearchProvider.notifier).setExcludeSourceId(null);
+      ref.read(catalogMultiSelectProvider.notifier).clear();
       if (q.isNotEmpty) {
         ref.read(globalSearchProvider.notifier).search(q);
       } else {
@@ -52,6 +55,7 @@ class _GlobalSearchScreenState extends ConsumerState<GlobalSearchScreen> {
 
   void _submit() {
     final q = _ctrl.text.trim();
+    ref.read(catalogMultiSelectProvider.notifier).clear();
     ref.read(globalSearchProvider.notifier).search(q);
   }
 
@@ -108,8 +112,9 @@ class _GlobalSearchScreenState extends ConsumerState<GlobalSearchScreen> {
                 ),
               ),
             ),
-            const GlobalSearchFilterBar(),
+            const GlobalSearchFilterBar(showCompactRailsToggle: true),
             const Expanded(child: GlobalSearchResultsList()),
+            const CatalogMultiSelectBar(),
           ],
         ),
       ),

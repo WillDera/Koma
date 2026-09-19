@@ -6,6 +6,7 @@ import '../theme/tokens/app_motion.dart';
 import '../theme/tokens/app_spacing.dart';
 import 'animated_press.dart';
 import 'book_cover.dart';
+import 'new_chapter_badge.dart';
 import 'progress_ring.dart';
 
 enum LibraryCardVariant { grid, list, compact, overlay, coverOnly }
@@ -18,6 +19,8 @@ class LibraryBookCard extends StatelessWidget {
   final bool selectionMode;
   final LibraryCardVariant variant;
   final bool showSourcePills;
+  final bool minimalChrome;
+  final bool enriching;
 
   const LibraryBookCard({
     super.key,
@@ -28,7 +31,11 @@ class LibraryBookCard extends StatelessWidget {
     this.selectionMode = false,
     this.variant = LibraryCardVariant.grid,
     this.showSourcePills = true,
+    this.minimalChrome = false,
+    this.enriching = false,
   });
+
+  bool get _showSource => !minimalChrome && showSourcePills;
 
   @override
   Widget build(BuildContext context) {
@@ -45,11 +52,12 @@ class LibraryBookCard extends StatelessWidget {
   /// title (not overlaid on the cover).
   Widget _grid(BuildContext context) {
     final c = context.colors;
-    return AnimatedPress(
-      onTap: onTap,
-      onLongPress: onLongPress,
-      scaleDown: 0.97,
-      child: Column(
+    return RepaintBoundary(
+      child: AnimatedPress(
+        onTap: onTap,
+        onLongPress: onLongPress,
+        scaleDown: 0.97,
+        child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Expanded(
@@ -61,7 +69,7 @@ class LibraryBookCard extends StatelessWidget {
                   variant: BookCoverVariant.grid,
                   expand: true,
                 ),
-                if (showSourcePills)
+                if (_showSource)
                   Positioned(
                     top: 6,
                     left: 6,
@@ -89,6 +97,13 @@ class LibraryBookCard extends StatelessWidget {
                     top: 8,
                     right: 8,
                     child: _selectionBadge(c),
+                  ),
+                if (enriching)
+                  Positioned.fill(
+                    child: ClipRRect(
+                      borderRadius: AppSpacing.brMd,
+                      child: CoverWorkingOverlay(),
+                    ),
                   ),
               ],
             ),
@@ -127,6 +142,7 @@ class LibraryBookCard extends StatelessWidget {
               style: TextStyle(color: c.textSecondary, fontSize: 11),
             ),
         ],
+      ),
       ),
     );
   }
@@ -178,7 +194,7 @@ class LibraryBookCard extends StatelessWidget {
                       style: TextStyle(color: c.textSecondary, fontSize: 12),
                     ),
                   ],
-                  if (showSourcePills) ...[
+                  if (_showSource) ...[
                     const SizedBox(height: 4),
                     Text(
                       _sourceLabel(book.source),
@@ -230,7 +246,7 @@ class LibraryBookCard extends StatelessWidget {
                   borderRadius: AppSpacing.brSm,
                   expand: true,
                 ),
-                if (showSourcePills)
+                if (_showSource)
                   Positioned(
                     top: 4,
                     left: 4,
@@ -258,6 +274,13 @@ class LibraryBookCard extends StatelessWidget {
                     top: 6,
                     right: 6,
                     child: _selectionBadge(c, size: 20),
+                  ),
+                if (enriching)
+                  Positioned.fill(
+                    child: ClipRRect(
+                      borderRadius: AppSpacing.brSm,
+                      child: CoverWorkingOverlay(),
+                    ),
                   ),
               ],
             ),
@@ -343,6 +366,7 @@ class LibraryBookCard extends StatelessWidget {
                 right: 8,
                 child: _selectionBadge(c),
               ),
+            if (enriching) Positioned.fill(child: CoverWorkingOverlay()),
           ],
         ),
       ),

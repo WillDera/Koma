@@ -30,14 +30,17 @@ import '../../core/services/local_cbz_prefs.dart';
 import '../../core/services/local_cbz_scanner.dart';
 import '../../core/services/annas_archive_prefs.dart';
 import '../../core/services/metadata_enrichment_service.dart';
+import '../../core/services/security_prefs.dart';
 import '../../core/services/user_profile.dart';
 import '../../router/router.dart';
+import '../discover/explore_view_prefs.dart';
 import '../reader/reader_settings_provider.dart';
 import '../reader/reader_settings_sheet.dart' show ReadingMode;
 import '../snippets/snippets_screen.dart';
 import 'custom_font_ui.dart';
 import 'open_source_licenses_sheet.dart';
 import 'security_settings_page.dart';
+import 'theme_pack_picker.dart';
 import 'tracking_settings_page.dart';
 import '../extensions/extensions_catalog_provider.dart';
 import '../../theme/app_theme.dart';
@@ -61,6 +64,16 @@ class SettingsScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final dpr = MediaQuery.devicePixelRatioOf(context);
+    final px = (72 * dpr).round();
+    precacheImage(
+      ResizeImage(
+        const AssetImage('assets/branding/hon.png'),
+        width: px,
+        height: px,
+      ),
+      context,
+    );
     return ScreenBackdrop(
       child: SafeArea(
         bottom: false,
@@ -170,9 +183,8 @@ class _SettingsHub extends StatelessWidget {
           0,
           SettingsRow(
             icon: Icons.person_outline_rounded,
-            iconColor: AppColors.figmaViolet,
             title: 'Profile',
-            subtitle: 'Name, photo, genres',
+            subtitle: 'Name, photo, genres, stats',
             onTap: () => _open(context, 'Profile', const _ProfileSection()),
           ),
         ),
@@ -180,7 +192,6 @@ class _SettingsHub extends StatelessWidget {
           1,
           SettingsRow(
             icon: Icons.bookmark_outline_rounded,
-            iconColor: AppColors.figmaAmber,
             title: 'Snippets',
             subtitle: 'Highlights and bookmarks',
             onTap: () => Navigator.of(context, rootNavigator: true).push(
@@ -192,7 +203,6 @@ class _SettingsHub extends StatelessWidget {
           2,
           SettingsRow(
             icon: Icons.palette_outlined,
-            iconColor: AppColors.figmaViolet,
             title: 'Appearance',
             subtitle: 'Theme, accent, single hand mode',
             onTap: () =>
@@ -203,7 +213,6 @@ class _SettingsHub extends StatelessWidget {
           3,
           SettingsRow(
             icon: Icons.text_fields_rounded,
-            iconColor: AppColors.figmaGreen,
             title: 'Typography',
             subtitle: 'Font, size, line height, bionic reading',
             onTap: () =>
@@ -214,17 +223,15 @@ class _SettingsHub extends StatelessWidget {
           4,
           SettingsRow(
             icon: Icons.storage_outlined,
-            iconColor: AppColors.figmaAmber,
             title: 'Data',
             subtitle: 'Backup, downloads, library updates',
-            onTap: () => _open(context, 'Data', const _DataAndStatsPage()),
+            onTap: () => _open(context, 'Data', const _DataPage()),
           ),
         ),
         row(
           5,
           SettingsRow(
             icon: Icons.shield_outlined,
-            iconColor: AppColors.figmaViolet,
             title: 'Security',
             subtitle: 'Incognito, app lock, secure screen',
             onTap: () =>
@@ -235,7 +242,6 @@ class _SettingsHub extends StatelessWidget {
           6,
           SettingsRow(
             icon: Icons.layers_outlined,
-            iconColor: AppColors.figmaCyan,
             title: 'Sources',
             subtitle: 'Ebook sources and manga plugins',
             onTap: () =>
@@ -246,7 +252,6 @@ class _SettingsHub extends StatelessWidget {
           7,
           SettingsRow(
             icon: Icons.track_changes_rounded,
-            iconColor: AppColors.figmaGreen,
             title: 'Tracking',
             subtitle: 'MAL, AniList',
             onTap: () =>
@@ -310,6 +315,11 @@ class _SettingsDestinationScreen extends StatelessWidget {
     // Own ScaffoldMessenger so SnackBars from this sub-page (Tracking,
     // Security, etc.) paint here — not on the Settings list underneath.
     // Pushed with rootNavigator:true, so MaterialApp's messenger is the shell.
+    //
+    // Body is in the tree for the whole slide (same as Profile / Typography).
+    // RepaintBoundary keeps the expensive first layout as one layer so later
+    // transition frames only composite. Do not wrap in StaggeredFadeScale —
+    // that second animation fought the route slide and felt like hitch.
     return ScaffoldMessenger(
       child: Scaffold(
         backgroundColor: Colors.transparent,
@@ -327,11 +337,7 @@ class _SettingsDestinationScreen extends StatelessWidget {
                     showBackButton: true,
                     padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
                   ),
-                  StaggeredFadeScale(
-                    index: 0,
-                    scaleBegin: 0.97,
-                    child: child,
-                  ),
+                  RepaintBoundary(child: child),
                 ],
               ),
             ),
@@ -342,8 +348,8 @@ class _SettingsDestinationScreen extends StatelessWidget {
   }
 }
 
-class _DataAndStatsPage extends StatelessWidget {
-  const _DataAndStatsPage();
+class _DataPage extends StatelessWidget {
+  const _DataPage();
 
   @override
   Widget build(BuildContext context) {
@@ -354,8 +360,6 @@ class _DataAndStatsPage extends StatelessWidget {
         _DownloadQueueSection(),
         SizedBox(height: 20),
         _LibraryUpdateSection(),
-        SizedBox(height: 20),
-        LibraryStatsPanel(),
       ],
     );
   }
@@ -409,22 +413,23 @@ class _AppearanceSection extends ConsumerWidget {
     final c = context.colors;
     final theme = ref.watch(themeProvider);
     final tn = ref.read(themeProvider.notifier);
-    final violet = AppColors.figmaViolet;
 
     return Column(
       children: [
         SettingsSection(
           title: 'Theme',
-          headerColor: violet,
           padding: _pad,
           children: [
             _ThemeModePicker(
               value: theme.themeMode,
               onChanged: tn.setThemeMode,
             ),
+            const ThemePackPicker(),
             SettingsRow(
               title: 'Sepia mode',
-              subtitle: 'Warm paper-like background',
+              subtitle: theme.usesCommunityPack
+                  ? 'Turns off the color theme while active'
+                  : 'Warm paper-like background',
               trailing: Switch(
                 value: theme.sepiaMode,
                 activeThumbColor: c.accent,
@@ -433,11 +438,13 @@ class _AppearanceSection extends ConsumerWidget {
             ),
             SettingsRow(
               title: 'AMOLED dark mode',
-              subtitle: 'True black for OLED screens',
+              subtitle: theme.usesCommunityPack
+                  ? 'Only applies with the Koma theme'
+                  : 'True black for OLED screens',
               trailing: Switch(
                 value: theme.amoledMode,
                 activeThumbColor: c.accent,
-                onChanged: tn.setAmoledMode,
+                onChanged: theme.usesCommunityPack ? null : tn.setAmoledMode,
               ),
             ),
             SettingsRow(
@@ -459,7 +466,6 @@ class _AppearanceSection extends ConsumerWidget {
         _gap,
         SettingsSection(
           title: 'Accent color',
-          headerColor: violet,
           padding: _pad,
           children: [
             Padding(
@@ -552,7 +558,6 @@ class _AppearanceSection extends ConsumerWidget {
         _gap,
         SettingsSection(
           title: 'Ergonomics',
-          headerColor: violet,
           padding: _pad,
           children: [
             Padding(
@@ -610,8 +615,13 @@ class _ThemeModePicker extends StatelessWidget {
     ];
     // Match SettingsSection card corners (brLg) on the end cells.
     final endRadius = Radius.circular(AppSpacing.radiusLg);
-    return IntrinsicHeight(
+    // Fixed height — IntrinsicHeight forces an extra layout pass on open.
+    // Icon (20) + label (~16) + vertical padding (14×2) ≈ 64; leave headroom
+    // for text scale so the Column does not overflow.
+    return SizedBox(
+      height: 84,
       child: Row(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           for (var i = 0; i < options.length; i++) ...[
             Expanded(
@@ -620,9 +630,8 @@ class _ThemeModePicker extends StatelessWidget {
                 child: AnimatedContainer(
                   duration: AppMotion.base,
                   curve: AppMotion.standard,
-                  padding: const EdgeInsets.symmetric(vertical: 16),
-                  decoration: BoxDecoration(
-                    color: value == options[i].$1
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                  decoration: BoxDecoration(                    color: value == options[i].$1
                         ? c.accent.withValues(alpha: 0.16)
                         : Colors.transparent,
                     borderRadius: BorderRadius.only(
@@ -633,6 +642,7 @@ class _ThemeModePicker extends StatelessWidget {
                     ),
                   ),
                   child: Column(
+                    mainAxisSize: MainAxisSize.min,
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
                       Icon(
@@ -1173,17 +1183,14 @@ class _TypographySection extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final p = ref.watch(themeProvider);
     final tn = ref.read(themeProvider.notifier);
-    final green = AppColors.figmaGreen;
     return Column(
       children: [
         SettingsSection(
           title: 'Reading font',
-          headerColor: green,
           padding: _pad,
           children: [
             SettingsRow(
               icon: Icons.text_fields,
-              iconColor: green,
               title: 'Reading font',
               subtitle: p.readingFontLabel,
               trailing: const Icon(Icons.chevron_right, size: 18),
@@ -1194,12 +1201,10 @@ class _TypographySection extends ConsumerWidget {
         _gap,
         SettingsSection(
           title: 'Layout',
-          headerColor: green,
           padding: _pad,
           children: [
             SettingsRow(
               icon: Icons.format_size,
-              iconColor: green,
               title: 'Font size',
               subtitle: '${p.fontSize.toInt()}px',
               trailing: SizedBox(
@@ -1209,14 +1214,13 @@ class _TypographySection extends ConsumerWidget {
                   min: 13,
                   max: 26,
                   divisions: 13,
-                  activeColor: green,
+                  activeColor: context.colors.accent,
                   onChanged: tn.setFontSize,
                 ),
               ),
             ),
             SettingsRow(
               icon: Icons.format_line_spacing,
-              iconColor: green,
               title: 'Line height',
               subtitle: '${p.lineHeight.toStringAsFixed(2)}×',
               trailing: SizedBox(
@@ -1226,14 +1230,13 @@ class _TypographySection extends ConsumerWidget {
                   min: 1.2,
                   max: 2.2,
                   divisions: 10,
-                  activeColor: green,
+                  activeColor: context.colors.accent,
                   onChanged: tn.setLineHeight,
                 ),
               ),
             ),
             SettingsRow(
               icon: Icons.width_normal,
-              iconColor: green,
               title: 'Page width',
               subtitle: '${p.pageWidth.toInt()}px',
               trailing: SizedBox(
@@ -1243,7 +1246,7 @@ class _TypographySection extends ConsumerWidget {
                   min: 520,
                   max: 760,
                   divisions: 12,
-                  activeColor: green,
+                  activeColor: context.colors.accent,
                   onChanged: tn.setPageWidth,
                 ),
               ),
@@ -1253,12 +1256,10 @@ class _TypographySection extends ConsumerWidget {
         _gap,
         SettingsSection(
           title: 'Reading mode',
-          headerColor: green,
           padding: _pad,
           children: [
             SettingsRow(
               icon: Icons.auto_stories_outlined,
-              iconColor: green,
               title: 'Default manga reading mode',
               subtitle:
                   '${_mangaReadingModeLabel(ref.watch(readerSettingsProvider).readingMode)} · unread titles',
@@ -1267,18 +1268,16 @@ class _TypographySection extends ConsumerWidget {
             ),
             SettingsRow(
               icon: Icons.bolt,
-              iconColor: green,
               title: 'Bionic reading',
               subtitle: 'Bold the first 40% of every word',
               trailing: Switch(
                 value: p.bionicReading,
-                activeThumbColor: green,
+                activeThumbColor: context.colors.accent,
                 onChanged: tn.setBionicReading,
               ),
             ),
             SettingsRow(
               icon: Icons.format_align_left,
-              iconColor: green,
               title: 'Text alignment',
               subtitle: _alignName(p.textAlign),
               trailing: const Icon(Icons.chevron_right, size: 18),
@@ -1535,13 +1534,27 @@ class _BookMetadataSectionState extends ConsumerState<_BookMetadataSection> {
     final discoverEnrich =
         ref.watch(discoverMetadataEnabledProvider).value ??
         kDiscoverMetadataEnabledDefault;
+    final compactMangaRails = ref.watch(exploreCompactMangaRailsProvider);
     return SettingsSection(
       title: 'Book metadata',
-      headerColor: AppColors.figmaAmber,
       padding: const EdgeInsets.symmetric(horizontal: 16),
       footer:
           'Looks up author, cover, genres, and release date via Open Library (primary) and Google Books (fallback). An API key improves Google Books rate limits but is optional.',
       children: [
+        SettingsRow(
+          icon: Icons.view_week_outlined,
+          title: 'Compact Explore manga results',
+          subtitle: compactMangaRails
+              ? 'Each source shows up to 5 covers in a horizontal row'
+              : 'Each source lists every hit in a vertical grid',
+          trailing: Switch(
+            value: compactMangaRails,
+            activeThumbColor: c.accent,
+            onChanged: (v) => ref
+                .read(exploreCompactMangaRailsProvider.notifier)
+                .setEnabled(v),
+          ),
+        ),
         SettingsRow(
           icon: Icons.travel_explore_outlined,
           title: 'Enrich Discover book covers',
@@ -1724,7 +1737,6 @@ class _DownloadQueueSection extends ConsumerWidget {
     final pending = ref.watch(downloadManagerProvider).pendingCount;
     return SettingsSection(
       title: 'Downloads',
-      headerColor: AppColors.figmaAmber,
       padding: const EdgeInsets.symmetric(horizontal: 16),
       footer:
           'Chapter downloads run in a shared queue across titles. Wi‑Fi and charging gates apply to the download queue (not manual library checks).',
@@ -1779,7 +1791,6 @@ class _LibraryUpdateSection extends ConsumerWidget {
     final lastChecked = update.lastCheckedAt;
     return SettingsSection(
       title: 'Library updates',
-      headerColor: AppColors.figmaAmber,
       padding: const EdgeInsets.symmetric(horizontal: 16),
       footer:
           'Check now always fetches every library title. Skip filters below '
@@ -1810,19 +1821,21 @@ class _LibraryUpdateSection extends ConsumerWidget {
         SettingsRow(
           icon: Icons.schedule_outlined,
           title: 'Check every',
-          subtitle:
-              '${update.interval.inHours} hour${update.interval.inHours == 1 ? '' : 's'}',
+          subtitle: LibraryUpdatePrefs.formatInterval(update.interval),
           trailing: PopupMenuButton<int>(
             icon: Icon(Icons.keyboard_arrow_down, color: c.textSecondary),
             tooltip: 'Interval',
-            onSelected: (hours) => ref
+            onSelected: (minutes) => ref
                 .read(libraryUpdateProvider.notifier)
-                .setInterval(Duration(hours: hours)),
+                .setInterval(Duration(minutes: minutes)),
             itemBuilder: (_) => const [
-              PopupMenuItem(value: 1, child: Text('1 hour')),
-              PopupMenuItem(value: 6, child: Text('6 hours')),
-              PopupMenuItem(value: 12, child: Text('12 hours')),
-              PopupMenuItem(value: 24, child: Text('24 hours')),
+              PopupMenuItem(value: 5, child: Text('5 minutes')),
+              PopupMenuItem(value: 15, child: Text('15 minutes')),
+              PopupMenuItem(value: 30, child: Text('30 minutes')),
+              PopupMenuItem(value: 60, child: Text('1 hour')),
+              PopupMenuItem(value: 6 * 60, child: Text('6 hours')),
+              PopupMenuItem(value: 12 * 60, child: Text('12 hours')),
+              PopupMenuItem(value: 24 * 60, child: Text('24 hours')),
             ],
           ),
         ),
@@ -2044,11 +2057,9 @@ class _StorageSectionState extends ConsumerState<_StorageSection> {
 
   @override
   Widget build(BuildContext context) {
-    final amber = AppColors.figmaAmber;
     final path = AppStorage.rootPath;
     return SettingsSection(
       title: 'Storage',
-      headerColor: amber,
       padding: const EdgeInsets.symmetric(horizontal: 16),
       footer:
           'Downloaded ebooks, manga chapters, covers, fonts, '
@@ -2061,7 +2072,6 @@ class _StorageSectionState extends ConsumerState<_StorageSection> {
       children: [
         SettingsRow(
           icon: Icons.folder_outlined,
-          iconColor: amber,
           title: 'Data folder',
           subtitle: path ?? 'App default (internal storage)',
           trailing: _picking
@@ -2076,14 +2086,12 @@ class _StorageSectionState extends ConsumerState<_StorageSection> {
         if (path != null)
           SettingsRow(
             icon: Icons.restart_alt,
-            iconColor: amber,
             title: 'Use app default',
             subtitle: 'Move data back to internal storage',
             onTap: _clearFolder,
           ),
         SettingsRow(
           icon: Icons.folder_zip_outlined,
-          iconColor: amber,
           title: 'Local manga folder',
           subtitle: _cbzFolder ?? 'Not set — import CBZ/CBR series',
           trailing: _pickingCbz
@@ -2098,14 +2106,12 @@ class _StorageSectionState extends ConsumerState<_StorageSection> {
         if (_cbzFolder != null) ...[
           SettingsRow(
             icon: Icons.refresh,
-            iconColor: amber,
             title: 'Rescan local manga',
             subtitle: 'Add new CBZ chapters from the folder',
             onTap: _rescanCbzFolder,
           ),
           SettingsRow(
             icon: Icons.link_off,
-            iconColor: amber,
             title: 'Clear local manga folder',
             subtitle: 'Stop scanning (library entries stay)',
             onTap: _clearCbzFolder,
@@ -2381,20 +2387,17 @@ class _DataSectionState extends ConsumerState<_DataSection> {
 
   @override
   Widget build(BuildContext context) {
-    final amber = AppColors.figmaAmber;
-    final violet = AppColors.figmaVioletLight;
+    final c = context.colors;
     return SettingsSection(
       title: 'Backup & restore',
-      headerColor: amber,
       padding: const EdgeInsets.symmetric(horizontal: 16),
       footer:
-          'Koma backups are JSON. You can also restore Mihon .tachibk and Mangayomi .backup files. Downloads and extension APKs are not inside those backups.',
+          'Koma backups are JSON: library, progress, snippets, themes, settings, repos, and installed sources. JS/Dart sources restore in place; Mihon APKs are reinstalled from the same repo when possible. Chapter image downloads and ebook files are not inside the file.',
       children: [
         SettingsRow(
           icon: Icons.file_upload_outlined,
-          iconColor: amber,
           title: 'Export',
-          subtitle: 'Save books, manga, and snippets as JSON',
+          subtitle: 'Library, settings, sources, and progress as JSON',
           trailing: _exporting
               ? const SizedBox(
                   width: 18,
@@ -2404,13 +2407,12 @@ class _DataSectionState extends ConsumerState<_DataSection> {
               : _TintedActionChip(
                   label: 'Export',
                   icon: Icons.download_outlined,
-                  color: amber,
+                  color: c.accent,
                 ),
           onTap: _exporting ? null : _export,
         ),
         SettingsRow(
           icon: Icons.list_alt_outlined,
-          iconColor: amber,
           title: 'Export manga list',
           subtitle: 'CSV of titles, progress, genres, and sources',
           trailing: _exportingList
@@ -2422,13 +2424,12 @@ class _DataSectionState extends ConsumerState<_DataSection> {
               : _TintedActionChip(
                   label: 'CSV',
                   icon: Icons.ios_share_outlined,
-                  color: amber,
+                  color: c.accent,
                 ),
           onTap: _exportingList ? null : _exportMangaList,
         ),
         SettingsRow(
           icon: Icons.file_download_outlined,
-          iconColor: violet,
           title: 'Import',
           subtitle: 'Koma JSON, Mihon .tachibk/.tachibak, or Mangayomi .backup',
           trailing: _importing
@@ -2440,7 +2441,7 @@ class _DataSectionState extends ConsumerState<_DataSection> {
               : _TintedActionChip(
                   label: 'Import',
                   icon: Icons.upload_outlined,
-                  color: violet,
+                  color: c.accent,
                 ),
           onTap: _importing ? null : _import,
         ),
@@ -2566,6 +2567,13 @@ class _DataSectionState extends ConsumerState<_DataSection> {
       }
       final imported = await svc.importBytes(bytes, filename: file.name);
       if (mounted) {
+        await SecurityPrefs.load();
+        try {
+          await ref.read(themeProvider.notifier).init();
+        } catch (_) {}
+        try {
+          await ref.read(userProfileProvider.notifier).load();
+        } catch (_) {}
         ref.read(libraryProvider.notifier).loadBooks();
         StashToast.show(
           context,
@@ -2636,7 +2644,6 @@ class _AnnasArchiveKeysSectionState extends State<_AnnasArchiveKeysSection> {
     final c = context.colors;
     return SettingsSection(
       title: "Anna's Archive",
-      headerColor: AppColors.figmaCyan,
       padding: const EdgeInsets.symmetric(horizontal: 16),
       footer:
           "Optional RapidAPI key enables hosted search and mirror lookup (100 free requests/month). "
@@ -2716,11 +2723,29 @@ class _SourcesSectionState extends ConsumerState<_SourcesSection> {
 
   @override
   Widget build(BuildContext context) {
-    if (_loading) return const SizedBox.shrink();
+    if (_loading) {
+      return SettingsSection(
+        title: 'Ebook sources',
+        padding: const EdgeInsets.symmetric(horizontal: 16),
+        children: [
+          SettingsRow(
+            icon: Icons.cloud_outlined,
+            title: 'Loading sources…',
+            trailing: SizedBox(
+              width: 18,
+              height: 18,
+              child: CircularProgressIndicator(
+                strokeWidth: 2,
+                color: context.colors.accent,
+              ),
+            ),
+          ),
+        ],
+      );
+    }
     if (_error != null) {
       return SettingsSection(
         title: 'Ebook sources',
-        headerColor: AppColors.figmaCyan,
         padding: const EdgeInsets.symmetric(horizontal: 16),
         children: [
           Padding(
@@ -2735,7 +2760,6 @@ class _SourcesSectionState extends ConsumerState<_SourcesSection> {
     }
     return SettingsSection(
       title: 'Ebook sources',
-      headerColor: AppColors.figmaCyan,
       padding: const EdgeInsets.symmetric(horizontal: 16),
       footer:
           'Discover searches all enabled sources. You can add multiple entries with the same tag (e.g. several LibGen mirrors or Anna\'s Archive rows with different language filters).',
@@ -2748,7 +2772,7 @@ class _SourcesSectionState extends ConsumerState<_SourcesSection> {
             onEdit: () => _edit(s),
           ),
         ),
-        SettingsRow(icon: Icons.add, iconColor: AppColors.figmaCyan, title: 'Add source', onTap: _add),
+        SettingsRow(icon: Icons.add, title: 'Add source', onTap: _add),
       ],
     );
   }
@@ -2913,7 +2937,6 @@ class _SourceRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final c = context.colors;
-    const cyan = AppColors.figmaCyan;
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
       child: Row(
@@ -2922,10 +2945,10 @@ class _SourceRow extends StatelessWidget {
             width: 40,
             height: 40,
             decoration: BoxDecoration(
-              color: cyan.withValues(alpha: 0.13),
+              color: c.accent.withValues(alpha: 0.13),
               borderRadius: AppSpacing.brMd,
             ),
-            child: const Icon(Icons.language, size: 18, color: cyan),
+            child: Icon(Icons.language, size: 18, color: c.accent),
           ),
           const SizedBox(width: 12),
           Expanded(
@@ -2958,13 +2981,13 @@ class _SourceRow extends StatelessWidget {
                         vertical: 2,
                       ),
                       decoration: BoxDecoration(
-                        color: cyan.withValues(alpha: 0.13),
+                        color: c.accent.withValues(alpha: 0.13),
                         borderRadius: BorderRadius.circular(4),
                       ),
                       child: Text(
                         source.tag.toUpperCase(),
-                        style: const TextStyle(
-                          color: cyan,
+                        style: TextStyle(
+                          color: c.accent,
                           fontSize: 9,
                           fontWeight: FontWeight.w700,
                         ),
@@ -2998,14 +3021,12 @@ class _PluginsSection extends ConsumerWidget {
     final updateCount = ref.watch(extensionUpdateCountProvider);
     return SettingsSection(
       title: 'Plugins',
-      headerColor: AppColors.figmaCyan,
       padding: const EdgeInsets.symmetric(horizontal: 16),
       footer:
           'Plugins extend Koma with new sources via Keiyoushi/Mihon extension APKs. Add a repo, fetch its index, and install the ones you want.',
       children: [
         SettingsRow(
           icon: Icons.extension_outlined,
-          iconColor: AppColors.figmaCyan,
           title: 'Manage plugins',
           subtitle: updateCount > 0
               ? 'Browse, install, and remove extensions · $updateCount update${updateCount == 1 ? '' : 's'} available'
@@ -3042,7 +3063,6 @@ class _PluginsSection extends ConsumerWidget {
         ),
         SettingsRow(
           icon: Icons.code,
-          iconColor: AppColors.figmaCyan,
           title: 'Plugin SDK',
           subtitle: 'Write sources for any site — starters & samples',
           trailing: const Icon(Icons.chevron_right, size: 18),
@@ -3185,14 +3205,12 @@ class _HttpNetworkSectionState extends State<_HttpNetworkSection> {
     }
     return SettingsSection(
       title: 'HTTP',
-      headerColor: AppColors.figmaViolet,
       padding: const EdgeInsets.symmetric(horizontal: 16),
       footer:
           'DoH resolves hostnames via DNS-over-HTTPS. CF proxy URL is tried before the in-app WebView solver (FlareSolverr / Byparr: http://host:8191). Per-source User-Agent overrides apply to all extension HTTP.',
       children: [
         SettingsRow(
           icon: Icons.dns_outlined,
-          iconColor: AppColors.figmaViolet,
           title: 'DNS-over-HTTPS',
           subtitle: 'Resolve hostnames via DoH instead of system DNS',
           trailing: Switch.adaptive(
@@ -3326,11 +3344,14 @@ class _ProfileSectionState extends ConsumerState<_ProfileSection> {
         ? 'Add your name'
         : profile.displayName.trim();
 
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(20, 4, 20, 24),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(20, 4, 20, 0),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
           // ── Identity hero ──────────────────────────────────────────
           Center(
             child: Column(
@@ -3572,8 +3593,13 @@ class _ProfileSectionState extends ConsumerState<_ProfileSection> {
               ),
             ),
           ),
-        ],
-      ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 20),
+        const LibraryStatsPanel(),
+        const SizedBox(height: 24),
+      ],
     );
   }
 
@@ -3865,11 +3891,11 @@ class _AboutSection extends ConsumerWidget {
           loading: () => 'Version …',
           error: (_, _) => 'Version',
         );
-    const features = <(IconData, String, Color)>[
-      (Icons.menu_book_outlined, 'EPUB reading', AppColors.figmaViolet),
-      (Icons.extension_outlined, 'Manga plugins', AppColors.figmaAmber),
-      (Icons.bolt, 'Bionic reading', Color(0xFFEF4444)),
-      (Icons.shield_outlined, 'Local-first / offline', AppColors.figmaGreen),
+    final features = <(IconData, String, Color)>[
+      (Icons.menu_book_outlined, 'EPUB reading', c.accent),
+      (Icons.extension_outlined, 'Manga plugins', c.accent),
+      (Icons.bolt, 'Bionic reading', c.accent),
+      (Icons.shield_outlined, 'Local-first / offline', c.accent),
     ];
     return Column(
       children: [
@@ -3885,29 +3911,26 @@ class _AboutSection extends ConsumerWidget {
             ),
             child: Column(
               children: [
-                Container(
-                  width: 72,
-                  height: 72,
-                  decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(22),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withValues(alpha: 0.18),
-                        blurRadius: 12,
-                        offset: const Offset(0, 4),
-                      ),
-                    ],
-                  ),
-                  clipBehavior: Clip.antiAlias,
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(22),
                   child: Image.asset(
-                    'app_icons/hon.png',
+                    'assets/branding/hon.png',
+                    width: 72,
+                    height: 72,
                     fit: BoxFit.cover,
+                    // Asset is 1024²; decode near the 72 logical display box.
+                    cacheWidth:
+                        (72 * MediaQuery.devicePixelRatioOf(context)).round(),
+                    cacheHeight:
+                        (72 * MediaQuery.devicePixelRatioOf(context)).round(),
                     errorBuilder: (_, error, stackTrace) => Container(
-                      decoration: const BoxDecoration(
+                      width: 72,
+                      height: 72,
+                      decoration: BoxDecoration(
                         gradient: LinearGradient(
                           begin: Alignment.topLeft,
                           end: Alignment.bottomRight,
-                          colors: [AppColors.figmaViolet, AppColors.figmaCyan],
+                          colors: [c.accent, c.accentMuted],
                         ),
                       ),
                       child: const Icon(
@@ -3975,53 +3998,23 @@ class _AboutSection extends ConsumerWidget {
                   ),
                 ),
               ),
-              GridView.count(
-                crossAxisCount: 2,
-                shrinkWrap: true,
-                physics: const NeverScrollableScrollPhysics(),
-                mainAxisSpacing: 8,
-                crossAxisSpacing: 8,
-                childAspectRatio: 2.6,
-                children: [
-                  for (final f in features)
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 10,
-                        vertical: 8,
-                      ),
-                      decoration: BoxDecoration(
-                        color: c.surface,
-                        borderRadius: AppSpacing.brMd,
-                        border: Border.all(color: c.border, width: 0.5),
-                      ),
-                      child: Row(
-                        children: [
-                          Container(
-                            width: 28,
-                            height: 28,
-                            decoration: BoxDecoration(
-                              color: f.$3.withValues(alpha: 0.13),
-                              borderRadius: BorderRadius.circular(8),
-                            ),
-                            child: Icon(f.$1, size: 14, color: f.$3),
-                          ),
-                          const SizedBox(width: 8),
-                          Expanded(
-                            child: Text(
-                              f.$2,
-                              style: TextStyle(
-                                color: c.textPrimary,
-                                fontSize: 12,
-                                fontWeight: FontWeight.w500,
-                                height: 1.25,
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
+              ...[
+                for (var i = 0; i < features.length; i += 2)
+                  Padding(
+                    padding: EdgeInsets.only(top: i == 0 ? 0 : 8),
+                    child: Row(
+                      children: [
+                        Expanded(child: _AboutFeatureTile(feature: features[i])),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: i + 1 < features.length
+                              ? _AboutFeatureTile(feature: features[i + 1])
+                              : const SizedBox.shrink(),
+                        ),
+                      ],
                     ),
-                ],
-              ),
+                  ),
+              ],
             ],
           ),
         ),
@@ -4095,6 +4088,50 @@ class _AboutSection extends ConsumerWidget {
           ),
         ),
       ],
+    );
+  }
+}
+
+class _AboutFeatureTile extends StatelessWidget {
+  const _AboutFeatureTile({required this.feature});
+
+  final (IconData, String, Color) feature;
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.colors;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+      decoration: BoxDecoration(
+        color: c.surface,
+        borderRadius: AppSpacing.brMd,
+        border: Border.all(color: c.border, width: 0.5),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 28,
+            height: 28,
+            decoration: BoxDecoration(
+              color: feature.$3.withValues(alpha: 0.13),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Icon(feature.$1, size: 14, color: feature.$3),
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              feature.$2,
+              style: TextStyle(
+                color: c.textPrimary,
+                fontSize: 12,
+                fontWeight: FontWeight.w500,
+                height: 1.25,
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

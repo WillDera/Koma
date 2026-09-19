@@ -7,10 +7,14 @@ import java.net.URL
 import java.util.Enumeration
 
 /**
- * Parent-last classloader matching Mihon's approach, with one host override:
- * [keiyoushi.utils] WebView helpers always load from the app ClassLoader so our
- * ServiceWorker stub for loadDataWithBaseURL is used (extension APK has an
- * unpatched copy that would otherwise win under child-first).
+ * Parent-last classloader matching Mihon's approach, with host overrides:
+ * - [keiyoushi.utils] WebView helpers always load from the app ClassLoader so our
+ *   ServiceWorker stub for loadDataWithBaseURL is used (extension APK has an
+ *   unpatched copy that would otherwise win under child-first).
+ * - Shared runtime packages (`kotlin.*`, `kotlinx.*`, OkHttp, Jsoup, …) always
+ *   load from the host. Extensions do not ship kotlin-stdlib; if R8 or a
+ *   partial DEX copy wins child-first, you get
+ *   `Failed resolution of: Lkotlin/text/Regex;`.
  */
 class ChildFirstPathClassLoader(
     dexPath: String,
@@ -23,15 +27,11 @@ class ChildFirstPathClassLoader(
     override fun loadClass(name: String?, resolve: Boolean): Class<*> {
         var c = findLoadedClass(name)
 
-        // Host WebView MUST win — never fall through to the extension's copy.
-        if (c == null && name != null && prefersHostWebView(name)) {
+        // Host-shared / host-patched types MUST win over anything in the APK.
+        if (c == null && name != null && prefersHostClass(name)) {
             val host = parent
                 ?: throw ClassNotFoundException("no parent ClassLoader for $name")
             c = host.loadClass(name)
-            android.util.Log.d(
-                "ChildFirstCL",
-                "host WebView class $name loader=${c.classLoader}",
-            )
             if (resolve) resolveClass(c)
             return c
         }
@@ -102,6 +102,20 @@ class ChildFirstPathClassLoader(
     }
 
     companion object {
+        /** Packages that must come from the host APK, not the extension DEX. */
+        fun prefersHostClass(name: String): Boolean {
+            if (prefersHostWebView(name)) return true
+            return name.startsWith("kotlin.") ||
+                name.startsWith("kotlinx.") ||
+                name.startsWith("okhttp3.") ||
+                name.startsWith("okio.") ||
+                name.startsWith("org.jsoup.") ||
+                name.startsWith("rx.") ||
+                name.startsWith("io.reactivex.") ||
+                name.startsWith("androidx.preference.") ||
+                name.startsWith("com.squareup.zstd.")
+        }
+
         /** Host-shipped keiyoushi WebView.kt symbols (see keiyoushi/utils/WebView.kt). */
         fun prefersHostWebView(name: String): Boolean {
             if (!name.startsWith("keiyoushi.utils.")) return false

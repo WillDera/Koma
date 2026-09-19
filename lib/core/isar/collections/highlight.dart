@@ -12,13 +12,21 @@ class Highlight {
   @Index()
   int? snippetId;
 
-  /// FK → [Book.id]. Required — highlights are always anchored to a book.
+  /// FK → [Book.id]. Null when this highlight is novel-backed ([mangaId]).
   @Index()
-  int bookId;
+  int? bookId;
 
-  /// FK → [Chapter.id]. Required — highlights are anchored to a chapter.
+  /// FK → [Chapter.id]. Null when novel-backed.
   @Index()
-  int chapterId;
+  int? chapterId;
+
+  /// FK → manga library row for novel highlights.
+  @Index()
+  int? mangaId;
+
+  /// FK → [MangaChapter.id] for novel highlights.
+  @Index()
+  int? mangaChapterId;
 
   int startOffset;
   int endOffset;
@@ -35,8 +43,10 @@ class Highlight {
   Highlight({
     this.id = Isar.autoIncrement,
     this.snippetId,
-    required this.bookId,
-    required this.chapterId,
+    this.bookId,
+    this.chapterId,
+    this.mangaId,
+    this.mangaChapterId,
     required this.startOffset,
     required this.endOffset,
     this.color = 'yellow',
@@ -50,6 +60,8 @@ class Highlight {
     'snippet_id': snippetId,
     'book_id': bookId,
     'chapter_id': chapterId,
+    'manga_id': mangaId,
+    'manga_chapter_id': mangaChapterId,
     'start_offset': startOffset,
     'end_offset': endOffset,
     'color': color,
@@ -61,8 +73,10 @@ class Highlight {
   factory Highlight.fromJson(Map<String, dynamic> json) => Highlight(
     id: json['id'] as int?,
     snippetId: json['snippet_id'] as int?,
-    bookId: json['book_id'] as int,
-    chapterId: json['chapter_id'] as int,
+    bookId: json['book_id'] as int?,
+    chapterId: json['chapter_id'] as int?,
+    mangaId: json['manga_id'] as int?,
+    mangaChapterId: json['manga_chapter_id'] as int?,
     startOffset: json['start_offset'] as int,
     endOffset: json['end_offset'] as int,
     color: json['color'] as String? ?? 'yellow',

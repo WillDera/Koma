@@ -8,14 +8,11 @@ import android.content.pm.PackageInfo
 import android.content.pm.PackageManager
 import android.media.MediaScannerConnection
 import android.net.Uri
-import android.os.BatteryManager
 import android.os.Build
 import android.os.Bundle
 import android.os.Environment
 import android.provider.MediaStore
 import android.util.Log
-import android.net.ConnectivityManager
-import android.net.NetworkCapabilities
 import androidx.core.content.FileProvider
 import androidx.core.content.pm.PackageInfoCompat
 import eu.kanade.tachiyomi.extension.DalvikRuntimeManager
@@ -318,7 +315,11 @@ class MainActivity : FlutterFragmentActivity() {
                     try {
                         val url = call.argument<String>("url")
                             ?: throw IllegalArgumentException("missing url")
-                        AppUpdateDownloadJob.start(applicationContext, url)
+                        val expected = when (val raw = call.argument<Any?>("expectedBytes")) {
+                            is Number -> raw.toLong()
+                            else -> -1L
+                        }
+                        AppUpdateDownloadJob.start(applicationContext, url, expected)
                         result.success(null)
                     } catch (e: Throwable) {
                         Log.e("AppUpdate", "startAppUpdateDownload failed", e)
@@ -346,7 +347,7 @@ class MainActivity : FlutterFragmentActivity() {
                     }.start()
                 }
                 "getDeviceConstraints" -> {
-                    result.success(readDeviceConstraints())
+                    result.success(DeviceConstraintsPublisher.snapshot(applicationContext))
                 }
                 "installApkViaPackageInstaller" -> {
                     Thread {
@@ -503,16 +504,6 @@ class MainActivity : FlutterFragmentActivity() {
                 else -> result.notImplemented()
             }
         }
-    }
-
-    private fun readDeviceConstraints(): Map<String, Any> {
-        val cm = getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
-        val network = cm.activeNetwork
-        val caps = network?.let { cm.getNetworkCapabilities(it) }
-        val unmetered = caps?.hasCapability(NetworkCapabilities.NET_CAPABILITY_NOT_METERED) == true
-        val bm = getSystemService(Context.BATTERY_SERVICE) as BatteryManager
-        val charging = bm.isCharging
-        return mapOf("unmetered" to unmetered, "charging" to charging)
     }
 
     private fun coerceByteArray(raw: Any?): ByteArray? = when (raw) {

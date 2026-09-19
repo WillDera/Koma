@@ -64,11 +64,15 @@ class _PdfReaderScreenState extends ConsumerState<PdfReaderScreen> {
           title: title,
         );
 
+    Widget spinner() => Center(
+          child: CircularProgressIndicator(color: c.accent),
+        );
+
     return bookAsync.when(
       loading: () => Scaffold(
         backgroundColor: c.bg,
         appBar: pdfAppBar(),
-        body: const Center(child: CircularProgressIndicator()),
+        body: spinner(),
       ),
       error: (e, _) => Scaffold(
         backgroundColor: c.bg,
@@ -110,7 +114,10 @@ class _PdfReaderScreenState extends ConsumerState<PdfReaderScreen> {
           body: PdfViewer.file(
             path,
             initialPageNumber: initialPage + 1,
+            useProgressiveLoading: false,
             params: PdfViewerParams(
+              backgroundColor: c.bg,
+              loadingBannerBuilder: (context, downloaded, total) => spinner(),
               onPageChanged: (page) {
                 if (page == null) return;
                 _scheduleSave(page - 1);
@@ -128,6 +135,10 @@ class _PdfReaderScreenState extends ConsumerState<PdfReaderScreen> {
 
 String _friendlyPdfError(Object error) {
   final text = error.toString();
+  if (text.contains('TimeoutException') || text.contains('timed out')) {
+    return 'PDF engine took too long to open this file. Close the reader and '
+        'try again, or re-import the book.';
+  }
   if (text.contains('FPDF_ERR_FILE') || text.contains('ERR_FILE')) {
     return 'PDF file is missing or unreadable. Re-import the book, or check '
         'that your data folder still contains the downloads.';
@@ -179,6 +190,11 @@ class _PdfMissingFileException implements Exception {
 
 final _pdfBookProvider =
     FutureProvider.autoDispose.family<_PdfOpenedBook, int>((ref, bookId) async {
+  await pdfrxFlutterInitialize().timeout(
+    const Duration(seconds: 20),
+    onTimeout: () => throw TimeoutException('PDF engine failed to start'),
+  );
+
   final repos = ref.read(repositoriesProvider);
   final book = await repos.books.getBook(bookId);
   if (book == null) throw StateError('Book $bookId not found');
@@ -189,8 +205,12 @@ final _pdfBookProvider =
   }
 
   var path = stored;
-  if (!await File(path).exists()) {
-    final remapped = await StoragePathRewrite.remapIfMissing(path);
+  final exists = await File(path)
+      .exists()
+      .timeout(const Duration(seconds: 8), onTimeout: () => false);
+  if (!exists) {
+    final remapped = await StoragePathRewrite.remapIfMissing(path)
+        .timeout(const Duration(seconds: 8), onTimeout: () => null);
     if (remapped == null) {
       throw _PdfMissingFileException(
         'PDF file is missing on disk. Re-import the book from Files, or check '

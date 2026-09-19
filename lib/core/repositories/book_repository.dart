@@ -1,6 +1,8 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:isar_community/isar.dart';
+import 'package:path/path.dart' as p;
 
 import '../isar/collections/book.dart' as i;
 import '../isar/collections/book_metadata.dart' as i;
@@ -81,13 +83,65 @@ class BookRepository {
     await _isar.writeTxn(() async {
       final row = await _isar.books.get(id);
       if (row == null) return;
+      final oldTitle = row.title;
       row.title = title;
       row.author = author;
       row.genre = genre;
       row.description = description;
       row.updatedAt = DateTime.now();
+
+      // Keep the on-disk ebook filename in sync with the display title.
+      if (title != oldTitle) {
+        final renamed = _tryRenameBookFile(row.filePath, title);
+        if (renamed != null) {
+          row.filePath = renamed;
+        }
+      }
+
       await _isar.books.put(row);
     });
+  }
+
+  /// Renames [filePath]'s basename to a sanitized [title], preserving extension.
+  /// Returns the new absolute path, or null if rename was skipped/failed.
+  static String? _tryRenameBookFile(String? filePath, String title) {
+    final path = filePath?.trim();
+    if (path == null || path.isEmpty) return null;
+    final file = File(path);
+    if (!file.existsSync()) return null;
+
+    final dir = p.dirname(path);
+    final ext = p.extension(path); // includes leading '.'
+    final base = _sanitizeFileBase(title);
+    var destName = '$base$ext';
+    var destPath = p.join(dir, destName);
+    if (p.equals(path, destPath)) return null;
+
+    // Avoid clobbering an existing file with the same name.
+    if (File(destPath).existsSync()) {
+      for (var i = 1; i < 1000; i++) {
+        destName = '$base ($i)$ext';
+        destPath = p.join(dir, destName);
+        if (!File(destPath).existsSync()) break;
+      }
+    }
+
+    try {
+      file.renameSync(destPath);
+      return destPath;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  static String _sanitizeFileBase(String title) {
+    final cleaned = title
+        .trim()
+        .replaceAll(RegExp(r'[\\/:*?"<>|\u0000-\u001f]'), '')
+        .replaceAll(RegExp(r'\s+'), ' ')
+        .replaceAll(RegExp(r'[. ]+$'), '')
+        .trim();
+    return cleaned.isEmpty ? 'ebook' : cleaned;
   }
 
   Future<void> updateProgress(
@@ -389,6 +443,14 @@ class BookRepository {
     return rows.map(_highlightToModel).toList(growable: false);
   }
 
+  Future<List<Highlight>> getHighlightsForMangaChapter(int mangaChapterId) async {
+    final rows = await _isar.highlights
+        .filter()
+        .mangaChapterIdEqualTo(mangaChapterId)
+        .findAll();
+    return rows.map(_highlightToModel).toList(growable: false);
+  }
+
   /// Persists [hl] and returns the assigned row id, so callers holding an
   /// in-memory copy can keep it in step with the stored row rather than
   /// carrying a placeholder id.
@@ -481,6 +543,8 @@ class BookRepository {
     snippetId: h.snippetId,
     bookId: h.bookId,
     chapterId: h.chapterId,
+    mangaId: h.mangaId,
+    mangaChapterId: h.mangaChapterId,
     startOffset: h.startOffset,
     endOffset: h.endOffset,
     color: h.color,
@@ -494,6 +558,8 @@ class BookRepository {
     snippetId: h.snippetId,
     bookId: h.bookId,
     chapterId: h.chapterId,
+    mangaId: h.mangaId,
+    mangaChapterId: h.mangaChapterId,
     startOffset: h.startOffset,
     endOffset: h.endOffset,
     color: h.color,

@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 import '../widgets/page_transitions.dart';
+import 'presets/theme_palette.dart';
 import 'tokens/app_colors.dart';
 import 'tokens/app_spacing.dart';
 import 'tokens/app_type.dart';
@@ -44,7 +45,16 @@ class AppTheme {
     Color? accent,
     String? fontFamily,
     ColorScheme? dynamicScheme,
+    ThemePalette? palette,
   }) {
+    if (palette != null) {
+      return fromPalette(
+        palette,
+        accent: accent,
+        fontFamily: fontFamily,
+        dynamicScheme: dynamicScheme,
+      );
+    }
     final a = accent ?? dynamicScheme?.primary ?? AppColors.lightAccent;
     return _buildTheme(
       brightness: Brightness.light,
@@ -52,6 +62,7 @@ class AppTheme {
       bgElevated: AppColors.lightBgElevated,
       surface: AppColors.lightSurface,
       surfaceMuted: AppColors.lightSurfaceMuted,
+      iconWell: AppColors.lightIconWell,
       border: AppColors.lightBorder,
       borderStrong: AppColors.lightBorderStrong,
       textPrimary: AppColors.lightTextPrimary,
@@ -71,7 +82,16 @@ class AppTheme {
     bool amoled = false,
     String? fontFamily,
     ColorScheme? dynamicScheme,
+    ThemePalette? palette,
   }) {
+    if (palette != null && !amoled) {
+      return fromPalette(
+        palette,
+        accent: accent,
+        fontFamily: fontFamily,
+        dynamicScheme: dynamicScheme,
+      );
+    }
     final a = accent ?? dynamicScheme?.primary ?? AppColors.darkAccent;
     // null = let the platform default font apply (Use device font).
     final ff = fontFamily;
@@ -82,6 +102,7 @@ class AppTheme {
         bgElevated: AppColors.amoledBgElevated,
         surface: AppColors.amoledSurface,
         surfaceMuted: AppColors.amoledSurfaceMuted,
+        iconWell: AppColors.amoledIconWell,
         border: AppColors.amoledBorder,
         borderStrong: AppColors.amoledBorderStrong,
         textPrimary: AppColors.amoledTextPrimary,
@@ -100,6 +121,7 @@ class AppTheme {
       bgElevated: AppColors.darkBgElevated,
       surface: AppColors.darkSurface,
       surfaceMuted: AppColors.darkSurfaceMuted,
+      iconWell: AppColors.darkIconWell,
       border: AppColors.darkBorder,
       borderStrong: AppColors.darkBorderStrong,
       textPrimary: AppColors.darkTextPrimary,
@@ -125,6 +147,7 @@ class AppTheme {
       bgElevated: AppColors.sepiaBgElevated,
       surface: AppColors.sepiaSurface,
       surfaceMuted: AppColors.sepiaSurfaceMuted,
+      iconWell: AppColors.sepiaIconWell,
       border: AppColors.sepiaBorder,
       borderStrong: AppColors.sepiaBorderStrong,
       textPrimary: AppColors.sepiaTextPrimary,
@@ -134,6 +157,34 @@ class AppTheme {
       accentMuted: _muted(a, AppColors.sepiaSurface),
       onAccent: dynamicScheme?.onPrimary ?? _onAccentFor(a),
       // null = let the platform default font apply (Use device font).
+      fontFamily: fontFamily,
+      dynamicScheme: dynamicScheme,
+    );
+  }
+
+  /// Full theme from a community [ThemePalette] (Catppuccin, Gruvbox, …).
+  static ThemeData fromPalette(
+    ThemePalette palette, {
+    Color? accent,
+    String? fontFamily,
+    ColorScheme? dynamicScheme,
+  }) {
+    final a = accent ?? dynamicScheme?.primary ?? palette.accent;
+    return _buildTheme(
+      brightness: palette.brightness,
+      bg: palette.bg,
+      bgElevated: palette.bgElevated,
+      surface: palette.surface,
+      surfaceMuted: palette.surfaceMuted,
+      iconWell: palette.iconWell,
+      border: palette.border,
+      borderStrong: palette.borderStrong,
+      textPrimary: palette.textPrimary,
+      textSecondary: palette.textSecondary,
+      textTertiary: palette.textTertiary,
+      accent: a,
+      accentMuted: _muted(a, palette.surface),
+      onAccent: dynamicScheme?.onPrimary ?? _onAccentFor(a),
       fontFamily: fontFamily,
       dynamicScheme: dynamicScheme,
     );
@@ -160,6 +211,7 @@ class AppTheme {
     required Color bgElevated,
     required Color surface,
     required Color surfaceMuted,
+    required Color iconWell,
     required Color border,
     required Color borderStrong,
     required Color textPrimary,
@@ -503,13 +555,7 @@ class AppTheme {
           bgElevated: bgElevated,
           surface: surface,
           surfaceMuted: surfaceMuted,
-          iconWell: brightness == Brightness.dark
-              ? (bg == AppColors.amoledBg
-                    ? AppColors.amoledIconWell
-                    : AppColors.darkIconWell)
-              : (bg == AppColors.sepiaBg
-                    ? AppColors.sepiaIconWell
-                    : AppColors.lightIconWell),
+          iconWell: iconWell,
           border: border,
           borderStrong: borderStrong,
           textPrimary: textPrimary,

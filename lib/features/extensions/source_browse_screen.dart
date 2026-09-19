@@ -21,6 +21,8 @@ import '../../widgets/library_book_card.dart';
 import '../../theme/app_icons.dart';
 import '../../widgets/page_transitions.dart';
 import '../../widgets/screen_chrome.dart';
+import 'catalog_multi_select.dart';
+import 'catalog_multi_select_bar.dart';
 import 'manga_detail_screen.dart';
 
 Route<T> _scaleFadeRoute<T>(Widget page) {
@@ -496,6 +498,17 @@ class _SourceBrowseScreenState extends ConsumerState<SourceBrowseScreen>
 
   VoidCallback _openManga(MManga m) {
     return () async {
+      final hit = CatalogHit(
+        sourceId: widget.sourceId,
+        url: m.url,
+        title: m.title,
+        imageUrl: m.thumbnailUrl,
+        author: m.author,
+        memo: m.memo,
+      );
+      if (ref.read(catalogMultiSelectProvider.notifier).handleTap(hit)) {
+        return;
+      }
       final repos = ref.read(repositoriesProvider);
       final existing = await repos.manga.getMangaByKey(widget.sourceId, m.url);
       if (existing != null) {
@@ -553,6 +566,7 @@ class _SourceBrowseScreenState extends ConsumerState<SourceBrowseScreen>
     int? coverMaxBytes,
   }) {
     final library = ref.watch(libraryProvider);
+    final selection = ref.watch(catalogMultiSelectProvider);
     final libraryUrls = <String>{
       for (final m in library.mangas)
         if (m.sourceId == widget.sourceId) m.url,
@@ -586,6 +600,7 @@ class _SourceBrowseScreenState extends ConsumerState<SourceBrowseScreen>
             );
           }
           final m = mangas[i];
+          final key = '${widget.sourceId}\u001f${m.url}';
           return CatalogCoverCard(
             title: m.title,
             imageUrl: m.thumbnailUrl,
@@ -594,7 +609,21 @@ class _SourceBrowseScreenState extends ConsumerState<SourceBrowseScreen>
             showBadge: false,
             inLibrary: libraryUrls.contains(m.url),
             coverMaxBytes: coverMaxBytes,
+            selectionMode: selection.isSelecting,
+            selected: selection.contains(key),
             onTap: _openManga(m),
+            onLongPress: () {
+              ref.read(catalogMultiSelectProvider.notifier).longPress(
+                    CatalogHit(
+                      sourceId: widget.sourceId,
+                      url: m.url,
+                      title: m.title,
+                      imageUrl: m.thumbnailUrl,
+                      author: m.author,
+                      memo: m.memo,
+                    ),
+                  );
+            },
           );
         },
       );
@@ -617,6 +646,7 @@ class _SourceBrowseScreenState extends ConsumerState<SourceBrowseScreen>
             );
           }
           final m = mangas[i];
+          final key = '${widget.sourceId}\u001f${m.url}';
           return CatalogCoverCard(
             title: m.title,
             subtitle: m.author,
@@ -626,7 +656,21 @@ class _SourceBrowseScreenState extends ConsumerState<SourceBrowseScreen>
             showBadge: false,
             inLibrary: libraryUrls.contains(m.url),
             coverMaxBytes: coverMaxBytes,
+            selectionMode: selection.isSelecting,
+            selected: selection.contains(key),
             onTap: _openManga(m),
+            onLongPress: () {
+              ref.read(catalogMultiSelectProvider.notifier).longPress(
+                    CatalogHit(
+                      sourceId: widget.sourceId,
+                      url: m.url,
+                      title: m.title,
+                      imageUrl: m.thumbnailUrl,
+                      author: m.author,
+                      memo: m.memo,
+                    ),
+                  );
+            },
           );
         },
       );
@@ -713,7 +757,10 @@ class _SourceBrowseScreenState extends ConsumerState<SourceBrowseScreen>
                   ],
                 ),
         ),
-        body: HorizontalTabSwipe(
+        body: Column(
+          children: [
+            Expanded(
+              child: HorizontalTabSwipe(
           tabIndex: _tabCtrl.index,
           tabCount: 2,
           onTabChanged: (i) {
@@ -765,6 +812,10 @@ class _SourceBrowseScreenState extends ConsumerState<SourceBrowseScreen>
                   onRefresh: _refresh,
                   coverMaxBytes: coverMaxBytes,
                 ),
+        ),
+            ),
+            const CatalogMultiSelectBar(),
+          ],
         ),
       ),
     );

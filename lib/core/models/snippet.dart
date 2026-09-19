@@ -7,6 +7,8 @@ class Snippet {
   final String? color;
   final int? bookId;
   final int? chapterId;
+  final int? mangaId;
+  final int? mangaChapterId;
   final int? collectionId;
   final int? startOffset;
   final int? endOffset;
@@ -14,6 +16,8 @@ class Snippet {
   final List<String> tags;
   final DateTime createdAt;
   final DateTime updatedAt;
+
+  bool get isNovelBacked => mangaId != null && mangaChapterId != null;
 
   Snippet({
     required this.id,
@@ -24,6 +28,8 @@ class Snippet {
     this.color,
     this.bookId,
     this.chapterId,
+    this.mangaId,
+    this.mangaChapterId,
     this.collectionId,
     this.startOffset,
     this.endOffset,
@@ -43,6 +49,8 @@ class Snippet {
     String? color,
     int? bookId,
     int? chapterId,
+    int? mangaId,
+    int? mangaChapterId,
     int? collectionId,
     int? startOffset,
     int? endOffset,
@@ -60,6 +68,8 @@ class Snippet {
       color: color ?? this.color,
       bookId: bookId ?? this.bookId,
       chapterId: chapterId ?? this.chapterId,
+      mangaId: mangaId ?? this.mangaId,
+      mangaChapterId: mangaChapterId ?? this.mangaChapterId,
       collectionId: collectionId ?? this.collectionId,
       startOffset: startOffset ?? this.startOffset,
       endOffset: endOffset ?? this.endOffset,
@@ -79,6 +89,8 @@ class Snippet {
     'color': color,
     'book_id': bookId,
     'chapter_id': chapterId,
+    'manga_id': mangaId,
+    'manga_chapter_id': mangaChapterId,
     'collection_id': collectionId,
     'start_offset': startOffset,
     'end_offset': endOffset,
@@ -97,6 +109,8 @@ class Snippet {
     color: json['color'] as String?,
     bookId: json['book_id'] as int?,
     chapterId: json['chapter_id'] as int?,
+    mangaId: json['manga_id'] as int?,
+    mangaChapterId: json['manga_chapter_id'] as int?,
     collectionId: json['collection_id'] as int?,
     startOffset: json['start_offset'] as int?,
     endOffset: json['end_offset'] as int?,

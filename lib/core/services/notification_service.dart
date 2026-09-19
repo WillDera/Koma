@@ -41,7 +41,7 @@ class NotificationService {
 
   bool _initialized = false;
 
-  Future<void> init() async {
+  Future<void> init({bool requestPermission = true}) async {
     if (_initialized) return;
     const settings = InitializationSettings(
       android: AndroidInitializationSettings('app_icon'),
@@ -50,12 +50,19 @@ class NotificationService {
       settings: settings,
       onDidReceiveNotificationResponse: _onNotificationResponse,
     );
-    if (!kIsWeb && defaultTargetPlatform == TargetPlatform.android) {
-      await _plugin
-          .resolvePlatformSpecificImplementation<
-            AndroidFlutterLocalNotificationsPlugin
-          >()
-          ?.requestNotificationsPermission();
+    if (requestPermission &&
+        !kIsWeb &&
+        defaultTargetPlatform == TargetPlatform.android) {
+      try {
+        await _plugin
+            .resolvePlatformSpecificImplementation<
+              AndroidFlutterLocalNotificationsPlugin
+            >()
+            ?.requestNotificationsPermission();
+      } catch (_) {
+        // WorkManager isolate has no Activity; posting still works if
+        // POST_NOTIFICATIONS was already granted from the UI isolate.
+      }
     }
     _initialized = true;
   }

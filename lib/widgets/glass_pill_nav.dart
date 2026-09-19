@@ -3,7 +3,7 @@ import 'package:flutter/material.dart';
 import '../theme/app_icons.dart';
 import '../theme/app_theme.dart';
 import '../theme/tokens/app_motion.dart';
-import '../theme/tokens/app_spacing.dart';
+import 'animated_press.dart';
 
 class NavItem {
   final AppIconData icon;
@@ -21,15 +21,33 @@ class NavItem {
   });
 }
 
-/// Flat bottom navigation — Kenji-inspired opaque bar with accent active
-/// tint. The optional profile tab shows an initials / photo avatar ("You").
+/// Floating animated pill bottom navigation.
+///
+/// Hugs its destinations (never full-width). The active destination expands;
+/// inactive ones shrink. Labels are semantic-only — nothing is drawn as text.
+///
+/// Optional [satellite] sits in the same vertical band as the pill (Library
+/// add / hide), matching surface + hairline chrome — not a Material FAB glow.
 class AppBottomNav extends StatelessWidget {
+  /// Approximate body height of the floating pill (excludes safe-area inset).
+  /// Used by screens that pad content above the bar.
+  static const double bodyHeight = 56;
+
+  /// Diameter of [NavSatelliteButton] (matches destination row height).
+  static const double satelliteSize = 48;
+
   final List<NavItem> items;
   final int currentIndex;
   final ValueChanged<int> onTap;
   final ValueChanged<int>? onLongPress;
   final String? profileInitials;
   final ImageProvider? profileImage;
+
+  /// Docked action(s) beside the pill (e.g. Library +).
+  final Widget? satellite;
+
+  /// When true, [satellite] is placed to the left of the pill (left-handed).
+  final bool satelliteLeading;
 
   const AppBottomNav({
     super.key,
@@ -39,79 +57,217 @@ class AppBottomNav extends StatelessWidget {
     this.onLongPress,
     this.profileInitials,
     this.profileImage,
+    this.satellite,
+    this.satelliteLeading = false,
   });
+
+  static const Duration _duration = AppMotion.base;
+  static const Curve _curve = Curves.easeOutCubic;
 
   @override
   Widget build(BuildContext context) {
     final c = context.colors;
-    return Container(
-      decoration: BoxDecoration(
-        color: c.bg,
-        border: Border(top: BorderSide(color: c.border, width: 1)),
-      ),
-      child: SafeArea(
-        top: false,
-        child: SizedBox(
-          height: 72,
+    final bottomInset = MediaQuery.paddingOf(context).bottom;
+
+    final pill = Material(
+      color: c.surface,
+      elevation: 0,
+      shadowColor: Colors.transparent,
+      borderRadius: BorderRadius.circular(28),
+      clipBehavior: Clip.antiAlias,
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(28),
+          border: Border.all(
+            color: c.border.withValues(alpha: 0.55),
+            width: 0.5,
+          ),
+        ),
+        child: AnimatedSize(
+          duration: _duration,
+          curve: _curve,
+          alignment: Alignment.center,
           child: Padding(
-            padding: const EdgeInsets.fromLTRB(8, 6, 8, 4),
+            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 6),
             child: Row(
+              mainAxisSize: MainAxisSize.min,
               children: List.generate(items.length, (i) {
                 final item = items[i];
                 final isActive = i == currentIndex;
-                return Expanded(
-                  child: GestureDetector(
-                    behavior: HitTestBehavior.opaque,
-                    onTap: () => onTap(i),
-                    onLongPress: onLongPress == null
-                        ? null
-                        : () => onLongPress!(i),
-                    child: AnimatedContainer(
-                      duration: AppMotion.base,
-                      curve: Curves.easeOutBack,
-                      alignment: Alignment.center,
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          AnimatedScale(
-                            scale: isActive ? 1.0 : 0.9,
-                            duration: AppMotion.base,
-                            curve: Curves.easeOutBack,
-                            child: _NavGlyph(
-                              item: item,
-                              isActive: isActive,
-                              initials: item.profileTab
-                                  ? profileInitials
-                                  : null,
-                              image: item.profileTab ? profileImage : null,
-                            ),
-                          ),
-                          const SizedBox(height: 6),
-                          AnimatedDefaultTextStyle(
-                            duration: AppMotion.base,
-                            curve: Curves.easeOutBack,
-                            style: TextStyle(
-                              color: isActive
-                                  ? c.accent
-                                  : c.textTertiary,
-                              fontSize: 12,
-                              fontWeight: isActive
-                                  ? FontWeight.w600
-                                  : FontWeight.w500,
-                            ),
-                            child: Text(
-                              item.label,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
+                return _PillDestination(
+                  key: ValueKey('nav-$i-${item.label}'),
+                  item: item,
+                  isActive: isActive,
+                  onTap: () => onTap(i),
+                  onLongPress: onLongPress == null
+                      ? null
+                      : () => onLongPress!(i),
+                  profileInitials:
+                      item.profileTab ? profileInitials : null,
+                  profileImage: item.profileTab ? profileImage : null,
                 );
               }),
+            ),
+          ),
+        ),
+      ),
+    );
+
+    // Bottom-align so a stacked satellite (hide above +) shares the pill's
+    // baseline instead of floating the pill between buttons. A small lift
+    // compensates for the 48px circle vs ~56px pill so + centers optically.
+    Widget dock(Widget child) => Padding(
+          padding: const EdgeInsets.only(bottom: 4),
+          child: child,
+        );
+
+    final cluster = Row(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.end,
+      children: [
+        if (satellite != null && satelliteLeading) ...[
+          dock(satellite!),
+          const SizedBox(width: 10),
+        ],
+        pill,
+        if (satellite != null && !satelliteLeading) ...[
+          const SizedBox(width: 10),
+          dock(satellite!),
+        ],
+      ],
+    );
+
+    return Padding(
+      padding: EdgeInsets.fromLTRB(16, 0, 16, 8 + bottomInset),
+      // heightFactor keeps this as tall as the pill. Plain [Align] expands to
+      // the Scaffold's max bottom-nav height, which then makes floating
+      // SnackBars assert "presented off screen".
+      child: Align(
+        alignment: Alignment.bottomCenter,
+        heightFactor: 1,
+        child: cluster,
+      ),
+    );
+  }
+}
+
+/// Circular control matching [AppBottomNav] chrome (surface + hairline).
+class NavSatelliteButton extends StatelessWidget {
+  const NavSatelliteButton({
+    super.key,
+    required this.icon,
+    required this.onPressed,
+    this.tooltip,
+    this.emphasized = false,
+  });
+
+  final AppIconData icon;
+  final VoidCallback onPressed;
+  final String? tooltip;
+
+  /// When true, accent fill (primary +); otherwise tonal surface (secondary).
+  final bool emphasized;
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.colors;
+    final size = AppBottomNav.satelliteSize;
+    final button = AnimatedPress(
+      onTap: onPressed,
+      scaleDown: 0.92,
+      child: Container(
+        width: size,
+        height: size,
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          color: emphasized ? c.accent : c.surface,
+          border: Border.all(
+            color: emphasized
+                ? c.accent.withValues(alpha: 0.9)
+                : c.border.withValues(alpha: 0.55),
+            width: 0.5,
+          ),
+        ),
+        child: Center(
+          child: AppIcon(
+            data: icon,
+            size: 22,
+            color: emphasized ? c.onAccent : c.textPrimary,
+          ),
+        ),
+      ),
+    );
+    if (tooltip == null) return button;
+    return Tooltip(message: tooltip!, child: button);
+  }
+}
+
+class _PillDestination extends StatelessWidget {
+  const _PillDestination({
+    super.key,
+    required this.item,
+    required this.isActive,
+    required this.onTap,
+    this.onLongPress,
+    this.profileInitials,
+    this.profileImage,
+  });
+
+  final NavItem item;
+  final bool isActive;
+  final VoidCallback onTap;
+  final VoidCallback? onLongPress;
+  final String? profileInitials;
+  final ImageProvider? profileImage;
+
+  static const Duration _duration = AppMotion.base;
+  static const Curve _curve = Curves.easeOutCubic;
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.colors;
+    final activeColor = c.accent;
+    final inactiveColor = c.textTertiary;
+
+    return Semantics(
+      button: true,
+      selected: isActive,
+      label: item.label,
+      child: Tooltip(
+        message: item.label,
+        child: Material(
+          color: Colors.transparent,
+          child: InkWell(
+            onTap: onTap,
+            onLongPress: onLongPress,
+            borderRadius: BorderRadius.circular(22),
+            splashColor: activeColor.withValues(alpha: 0.12),
+            highlightColor: activeColor.withValues(alpha: 0.06),
+            child: AnimatedContainer(
+              duration: _duration,
+              curve: _curve,
+              width: isActive ? 58 : 44,
+              height: 48,
+              alignment: Alignment.center,
+              decoration: BoxDecoration(
+                color: isActive
+                    ? activeColor.withValues(alpha: 0.16)
+                    : Colors.transparent,
+                borderRadius: BorderRadius.circular(22),
+              ),
+              child: AnimatedScale(
+                scale: isActive ? 1.0 : 0.82,
+                duration: _duration,
+                curve: _curve,
+                child: _NavGlyph(
+                  item: item,
+                  isActive: isActive,
+                  activeColor: activeColor,
+                  inactiveColor: inactiveColor,
+                  initials: profileInitials,
+                  image: profileImage,
+                ),
+              ),
             ),
           ),
         ),
@@ -124,14 +280,21 @@ class _NavGlyph extends StatelessWidget {
   const _NavGlyph({
     required this.item,
     required this.isActive,
+    required this.activeColor,
+    required this.inactiveColor,
     required this.initials,
     this.image,
   });
 
   final NavItem item;
   final bool isActive;
+  final Color activeColor;
+  final Color inactiveColor;
   final String? initials;
   final ImageProvider? image;
+
+  static const Duration _duration = AppMotion.base;
+  static const Curve _curve = Curves.easeOutCubic;
 
   @override
   Widget build(BuildContext context) {
@@ -139,17 +302,18 @@ class _NavGlyph extends StatelessWidget {
     if (initials != null || image != null) {
       final trimmed = (initials ?? '').trim();
       final letter = trimmed.isEmpty ? '?' : trimmed[0].toUpperCase();
+      final size = isActive ? 28.0 : 22.0;
       return AnimatedContainer(
-        duration: AppMotion.base,
-        curve: Curves.easeOutBack,
-        width: 28,
-        height: 28,
+        duration: _duration,
+        curve: _curve,
+        width: size,
+        height: size,
         alignment: Alignment.center,
         decoration: BoxDecoration(
           shape: BoxShape.circle,
-          color: isActive ? c.accent : c.surfaceMuted,
+          color: isActive ? activeColor : inactiveColor.withValues(alpha: 0.2),
           border: Border.all(
-            color: isActive ? c.accent : c.borderStrong,
+            color: isActive ? activeColor : inactiveColor,
             width: 1.5,
           ),
           image: image != null
@@ -161,30 +325,30 @@ class _NavGlyph extends StatelessWidget {
             : Text(
                 letter,
                 style: TextStyle(
-                  color: isActive ? c.onAccent : c.textSecondary,
-                  fontSize: 12,
+                  color: isActive ? c.onAccent : inactiveColor,
+                  fontSize: isActive ? 12 : 10,
                   fontWeight: FontWeight.w700,
                 ),
               ),
       );
     }
 
-    return AnimatedContainer(
-      duration: AppMotion.base,
-      curve: Curves.easeOutBack,
-      width: 32,
-      height: 32,
-      alignment: Alignment.center,
-      decoration: BoxDecoration(
-        color: isActive
-            ? c.accent.withValues(alpha: 0.26)
-            : Colors.transparent,
-        borderRadius: AppSpacing.brMd,
-      ),
+    final iconData = isActive ? (item.activeIcon ?? item.icon) : item.icon;
+    return AnimatedSwitcher(
+      duration: _duration,
+      switchInCurve: _curve,
+      switchOutCurve: _curve,
+      transitionBuilder: (child, animation) {
+        return FadeTransition(
+          opacity: animation,
+          child: ScaleTransition(scale: animation, child: child),
+        );
+      },
       child: AppIcon(
-        data: isActive ? (item.activeIcon ?? item.icon) : item.icon,
-        size: 22,
-        color: isActive ? c.accent : c.textTertiary,
+        key: ValueKey('${item.label}-$isActive'),
+        data: iconData,
+        size: isActive ? 24 : 20,
+        color: isActive ? activeColor : inactiveColor,
       ),
     );
   }

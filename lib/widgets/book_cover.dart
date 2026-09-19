@@ -4,7 +4,6 @@ import 'package:flutter/material.dart';
 
 import '../core/models/book.dart';
 import '../theme/app_theme.dart';
-import '../theme/tokens/app_motion.dart';
 import '../theme/tokens/app_spacing.dart';
 
 enum BookCoverVariant { grid, list, hero, compact }
@@ -47,17 +46,25 @@ class BookCover extends StatelessWidget {
         };
 
     final hasCover = book.coverPath != null && book.coverPath!.isNotEmpty;
+    final decodeWidth = _decodeWidthPx(context);
     final image = hasCover
         ? Image.file(
             File(book.coverPath!),
             fit: fit,
             width: expand ? double.infinity : null,
             height: expand ? double.infinity : null,
+            cacheWidth: decodeWidth,
+            filterQuality: variant == BookCoverVariant.hero
+                ? FilterQuality.medium
+                : FilterQuality.low,
+            gaplessPlayback: true,
             errorBuilder: (_, _, _) => _placeholder(c),
           )
         : _placeholder(c);
 
-    final child = ClipRRect(borderRadius: radius, child: image);
+    final child = RepaintBoundary(
+      child: ClipRRect(borderRadius: radius, child: image),
+    );
 
     if (expand) {
       return SizedBox.expand(child: child);
@@ -82,8 +89,7 @@ class BookCover extends StatelessWidget {
     final showSubtitle =
         variant == BookCoverVariant.hero || variant == BookCoverVariant.grid;
 
-    return AnimatedContainer(
-      duration: AppMotion.base,
+    return Container(
       decoration: BoxDecoration(
         gradient: LinearGradient(
           begin: Alignment.topLeft,
@@ -93,7 +99,6 @@ class BookCover extends StatelessWidget {
       ),
       child: Stack(
         children: [
-          // Subtle paper texture / noise hint (using a soft radial gradient)
           Positioned.fill(
             child: DecoratedBox(
               decoration: BoxDecoration(
@@ -147,6 +152,18 @@ class BookCover extends StatelessWidget {
         ],
       ),
     );
+  }
+
+  /// Pixel width passed to [Image.cacheWidth] so covers decode near display size.
+  int _decodeWidthPx(BuildContext context) {
+    final dpr = MediaQuery.devicePixelRatioOf(context);
+    final logical = switch (variant) {
+      BookCoverVariant.hero => 240.0,
+      BookCoverVariant.grid => 160.0,
+      BookCoverVariant.list => 56.0,
+      BookCoverVariant.compact => 36.0,
+    };
+    return (logical * dpr).round().clamp(64, 720);
   }
 
   String _monogramFor(String title) {

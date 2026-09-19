@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:math';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart' as webview;
@@ -63,6 +64,26 @@ webview.WebViewEnvironment? webViewEnvironment;
 /// this handler drives a headless WebView until the challenge clears.
 int cfPort = 0;
 HttpServer? _cfServer;
+
+/// Shared secret for loopback CF HTTP. Other on-device apps can reach
+/// 127.0.0.1; they cannot guess this token.
+String cfAuthToken = '';
+const kCfAuthHeader = 'x-koma-cf-token';
+
+Map<String, String> cfLoopbackHeaders() => {
+      HttpHeaders.contentTypeHeader: 'application/json',
+      kCfAuthHeader: cfAuthToken,
+    };
+
+String _newCfAuthToken() {
+  final bytes = List<int>.generate(32, (_) => Random.secure().nextInt(256));
+  return base64Url.encode(bytes);
+}
+
+bool _authorizeCfRequest(HttpRequest request) {
+  if (cfAuthToken.isEmpty) return false;
+  return request.headers.value(kCfAuthHeader) == cfAuthToken;
+}
 
 /// Faithful port of mangayomi's [MClient](lib/services/http/m_client.dart).
 ///
@@ -367,11 +388,13 @@ class LoggerInterceptor extends InterceptorContract {
         );
       }
       if (cloudflare) {
-        debugPrint(
-          '${response.statusCode} Failed to bypass Cloudflare\n'
-          'You can try to bypass it manually in the webview\n\n'
-          'statusCode: ${response.statusCode}',
-        );
+        if (kDebugMode) {
+          debugPrint(
+            '${response.statusCode} Failed to bypass Cloudflare\n'
+            'You can try to bypass it manually in the webview\n\n'
+            'statusCode: ${response.statusCode}',
+          );
+        }
       }
     }
     return response;
@@ -417,7 +440,7 @@ class ResolveCloudFlareChallenge extends RetryPolicy {
       return http
           .post(
             Uri.parse('http://localhost:$cfPort/resolve_cf'),
-            headers: {HttpHeaders.contentTypeHeader: 'application/json'},
+            headers: cfLoopbackHeaders(),
             body: jsonEncode({'url': url}),
           )
           .then((res) {
@@ -437,10 +460,22 @@ class ResolveCloudFlareChallenge extends RetryPolicy {
 /// Ported from mangayomi's [webviewServer].
 Future<void> webviewServer() async {
   try {
+    cfAuthToken = _newCfAuthToken();
     _cfServer = await HttpServer.bind(InternetAddress.loopbackIPv4, cfPort);
     cfPort = _cfServer!.port;
     _cfServer!.listen(
       (HttpRequest request) {
+        if (request.method == 'POST' &&
+            (request.uri.path == '/resolve_cf' ||
+                request.uri.path == '/evaluateJavascriptViaWebview')) {
+          if (!_authorizeCfRequest(request)) {
+            request.response
+              ..statusCode = HttpStatus.unauthorized
+              ..write('Unauthorized')
+              ..close();
+            return;
+          }
+        }
         if (request.method == 'POST' && request.uri.path == '/resolve_cf') {
           _handleResolveCf(request);
         } else if (request.method == 'POST' &&
@@ -461,6 +496,7 @@ Future<void> webviewServer() async {
       cancelOnError: false,
     );
   } catch (e, st) {
+    cfAuthToken = '';
     if (kDebugMode) {
       debugPrint(
         "Couldn't start Cloudflare Resolution Webview Server: $e\n$st",
@@ -478,6 +514,7 @@ Future<void> stopwebviewServer() async {
   } finally {
     _cfServer = null;
     cfPort = 0;
+    cfAuthToken = '';
   }
 }
 

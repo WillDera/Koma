@@ -24,6 +24,7 @@ class MetadataEnrichmentProgress {
     this.total = 0,
     this.lastMessage,
     this.errors = const [],
+    this.activeBookId,
   });
 
   final bool running;
@@ -32,12 +33,17 @@ class MetadataEnrichmentProgress {
   final String? lastMessage;
   final List<String> errors;
 
+  /// Book currently being enriched (single or batch). Null when idle.
+  final int? activeBookId;
+
   MetadataEnrichmentProgress copyWith({
     bool? running,
     int? current,
     int? total,
     String? lastMessage,
     List<String>? errors,
+    int? activeBookId,
+    bool clearActiveBookId = false,
   }) {
     return MetadataEnrichmentProgress(
       running: running ?? this.running,
@@ -45,6 +51,9 @@ class MetadataEnrichmentProgress {
       total: total ?? this.total,
       lastMessage: lastMessage ?? this.lastMessage,
       errors: errors ?? this.errors,
+      activeBookId: clearActiveBookId
+          ? null
+          : (activeBookId ?? this.activeBookId),
     );
   }
 }
@@ -248,6 +257,7 @@ class MetadataEnrichmentNotifier extends Notifier<MetadataEnrichmentProgress> {
       running: true,
       current: 0,
       total: 1,
+      activeBookId: book.id,
       lastMessage: 'Looking up ${book.title}…',
     );
     try {
@@ -282,6 +292,7 @@ class MetadataEnrichmentNotifier extends Notifier<MetadataEnrichmentProgress> {
       running: true,
       current: 0,
       total: books.length,
+      activeBookId: books.first.id,
       lastMessage: 'Looking up ${books.length} books…',
     );
     final errors = <String>[];
@@ -294,14 +305,20 @@ class MetadataEnrichmentNotifier extends Notifier<MetadataEnrichmentProgress> {
           i,
           i + batchSize > books.length ? books.length : i + batchSize,
         );
-        final results = await _service.enrichBooks(batch);
-        for (final r in results) {
-          if (r.found) {
-            found++;
-          } else if (r.error != null) {
-            errors.add('${r.title}: ${r.error}');
-          } else {
-            errors.add('No metadata for "${r.title}"');
+        for (final book in batch) {
+          state = state.copyWith(
+            activeBookId: book.id,
+            lastMessage: 'Looking up ${book.title}…',
+          );
+          final results = await _service.enrichBooks([book]);
+          for (final r in results) {
+            if (r.found) {
+              found++;
+            } else if (r.error != null) {
+              errors.add('${r.title}: ${r.error}');
+            } else {
+              errors.add('No metadata for "${r.title}"');
+            }
           }
         }
         state = state.copyWith(

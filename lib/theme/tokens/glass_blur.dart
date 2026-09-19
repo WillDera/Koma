@@ -5,10 +5,10 @@ import 'package:flutter/material.dart';
 /// Shared glass-blur helpers for nav and reader chrome.
 ///
 /// Blur is isolated with [RepaintBoundary] so scrolling content underneath
-/// doesn't dirty the blurred layer's paint every frame. Sigma is kept modest
-/// (was 20) for cheaper sampling under Impeller.
+/// doesn't dirty the blurred layer's paint every frame. Sigma stays modest
+/// for cheaper sampling under Impeller.
 abstract final class GlassBlur {
-  static const double sigma = 12;
+  static const double sigma = 8;
 
   static ImageFilter get filter =>
       ImageFilter.blur(sigmaX: sigma, sigmaY: sigma);

@@ -11,10 +11,12 @@ class ImportResult {
   final int categoriesImported;
   final int reposImported;
   final int cookiesImported;
+  final int extensionsRestored;
   final int extensionsInstalled;
   final List<String> missingSources;
   final int skippedAnime;
   final int skippedNovels;
+  final int settingsRestored;
   final int version;
 
   const ImportResult({
@@ -30,10 +32,12 @@ class ImportResult {
     this.categoriesImported = 0,
     this.reposImported = 0,
     this.cookiesImported = 0,
+    this.extensionsRestored = 0,
     this.extensionsInstalled = 0,
     this.missingSources = const [],
     this.skippedAnime = 0,
     this.skippedNovels = 0,
+    this.settingsRestored = 0,
     required this.version,
   });
 
@@ -93,9 +97,19 @@ class ImportResult {
         '$reposImported repo${reposImported == 1 ? '' : 's'}',
       );
     }
+    if (extensionsRestored > 0) {
+      parts.add(
+        '$extensionsRestored script source${extensionsRestored == 1 ? '' : 's'}',
+      );
+    }
     if (extensionsInstalled > 0) {
       parts.add(
-        '$extensionsInstalled extension${extensionsInstalled == 1 ? '' : 's'} installed',
+        '$extensionsInstalled extension${extensionsInstalled == 1 ? '' : 's'} reinstalled',
+      );
+    }
+    if (settingsRestored > 0) {
+      parts.add(
+        '$settingsRestored setting${settingsRestored == 1 ? '' : 's'}',
       );
     }
     var text = parts.isEmpty ? 'Nothing to import' : 'Imported: ${parts.join(', ')}';
@@ -111,7 +125,7 @@ class ImportResult {
       text += '\nSkipped ${skip.join(' and ')}.';
     }
     if (mangaImported + mangaSkipped > 0) {
-      text += '\nDownloads and extension APKs are not in the backup.';
+      text += '\nChapter image downloads are not in the backup.';
     }
     return text;
   }

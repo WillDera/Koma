@@ -7,17 +7,20 @@ import 'package:go_router/go_router.dart';
 import '../core/app_version.dart';
 import '../core/services/security_prefs.dart';
 import '../core/services/user_profile.dart';
+import '../features/library/library_nav_satellite.dart';
 import '../theme/app_icons.dart';
 import '../theme/app_theme.dart';
 import '../theme/theme_provider.dart';
+import '../theme/theme_state.dart';
 import '../widgets/app_update_gate.dart';
 import '../widgets/glass_pill_nav.dart';
 import '../widgets/nav_drawer.dart';
 import '../widgets/stats_popup.dart';
 
-/// When true, Explore is consuming system back for in-tab history (view-all /
-/// search). [MainShell] must not also jump to Library — nested [PopScope]s with
-/// `canPop: false` all receive the same pop attempt.
+/// When true, a tab is consuming system back for in-tab history (Library
+/// section view-all, Explore search / view-all, …). [MainShell] must not exit
+/// the app or jump tabs — nested [PopScope]s with `canPop: false` alone are
+/// not enough because the shell route is a separate navigator entry.
 class ShellBackInterceptor extends Notifier<bool> {
   @override
   bool build() => false;
@@ -98,17 +101,21 @@ class MainShell extends ConsumerWidget {
     final onLibrary = navigationShell.currentIndex == 0;
     final incognito = ref.watch(incognitoProvider);
     final tabConsumesBack = ref.watch(shellBackInterceptorProvider);
+    final leftHanded = ref.watch(themeProvider).handMode == HandMode.left;
+    final satellite = ref.watch(libraryNavSatelliteProvider);
     final c = context.colors;
     return AppUpdateGate(
       child: PopScope(
-        canPop: onLibrary,
+        // Library root may exit the app, unless Library itself is consuming
+        // back for section view-all (via [shellBackInterceptorProvider]).
+        canPop: onLibrary && !tabConsumesBack,
         onPopInvokedWithResult: (didPop, _) {
           if (didPop) return;
-          // Explore (and similar) may consume back for in-tab history. Only
-          // honor that while that branch is actually showing — IndexedStack
-          // keeps other tabs alive with a stale interceptor flag.
-          if (navigationShell.currentIndex == 3 && tabConsumesBack) return;
-          if (navigationShell.currentIndex != 0) {
+          // IndexedStack keeps other tabs alive — only honor the interceptor
+          // for the tab that actually claims it (Library / Explore).
+          final i = navigationShell.currentIndex;
+          if (tabConsumesBack && (i == 0 || i == 3)) return;
+          if (i != 0) {
             navigationShell.goBranch(0);
           }
         },
@@ -167,6 +174,10 @@ class MainShell extends ConsumerWidget {
             },
             profileInitials: initials,
             profileImage: profileImage,
+            satelliteLeading: leftHanded,
+            satellite: onLibrary && satellite.hasAny
+                ? _LibraryNavSatelliteCluster(satellite: satellite)
+                : null,
           ),
           drawer: NavDrawer(
             currentIndex: navigationShell.currentIndex,
@@ -175,6 +186,38 @@ class MainShell extends ConsumerWidget {
           ),
         ),
       ),
+    );
+  }
+}
+
+class _LibraryNavSatelliteCluster extends StatelessWidget {
+  const _LibraryNavSatelliteCluster({required this.satellite});
+
+  final LibraryNavSatellite satellite;
+
+  @override
+  Widget build(BuildContext context) {
+    final hide = satellite.onHideSelected;
+    final add = satellite.onAdd;
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        if (hide != null) ...[
+          NavSatelliteButton(
+            icon: const MaterialIconData(Icons.visibility_off_outlined),
+            tooltip: 'Hide selected',
+            onPressed: hide,
+          ),
+          if (add != null) const SizedBox(height: 10),
+        ],
+        if (add != null)
+          NavSatelliteButton(
+            icon: AppIcons.add,
+            tooltip: 'Add',
+            emphasized: true,
+            onPressed: add,
+          ),
+      ],
     );
   }
 }

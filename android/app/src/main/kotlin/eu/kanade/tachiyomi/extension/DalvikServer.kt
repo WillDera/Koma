@@ -26,7 +26,9 @@ import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.sync.withPermit
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
@@ -49,10 +51,12 @@ import java.io.File
 import java.io.IOException
 import java.io.InputStreamReader
 import java.io.OutputStream
+import java.net.InetAddress
 import java.net.ServerSocket
 import java.net.Socket
 import java.nio.charset.StandardCharsets
 import java.security.MessageDigest
+import java.util.concurrent.ConcurrentHashMap
 
 class DalvikServer(
     private val context: Context,
@@ -91,12 +95,37 @@ class DalvikServer(
 
     private val loadedExtensions = mutableMapOf<String, LoadedExtension>()
     private val loadedApkPaths = mutableMapOf<String, File>()
+    /**
+     * Flutter Source URL overrides, keyed by hex bridge id and/or Mihon
+     * numeric id. Survives APK re-load so callers that omit baseUrlOverride
+     * do not silently revert to the APK domain.
+     */
+    private val baseUrlOverrides = ConcurrentHashMap<String, String>()
+    /** Packaged (APK) baseUrl per bridge/mihon id — needed for host rewrite. */
+    private val packagedBaseUrls = ConcurrentHashMap<String, String>()
+    /**
+     * Per-manga lock for [HttpSource.getMangaUpdate]. Extensions (e.g. AllManga)
+     * throw if details+chapters refresh overlap for the same title — library
+     * Updates and the detail screen often race.
+     */
+    private val mangaUpdateLocks = ConcurrentHashMap<String, Mutex>()
     /** HttpSources from the most recent SourceFactory load (cleared after aliasing). */
     @Volatile
     private var lastFactorySiblings: List<HttpSource> = emptyList()
     private val extensionsCacheDir: File by lazy {
         File(context.cacheDir, "dex-extensions").also { it.mkdirs() }
     }
+
+    private fun mangaUpdateMutex(sourceId: String?, url: String): Mutex {
+        val key = "${sourceId.orEmpty()}\u0000$url"
+        return mangaUpdateLocks.getOrPut(key) { Mutex() }
+    }
+
+    private suspend fun <T> withMangaUpdateLock(
+        sourceId: String?,
+        url: String,
+        block: suspend () -> T,
+    ): T = mangaUpdateMutex(sourceId, url).withLock { block() }
 
     /**
      * Looks up a loaded [HttpSource] by hex bridge id or Mihon numeric
@@ -151,7 +180,9 @@ class DalvikServer(
     fun start(): Int {
         if (isRunning) return _port
         ensureInjekt()
-        serverSocket = ServerSocket(0)
+        // Loopback only — Dart talks to 127.0.0.1, and a wildcard bind would
+        // expose unauthenticated extension RPC to the LAN / other apps.
+        serverSocket = ServerSocket(0, 50, InetAddress.getByName("127.0.0.1"))
         _port = serverSocket!!.localPort
         isRunning = true
         Log.d(TAG, "start: listening on port $_port")
@@ -208,6 +239,7 @@ class DalvikServer(
         val apkPath = root.str("apkPath") ?: return errorJson("missing apkPath")
         val className = root.str("className")
         val preferredSourceId = root.str("preferredSourceId") ?: root.str("id")
+        val baseUrlOverride = root.str("baseUrlOverride")?.trim().orEmpty()
         val apkFile = File(apkPath)
         if (!apkFile.exists()) return errorJson("apk not found: $apkPath")
 
@@ -238,6 +270,26 @@ class DalvikServer(
             return errorJson("not HttpSource: ${source.javaClass.name}")
         }
 
+        val nativeBaseUrl = source.baseUrl
+        val mihonIdEarly = source.id.toString()
+        rememberPackagedBaseUrl(sourceId, mihonIdEarly, nativeBaseUrl)
+        val remembered = sequenceOf(
+            baseUrlOverride,
+            preferredSourceId?.let { baseUrlOverrides[it] }.orEmpty(),
+            baseUrlOverrides[sourceId].orEmpty(),
+            baseUrlOverrides[mihonIdEarly].orEmpty(),
+        ).map { it.trim() }.firstOrNull { it.isNotEmpty() }.orEmpty()
+        if (remembered.isNotEmpty() && remembered != nativeBaseUrl) {
+            applyHttpSourceBaseUrl(source, remembered, packagedBaseUrl = nativeBaseUrl)
+            rememberBaseUrlOverride(sourceId, mihonIdEarly, remembered)
+        } else if (baseUrlOverride.isNotEmpty()) {
+            rememberBaseUrlOverride(sourceId, mihonIdEarly, baseUrlOverride)
+        } else {
+            // No override — drop any stale host rewrite for this packaged domain.
+            eu.kanade.tachiyomi.network.interceptor.BaseUrlHostRewrite
+                .unregisterPackaged(nativeBaseUrl)
+        }
+
         val loaded = LoadedExtension(
             sourceId = sourceId,
             source = source,
@@ -248,7 +300,7 @@ class DalvikServer(
         loadedExtensions[sourceId] = loaded
         // Alias by Mihon numeric Source.id so downloads that only know that
         // id (library / backup rows) resolve without a second round-trip.
-        val mihonId = source.id.toString()
+        val mihonId = mihonIdEarly
         if (mihonId.isNotBlank() && mihonId != sourceId) {
             loadedExtensions[mihonId] = loaded
         }
@@ -256,6 +308,13 @@ class DalvikServer(
         for (sibling in lastFactorySiblings) {
             val sid = sibling.id.toString()
             if (sid.isBlank() || sid == sourceId || sid == mihonId) continue
+            rememberPackagedBaseUrl(sourceId, sid, sibling.baseUrl)
+            // Sibling may have its own remembered override (multi-source APK).
+            val sibOverride = baseUrlOverrides[sid].orEmpty()
+            if (sibOverride.isNotEmpty() && sibOverride != sibling.baseUrl) {
+                val sibPackaged = packagedBaseUrls[sid] ?: sibling.baseUrl
+                applyHttpSourceBaseUrl(sibling, sibOverride, packagedBaseUrl = sibPackaged)
+            }
             loadedExtensions[sid] = LoadedExtension(
                 sourceId = sourceId,
                 source = sibling,
@@ -267,7 +326,8 @@ class DalvikServer(
         Log.d(
             TAG,
             "loadExtension: cached sourceId=$sourceId mihonId=$mihonId name=${source.name}" +
-                (if (className != null) " className=$className" else ""),
+                (if (className != null) " className=$className" else "") +
+                (if (remembered.isNotEmpty()) " baseUrlOverride=$remembered" else ""),
         )
 
         return json.encodeToString(buildJsonObject {
@@ -276,8 +336,66 @@ class DalvikServer(
             put("name", source.name)
             put("lang", source.lang)
             put("baseUrl", source.baseUrl)
+            put("nativeBaseUrl", nativeBaseUrl)
             if (className != null) put("className", className)
         })
+    }
+
+    /** Live-update [HttpSource.baseUrl] on an already-loaded Mihon source. */
+    private fun handleSetBaseUrlOverride(root: JsonObject): String {
+        val sourceId = root.str("sourceId") ?: return errorJson("missing sourceId")
+        val baseUrl = root.str("baseUrl")?.trim().orEmpty()
+        if (baseUrl.isEmpty()) return errorJson("missing baseUrl")
+        val src = findHttpSource(sourceId)
+        if (src == null) {
+            // Remember for the next loadExtension even if not loaded yet.
+            baseUrlOverrides[sourceId] = baseUrl
+            return json.encodeToString(buildJsonObject {
+                put("ok", true)
+                put("loaded", false)
+                put("baseUrl", baseUrl)
+            })
+        }
+        val mihonId = src.id.toString()
+        val packaged = packagedBaseUrls[sourceId]
+            ?: packagedBaseUrls[mihonId]
+            ?: src.baseUrl
+        rememberPackagedBaseUrl(sourceId, mihonId, packaged)
+        val ok = applyHttpSourceBaseUrl(src, baseUrl, packagedBaseUrl = packaged)
+        rememberBaseUrlOverride(sourceId, mihonId, baseUrl)
+        return json.encodeToString(buildJsonObject {
+            put("ok", ok)
+            put("loaded", true)
+            put("baseUrl", src.baseUrl)
+            put("packagedBaseUrl", packaged)
+        })
+    }
+
+    private fun rememberBaseUrlOverride(bridgeId: String, mihonId: String, url: String) {
+        if (url.isBlank()) return
+        if (bridgeId.isNotBlank()) baseUrlOverrides[bridgeId] = url
+        if (mihonId.isNotBlank()) baseUrlOverrides[mihonId] = url
+    }
+
+    private fun rememberPackagedBaseUrl(bridgeId: String, mihonId: String, url: String) {
+        val u = url.trim().trimEnd('/')
+        if (u.isBlank()) return
+        // Only store the first packaged value — later loads after an override
+        // may already show the mutated getter.
+        if (bridgeId.isNotBlank()) packagedBaseUrls.putIfAbsent(bridgeId, u)
+        if (mihonId.isNotBlank()) packagedBaseUrls.putIfAbsent(mihonId, u)
+    }
+
+    private fun clearBaseUrlOverrides(bridgeId: String, mihonId: String) {
+        val packaged = packagedBaseUrls[bridgeId] ?: packagedBaseUrls[mihonId]
+        if (bridgeId.isNotBlank()) baseUrlOverrides.remove(bridgeId)
+        if (mihonId.isNotBlank()) baseUrlOverrides.remove(mihonId)
+        if (bridgeId.isNotBlank()) packagedBaseUrls.remove(bridgeId)
+        if (mihonId.isNotBlank()) packagedBaseUrls.remove(mihonId)
+        if (!packaged.isNullOrBlank()) {
+            eu.kanade.tachiyomi.network.interceptor.BaseUrlHostRewrite
+                .unregisterPackaged(packaged)
+        }
     }
 
     private fun handleUnloadExtension(root: JsonObject): String {
@@ -289,10 +407,14 @@ class DalvikServer(
         var unloaded = false
         if (removed != null) {
             unloaded = true
+            clearBaseUrlOverrides(removed.sourceId, removed.source.id.toString())
             loadedExtensions.entries.removeAll {
                 it.value === removed || it.value.sourceId == removed.sourceId
             }
             loadedApkPaths.remove(removed.sourceId)?.delete()
+        } else {
+            // Still drop a remembered override keyed only by the request id.
+            baseUrlOverrides.remove(sourceId)
         }
         Log.d(TAG, "unloadExtension: sourceId=$sourceId removed=$unloaded")
         return json.encodeToString(
@@ -563,6 +685,7 @@ class DalvikServer(
                 "loadExtension" -> handleLoadExtension(root)
                 "unloadExtension" -> handleUnloadExtension(root)
                 "listLoadedExtensions" -> handleListLoadedExtensions()
+                "setBaseUrlOverride" -> handleSetBaseUrlOverride(root)
 
                 // -- Content methods (accept sourceId or base64 data fallback) ---------
                 "getPopularManga" -> {
@@ -648,12 +771,22 @@ class DalvikServer(
                 }
                 "getMangaDetails" -> {
                     val url = root.str("url") ?: return errorJson("missing url")
-                    withLoadedExtension(root.str("sourceId"), data) { src ->
+                    val sourceId = root.str("sourceId")
+                    withLoadedExtension(sourceId, data) { src ->
                         // Mihon parity: hydrate catalogue fields (title/memo/…) before
                         // getMangaUpdate — AllAnime and similar sources NPE on empty memo.
                         val manga = hydrateSManga(root)
                         val result = try {
-                            runBlocking { src.getMangaUpdate(manga, emptyList(), fetchDetails = true, fetchChapters = false) }
+                            runBlocking {
+                                withMangaUpdateLock(sourceId, url) {
+                                    src.getMangaUpdate(
+                                        manga,
+                                        emptyList(),
+                                        fetchDetails = true,
+                                        fetchChapters = false,
+                                    )
+                                }
+                            }
                         } catch (e: Exception) {
                             Log.e(TAG, "getMangaDetails failed for $url", e)
                             return@withLoadedExtension errorJson("getMangaDetails failed: ${e.message}")
@@ -665,10 +798,20 @@ class DalvikServer(
                 }
                 "getMangaUpdate" -> {
                     val url = root.str("url") ?: return errorJson("missing url")
-                    withLoadedExtension(root.str("sourceId"), data) { src ->
+                    val sourceId = root.str("sourceId")
+                    withLoadedExtension(sourceId, data) { src ->
                         val manga = hydrateSManga(root)
                         val update = try {
-                            runBlocking { src.getMangaUpdate(manga, emptyList(), fetchDetails = true, fetchChapters = true) }
+                            runBlocking {
+                                withMangaUpdateLock(sourceId, url) {
+                                    src.getMangaUpdate(
+                                        manga,
+                                        emptyList(),
+                                        fetchDetails = true,
+                                        fetchChapters = true,
+                                    )
+                                }
+                            }
                         } catch (e: Exception) {
                             Log.e(TAG, "getMangaUpdate failed for $url", e)
                             // Do not return a fake empty manga — Dart treats that as
@@ -683,10 +826,20 @@ class DalvikServer(
                 }
                 "getChapterList" -> {
                     val url = root.str("url") ?: return errorJson("missing url")
-                    withLoadedExtension(root.str("sourceId"), data) { src ->
+                    val sourceId = root.str("sourceId")
+                    withLoadedExtension(sourceId, data) { src ->
                         val manga = hydrateSManga(root)
                         val update = try {
-                            runBlocking { src.getMangaUpdate(manga, emptyList(), fetchDetails = false, fetchChapters = true) }
+                            runBlocking {
+                                withMangaUpdateLock(sourceId, url) {
+                                    src.getMangaUpdate(
+                                        manga,
+                                        emptyList(),
+                                        fetchDetails = false,
+                                        fetchChapters = true,
+                                    )
+                                }
+                            }
                         } catch (e: Exception) {
                             Log.e(TAG, "getChapterList failed for $url", e)
                             return@withLoadedExtension errorJson("getChapterList failed: ${e.message}")
@@ -792,8 +945,13 @@ class DalvikServer(
             }
             result
         } catch (e: Throwable) {
-            Log.e(TAG, "handleRequest: error", e)
-            errorJson("error: ${e.message}")
+            val detail = when (e) {
+                is eu.kanade.tachiyomi.network.HttpException ->
+                    "HTTP ${e.code}${e.url?.let { " for $it" } ?: ""}"
+                else -> e.message
+            }
+            Log.e(TAG, "handleRequest: error ($detail)", e)
+            errorJson("error: $detail")
         }
     }
 

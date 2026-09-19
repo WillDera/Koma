@@ -23,6 +23,7 @@ import '../../core/services/download/download_manager.dart';
 import '../../core/services/extension_source_resolve.dart';
 import '../../core/services/keiyoushi_service.dart';
 import '../../core/services/merge_manga_use_case.dart';
+import '../../core/services/migrate_suggestion_service.dart';
 import '../../core/services/local_cbz_prefs.dart';
 import '../../core/services/local_cbz_source.dart';
 import '../../core/services/trackers/track_chapter_use_case.dart';
@@ -43,6 +44,7 @@ import '../../theme/tokens/app_type.dart';
 import '../../widgets/animated_press.dart';
 import '../../widgets/dialog_sheet.dart';
 import '../../widgets/icon_button_round.dart';
+import '../../widgets/new_chapter_badge.dart';
 import '../../widgets/page_transitions.dart';
 import '../../widgets/screen_chrome.dart';
 import '../../widgets/toast.dart';
@@ -50,6 +52,7 @@ import '../../widgets/tracker_brand_icon.dart';
 import '../library/cbz_export_flow.dart';
 import 'manga_detail_providers.dart';
 import 'migrate_search_screen.dart';
+import 'migrate_suggestion_provider.dart';
 import 'track_manga_screen.dart';
 
 enum _DownloadMode { all, unread, range, next1, next5, next10 }
@@ -121,6 +124,12 @@ class _MangaDetailScreenState extends ConsumerState<MangaDetailScreen> {
   final Set<String> _selectedChapterUrls = {};
   List<Track> _linkedTracks = const [];
   String? _notes;
+
+  MigrateSuggestion? _migrateSuggestion;
+  bool _migrateSuggestLoading = false;
+  bool _migrateSuggestUserRequested = false;
+  bool _migrating = false;
+  int _migrateSuggestGen = 0;
 
   /// Bumped on every [_init] so in-flight network/Isar work from a previous
   /// open (or a superseded refresh) cannot mutate the current screen.
@@ -280,6 +289,10 @@ class _MangaDetailScreenState extends ConsumerState<MangaDetailScreen> {
     _inLibrary = false;
     _viewerFlags = widget.manga?.viewerFlags ?? 0;
     _localThumbnail = null;
+    _migrateSuggestion = null;
+    _migrateSuggestLoading = false;
+    _migrateSuggestUserRequested = false;
+    _migrateSuggestGen++;
     if (mounted) setState(() => _sessionReady = true);
 
     final m = widget.manga;
@@ -407,8 +420,10 @@ class _MangaDetailScreenState extends ConsumerState<MangaDetailScreen> {
               'date_upload': c.dateUpload,
               'is_read': c.isRead,
               'last_page_read': c.lastPageRead,
+              'scroll_position': c.scrollPosition,
               'is_opened': c.isOpened,
               'is_downloaded': c.isDownloaded,
+              'date_fetch': c.dateFetch,
               if (c.readAt != null) 'read_at': c.readAt!.toIso8601String(),
             },
           )
@@ -420,11 +435,121 @@ class _MangaDetailScreenState extends ConsumerState<MangaDetailScreen> {
             c.url: {
               'is_read': c.isRead,
               'last_page_read': c.lastPageRead,
+              'scroll_position': c.scrollPosition,
               'is_downloaded': c.isDownloaded,
               'is_opened': c.isOpened,
+              'date_fetch': c.dateFetch,
               'read_at': c.readAt?.toIso8601String(),
             },
         });
+    }
+    if (m.inLibrary) {
+      _scheduleMigrateSuggestionScan();
+    }
+  }
+
+  void _scheduleMigrateSuggestionScan({bool force = false}) {
+    final mangaId = _mangaId;
+    if (mangaId == null || !_inLibrary) return;
+    if (LocalCbzSource.isLocal(widget.sourceId)) return;
+    final gen = ++_migrateSuggestGen;
+    setState(() {
+      _migrateSuggestLoading = true;
+      if (force) {
+        _migrateSuggestion = null;
+        _migrateSuggestUserRequested = true;
+      }
+    });
+    unawaited(() async {
+      try {
+        final service = ref.read(migrateSuggestionServiceProvider);
+        if (force) await service.clearDismiss(mangaId);
+        final manga = await ref.read(repositoriesProvider).manga.getMangaById(
+          mangaId,
+        );
+        if (manga == null || !manga.inLibrary) return;
+        final suggestion = await service.findBetterSource(
+          manga,
+          force: force,
+        );
+        if (!mounted || gen != _migrateSuggestGen) return;
+        setState(() {
+          _migrateSuggestion = suggestion;
+          _migrateSuggestLoading = false;
+          if (suggestion != null) _migrateSuggestUserRequested = false;
+        });
+        if (force && suggestion == null && mounted) {
+          StashToast.show(
+            context,
+            message: 'No fuller source found for this title',
+            icon: Icons.info_outline,
+          );
+        }
+      } catch (_) {
+        if (!mounted || gen != _migrateSuggestGen) return;
+        setState(() => _migrateSuggestLoading = false);
+      }
+    }());
+  }
+
+  Future<void> _dismissMigrateSuggestion() async {
+    final sug = _migrateSuggestion;
+    final mangaId = _mangaId;
+    if (sug == null || mangaId == null) return;
+    await ref
+        .read(migrateSuggestionServiceProvider)
+        .dismiss(mangaId, sug.fingerprint);
+    if (!mounted) return;
+    setState(() => _migrateSuggestion = null);
+  }
+
+  Future<void> _applyMigrateSuggestion() async {
+    final sug = _migrateSuggestion;
+    final mangaId = _mangaId;
+    if (sug == null || mangaId == null || !mounted || _migrating) return;
+    final title = _preferTitle(
+      ref.read(mangaDetailProvider).details?['title'] as String?,
+      widget.title,
+    );
+    try {
+      final target = await confirmAndMigrate(
+        context: context,
+        ref: ref,
+        currentMangaId: mangaId,
+        currentTitle: title,
+        targetSourceId: sug.targetSourceId,
+        targetSourceName: sug.targetSourceName,
+        targetUrl: sug.targetUrl,
+        targetTitle: sug.targetTitle,
+        targetMemo: sug.targetMemo,
+        onConfirmed: () {
+          if (mounted) setState(() => _migrating = true);
+        },
+      );
+      if (target == null || !mounted) {
+        if (mounted) setState(() => _migrating = false);
+        return;
+      }
+      await ref
+          .read(migrateSuggestionServiceProvider)
+          .dismiss(mangaId, sug.fingerprint);
+      if (!mounted) return;
+      context.pushReplacementNamed(
+        Routes.mangaDetail,
+        extra: (
+          sourceId: target.sourceId,
+          url: target.url,
+          title: target.name,
+          manga: target,
+          memo: target.memo,
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _migrating = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Migrate failed: $e')),
+      );
     }
   }
 
@@ -723,12 +848,16 @@ class _MangaDetailScreenState extends ConsumerState<MangaDetailScreen> {
       })
       ..setError(null);
     // Do not touch loading — Isar stream updates must not hide the fetch banner.
+    final becameLibrary = !_inLibrary && manga.inLibrary;
     setState(() {
       _mangaId = manga.id;
       _inLibrary = manga.inLibrary;
       _viewerFlags = manga.viewerFlags;
     });
     unawaited(_reloadLinkedTracks());
+    if (becameLibrary) {
+      _scheduleMigrateSuggestionScan();
+    }
   }
 
   /// Merges chapter progress from Isar stream into the display chapter maps.
@@ -743,9 +872,11 @@ class _MangaDetailScreenState extends ConsumerState<MangaDetailScreen> {
         'id': lc.id,
         'is_read': lc.isRead,
         'last_page_read': lc.lastPageRead,
+        'scroll_position': lc.scrollPosition,
         'is_downloaded': lc.isDownloaded,
         'is_opened': lc.isOpened,
         'is_bookmarked': lc.isBookmarked,
+        'date_fetch': lc.dateFetch,
         'read_at': lc.readAt?.toIso8601String(),
       };
       // Index by both raw and normalized URL — remote rows and Isar can differ
@@ -770,9 +901,11 @@ class _MangaDetailScreenState extends ConsumerState<MangaDetailScreen> {
               'id': c.id,
               'is_read': c.isRead,
               'last_page_read': c.lastPageRead,
+              'scroll_position': c.scrollPosition,
               'is_opened': c.isOpened,
               'is_downloaded': c.isDownloaded,
               'is_bookmarked': c.isBookmarked,
+              'date_fetch': c.dateFetch,
               'memo': c.memo,
               if (c.readAt != null) 'read_at': c.readAt!.toIso8601String(),
             },
@@ -788,6 +921,7 @@ class _MangaDetailScreenState extends ConsumerState<MangaDetailScreen> {
           'id': local['id'],
           'is_read': local['is_read'],
           'last_page_read': local['last_page_read'],
+          'scroll_position': local['scroll_position'],
           'is_downloaded': local['is_downloaded'],
           'is_opened': local['is_opened'],
           'is_bookmarked': local['is_bookmarked'],
@@ -875,6 +1009,7 @@ class _MangaDetailScreenState extends ConsumerState<MangaDetailScreen> {
       if (!mounted || gen != _loadGen) return;
       setState(() => _inLibrary = true);
       if (mounted) ref.read(libraryProvider.notifier).loadBooks();
+      _scheduleMigrateSuggestionScan();
     } else {
       // First time insertion — ensure chapters exist before creating manga row
       var detail = ref.read(mangaDetailProvider);
@@ -936,6 +1071,7 @@ class _MangaDetailScreenState extends ConsumerState<MangaDetailScreen> {
       unawaited(_reloadLinkedTracks());
       ref.read(mangaDetailProvider.notifier).setInLibrary(true, id);
       if (mounted) ref.read(libraryProvider.notifier).loadBooks();
+      _scheduleMigrateSuggestionScan();
     }
     if (!mounted) return;
     StashToast.show(
@@ -957,7 +1093,13 @@ class _MangaDetailScreenState extends ConsumerState<MangaDetailScreen> {
       await repos.manga.clearMangaChapterHistory(_mangaId!);
     }
     if (mounted) {
-      setState(() => _inLibrary = false);
+      setState(() {
+        _inLibrary = false;
+        _migrateSuggestion = null;
+        _migrateSuggestLoading = false;
+        _migrateSuggestUserRequested = false;
+        _migrateSuggestGen++;
+      });
       ref.read(libraryProvider.notifier).loadBooks();
       ref.read(historyRevisionProvider.notifier).bump();
     }
@@ -1325,8 +1467,10 @@ class _MangaDetailScreenState extends ConsumerState<MangaDetailScreen> {
 
     if (targets.isEmpty) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('No chapters match the selection')),
+        StashToast.show(
+          context,
+          message: 'No chapters match the selection',
+          icon: Icons.info_outline,
         );
       }
       return;
@@ -1342,8 +1486,10 @@ class _MangaDetailScreenState extends ConsumerState<MangaDetailScreen> {
     }).toList();
     if (targets.isEmpty) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Selected chapters are already downloaded')),
+        StashToast.show(
+          context,
+          message: 'Selected chapters are already downloaded',
+          icon: Icons.check,
         );
       }
       return;
@@ -1362,16 +1508,13 @@ class _MangaDetailScreenState extends ConsumerState<MangaDetailScreen> {
     );
     _syncDownloadProgressFromQueue(mgr.manager);
     if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
+      StashToast.show(
+        context,
+        message:
             'Queued ${targets.length} chapter${targets.length == 1 ? '' : 's'}',
-          ),
-          action: SnackBarAction(
-            label: 'Queue',
-            onPressed: () => context.pushNamed(Routes.downloadQueue),
-          ),
-        ),
+        icon: Icons.download_rounded,
+        actionLabel: 'Queue',
+        onAction: () => context.pushNamed(Routes.downloadQueue),
       );
     }
   }
@@ -1561,15 +1704,44 @@ class _MangaDetailScreenState extends ConsumerState<MangaDetailScreen> {
     final url = ch['url'] as String? ?? '';
     if (url.isEmpty) return;
     final repos = ref.read(repositoriesProvider);
-    final row = await repos.manga.getMangaChapterByUrl(mangaId, url);
+    var row = await repos.manga.getMangaChapterByUrl(mangaId, url);
+    if (row == null) {
+      final mangaTitle = _preferTitle(
+        detail.details?['title'] as String?,
+        widget.title,
+      );
+      final model = MangaChapter.withRecognition(
+        id: 0,
+        mangaId: mangaId,
+        mangaTitle: mangaTitle,
+        name: ch['name'] as String? ?? '',
+        url: url,
+        scanlator: ch['scanlator'] as String?,
+        dateUpload: asIntOr(ch['date_upload']),
+        index: asIntOr(ch['index']),
+        sourceChapterNumber: ch['chapter_number'] as num?,
+        memo: ch['memo'] as String?,
+      );
+      await repos.manga.insertMangaChapters(mangaId, [model]);
+      row = await repos.manga.getMangaChapterByUrl(mangaId, url);
+    }
     if (row == null) return;
     final next = !row.isBookmarked;
     await repos.manga.setMangaChapterBookmarked(row.id, next);
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(next ? 'Chapter bookmarked' : 'Bookmark removed'),
-      ),
+    final local = Map<String, Map<String, dynamic>>.from(
+      ref.read(mangaDetailProvider).localChapters,
+    );
+    local[url] = {
+      ...?local[url],
+      'is_bookmarked': next,
+      'url': url,
+    };
+    ref.read(mangaDetailProvider.notifier).setLocalChapters(local);
+    StashToast.show(
+      context,
+      message: next ? 'Chapter bookmarked' : 'Bookmark removed',
+      icon: next ? Icons.bookmark : Icons.bookmark_border,
     );
   }
 
@@ -1628,6 +1800,14 @@ class _MangaDetailScreenState extends ConsumerState<MangaDetailScreen> {
           ref.read(mangaDetailProvider).details?['memo'] as String?,
     );
     _syncDownloadProgressFromQueue(mgr);
+    if (!mounted) return;
+    StashToast.show(
+      context,
+      message: 'Download queued',
+      icon: Icons.download_rounded,
+      actionLabel: 'Queue',
+      onAction: () => context.pushNamed(Routes.downloadQueue),
+    );
   }
 
   void _syncDownloadProgressFromQueue(DownloadManager mgr) {
@@ -1998,7 +2178,8 @@ class _MangaDetailScreenState extends ConsumerState<MangaDetailScreen> {
     for (final ch in chapters) {
       final isRead = ch['is_read'] as bool? ?? false;
       final lastPage = asIntOr(ch['last_page_read']);
-      if (!isRead && lastPage > 0) {
+      final scroll = (ch['scroll_position'] as num?)?.toDouble() ?? 0.0;
+      if (!isRead && (lastPage > 0 || scroll > 0)) {
         inProgress ??= ch;
       }
       if (!isRead) {
@@ -2011,6 +2192,7 @@ class _MangaDetailScreenState extends ConsumerState<MangaDetailScreen> {
   bool _hasContinueProgress(List<Map<String, dynamic>> chapters) {
     for (final ch in chapters) {
       if (asIntOr(ch['last_page_read']) > 0) return true;
+      if (((ch['scroll_position'] as num?)?.toDouble() ?? 0) > 0) return true;
       if (ch['is_read'] as bool? ?? false) return true;
     }
     return false;
@@ -2056,6 +2238,8 @@ class _MangaDetailScreenState extends ConsumerState<MangaDetailScreen> {
         mangaName: widget.title,
         chapterUrl: url,
         chapterName: ch['name'] as String? ?? '',
+        seekStartOffset: null,
+        seekEndOffset: null,
       );
       await context.pushNamed(Routes.novelReader, extra: novelArgs);
     } else {
@@ -2077,9 +2261,11 @@ class _MangaDetailScreenState extends ConsumerState<MangaDetailScreen> {
         chMapNorm[_normalizeUrl(lc.url)] = {
           'is_read': lc.isRead,
           'last_page_read': lc.lastPageRead,
+          'scroll_position': lc.scrollPosition,
           'is_downloaded': lc.isDownloaded,
           'is_opened': lc.isOpened,
           'is_bookmarked': lc.isBookmarked,
+          'date_fetch': lc.dateFetch,
         };
       }
       final latest = ref.read(mangaDetailProvider);
@@ -2089,9 +2275,11 @@ class _MangaDetailScreenState extends ConsumerState<MangaDetailScreen> {
         final cleaned = Map<String, dynamic>.from(row)
           ..remove('is_read')
           ..remove('last_page_read')
+          ..remove('scroll_position')
           ..remove('is_downloaded')
           ..remove('is_opened')
           ..remove('is_bookmarked')
+          ..remove('date_fetch')
           ..remove('read_at');
         if (local != null) cleaned.addAll(local);
         return cleaned;
@@ -2173,6 +2361,10 @@ class _MangaDetailScreenState extends ConsumerState<MangaDetailScreen> {
             memo: target.memo,
           ),
         );
+      case 'find_better_source':
+        if (LocalCbzSource.isLocal(widget.sourceId)) return;
+        if (_mangaId == null || !_inLibrary) return;
+        _scheduleMigrateSuggestionScan(force: true);
       case 'merge':
         await _mergeDuplicate();
       case 'track':
@@ -2541,7 +2733,7 @@ class _MangaDetailScreenState extends ConsumerState<MangaDetailScreen> {
     final selectedOnly = showBulkBar ? _selectedChapters() : const <Map<String, dynamic>>[];
     final singleSelected = selectedOnly.length == 1 ? selectedOnly.first : null;
 
-    return Scaffold(
+    final scaffold = Scaffold(
       backgroundColor: c.bg,
       bottomNavigationBar: _KenjiDetailButtonGroup(
         c: c,
@@ -2650,6 +2842,13 @@ class _MangaDetailScreenState extends ConsumerState<MangaDetailScreen> {
                             value: 'migrate',
                             child: Text('Migrate'),
                           ),
+                        if (_inLibrary &&
+                            _mangaId != null &&
+                            !LocalCbzSource.isLocal(widget.sourceId))
+                          const PopupMenuItem(
+                            value: 'find_better_source',
+                            child: Text('Find better source…'),
+                          ),
                         if (_inLibrary && _mangaId != null)
                           const PopupMenuItem(
                             value: 'merge',
@@ -2717,6 +2916,110 @@ class _MangaDetailScreenState extends ConsumerState<MangaDetailScreen> {
                       ),
                     ),
                   ),
+                if (_inLibrary &&
+                    !LocalCbzSource.isLocal(widget.sourceId) &&
+                    (_migrateSuggestion != null ||
+                        (_migrateSuggestLoading &&
+                            _migrateSuggestUserRequested)))
+                  SliverToBoxAdapter(
+                    child: Padding(
+                      padding: const EdgeInsets.fromLTRB(24, 0, 24, 12),
+                      child: Material(
+                        color: c.surfaceMuted,
+                        borderRadius: BorderRadius.circular(10),
+                        child: Padding(
+                          padding: const EdgeInsets.fromLTRB(14, 10, 8, 10),
+                          child: Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Padding(
+                                padding: const EdgeInsets.only(top: 2),
+                                child: Icon(
+                                  Icons.swap_horiz_rounded,
+                                  size: 18,
+                                  color: c.accent,
+                                ),
+                              ),
+                              const SizedBox(width: 10),
+                              Expanded(
+                                child: _migrateSuggestLoading &&
+                                        _migrateSuggestion == null
+                                    ? Text(
+                                        'Looking for a source with more chapters…',
+                                        style: TextStyle(
+                                          color: c.textSecondary,
+                                          fontSize: 13,
+                                          height: 1.35,
+                                        ),
+                                      )
+                                    : Column(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
+                                        children: [
+                                          Text(
+                                            _migrateSuggestion!.message,
+                                            style: TextStyle(
+                                              color: c.textPrimary,
+                                              fontSize: 13,
+                                              fontWeight: FontWeight.w600,
+                                              height: 1.35,
+                                            ),
+                                          ),
+                                          const SizedBox(height: 2),
+                                          Text(
+                                            'Migrate to keep reading with a fuller catalogue.',
+                                            style: TextStyle(
+                                              color: c.textTertiary,
+                                              fontSize: 12,
+                                              height: 1.3,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                              ),
+                              if (_migrateSuggestion != null) ...[
+                                TextButton(
+                                  onPressed: _migrating
+                                      ? null
+                                      : _applyMigrateSuggestion,
+                                  child: Text(
+                                    'Migrate',
+                                    style: TextStyle(color: c.accent),
+                                  ),
+                                ),
+                                IconButton(
+                                  tooltip: 'Dismiss',
+                                  visualDensity: VisualDensity.compact,
+                                  onPressed: _migrating
+                                      ? null
+                                      : _dismissMigrateSuggestion,
+                                  icon: Icon(
+                                    Icons.close,
+                                    size: 18,
+                                    color: c.textTertiary,
+                                  ),
+                                ),
+                              ] else
+                                Padding(
+                                  padding: const EdgeInsets.only(
+                                    top: 2,
+                                    right: 6,
+                                  ),
+                                  child: SizedBox(
+                                    width: 14,
+                                    height: 14,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                      color: c.accent,
+                                    ),
+                                  ),
+                                ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
                 if (detail.error != null)
                   SliverToBoxAdapter(
                     child: Padding(
@@ -2750,8 +3053,7 @@ class _MangaDetailScreenState extends ConsumerState<MangaDetailScreen> {
                             borderRadius: AppSpacing.brPill,
                           ),
                           child: Text(
-                            '${filteredChapters.length} '
-                            '${filteredChapters.length == 1 ? 'Chapter' : 'Chapters'}',
+                            '${filteredChapters.length}',
                             style: TextStyle(
                               color: c.textSecondary,
                               fontSize: 12,
@@ -2976,6 +3278,34 @@ class _MangaDetailScreenState extends ConsumerState<MangaDetailScreen> {
             )
           : const Center(child: Text('Failed to load manga details')),
     );
+
+    if (!_migrating) return scaffold;
+
+    return Stack(
+      children: [
+        scaffold,
+        const ColoredBox(
+          color: Color(0x99000000),
+          child: Center(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                CircularProgressIndicator(),
+                SizedBox(height: 16),
+                Text(
+                  'Migrating…',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 15,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ],
+    );
   }
 
   Widget _buildChapterItem({
@@ -2996,14 +3326,17 @@ class _MangaDetailScreenState extends ConsumerState<MangaDetailScreen> {
     final isOpened = ch['is_opened'] as bool? ?? false;
     final isBookmarked = ch['is_bookmarked'] as bool? ?? false;
     final lastPageRead = asIntOr(ch['last_page_read']);
+    final scrollPos = (ch['scroll_position'] as num?)?.toDouble() ?? 0.0;
     final name = ch['name'] as String? ?? '';
     final scanlator = (ch['scanlator'] as String?)?.trim();
     final dateUpload = asIntOr(ch['date_upload']);
+    final dateFetch = asIntOr(ch['date_fetch']);
     final dlStatus = downloadProgress[url];
     final pageProg = _parsePageProgress(dlStatus);
-    // Opened OR fully read → dim + clear the "new" dot.
-    final seen = isOpened || isRead || lastPageRead > 0;
-    final unreadNew = !seen;
+    // Opened OR fully read → dim + clear the "new" tag.
+    final seen = isOpened || isRead || lastPageRead > 0 || scrollPos > 0;
+    // Only update-discovered chapters (dateFetch stamped) get the NEW tag.
+    final unreadNew = !seen && dateFetch > 0;
 
     final dateStr = dateUpload > 0
         ? DateFormat.yMMMd().format(
@@ -3014,6 +3347,7 @@ class _MangaDetailScreenState extends ConsumerState<MangaDetailScreen> {
       if (dateStr.isNotEmpty) dateStr,
       if (scanlator != null && scanlator.isNotEmpty) scanlator,
       if (!isRead && lastPageRead > 0) 'Page ${lastPageRead + 1}',
+      if (!isRead && lastPageRead <= 0 && scrollPos > 0) 'In progress',
     ];
     final subtitle = subtitleParts.join(' · ');
 
@@ -3039,16 +3373,9 @@ class _MangaDetailScreenState extends ConsumerState<MangaDetailScreen> {
                 ),
               )
             else if (unreadNew)
-              Padding(
-                padding: const EdgeInsets.only(right: 10),
-                child: Container(
-                  width: 6,
-                  height: 6,
-                  decoration: BoxDecoration(
-                    color: c.accent,
-                    shape: BoxShape.circle,
-                  ),
-                ),
+              const Padding(
+                padding: EdgeInsets.only(right: 10),
+                child: NewChapterTag(),
               )
             else
               const SizedBox(width: 16),

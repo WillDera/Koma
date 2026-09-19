@@ -20,9 +20,13 @@ class KomaApplication : Application() {
 
     override fun onCreate() {
         super.onCreate()
+        // Load zstd JNI peer classes on the app ClassLoader before any
+        // extension OkHttp thread can trigger libzstd-kmp.so FindClass.
+        runCatching { ZstdJniKeep.pin() }
         // Shared with OkHttp [AndroidCookieJar] + extension runWebView.
         runCatching { CookieManager.getInstance().setAcceptCookie(true) }
         DalvikRuntimeManager.initialize(this)
+        DeviceConstraintsPublisher.start(this)
         if (isAutoUpdateEnabled()) {
             try {
                 DalvikRuntimeManager.getOrStartServer()

@@ -1,7 +1,8 @@
 plugins {
-    id("com.android.application") version "8.11.1"
+    // Versions come from android/settings.gradle.kts (AGP 8.11.1 / Kotlin 2.4.10).
+    id("com.android.application")
+    id("org.jetbrains.kotlin.android")
     id("dev.flutter.flutter-gradle-plugin")
-    kotlin("android") version "2.4.10"
 }
 
 android {
@@ -28,6 +29,11 @@ android {
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
         versionName = flutter.versionName
+        // Sideload / GitHub release APKs: arm64 only. Covers essentially all
+        // phones from ~2019+. Comment out to debug on x86_64 emulators.
+        ndk {
+            abiFilters += listOf("arm64-v8a")
+        }
     }
 
     signingConfigs {
@@ -60,8 +66,12 @@ android {
             } else {
                 signingConfig = signingConfigs.getByName("debug")
             }
-            isMinifyEnabled = false
-            isShrinkResources = false
+            isMinifyEnabled = true
+            isShrinkResources = true
+            proguardFiles(
+                getDefaultProguardFile("proguard-android-optimize.txt"),
+                "proguard-rules.pro",
+            )
         }
     }
 
@@ -69,6 +79,16 @@ android {
         jniLibs {
             pickFirsts += listOf(
                 "**/libc++_shared.so",
+            )
+            // Vulkan validation is a debug engine artifact; never ship it.
+            // Sideload APKs are arm64-only — strip other ABIs even if a plugin
+            // (isar / qjs / pdfrx / cargokit) still emits them.
+            excludes += setOf(
+                "**/libVkLayer_khronos_validation.so",
+                "**/armeabi-v7a/**",
+                "**/armeabi/**",
+                "**/x86/**",
+                "**/x86_64/**",
             )
         }
         resources {
@@ -91,6 +111,11 @@ dependencies {
     implementation("com.squareup.okhttp3:okhttp:5.4.0")
     implementation("com.squareup.okhttp3:okhttp-brotli:5.4.0")
     implementation("com.squareup.okhttp3:okhttp-zstd:5.4.0")
+    // Direct so R8's program set includes ZstdCompressor (okhttp-zstd only
+    // depends on zstd-kmp-okio-jvm at runtime; keep rules cannot keep a
+    // class that never entered the merge).
+    implementation("com.squareup.zstd:zstd-kmp:0.4.0")
+    implementation("com.squareup.zstd:zstd-kmp-okio:0.4.0")
     implementation("com.squareup.okio:okio:3.9.0")
     // Keiyoushi extensions are compiled against mihon's coroutines bundle (1.11.0).
     // Newer extensions use `BuildersKt.runBlockingK` (concurrent source set), which
@@ -99,6 +124,9 @@ dependencies {
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.11.0")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.11.0")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-guava:1.11.0")
+    // Explicit stdlib so extension PathClassLoaders always have kotlin.text.Regex
+    // etc. on the host classpath (not only as a transitive of the Kotlin plugin).
+    implementation("org.jetbrains.kotlin:kotlin-stdlib:2.4.10")
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.11.0")
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json-okio:1.11.0")
     // Keiyoushi / Mihon extensions often pull protobuf codecs (e.g. ProtoBuf).

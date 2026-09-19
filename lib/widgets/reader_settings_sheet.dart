@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../features/reader/text_progress_pill_prefs.dart';
+import '../features/reader/tts_controls_prefs.dart';
 import '../features/settings/custom_font_ui.dart';
 import '../theme/app_theme.dart';
 import '../theme/theme_provider.dart';
@@ -11,16 +13,25 @@ import 'dialog_sheet.dart';
 import 'segmented_control.dart';
 
 class ReaderSettingsSheet extends ConsumerStatefulWidget {
-  const ReaderSettingsSheet({super.key});
+  const ReaderSettingsSheet({
+    super.key,
+    this.showPageStyle = true,
+  });
 
-  static Future<void> show(BuildContext context) {
+  /// Ebook page/curl picker. Novels are scroll-only — pass false.
+  final bool showPageStyle;
+
+  static Future<void> show(
+    BuildContext context, {
+    bool showPageStyle = true,
+  }) {
     return StashSheet.show<void>(
       context,
       title: 'Reader',
       subtitle: 'Tune typography and theme.',
       initialChildSize: 0.78,
       maxChildSize: 0.95,
-      child: const ReaderSettingsSheet(),
+      child: ReaderSettingsSheet(showPageStyle: showPageStyle),
     );
   }
 
@@ -238,40 +249,42 @@ class _ReaderSettingsSheetState extends ConsumerState<ReaderSettingsSheet> {
           ),
         ),
         const SizedBox(height: 16),
-        AnimatedPress(
-          onTap: () => _showPageStylePicker(context, p, tn),
-          child: Container(
-            padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
-            decoration: BoxDecoration(
-              color: c.surface,
-              borderRadius: AppSpacing.brLg,
-              border: Border.all(color: c.border, width: 0.5),
-            ),
-            child: Row(
-              children: [
-                Icon(Icons.auto_stories, size: 18, color: c.textSecondary),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: Text(
-                    'Page style',
-                    style: TextStyle(
-                      color: c.textPrimary,
-                      fontSize: 14,
-                      fontWeight: FontWeight.w500,
+        if (widget.showPageStyle) ...[
+          AnimatedPress(
+            onTap: () => _showPageStylePicker(context, p, tn),
+            child: Container(
+              padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+              decoration: BoxDecoration(
+                color: c.surface,
+                borderRadius: AppSpacing.brLg,
+                border: Border.all(color: c.border, width: 0.5),
+              ),
+              child: Row(
+                children: [
+                  Icon(Icons.auto_stories, size: 18, color: c.textSecondary),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      'Page style',
+                      style: TextStyle(
+                        color: c.textPrimary,
+                        fontSize: 14,
+                        fontWeight: FontWeight.w500,
+                      ),
                     ),
                   ),
-                ),
-                Text(
-                  p.pageStyle.label,
-                  style: TextStyle(color: c.textTertiary, fontSize: 13),
-                ),
-                const SizedBox(width: 4),
-                Icon(Icons.chevron_right, size: 16, color: c.textTertiary),
-              ],
+                  Text(
+                    p.pageStyle.label,
+                    style: TextStyle(color: c.textTertiary, fontSize: 13),
+                  ),
+                  const SizedBox(width: 4),
+                  Icon(Icons.chevron_right, size: 16, color: c.textTertiary),
+                ],
+              ),
             ),
           ),
-        ),
-        const SizedBox(height: 16),
+          const SizedBox(height: 16),
+        ],
         _ToggleRow(
           title: 'Bionic reading',
           subtitle: 'Bold first half of each word',
@@ -284,6 +297,77 @@ class _ReaderSettingsSheetState extends ConsumerState<ReaderSettingsSheet> {
           subtitle: 'Hide UI after 3 seconds of inactivity',
           value: p.immersiveAutoHide,
           onChanged: (v) => tn.setImmersiveAutoHide(v),
+        ),
+        const SizedBox(height: 28),
+        _SectionLabel('Media controls'),
+        const SizedBox(height: 12),
+        Consumer(
+          builder: (context, ref, _) {
+            final media = ref.watch(ttsControlsPrefsProvider);
+            final mn = ref.read(ttsControlsPrefsProvider.notifier);
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Text(
+                  'Placement',
+                  style: TextStyle(
+                    color: c.textSecondary,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                SegmentedControl<TtsControlsPlacement>(
+                  value: media.placement,
+                  onChanged: mn.setPlacement,
+                  segments: const {
+                    TtsControlsPlacement.left: 'Left',
+                    TtsControlsPlacement.bottom: 'Bottom',
+                    TtsControlsPlacement.right: 'Right',
+                  },
+                ),
+              ],
+            );
+          },
+        ),
+        const SizedBox(height: 28),
+        _SectionLabel('Progress pill'),
+        const SizedBox(height: 12),
+        Consumer(
+          builder: (context, ref, _) {
+            final pill = ref.watch(textProgressPillPrefsProvider);
+            final pn = ref.read(textProgressPillPrefsProvider.notifier);
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                _ToggleRow(
+                  title: 'Show progress pill',
+                  subtitle: 'Fades in while reading, hides after 3s idle',
+                  value: pill.enabled,
+                  onChanged: pn.setEnabled,
+                ),
+                const SizedBox(height: 12),
+                Text(
+                  'Placement',
+                  style: TextStyle(
+                    color: c.textSecondary,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                SegmentedControl<TextProgressPillPlacement>(
+                  value: pill.placement,
+                  onChanged: pn.setPlacement,
+                  segments: const {
+                    TextProgressPillPlacement.left: 'Left',
+                    TextProgressPillPlacement.bottom: 'Bottom',
+                    TextProgressPillPlacement.right: 'Right',
+                  },
+                ),
+              ],
+            );
+          },
         ),
       ],
     );

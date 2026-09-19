@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../core/providers.dart';
 import '../theme/app_theme.dart';
 import '../theme/tokens/app_spacing.dart';
+import 'glass_pill_nav.dart';
 import 'icon_button_round.dart';
 import 'library_book_card.dart';
 import 'segmented_control.dart';
@@ -28,7 +29,7 @@ class LibraryLayoutSheet extends ConsumerWidget {
     final library = ref.watch(libraryProvider);
     final ln = ref.read(libraryProvider.notifier);
     final bottomClearance =
-        72.0 + MediaQuery.paddingOf(context).bottom + 20;
+        AppBottomNav.bodyHeight + MediaQuery.paddingOf(context).bottom + 28;
     // Material must own the fill so SwitchListTile ink/splash isn't
     // obscured by an intermediate DecoratedBox background.
     return Material(
@@ -90,12 +91,7 @@ class LibraryLayoutSheet extends ConsumerWidget {
               ),
               const SizedBox(height: 10),
               SegmentedControl<int>(
-                segments: const {
-                  2: '2',
-                  3: '3',
-                  4: '4',
-                  5: '5',
-                },
+                segments: const {2: '2', 3: '3', 4: '4', 5: '5'},
                 value: library.gridColumns.clamp(2, 5),
                 onChanged: ln.setGridColumns,
               ),
@@ -132,15 +128,30 @@ class LibraryLayoutSheet extends ConsumerWidget {
               SwitchListTile(
                 contentPadding: EdgeInsets.zero,
                 title: Text(
+                  'Minimal cards',
+                  style: TextStyle(color: c.textPrimary, fontSize: 14),
+                ),
+                subtitle: Text(
+                  'Hide source, type, and size pills on covers',
+                  style: TextStyle(color: c.textTertiary, fontSize: 12),
+                ),
+                value: library.minimalCards,
+                onChanged: ln.setMinimalCards,
+              ),
+              SwitchListTile(
+                contentPadding: EdgeInsets.zero,
+                title: Text(
                   'Source label',
                   style: TextStyle(color: c.textPrimary, fontSize: 14),
                 ),
                 subtitle: Text(
-                  'Extension / source name on covers',
+                  library.minimalCards
+                      ? 'Overridden while minimal cards is on'
+                      : 'Extension / source name on covers',
                   style: TextStyle(color: c.textTertiary, fontSize: 12),
                 ),
                 value: library.showSourcePills,
-                onChanged: ln.setShowSourcePills,
+                onChanged: library.minimalCards ? null : ln.setShowSourcePills,
               ),
               SwitchListTile(
                 contentPadding: EdgeInsets.zero,

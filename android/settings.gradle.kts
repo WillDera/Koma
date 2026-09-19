@@ -15,6 +15,19 @@ pluginManagement {
         mavenCentral()
         gradlePluginPortal()
     }
+
+    // Flutter plugins often apply Kotlin without a version and pick up an older
+    // compiler (e.g. 2.2) while the app resolves kotlin-stdlib 2.4.x → metadata
+    // mismatch during CI release builds. Pin every Kotlin plugin request.
+    resolutionStrategy {
+        eachPlugin {
+            if (requested.id.namespace == "org.jetbrains.kotlin" ||
+                requested.id.id.startsWith("org.jetbrains.kotlin")
+            ) {
+                useVersion("2.4.10")
+            }
+        }
+    }
 }
 
 plugins {

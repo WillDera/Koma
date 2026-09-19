@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import '../theme/app_theme.dart';
 import '../theme/tokens/app_motion.dart';
 
-/// Kenji-style ebook bottom chrome: circular prev/next + chapter pill.
+/// Ebook / novel bottom chrome: circular prev/next + chapter pill.
 class ReaderBottomBar extends StatelessWidget {
   final VoidCallback onChapters;
   final VoidCallback onPrevious;
@@ -35,6 +35,7 @@ class ReaderBottomBar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final c = context.colors;
+    final chromeBg = background ?? c.surface;
     return AnimatedSlide(
       duration: AppMotion.base,
       curve: AppMotion.standard,
@@ -51,11 +52,12 @@ class ReaderBottomBar extends StatelessWidget {
                   icon: Icons.chevron_left,
                   enabled: canGoPrevious,
                   onTap: onPrevious,
+                  chromeBg: chromeBg,
                 ),
                 const SizedBox(width: 12),
                 Expanded(
                   child: Material(
-                    color: const Color(0xFF1A1A1A),
+                    color: chromeBg,
                     borderRadius: BorderRadius.circular(28),
                     child: InkWell(
                       onTap: onChapters,
@@ -100,6 +102,7 @@ class ReaderBottomBar extends StatelessWidget {
                   enabled: canGoNext,
                   onTap: onNext,
                   filled: true,
+                  chromeBg: chromeBg,
                 ),
               ],
             ),
@@ -115,18 +118,20 @@ class _CircleNav extends StatelessWidget {
     required this.icon,
     required this.enabled,
     required this.onTap,
+    required this.chromeBg,
     this.filled = false,
   });
 
   final IconData icon;
   final bool enabled;
   final VoidCallback onTap;
+  final Color chromeBg;
   final bool filled;
 
   @override
   Widget build(BuildContext context) {
     final c = context.colors;
-    final bg = filled && enabled ? c.accent : const Color(0xFF1A1A1A);
+    final bg = filled && enabled ? c.accent : chromeBg;
     final fg = filled && enabled
         ? c.onAccent
         : (enabled ? c.textPrimary : c.textTertiary.withValues(alpha: 0.45));

@@ -27,6 +27,14 @@ class Snippet {
   @Index()
   int? chapterId;
 
+  /// FK → manga library row for novel-backed snippets.
+  @Index()
+  int? mangaId;
+
+  /// FK → [MangaChapter.id] for novel-backed snippets.
+  @Index()
+  int? mangaChapterId;
+
   /// FK → [SnippetCollection.id]. Nullable — snippets can be uncollected.
   @Index()
   int? collectionId;
@@ -53,6 +61,8 @@ class Snippet {
     this.color,
     this.bookId,
     this.chapterId,
+    this.mangaId,
+    this.mangaChapterId,
     this.collectionId,
     this.startOffset,
     this.endOffset,
@@ -71,6 +81,8 @@ class Snippet {
     'color': color,
     'book_id': bookId,
     'chapter_id': chapterId,
+    'manga_id': mangaId,
+    'manga_chapter_id': mangaChapterId,
     'collection_id': collectionId,
     'start_offset': startOffset,
     'end_offset': endOffset,
@@ -89,6 +101,8 @@ class Snippet {
     color: json['color'] as String?,
     bookId: json['book_id'] as int?,
     chapterId: json['chapter_id'] as int?,
+    mangaId: json['manga_id'] as int?,
+    mangaChapterId: json['manga_chapter_id'] as int?,
     collectionId: json['collection_id'] as int?,
     startOffset: json['start_offset'] as int?,
     endOffset: json['end_offset'] as int?,

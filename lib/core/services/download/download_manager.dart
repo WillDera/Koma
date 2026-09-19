@@ -15,6 +15,7 @@ import '../extension_source_resolve.dart';
 import '../download_prefs.dart';
 import '../keiyoushi_service.dart';
 import '../notification_service.dart';
+import '../novel_html_content_service.dart';
 import 'chapter_download.dart';
 import 'download_store.dart';
 
@@ -108,11 +109,15 @@ class DownloadManager extends ChangeNotifier {
       }
       if (d.order >= _orderCounter) _orderCounter = d.order + 1;
     }
-    await _store.setRunner('none');
+    final currentRunner = await _store.runner();
+    if (currentRunner != 'wm') {
+      await _store.setRunner('none');
+    }
     notifyListeners();
     if (autoStart &&
         !_paused &&
         _queue.any((d) => d.status == DownloadState.queue)) {
+      if (currentRunner == 'wm') return;
       await startDownloads(retryErrors: false);
     }
   }
@@ -367,8 +372,11 @@ class DownloadManager extends ChangeNotifier {
       }
 
       final isJs = await _isJsSource(download.sourceId);
+      final isNovel = await _isNovelSource(download.sourceId);
       final bool ok;
-      if (isJs) {
+      if (isNovel) {
+        ok = await _downloadOneNovel(download, abort);
+      } else if (isJs) {
         ok = await _downloadOneJs(download, abort);
       } else {
         final sourceId = await _ensureDalvikSourceLoaded(download.sourceId);
@@ -452,6 +460,64 @@ class DownloadManager extends ChangeNotifier {
     return ext?.isJs ?? false;
   }
 
+  Future<bool> _isNovelSource(String sourceId) async {
+    final repos = _repos;
+    if (repos == null) return false;
+    final ext = await findInstalledExtension(repos, sourceId);
+    return (ext?.itemType ?? '').toLowerCase() == 'novel';
+  }
+
+  /// Novel path: fetch + cache HTML via [NovelHtmlContentService] (no page JPGs).
+  Future<bool> _downloadOneNovel(
+    ChapterDownload download,
+    DownloadAbortController abort,
+  ) async {
+    final repos = _repos;
+    if (repos == null) return false;
+
+    download.pagesTotal = 1;
+    download.pagesDone = 0;
+    notifyListeners();
+    unawaited(
+      NotificationService.instance.notifyDownloadProgress(
+        mangaTitle: download.mangaTitle,
+        chapterName: download.chapterName,
+        done: 0,
+        total: 1,
+        pending: pendingCount,
+      ),
+    );
+
+    if (abort.isAborted || _paused) return false;
+
+    final html = await NovelHtmlContentService(
+      repos: repos,
+      dispatch: _dispatch,
+    ).load(
+      sourceId: download.sourceId,
+      mangaId: download.mangaId ?? 0,
+      mangaName: download.mangaTitle,
+      chapterUrl: download.chapterUrl,
+      forceNetwork: true,
+    );
+    if (abort.isAborted || _paused) return false;
+    if (html.trim().isEmpty) return false;
+
+    download.pagesDone = 1;
+    notifyListeners();
+    unawaited(
+      NotificationService.instance.notifyDownloadProgress(
+        mangaTitle: download.mangaTitle,
+        chapterName: download.chapterName,
+        done: 1,
+        total: 1,
+        pending: pendingCount,
+      ),
+    );
+    unawaited(_persist());
+    return true;
+  }
+
   /// Resolve hex/Mihon id and load the APK into Dalvik before download.
   /// Cold downloads (and WorkManager) otherwise hit "Source not loaded".
   Future<String> _ensureDalvikSourceLoaded(String sourceId) async {
@@ -471,6 +537,10 @@ class DownloadManager extends ChangeNotifier {
       apkPath: ext.apkPath,
       className: ext.className.isEmpty ? null : ext.className,
       preferredSourceId: preferred,
+      baseUrlOverride:
+          (ext.baseUrl != null && ext.baseUrl!.trim().isNotEmpty)
+              ? ext.baseUrl!.trim()
+              : null,
     );
     final loadedSid = (desc['sourceId'] as String?)?.trim();
     if (loadedSid != null && loadedSid.isNotEmpty) return loadedSid;

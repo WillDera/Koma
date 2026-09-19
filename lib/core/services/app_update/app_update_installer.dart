@@ -41,9 +41,14 @@ class AppUpdateInstaller {
   Future<File> downloadApk(
     String downloadLink, {
     void Function(int progress)? onProgress,
+    int? expectedBytes,
   }) async {
     if (!kIsWeb && Platform.isAndroid) {
-      return _downloadApkNative(downloadLink, onProgress: onProgress);
+      return _downloadApkNative(
+        downloadLink,
+        onProgress: onProgress,
+        expectedBytes: expectedBytes,
+      );
     }
     return _downloadApkHttp(downloadLink, onProgress: onProgress);
   }
@@ -52,9 +57,12 @@ class AppUpdateInstaller {
   Future<File> _downloadApkNative(
     String downloadLink, {
     void Function(int progress)? onProgress,
+    int? expectedBytes,
   }) async {
     await _channel.invokeMethod<void>('startAppUpdateDownload', {
       'url': downloadLink,
+      if (expectedBytes != null && expectedBytes > 0)
+        'expectedBytes': expectedBytes,
     });
     return awaitNativeDownload(onProgress: onProgress);
   }
@@ -193,6 +201,8 @@ class AppUpdateInstaller {
       if (dir != null) {
         final native = File('${dir.path}/$_apkName');
         if (await native.exists()) await native.delete();
+        final part = File('${dir.path}/$_apkName.part');
+        if (await part.exists()) await part.delete();
       }
     } catch (_) {}
   }
