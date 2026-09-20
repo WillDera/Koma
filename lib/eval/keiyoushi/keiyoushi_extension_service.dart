@@ -110,12 +110,14 @@ class KeiyoushiExtensionService implements ExtensionService {
     String url, {
     String? memo,
     String? title,
+    Duration? timeout,
   }) async {
     final result = await _keiyoushi.getMangaUpdate(
       sourceId: source.sourceId,
       url: url,
       memo: memo,
       title: title,
+      timeout: timeout ?? const Duration(seconds: 60),
     );
     final details = result.details;
     final manga = details.isNotEmpty ? MManga.fromMap(details) : null;

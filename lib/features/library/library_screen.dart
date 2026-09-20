@@ -24,6 +24,8 @@ import '../../core/services/hidden_titles_prefs.dart';
 import '../../core/services/koma_package_store.dart';
 import '../../core/services/local_cbz_prefs.dart';
 import '../../core/services/local_cbz_scanner.dart';
+import '../../core/services/local_source_watcher.dart';
+import '../../core/services/continue_widget_service.dart';
 import '../../core/services/merge_manga_use_case.dart';
 import '../../core/services/metadata_enrichment_service.dart';
 import '../../core/services/android_storage_access.dart';
@@ -86,6 +88,8 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> with RouteAware {
   int? _selectedCategoryId;
   final Map<int, String?> _mangaThumbnails = {};
   List<_ContinueItem> _continueItems = const [];
+  final LocalSourceWatcher _localWatcher = LocalSourceWatcher();
+  bool _localScanBusy = false;
 
   _LibrarySection get _section =>
       _viewAllSection ?? _LibrarySection.books;
@@ -97,6 +101,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> with RouteAware {
       ref.read(libraryProvider.notifier).loadBooks();
       _loadThumbnails();
       _loadContinue();
+      _startLocalWatcher();
       _syncNavSatellite(ref.read(libraryProvider));
     });
     // In-app notification when an auto poll discovers new chapters. Cleared
@@ -155,8 +160,38 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> with RouteAware {
           _ContinueItem.manga(m, m.lastReadAt ?? epoch),
       ]..sort((a, b) => b.lastReadAt.compareTo(a.lastReadAt));
       setState(() => _continueItems = merged);
+      unawaited(ContinueWidgetService.updateFromRepos(repos));
     } catch (_) {
       // Continue rail is best-effort.
+    }
+  }
+
+  Future<void> _startLocalWatcher() async {
+    final path = await LocalCbzPrefs.folderPath();
+    if (!mounted) return;
+    if (path == null || path.isEmpty) {
+      _localWatcher.stop();
+      return;
+    }
+    _localWatcher.start(
+      mangaPath: path,
+      onChanged: () => unawaited(_onLocalFolderChanged()),
+    );
+  }
+
+  Future<void> _onLocalFolderChanged() async {
+    if (_localScanBusy || !mounted) return;
+    _localScanBusy = true;
+    try {
+      final path = await LocalCbzPrefs.folderPath();
+      if (path == null || path.isEmpty) return;
+      await LocalCbzScanner(ref.read(repositoriesProvider)).scanFolder(path);
+      if (!mounted) return;
+      await ref.read(libraryProvider.notifier).loadBooks();
+    } catch (_) {
+      // Quiet rescan — failures are non-fatal.
+    } finally {
+      _localScanBusy = false;
     }
   }
 
@@ -182,6 +217,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> with RouteAware {
 
   @override
   void dispose() {
+    _localWatcher.stop();
     // Provider may already be disposed if the whole tree is tearing down.
     try {
       ref.read(libraryNavSatelliteProvider.notifier).clear();
@@ -733,10 +769,12 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> with RouteAware {
             subtitle: groupLabel,
             onViewAll: () => context.pushNamed(Routes.collections),
             itemCount: preview.length,
+            separatorWidth: 22,
             itemBuilder: (context, i) {
               final g = preview[i];
               final covers = _groupCovers(g, provider);
               return MediaRailCover(
+                width: 128,
                 child: StaggeredFadeScale(
                   index: i,
                   child: LibraryGroupStackCard(
@@ -779,22 +817,13 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> with RouteAware {
   }
 
   ImageProvider? _mangaCoverProvider(Manga manga) {
-    final custom = manga.customCoverPath;
-    if (custom != null && custom.isNotEmpty && File(custom).existsSync()) {
-      return FileImage(File(custom));
-    }
-    final thumb = _mangaThumbnails[manga.id];
-    if (thumb != null && thumb.isNotEmpty && File(thumb).existsSync()) {
-      return FileImage(File(thumb));
-    }
-    final url = manga.imageUrl?.trim();
-    if (url != null &&
-        url.isNotEmpty &&
-        !url.startsWith('http') &&
-        File(url).existsSync()) {
-      return FileImage(File(url));
-    }
-    return null;
+    final headers =
+        ref.read(sourceImageHeadersProvider(manga.sourceId)).value;
+    return mangaCoverProvider(
+      manga,
+      localThumbPath: _mangaThumbnails[manga.id],
+      headers: headers,
+    );
   }
 
   List<GroupCoverSlot> _groupCovers(
@@ -853,6 +882,8 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> with RouteAware {
           !inNovelsOnly &&
           _selectedMangaPair(provider) != null;
       final showGroup = provider.selectedIds.length >= 2;
+      final showAddToGroup =
+          provider.selectedIds.isNotEmpty && provider.groups.isNotEmpty;
       return LibraryHeader(
         title: '${provider.selectedIds.length} selected',
         actions: [
@@ -864,6 +895,15 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> with RouteAware {
               iconColor: c.accent,
               tooltip: 'Create group',
               onPressed: () => _createGroupFromSelection(context),
+            ),
+          if (showAddToGroup)
+            IconButtonRound(
+              icon: Icons.playlist_add_outlined,
+              size: 38,
+              variant: IconButtonVariant.tonal,
+              iconColor: c.accent,
+              tooltip: 'Add to group',
+              onPressed: () => _addSelectionToGroup(context, provider),
             ),
           if (showMerge)
             IconButtonRound(
@@ -1246,6 +1286,84 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> with RouteAware {
       StashToast.show(
         context,
         message: 'Group “$name” created',
+        icon: Icons.layers_outlined,
+      );
+    } catch (e) {
+      if (!context.mounted) return;
+      StashToast.show(
+        context,
+        message: '$e',
+        icon: Icons.error_outline,
+      );
+    }
+  }
+
+  Future<void> _addSelectionToGroup(
+    BuildContext context,
+    LibraryState provider,
+  ) async {
+    final groups = provider.groups;
+    if (groups.isEmpty) return;
+    final c = context.colors;
+    final chosen = await showModalBottomSheet<LibraryGroupInfo>(
+      context: context,
+      backgroundColor: c.bgElevated,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (ctx) {
+        return SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(20, 16, 20, 8),
+                child: Text(
+                  'Add to group',
+                  style: TextStyle(
+                    color: c.textPrimary,
+                    fontSize: 17,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+              ConstrainedBox(
+                constraints: BoxConstraints(
+                  maxHeight: MediaQuery.sizeOf(ctx).height * 0.5,
+                ),
+                child: ListView.builder(
+                  shrinkWrap: true,
+                  itemCount: groups.length,
+                  itemBuilder: (ctx, i) {
+                    final g = groups[i];
+                    return ListTile(
+                      leading: Icon(Icons.layers_outlined, color: c.accent),
+                      title: Text(
+                        g.name,
+                        style: TextStyle(color: c.textPrimary),
+                      ),
+                      subtitle: Text(
+                        '${g.members.length} titles',
+                        style: TextStyle(color: c.textTertiary, fontSize: 12),
+                      ),
+                      onTap: () => Navigator.pop(ctx, g),
+                    );
+                  },
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+    if (chosen == null || !context.mounted) return;
+    try {
+      await ref.read(libraryProvider.notifier).addSelectionToGroup(chosen.id);
+      if (!context.mounted) return;
+      StashToast.show(
+        context,
+        message: 'Added to “${chosen.name}”',
         icon: Icons.layers_outlined,
       );
     } catch (e) {
@@ -1786,49 +1904,56 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> with RouteAware {
     );
   }
 
-  void _showAddNoteDialog(BuildContext context) {
+  Future<void> _showAddNoteDialog(BuildContext context) async {
     final titleCtrl = TextEditingController();
     final contentCtrl = TextEditingController();
-    StashDialog.show<void>(
-      context,
-      title: 'New note',
-      contentWidget: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          TextField(
-            controller: titleCtrl,
-            autofocus: true,
-            decoration: const InputDecoration(labelText: 'Title'),
+    try {
+      await StashDialog.show<void>(
+        context,
+        title: 'New note',
+        contentWidget: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              controller: titleCtrl,
+              autofocus: true,
+              decoration: const InputDecoration(labelText: 'Title'),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: contentCtrl,
+              maxLines: 5,
+              decoration: const InputDecoration(labelText: 'Content'),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: Text(
+              'Cancel',
+              style: TextStyle(color: context.colors.textSecondary),
+            ),
           ),
-          const SizedBox(height: 12),
-          TextField(
-            controller: contentCtrl,
-            maxLines: 5,
-            decoration: const InputDecoration(labelText: 'Content'),
+          PremiumButton(
+            label: 'Save',
+            size: PremiumButtonSize.sm,
+            onPressed: () {
+              final t = titleCtrl.text.trim();
+              final c = contentCtrl.text.trim();
+              if (t.isEmpty || c.isEmpty) return;
+              Navigator.pop(context);
+              _createNote(context, t, c);
+            },
           ),
         ],
-      ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.pop(context),
-          child: Text(
-            'Cancel',
-            style: TextStyle(color: context.colors.textSecondary),
-          ),
-        ),
-        PremiumButton(
-          label: 'Save',
-          size: PremiumButtonSize.sm,
-          onPressed: () {
-            final t = titleCtrl.text.trim();
-            final c = contentCtrl.text.trim();
-            if (t.isEmpty || c.isEmpty) return;
-            Navigator.pop(context);
-            _createNote(context, t, c);
-          },
-        ),
-      ],
-    );
+      );
+    } finally {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        titleCtrl.dispose();
+        contentCtrl.dispose();
+      });
+    }
   }
 
   Future<void> _createNote(
@@ -2375,6 +2500,7 @@ class _BookShelf extends StatelessWidget {
           gridDelegate: CatalogCardLayout.gridDelegate(
             columns: provider.gridColumns,
             variant: variant,
+            forGroupStacks: groups.isNotEmpty,
           ),
           delegate: SliverChildBuilderDelegate(
             (ctx, i) => StaggeredFadeScale(
@@ -2471,19 +2597,15 @@ class _BookShelf extends StatelessWidget {
       } else {
         final manga = mangasById[m.itemId];
         if (manga == null) continue;
-        final local = mangaThumbnails[manga.id];
-        ImageProvider? image;
-        if (local != null && local.isNotEmpty && File(local).existsSync()) {
-          image = FileImage(File(local));
-        } else if (manga.imageUrl != null && manga.imageUrl!.isNotEmpty) {
-          image = cachedCover(manga.imageUrl!);
-        }
         slots.add(
           GroupCoverSlot(
             title: manga.name,
             memberKey: m.memberKey,
             readingOrder: m.readingOrder,
-            image: image,
+            image: mangaCoverProvider(
+              manga,
+              localThumbPath: mangaThumbnails[manga.id],
+            ),
             badge: provider.isNovelManga(manga)
                 ? 'Novel'
                 : (provider.extensionNames[manga.sourceId] ?? manga.sourceId),
@@ -2552,6 +2674,7 @@ class _MangaShelf extends StatelessWidget {
           gridDelegate: CatalogCardLayout.gridDelegate(
             columns: provider.gridColumns,
             variant: variant,
+            forGroupStacks: groups.isNotEmpty,
           ),
           delegate: SliverChildBuilderDelegate((ctx, i) {
             return StaggeredFadeScale(
@@ -2662,19 +2785,15 @@ class _MangaShelf extends StatelessWidget {
       } else {
         final manga = mangasById[m.itemId];
         if (manga == null) continue;
-        final local = mangaThumbnails[manga.id];
-        ImageProvider? image;
-        if (local != null && local.isNotEmpty && File(local).existsSync()) {
-          image = FileImage(File(local));
-        } else if (manga.imageUrl != null && manga.imageUrl!.isNotEmpty) {
-          image = cachedCover(manga.imageUrl!);
-        }
         slots.add(
           GroupCoverSlot(
             title: manga.name,
             memberKey: m.memberKey,
             readingOrder: m.readingOrder,
-            image: image,
+            image: mangaCoverProvider(
+              manga,
+              localThumbPath: mangaThumbnails[manga.id],
+            ),
             badge: provider.isNovelManga(manga)
                 ? 'Novel'
                 : (extensionNames[manga.sourceId] ?? manga.sourceId),

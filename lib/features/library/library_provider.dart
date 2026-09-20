@@ -496,6 +496,23 @@ class LibraryNotifier extends Notifier<LibraryState> {
     return id;
   }
 
+  Future<void> addSelectionToGroup(int groupId) async {
+    final keys = state.selectedIds.toList();
+    if (keys.isEmpty) return;
+    await ref.read(repositoriesProvider).groups.addMembers(groupId, keys);
+    state = state.copyWith(selectedIds: {}, selectionMode: false);
+    await loadBooks();
+  }
+
+  Future<void> addMembersToGroup(int groupId, List<String> memberKeys) async {
+    if (memberKeys.isEmpty) return;
+    await ref
+        .read(repositoriesProvider)
+        .groups
+        .addMembers(groupId, memberKeys);
+    await loadBooks();
+  }
+
   Future<void> renameGroup(int groupId, String name) async {
     await ref.read(repositoriesProvider).groups.renameGroup(groupId, name);
     await loadBooks();
@@ -719,6 +736,7 @@ class LibraryUpdateNotifier extends Notifier<LibraryUpdateState> {
           enqueueNewChaptersFromUpdate(
             manager: ref.read(downloadManagerProvider.notifier).manager,
             report: report,
+            repositories: ref.read(repositoriesProvider),
           ),
         );
       }

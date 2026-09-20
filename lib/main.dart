@@ -19,6 +19,7 @@ import 'core/services/extension_install_listener.dart';
 import 'core/services/extension_manager.dart';
 import 'core/services/extension_repo_deep_link_listener.dart';
 import 'core/services/file_open_intent_listener.dart';
+import 'core/services/continue_widget_service.dart';
 import 'core/services/source_pref_store.dart';
 import 'core/services/search_intent_listener.dart';
 import 'core/services/security_prefs.dart';
@@ -109,6 +110,7 @@ void main() {
       );
       FileOpenIntentListener.init(container);
       ExtensionRepoDeepLinkListener.init(container);
+      ContinueWidgetService.init(container);
 
       unawaited(extensionManager.reloadAll().then((_) async {
         await _checkExtensionUpdates(extensionManager);

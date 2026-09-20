@@ -198,41 +198,45 @@ class StashDialog extends StatelessWidget {
       ),
       child: Padding(
         padding: const EdgeInsets.fromLTRB(22, 20, 22, 14),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Text(
-              title,
-              style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                color: c.textPrimary,
-                fontWeight: FontWeight.w600,
-                letterSpacing: -0.3,
-                height: 1.2,
-              ),
-            ),
-            if (content != null) ...[
-              const SizedBox(height: 8),
+        // Scroll so multiline fields + IME don't blow the dialog layout.
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
               Text(
-                content!,
-                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                  color: c.textSecondary,
-                  height: 1.5,
+                title,
+                style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                  color: c.textPrimary,
+                  fontWeight: FontWeight.w600,
+                  letterSpacing: -0.3,
+                  height: 1.2,
                 ),
               ),
+              if (content != null) ...[
+                const SizedBox(height: 8),
+                Text(
+                  content!,
+                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                    color: c.textSecondary,
+                    height: 1.5,
+                  ),
+                ),
+              ],
+              if (contentWidget != null) ...[
+                const SizedBox(height: 16),
+                contentWidget!,
+              ],
+              const SizedBox(height: 20),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: actions
+                    .expand((w) => [w, const SizedBox(width: 8)])
+                    .toList()
+                  ..removeLast(),
+              ),
             ],
-            if (contentWidget != null) ...[
-              const SizedBox(height: 16),
-              contentWidget!,
-            ],
-            const SizedBox(height: 20),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.end,
-              children:
-                  actions.expand((w) => [w, const SizedBox(width: 8)]).toList()
-                    ..removeLast(),
-            ),
-          ],
+          ),
         ),
       ),
     );

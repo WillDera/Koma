@@ -24,6 +24,7 @@ import '../../core/services/extension_source_resolve.dart';
 import '../../core/services/keiyoushi_service.dart';
 import '../../core/services/merge_manga_use_case.dart';
 import '../../core/services/migrate_suggestion_service.dart';
+import '../../core/services/library_duplicate_detector.dart';
 import '../../core/services/local_cbz_prefs.dart';
 import '../../core/services/local_cbz_source.dart';
 import '../../core/services/trackers/track_chapter_use_case.dart';
@@ -130,6 +131,11 @@ class _MangaDetailScreenState extends ConsumerState<MangaDetailScreen> {
   bool _migrateSuggestUserRequested = false;
   bool _migrating = false;
   int _migrateSuggestGen = 0;
+
+  /// Same-fingerprint library entry on a different source (merge candidate).
+  Manga? _libraryDuplicate;
+  String? _libraryDuplicateSourceLabel;
+  int _libraryDupGen = 0;
 
   /// Bumped on every [_init] so in-flight network/Isar work from a previous
   /// open (or a superseded refresh) cannot mutate the current screen.
@@ -293,6 +299,9 @@ class _MangaDetailScreenState extends ConsumerState<MangaDetailScreen> {
     _migrateSuggestLoading = false;
     _migrateSuggestUserRequested = false;
     _migrateSuggestGen++;
+    _libraryDuplicate = null;
+    _libraryDuplicateSourceLabel = null;
+    _libraryDupGen++;
     if (mounted) setState(() => _sessionReady = true);
 
     final m = widget.manga;
@@ -379,7 +388,15 @@ class _MangaDetailScreenState extends ConsumerState<MangaDetailScreen> {
     final repos = ref.read(repositoriesProvider);
     final m = await repos.manga.getMangaById(mangaId);
     if (m == null || !mounted || !_isCurrentBinding) return;
-    if (m.sourceId != widget.sourceId || m.url != widget.url) return;
+    // Prefer id match when opened from library with a full Manga object;
+    // sourceId/url can drift after migrate / baseUrl overrides.
+    final idMatchesWidget = widget.manga != null &&
+        widget.manga!.id > 0 &&
+        widget.manga!.id == m.id;
+    if (!idMatchesWidget &&
+        (m.sourceId != widget.sourceId || m.url != widget.url)) {
+      return;
+    }
     _mangaId = m.id;
     _notes = m.notes;
     _inLibrary = m.inLibrary;
@@ -445,6 +462,133 @@ class _MangaDetailScreenState extends ConsumerState<MangaDetailScreen> {
     }
     if (m.inLibrary) {
       _scheduleMigrateSuggestionScan();
+      _scheduleLibraryDuplicateScan();
+    }
+  }
+
+  void _scheduleLibraryDuplicateScan() {
+    final mangaId = _mangaId;
+    if (mangaId == null || !_inLibrary) return;
+    final gen = ++_libraryDupGen;
+    unawaited(() async {
+      try {
+        final repos = ref.read(repositoriesProvider);
+        final keep = await repos.manga.getMangaById(mangaId);
+        if (keep == null || !keep.inLibrary) return;
+        if (!mounted || gen != _libraryDupGen) return;
+        final library = await repos.manga.getMangasInLibrary();
+        final keepCand = LibraryDuplicateCandidate(
+          id: keep.id,
+          name: keep.name,
+          author: keep.author,
+          sourceId: keep.sourceId,
+          url: keep.url,
+          alternateTitles: keep.alternateTitles,
+        );
+        final candidates = [
+          for (final m in library)
+            LibraryDuplicateCandidate(
+              id: m.id,
+              name: m.name,
+              author: m.author,
+              sourceId: m.sourceId,
+              url: m.url,
+              alternateTitles: m.alternateTitles,
+            ),
+        ];
+        debugLogLibraryDuplicates(keepCand, candidates);
+        LibraryDuplicateCandidate? other;
+        for (final cand in candidates) {
+          if (LibraryDuplicateDetector.isLikelyDuplicate(keepCand, cand)) {
+            other = cand;
+            break;
+          }
+        }
+        if (other == null || !mounted || gen != _libraryDupGen) return;
+        final absorb = await repos.manga.getMangaById(other.id);
+        if (absorb == null || !mounted || gen != _libraryDupGen) return;
+        String label;
+        try {
+          label = await MergeMangaUseCase(repos).sourceLabel(absorb);
+        } catch (_) {
+          label = absorb.sourceId;
+        }
+        if (!mounted || gen != _libraryDupGen) return;
+        setState(() {
+          _libraryDuplicate = absorb;
+          _libraryDuplicateSourceLabel = label;
+        });
+      } catch (e, st) {
+        assert(() {
+          debugPrint('[dup-hint] scan failed: $e\n$st');
+          return true;
+        }());
+      }
+    }());
+  }
+
+  Future<void> _mergeLibraryDuplicate() async {
+    final absorb = _libraryDuplicate;
+    final mangaId = _mangaId;
+    if (absorb == null || mangaId == null) return;
+    final repos = ref.read(repositoriesProvider);
+    final keep = await repos.manga.getMangaById(mangaId);
+    if (keep == null || !mounted) return;
+
+    final absorbLabel =
+        _libraryDuplicateSourceLabel ??
+        await MergeMangaUseCase(repos).sourceLabel(absorb);
+    if (!mounted) return;
+
+    final confirmed = await StashDialog.show<bool>(
+      context,
+      title: 'Merge duplicate?',
+      content:
+          'Keep "${keep.name}" and absorb "${absorb.name}" '
+          '($absorbLabel). The duplicate leaves the library.',
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context, false),
+          child: Text(
+            'Cancel',
+            style: TextStyle(color: context.colors.textSecondary),
+          ),
+        ),
+        FilledButton(
+          onPressed: () => Navigator.pop(context, true),
+          child: const Text('Merge'),
+        ),
+      ],
+    );
+    if (confirmed != true || !mounted) return;
+
+    try {
+      await MergeMangaUseCase(repos).invoke(keep: keep, absorb: absorb);
+      if (!mounted) return;
+      ref.read(libraryProvider.notifier).loadBooks();
+      setState(() {
+        _libraryDuplicate = null;
+        _libraryDuplicateSourceLabel = null;
+      });
+      StashToast.show(
+        context,
+        message: 'Merged duplicate',
+        icon: Icons.check,
+      );
+    } on MergeValidationException catch (e) {
+      if (!mounted) return;
+      StashToast.show(
+        context,
+        message: e.message,
+        icon: Icons.error_outline,
+      );
+    } catch (_) {
+      if (!mounted) return;
+      StashToast.show(
+        context,
+        message: 'Merge failed',
+        icon: Icons.error_outline,
+      );
     }
   }
 
@@ -849,14 +993,16 @@ class _MangaDetailScreenState extends ConsumerState<MangaDetailScreen> {
       ..setError(null);
     // Do not touch loading — Isar stream updates must not hide the fetch banner.
     final becameLibrary = !_inLibrary && manga.inLibrary;
+    final alreadyLibrary = manga.inLibrary;
     setState(() {
       _mangaId = manga.id;
       _inLibrary = manga.inLibrary;
       _viewerFlags = manga.viewerFlags;
     });
     unawaited(_reloadLinkedTracks());
-    if (becameLibrary) {
+    if (becameLibrary || (alreadyLibrary && _libraryDuplicate == null)) {
       _scheduleMigrateSuggestionScan();
+      _scheduleLibraryDuplicateScan();
     }
   }
 
@@ -1010,6 +1156,7 @@ class _MangaDetailScreenState extends ConsumerState<MangaDetailScreen> {
       setState(() => _inLibrary = true);
       if (mounted) ref.read(libraryProvider.notifier).loadBooks();
       _scheduleMigrateSuggestionScan();
+      _scheduleLibraryDuplicateScan();
     } else {
       // First time insertion — ensure chapters exist before creating manga row
       var detail = ref.read(mangaDetailProvider);
@@ -1072,6 +1219,7 @@ class _MangaDetailScreenState extends ConsumerState<MangaDetailScreen> {
       ref.read(mangaDetailProvider.notifier).setInLibrary(true, id);
       if (mounted) ref.read(libraryProvider.notifier).loadBooks();
       _scheduleMigrateSuggestionScan();
+      _scheduleLibraryDuplicateScan();
     }
     if (!mounted) return;
     StashToast.show(
@@ -1400,8 +1548,11 @@ class _MangaDetailScreenState extends ConsumerState<MangaDetailScreen> {
       ),
     );
 
-    startController.dispose();
-    endController.dispose();
+    // Sheet route may still rebuild during dismiss / IME hide.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      startController.dispose();
+      endController.dispose();
+    });
 
     if (confirmed == null) return;
 
@@ -1522,30 +1673,14 @@ class _MangaDetailScreenState extends ConsumerState<MangaDetailScreen> {
   Future<void> _editNotes() async {
     final mangaId = _mangaId;
     if (mangaId == null) return;
-    final ctrl = TextEditingController(text: _notes ?? '');
-    final saved = await StashDialog.show<String?>(
-      context,
-      title: 'Notes',
-      contentWidget: TextField(
-        controller: ctrl,
-        maxLines: 6,
-        decoration: const InputDecoration(hintText: 'Personal notes…'),
-      ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.pop(context),
-          child: Text(
-            'Cancel',
-            style: TextStyle(color: context.colors.textSecondary),
-          ),
-        ),
-        FilledButton(
-          onPressed: () => Navigator.pop(context, ctrl.text.trim()),
-          child: const Text('Save'),
-        ),
-      ],
+    // Stateful dialog owns the controller so dispose runs after the route
+    // (and IME) finish tearing down — not while TextField is still listening.
+    final saved = await showDialog<String>(
+      context: context,
+      useRootNavigator: false,
+      barrierColor: Colors.black.withValues(alpha: 0.4),
+      builder: (ctx) => _MangaNotesDialog(initialNotes: _notes ?? ''),
     );
-    ctrl.dispose();
     if (saved == null || !mounted) return;
     final repos = ref.read(repositoriesProvider);
     await repos.manga.setMangaNotes(mangaId, saved.isEmpty ? null : saved);
@@ -2875,6 +3010,67 @@ class _MangaDetailScreenState extends ConsumerState<MangaDetailScreen> {
                   ),
                 ),
                 const SliverToBoxAdapter(child: SizedBox(height: 8)),
+                if (_inLibrary && _libraryDuplicate != null)
+                  // Keep duplicate hint high in the scroll so it isn't lost
+                  // under chapter chrome.
+                  SliverToBoxAdapter(
+                    child: Padding(
+                      padding: const EdgeInsets.fromLTRB(24, 0, 24, 12),
+                      child: Material(
+                        color: c.accent.withValues(alpha: 0.12),
+                        borderRadius: BorderRadius.circular(10),
+                        child: Padding(
+                          padding: const EdgeInsets.fromLTRB(14, 10, 8, 10),
+                          child: Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Padding(
+                                padding: const EdgeInsets.only(top: 2),
+                                child: Icon(
+                                  Icons.content_copy_rounded,
+                                  size: 18,
+                                  color: c.accent,
+                                ),
+                              ),
+                              const SizedBox(width: 10),
+                              Expanded(
+                                child: Text(
+                                  'Also in library on '
+                                  '${_libraryDuplicateSourceLabel ?? _libraryDuplicate!.sourceId}',
+                                  style: TextStyle(
+                                    color: c.textPrimary,
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.w600,
+                                    height: 1.35,
+                                  ),
+                                ),
+                              ),
+                              TextButton(
+                                onPressed: _mergeLibraryDuplicate,
+                                child: Text(
+                                  'Merge',
+                                  style: TextStyle(color: c.accent),
+                                ),
+                              ),
+                              IconButton(
+                                tooltip: 'Dismiss',
+                                visualDensity: VisualDensity.compact,
+                                onPressed: () => setState(() {
+                                  _libraryDuplicate = null;
+                                  _libraryDuplicateSourceLabel = null;
+                                }),
+                                icon: Icon(
+                                  Icons.close,
+                                  size: 18,
+                                  color: c.textTertiary,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
                 if (detail.loading)
                   SliverToBoxAdapter(
                     child: Padding(
@@ -4565,6 +4761,51 @@ class _KenjiBarButton extends StatelessWidget {
       onTap: onPressed,
       scaleDown: 0.97,
       child: child,
+    );
+  }
+}
+
+/// Notes editor for manga detail — owns [TextEditingController] lifecycle.
+class _MangaNotesDialog extends StatefulWidget {
+  final String initialNotes;
+
+  const _MangaNotesDialog({required this.initialNotes});
+
+  @override
+  State<_MangaNotesDialog> createState() => _MangaNotesDialogState();
+}
+
+class _MangaNotesDialogState extends State<_MangaNotesDialog> {
+  late final TextEditingController _ctrl =
+      TextEditingController(text: widget.initialNotes);
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.colors;
+    return StashDialog(
+      title: 'Notes',
+      contentWidget: TextField(
+        controller: _ctrl,
+        maxLines: 6,
+        autofocus: true,
+        decoration: const InputDecoration(hintText: 'Personal notes…'),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: Text('Cancel', style: TextStyle(color: c.textSecondary)),
+        ),
+        FilledButton(
+          onPressed: () => Navigator.pop(context, _ctrl.text.trim()),
+          child: const Text('Save'),
+        ),
+      ],
     );
   }
 }

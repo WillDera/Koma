@@ -14,4 +14,6 @@
     <string name="webview_open_browser">Open in browser</string>
     <string name="app_name">Koma</string>
     <string name="search_hint">Search manga catalogue</string>
+    <string name="continue_widget_description">Resume your last book or manga</string>
+    <string name="continue_widget_label">Continue reading</string>
 </resources>

@@ -97,6 +97,29 @@ abstract class BaseTracker {
     await tracks.upsertTrack(track);
   }
 
+  /// Update privacy / start / finish dates / status on a list entry.
+  ///
+  /// Pass `0` for a date to clear it.
+  Future<void> updateListEntry(
+    Track track, {
+    bool? private,
+    int? startedReadingDate,
+    int? finishedReadingDate,
+    TrackStatus? status,
+  }) async {
+    if (private != null) track.private = private;
+    if (startedReadingDate != null) {
+      track.startedReadingDate =
+          startedReadingDate == 0 ? null : startedReadingDate;
+    }
+    if (finishedReadingDate != null) {
+      track.finishedReadingDate =
+          finishedReadingDate == 0 ? null : finishedReadingDate;
+    }
+    if (status != null) track.status = status;
+    await tracks.upsertTrack(track);
+  }
+
   Future<List<TrackerReview>> listReviews(int mediaId) async => const [];
 
   Future<TrackerReview?> upsertReview({

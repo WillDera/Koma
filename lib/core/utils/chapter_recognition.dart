@@ -49,6 +49,23 @@ class ChapterRecognition {
 
   static bool isRecognized(double chapterNumber) => chapterNumber >= 0;
 
+  /// Whole-chapter index: `1.1`, `1.2`, `1-en` → `1`.
+  ///
+  /// Prefer [parseFromName] for cross-source compare so language / part
+  /// variants of the same chapter collapse correctly.
+  static int? majorChapterNumber(double chapterNumber) {
+    if (!isRecognized(chapterNumber)) return null;
+    return chapterNumber.floor();
+  }
+
+  /// Parse from the chapter title only (ignore source-provided numbers).
+  static double parseFromName(String mangaTitle, String chapterName) =>
+      parseChapterNumber(mangaTitle, chapterName);
+
+  /// Major chapter from the chapter title only.
+  static int? majorFromName(String mangaTitle, String chapterName) =>
+      majorChapterNumber(parseFromName(mangaTitle, chapterName));
+
   static double _fromMatch(RegExpMatch match) {
     final initial = double.parse(match.group(1)!);
     return initial + _decimal(match.group(2), match.group(3));

@@ -21,6 +21,7 @@ import 'backup/import_result.dart';
 import 'backup/mangayomi_backup_decoder.dart';
 import 'backup/mihon_backup_decoder.dart';
 import 'extension_manager.dart';
+import 'source_pref_store.dart';
 
 export 'backup/import_result.dart';
 
@@ -104,13 +105,18 @@ class ExportService {
     final highlights = await _repos.books.getAllHighlights();
     final collections = await _repos.snippets.getCollections();
     final settings = await BackupSettings.dump();
+    final sourcePrefs = await SourcePrefStore.exportAll();
+    Map<String, dynamic>? apkSourcePrefs;
+    try {
+      apkSourcePrefs = await SourcePrefStore.exportApkSourcePrefs();
+    } catch (_) {}
 
     final bySourceId = <String, ExtensionSource>{
       for (final e in extensions) e.sourceId: e,
     };
 
     final export = {
-      'version': 5,
+      'version': 6,
       'exported_at': DateTime.now().toIso8601String(),
       'books': books.map((b) => b.toJson()).toList(),
       'chapters': chapters.map((ch) => ch.toJson()).toList(),
@@ -136,6 +142,8 @@ class ExportService {
       'highlights': highlights.map((h) => h.toJson()).toList(),
       'snippet_collections': collections.map((c) => c.toJson()).toList(),
       'settings': settings,
+      'source_prefs': sourcePrefs,
+      'apk_source_prefs': ?apkSourcePrefs,
     };
     return const JsonEncoder.withIndent('  ').convert(export);
   }
@@ -530,6 +538,17 @@ class ExportService {
     if (settingsJson is Map) {
       settingsRestored = await BackupSettings.restore(
         Map<String, dynamic>.from(settingsJson),
+      );
+    }
+
+    final sourcePrefsJson = data['source_prefs'];
+    if (sourcePrefsJson is List) {
+      await SourcePrefStore.importAll(sourcePrefsJson);
+    }
+    final apkPrefsJson = data['apk_source_prefs'];
+    if (apkPrefsJson is Map) {
+      await SourcePrefStore.importApkSourcePrefs(
+        Map<String, dynamic>.from(apkPrefsJson),
       );
     }
 

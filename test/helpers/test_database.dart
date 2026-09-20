@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:isar_community/isar.dart';
 import 'package:koma/core/isar/isar.dart';
 import 'package:koma/core/repositories/repositories.dart';
+import 'package:koma/core/services/source_pref_store.dart';
 import 'package:path_provider_platform_interface/path_provider_platform_interface.dart';
 
 /// Point Isar at the native library shipped in isar_community_flutter_libs.
@@ -57,5 +58,6 @@ Future<Repositories> createTestRepositories() async {
   _tmpDocs ??= await Directory.systemTemp.createTemp('koma_test_docs_');
   PathProviderPlatform.instance = _FakePathProvider(_tmpDocs!.path);
   final isar = await openIsarInMemory();
+  SourcePrefStore.bind(isar);
   return Repositories(isar);
 }

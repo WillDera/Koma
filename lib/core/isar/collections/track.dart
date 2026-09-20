@@ -38,6 +38,10 @@ class Track {
   String? trackingUrl;
   int? updatedAt;
 
+  /// When true, the list entry is private on the tracker (AniList) or
+  /// stored locally only (MAL / others that lack a private flag).
+  bool private = false;
+
   /// Cached [TrackerMediaDetails] JSON from the tracker catalog.
   String? mediaDetailsJson;
 
@@ -56,6 +60,7 @@ class Track {
     this.finishedReadingDate,
     this.trackingUrl,
     this.updatedAt = 0,
+    this.private = false,
     this.mediaDetailsJson,
   });
 }

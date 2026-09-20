@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../../isar/collections/track.dart';
 import '../../repositories/repositories.dart';
 import '../../repositories/track_repository.dart';
 import '../../utils/chapter_recognition.dart';
@@ -8,6 +9,7 @@ import 'anilist.dart';
 import 'base_tracker.dart';
 import 'manga_updates.dart';
 import 'myanimelist.dart';
+import 'track_date_utils.dart';
 import 'track_sync_feedback.dart';
 
 /// After marking a chapter read, push progress to linked trackers.
@@ -98,6 +100,31 @@ class TrackChapterUseCase {
       if (!await tracker.isLoggedIn()) continue;
       try {
         await tracker.updateProgress(track, last);
+        // Auto-fill start/finish dates when progress crosses thresholds.
+        final today = TrackDateUtils.todayEpochMs();
+        int? started;
+        int? finished;
+        TrackStatus? status;
+        if (last > 0 && track.startedReadingDate == null) {
+          started = today;
+        }
+        final total = track.totalChapter ?? 0;
+        if (total > 0 && last >= total) {
+          if (track.finishedReadingDate == null) {
+            finished = today;
+          }
+          if (track.status != TrackStatus.completed) {
+            status = TrackStatus.completed;
+          }
+        }
+        if (started != null || finished != null || status != null) {
+          await tracker.updateListEntry(
+            track,
+            startedReadingDate: started,
+            finishedReadingDate: finished,
+            status: status,
+          );
+        }
         synced.add(_shortName(tracker.name));
       } catch (e, st) {
         debugPrint('TrackChapterUseCase ${tracker.name} failed: $e\n$st');

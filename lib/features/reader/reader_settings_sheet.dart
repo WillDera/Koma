@@ -54,6 +54,8 @@ class ReaderSettings {
   double brightness;
   double contrast;
   double saturation;
+  /// Invert page colors after brightness/contrast/saturation.
+  bool invertColors;
   Color? tintColor;
   double tintOpacity;
   /// When app Appearance is sepia, warm the manga page paper to match.
@@ -83,6 +85,7 @@ class ReaderSettings {
     this.brightness = 1.0,
     this.contrast = 1.0,
     this.saturation = 1.0,
+    this.invertColors = false,
     this.tintColor,
     this.tintOpacity = 0.0,
     this.sepiaPanels = true,
@@ -110,6 +113,7 @@ class ReaderSettings {
     double? brightness,
     double? contrast,
     double? saturation,
+    bool? invertColors,
     Color? tintColor,
     double? tintOpacity,
     bool? sepiaPanels,
@@ -137,6 +141,7 @@ class ReaderSettings {
       brightness: brightness ?? this.brightness,
       contrast: contrast ?? this.contrast,
       saturation: saturation ?? this.saturation,
+      invertColors: invertColors ?? this.invertColors,
       tintColor: tintColor ?? this.tintColor,
       tintOpacity: tintOpacity ?? this.tintOpacity,
       sepiaPanels: sepiaPanels ?? this.sepiaPanels,
@@ -170,6 +175,7 @@ class ReaderSettings {
     'brightness': brightness,
     'contrast': contrast,
     'saturation': saturation,
+    'invertColors': invertColors ? 1 : 0,
     'tintColor': tintColor?.toARGB32(),
     'tintOpacity': tintOpacity,
     'sepiaPanels': sepiaPanels ? 1 : 0,
@@ -218,6 +224,7 @@ class ReaderSettings {
       brightness: (json['brightness'] as num?)?.toDouble() ?? 1.0,
       contrast: (json['contrast'] as num?)?.toDouble() ?? 1.0,
       saturation: (json['saturation'] as num?)?.toDouble() ?? 1.0,
+      invertColors: (json['invertColors'] as int? ?? 0) == 1,
       tintColor: json['tintColor'] != null
           ? Color(json['tintColor'] as int)
           : null,
@@ -520,6 +527,54 @@ class _DisplayTab extends StatelessWidget {
               onChanged(settings.copyWith(rotationMode: mode)),
         ),
         const SizedBox(height: 24),
+        _SectionLabel('Page filters'),
+        const SizedBox(height: 8),
+        SegmentedControl<_PageFilterPreset>(
+          segments: const {
+            _PageFilterPreset.none: 'None',
+            _PageFilterPreset.grayscale: 'Grayscale',
+            _PageFilterPreset.invert: 'Invert',
+          },
+          value: _pageFilterPreset(settings),
+          onChanged: (preset) {
+            switch (preset) {
+              case _PageFilterPreset.none:
+                onChanged(
+                  settings.copyWith(saturation: 1.0, invertColors: false),
+                );
+              case _PageFilterPreset.grayscale:
+                onChanged(
+                  settings.copyWith(saturation: 0.0, invertColors: false),
+                );
+              case _PageFilterPreset.invert:
+                onChanged(settings.copyWith(invertColors: true));
+            }
+          },
+        ),
+        const SizedBox(height: 16),
+        _LabelRow(
+          'Brightness',
+          settings.brightness.toStringAsFixed(2),
+        ),
+        Slider(
+          value: settings.brightness.clamp(0.25, 1.75),
+          min: 0.25,
+          max: 1.75,
+          divisions: 30,
+          onChanged: (v) => onChanged(settings.copyWith(brightness: v)),
+        ),
+        _LabelRow(
+          'Contrast',
+          settings.contrast.toStringAsFixed(2),
+        ),
+        Slider(
+          value: settings.contrast.clamp(0.25, 1.75),
+          min: 0.25,
+          max: 1.75,
+          divisions: 30,
+          onChanged: (v) => onChanged(settings.copyWith(contrast: v)),
+        ),
+        const SizedBox(height: 24),
         _SectionLabel('UI options'),
         const SizedBox(height: 8),
         Container(
@@ -612,6 +667,42 @@ class _DisplayTab extends StatelessWidget {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16),
       child: Divider(height: 1, thickness: 0.5, color: c.border),
+    );
+  }
+
+  static _PageFilterPreset _pageFilterPreset(ReaderSettings s) {
+    if (s.invertColors) return _PageFilterPreset.invert;
+    if (s.saturation == 0.0) return _PageFilterPreset.grayscale;
+    return _PageFilterPreset.none;
+  }
+}
+
+enum _PageFilterPreset { none, grayscale, invert }
+
+class _LabelRow extends StatelessWidget {
+  final String label;
+  final String value;
+  const _LabelRow(this.label, this.value);
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.colors;
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 4),
+      child: Row(
+        children: [
+          Expanded(
+            child: Text(
+              label,
+              style: TextStyle(color: c.textSecondary, fontSize: 13),
+            ),
+          ),
+          Text(
+            value,
+            style: TextStyle(color: c.textTertiary, fontSize: 12),
+          ),
+        ],
+      ),
     );
   }
 }

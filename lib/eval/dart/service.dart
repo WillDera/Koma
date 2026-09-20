@@ -511,14 +511,20 @@ class DartExtensionService implements ExtensionService {
     String url, {
     String? memo,
     String? title,
+    Duration? timeout,
   }) async {
-    await _init(source);
-    final manga =
-        await _interpreter!.invoke('getDetail', [url]) as dart_manga.MManga;
-    return (
-      manga: _toApiManga(manga),
-      chapters: (manga.chapters ?? []).map(_toApiChapter).toList(),
-    );
+    Future<({MManga? manga, List<MChapter> chapters})> run() async {
+      await _init(source);
+      final manga =
+          await _interpreter!.invoke('getDetail', [url]) as dart_manga.MManga;
+      return (
+        manga: _toApiManga(manga),
+        chapters: (manga.chapters ?? []).map(_toApiChapter).toList(),
+      );
+    }
+
+    if (timeout == null) return run();
+    return run().timeout(timeout);
   }
 
   @override

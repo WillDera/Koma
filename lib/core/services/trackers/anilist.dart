@@ -9,6 +9,7 @@ import '../../isar/collections/track_preference.dart';
 import '../../repositories/repositories.dart';
 import '../../repositories/track_repository.dart';
 import 'base_tracker.dart';
+import 'track_date_utils.dart';
 
 /// AniList GraphQL + OAuth (redirect `koma://anilist-auth`).
 class AnilistTracker extends BaseTracker {
@@ -307,6 +308,15 @@ class AnilistTracker extends BaseTracker {
     ].where((e) => e.title.isNotEmpty).toList();
   }
 
+  static String _toAniListStatus(TrackStatus status) => switch (status) {
+        TrackStatus.reading => 'CURRENT',
+        TrackStatus.completed => 'COMPLETED',
+        TrackStatus.onHold => 'PAUSED',
+        TrackStatus.dropped => 'DROPPED',
+        TrackStatus.planToRead => 'PLANNING',
+        TrackStatus.reReading => 'REPEATING',
+      };
+
   @override
   Future<Track> bind({
     required int mangaId,
@@ -326,6 +336,9 @@ class AnilistTracker extends BaseTracker {
             mediaId
             status
             progress
+            private
+            startedAt { year month day }
+            completedAt { year month day }
           }
         }
       ''',
@@ -349,9 +362,108 @@ class AnilistTracker extends BaseTracker {
           : TrackStatus.planToRead,
       trackingUrl: hit.trackingUrl,
       score: 0,
+      private: entry?['private'] as bool? ?? false,
+      startedReadingDate: TrackDateUtils.fromFuzzyDate(
+        entry?['startedAt'] as Map<String, dynamic>?,
+      ),
+      finishedReadingDate: TrackDateUtils.fromFuzzyDate(
+        entry?['completedAt'] as Map<String, dynamic>?,
+      ),
     );
     await tracks.upsertTrack(track);
     return track;
+  }
+
+  @override
+  Future<void> updateListEntry(
+    Track track, {
+    bool? private,
+    int? startedReadingDate,
+    int? finishedReadingDate,
+    TrackStatus? status,
+  }) async {
+    final token = await _accessToken();
+    if (token == null) throw StateError('Not logged in to AniList');
+    final mediaId = track.mediaId;
+    final libraryId = track.libraryId;
+    if (mediaId == null && libraryId == null) {
+      throw StateError('AniList track missing media id');
+    }
+
+    if (private != null) track.private = private;
+    Map<String, dynamic>? startedAtVar;
+    var includeStartedAt = false;
+    Map<String, dynamic>? completedAtVar;
+    var includeCompletedAt = false;
+    if (startedReadingDate != null) {
+      includeStartedAt = true;
+      if (startedReadingDate == TrackDateUtils.clearSentinel) {
+        track.startedReadingDate = null;
+        startedAtVar = TrackDateUtils.clearFuzzyDate();
+      } else {
+        track.startedReadingDate = startedReadingDate;
+        startedAtVar = TrackDateUtils.toFuzzyDate(startedReadingDate);
+      }
+    }
+    if (finishedReadingDate != null) {
+      includeCompletedAt = true;
+      if (finishedReadingDate == TrackDateUtils.clearSentinel) {
+        track.finishedReadingDate = null;
+        completedAtVar = TrackDateUtils.clearFuzzyDate();
+      } else {
+        track.finishedReadingDate = finishedReadingDate;
+        completedAtVar = TrackDateUtils.toFuzzyDate(finishedReadingDate);
+      }
+    }
+    if (status != null) track.status = status;
+
+    final idArg = libraryId != null ? r'$id: Int' : r'$mediaId: Int';
+    final idField = libraryId != null ? r'id: $id' : r'mediaId: $mediaId';
+    final varDecls = <String>[idArg];
+    final fieldArgs = <String>[idField];
+    final variables = <String, dynamic>{
+      'id': ?libraryId,
+      if (libraryId == null) 'mediaId': mediaId,
+    };
+    if (private != null) {
+      varDecls.add(r'$private: Boolean');
+      fieldArgs.add(r'private: $private');
+      variables['private'] = private;
+    }
+    if (includeStartedAt) {
+      varDecls.add(r'$startedAt: FuzzyDateInput');
+      fieldArgs.add(r'startedAt: $startedAt');
+      variables['startedAt'] = startedAtVar;
+    }
+    if (includeCompletedAt) {
+      varDecls.add(r'$completedAt: FuzzyDateInput');
+      fieldArgs.add(r'completedAt: $completedAt');
+      variables['completedAt'] = completedAtVar;
+    }
+    if (status != null) {
+      varDecls.add(r'$status: MediaListStatus');
+      fieldArgs.add(r'status: $status');
+      variables['status'] = _toAniListStatus(status);
+    }
+
+    final mutation = '''
+      mutation (${varDecls.join(', ')}) {
+        SaveMediaListEntry(${fieldArgs.join(', ')}) {
+          id
+          private
+          startedAt { year month day }
+          completedAt { year month day }
+          status
+        }
+      }
+    ''';
+
+    final result = await _gql(token, mutation, variables: variables);
+    final entry = result['data']?['SaveMediaListEntry'] as Map<String, dynamic>?;
+    final entryId = (entry?['id'] as num?)?.toInt();
+    if (entryId != null) track.libraryId = entryId;
+    if (entry?['private'] is bool) track.private = entry!['private'] as bool;
+    await tracks.upsertTrack(track);
   }
 
   @override
@@ -366,38 +478,75 @@ class AnilistTracker extends BaseTracker {
       throw StateError('AniList track missing media id');
     }
 
-    // Prefer list-entry id when we have it; otherwise save by mediaId.
-    final result = await _gql(
-      token,
-      libraryId != null
-          ? r'''
-        mutation ($id: Int, $progress: Int, $status: MediaListStatus) {
-          SaveMediaListEntry(id: $id, progress: $progress, status: $status) {
-            id
-            progress
-            mediaId
-          }
+    final prev = track.lastChapterRead ?? 0;
+    Map<String, dynamic>? startedAt;
+    Map<String, dynamic>? completedAt;
+    var listStatus = 'CURRENT';
+    var trackStatus = TrackStatus.reading;
+
+    if (prev == 0 &&
+        lastChapterRead > 0 &&
+        track.startedReadingDate == null) {
+      final today = TrackDateUtils.todayEpochMs();
+      track.startedReadingDate = today;
+      startedAt = TrackDateUtils.toFuzzyDate(today);
+    }
+
+    final total = track.totalChapter ?? 0;
+    final completed = total > 0 && lastChapterRead >= total;
+    if (completed) {
+      listStatus = 'COMPLETED';
+      trackStatus = TrackStatus.completed;
+      if (track.finishedReadingDate == null) {
+        final today = TrackDateUtils.todayEpochMs();
+        track.finishedReadingDate = today;
+        completedAt = TrackDateUtils.toFuzzyDate(today);
+      }
+    }
+
+    final idArg = libraryId != null ? r'$id: Int' : r'$mediaId: Int';
+    final idField = libraryId != null ? r'id: $id' : r'mediaId: $mediaId';
+    final varDecls = <String>[
+      idArg,
+      r'$progress: Int',
+      r'$status: MediaListStatus',
+    ];
+    final fieldArgs = <String>[
+      idField,
+      r'progress: $progress',
+      r'status: $status',
+    ];
+    final variables = <String, dynamic>{
+      'id': ?libraryId,
+      if (libraryId == null) 'mediaId': mediaId,
+      'progress': lastChapterRead,
+      'status': listStatus,
+    };
+    if (startedAt != null) {
+      varDecls.add(r'$startedAt: FuzzyDateInput');
+      fieldArgs.add(r'startedAt: $startedAt');
+      variables['startedAt'] = startedAt;
+    }
+    if (completedAt != null) {
+      varDecls.add(r'$completedAt: FuzzyDateInput');
+      fieldArgs.add(r'completedAt: $completedAt');
+      variables['completedAt'] = completedAt;
+    }
+
+    final mutation = '''
+      mutation (${varDecls.join(', ')}) {
+        SaveMediaListEntry(${fieldArgs.join(', ')}) {
+          id
+          progress
+          mediaId
         }
-      '''
-          : r'''
-        mutation ($mediaId: Int, $progress: Int, $status: MediaListStatus) {
-          SaveMediaListEntry(mediaId: $mediaId, progress: $progress, status: $status) {
-            id
-            progress
-            mediaId
-          }
-        }
-      ''',
-      variables: {
-        if (libraryId != null) 'id': libraryId,
-        if (libraryId == null) 'mediaId': mediaId,
-        'progress': lastChapterRead,
-        'status': 'CURRENT',
-      },
-    );
+      }
+    ''';
+
+    final result = await _gql(token, mutation, variables: variables);
     final entry = result['data']?['SaveMediaListEntry'] as Map<String, dynamic>?;
     track.lastChapterRead = lastChapterRead;
-    track.status = TrackStatus.reading;
+    track.status = trackStatus;
     final entryId = (entry?['id'] as num?)?.toInt();
     if (entryId != null) track.libraryId = entryId;
     await tracks.upsertTrack(track);

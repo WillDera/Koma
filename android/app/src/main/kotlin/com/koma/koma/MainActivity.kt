@@ -64,16 +64,23 @@ class MainActivity : FlutterFragmentActivity() {
         val scheme = uri.scheme?.lowercase().orEmpty()
         val host = uri.host?.lowercase().orEmpty()
         return when (scheme) {
-            "mangayomi", "koma", "tachiyomi" -> host == "add-repo"
+            "mangayomi", "tachiyomi" -> host == "add-repo"
+            "koma" -> host == "add-repo" || host == "continue"
             "mihon" -> host == "add-repo" || host == "extension-store"
             else -> false
         }
     }
 
     private fun captureDeepLinkIntent(intent: Intent?) {
-        if (intent?.action != Intent.ACTION_VIEW) return
+        val action = intent?.action ?: return
         val uri = intent.data ?: return
-        if (!isRepoDeepLink(uri)) return
+        val isView = action == Intent.ACTION_VIEW
+        val isWidgetLaunch =
+            action == "es.antonborri.home_widget.action.LAUNCH" &&
+                uri.scheme?.equals("koma", ignoreCase = true) == true &&
+                uri.host?.equals("continue", ignoreCase = true) == true
+        if (!isView && !isWidgetLaunch) return
+        if (!isRepoDeepLink(uri) && !isWidgetLaunch) return
         val link = uri.toString()
         if (deepLinkChannel != null) {
             deepLinkChannel?.invokeMethod("onDeepLink", link)
@@ -471,6 +478,34 @@ class MainActivity : FlutterFragmentActivity() {
                         result.error("PREFS_FAILED", e.message, null)
                     }
                 }
+                "exportAllSourcePrefs" -> {
+                    Thread {
+                        try {
+                            val out = exportAllSourceSharedPrefs()
+                            runOnUiThread { result.success(out) }
+                        } catch (e: Throwable) {
+                            Log.e("SourcePrefs", "exportAllSourcePrefs failed", e)
+                            runOnUiThread {
+                                result.error("EXPORT_FAILED", e.message, null)
+                            }
+                        }
+                    }.start()
+                }
+                "importSourcePrefs" -> {
+                    Thread {
+                        try {
+                            @Suppress("UNCHECKED_CAST")
+                            val data = call.arguments as? Map<String, Any?> ?: emptyMap()
+                            importSourceSharedPrefs(data)
+                            runOnUiThread { result.success(null) }
+                        } catch (e: Throwable) {
+                            Log.e("SourcePrefs", "importSourcePrefs failed", e)
+                            runOnUiThread {
+                                result.error("IMPORT_FAILED", e.message, null)
+                            }
+                        }
+                    }.start()
+                }
                 else -> result.notImplemented()
             }
         }
@@ -689,6 +724,61 @@ class MainActivity : FlutterFragmentActivity() {
             chars[j++] = hex[v and 0x0f]
         }
         return String(chars)
+    }
+
+    private fun exportAllSourceSharedPrefs(): Map<String, Map<String, Any?>> {
+        val dir = File(applicationInfo.dataDir, "shared_prefs")
+        val out = linkedMapOf<String, Map<String, Any?>>()
+        if (!dir.isDirectory) return out
+        val files = dir.listFiles() ?: return out
+        for (file in files) {
+            val name = file.name.removeSuffix(".xml")
+            if (!name.startsWith("source_")) continue
+            val prefs = getSharedPreferences(name, Context.MODE_PRIVATE)
+            val map = linkedMapOf<String, Any?>()
+            for ((k, v) in prefs.all) {
+                when (v) {
+                    is Set<*> -> map[k] = v.map { it?.toString() }.toList()
+                    else -> map[k] = v
+                }
+            }
+            out[name] = map
+        }
+        return out
+    }
+
+    private fun importSourceSharedPrefs(data: Map<String, Any?>) {
+        for ((name, rawValues) in data) {
+            if (!name.startsWith("source_")) continue
+            @Suppress("UNCHECKED_CAST")
+            val values = rawValues as? Map<String, Any?> ?: continue
+            val editor = getSharedPreferences(name, Context.MODE_PRIVATE).edit()
+            for ((k, v) in values) {
+                when (v) {
+                    null -> editor.remove(k)
+                    is Boolean -> editor.putBoolean(k, v)
+                    is Int -> editor.putInt(k, v)
+                    is Long -> editor.putLong(k, v)
+                    is Float -> editor.putFloat(k, v)
+                    is Double -> {
+                        val asLong = v.toLong()
+                        if (asLong.toDouble() == v) editor.putLong(k, asLong)
+                        else editor.putFloat(k, v.toFloat())
+                    }
+                    is String -> editor.putString(k, v)
+                    is List<*> -> editor.putStringSet(
+                        k,
+                        v.map { it?.toString() ?: "" }.toSet(),
+                    )
+                    is Set<*> -> editor.putStringSet(
+                        k,
+                        v.map { it?.toString() ?: "" }.toSet(),
+                    )
+                    else -> editor.putString(k, v.toString())
+                }
+            }
+            editor.commit()
+        }
     }
 
     override fun cleanUpFlutterEngine(flutterEngine: FlutterEngine) {

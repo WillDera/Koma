@@ -131,6 +131,13 @@
                 <category android:name="android.intent.category.BROWSABLE" />
                 <data android:scheme="koma" android:host="add-repo" />
             </intent-filter>
+            <!-- Home-screen Continue widget -->
+            <intent-filter android:label="Continue reading">
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="koma" android:host="continue" />
+            </intent-filter>
             <!-- Tracker OAuth (anilist-auth / mal-auth) MUST NOT be on MainActivity —
                  flutter_web_auth_2's CallbackActivity owns those hosts. Registering
                  them here steals the redirect so login never persists. -->
@@ -211,6 +218,17 @@
                 <action android:name="android.intent.action.PACKAGE_REMOVED" />
                 <data android:scheme="package" />
             </intent-filter>
+        </receiver>
+        <receiver
+            android:name=".ContinueWidgetProvider"
+            android:exported="true"
+            android:label="@string/continue_widget_label">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/continue_widget_info" />
         </receiver>
         <!-- WorkManager SystemForegroundService for AppUpdateDownloadJob (dataSync). -->
         <service

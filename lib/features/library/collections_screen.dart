@@ -1,13 +1,18 @@
+import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 
+import 'package:crypto/crypto.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../core/models/library_group.dart';
 import '../../core/providers.dart';
+import '../../core/services/app_storage.dart';
 import '../../core/services/group_display_prefs.dart';
 import '../../core/utils/image_cache.dart';
+import '../../core/utils/image_headers.dart';
 import '../../router/book_navigation.dart';
 import '../../router/router.dart';
 import '../../theme/app_icons.dart';
@@ -37,12 +42,39 @@ class CollectionsScreen extends ConsumerStatefulWidget {
 
 class _CollectionsScreenState extends ConsumerState<CollectionsScreen> {
   final _searchCtrl = TextEditingController();
+  final Map<int, String?> _mangaThumbnails = {};
   bool _searching = false;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _loadThumbnails());
+  }
 
   @override
   void dispose() {
     _searchCtrl.dispose();
     super.dispose();
+  }
+
+  Future<void> _loadThumbnails() async {
+    try {
+      final appDir = await AppStorage.documents();
+      final thumbDir = Directory('${appDir.path}/thumbnails');
+      if (!await thumbDir.exists()) return;
+      final provider = ref.read(libraryProvider);
+      final paths = <int, String?>{};
+      for (final manga in provider.mangas) {
+        final url = manga.imageUrl;
+        if (url == null || url.isEmpty) continue;
+        final hash = sha256.convert(utf8.encode(url)).toString();
+        final path = '${thumbDir.path}/$hash.jpg';
+        paths[manga.id] = File(path).existsSync() ? path : null;
+      }
+      if (mounted) setState(() => _mangaThumbnails.addAll(paths));
+    } catch (_) {
+      // ignore thumbnail loading failures
+    }
   }
 
   List<LibraryGroupInfo> _filtered(List<LibraryGroupInfo> groups) {
@@ -83,6 +115,11 @@ class _CollectionsScreenState extends ConsumerState<CollectionsScreen> {
   Widget build(BuildContext context) {
     final c = context.colors;
     final library = ref.watch(libraryProvider);
+    ref.listen(libraryProvider, (prev, next) {
+      if (prev?.mangas != next.mangas) {
+        unawaited(_loadThumbnails());
+      }
+    });
     final groupDisplay =
         ref.watch(groupDisplayProvider).value ??
         const GroupDisplaySettings();
@@ -195,6 +232,7 @@ class _CollectionsScreenState extends ConsumerState<CollectionsScreen> {
                       gridDelegate: CatalogCardLayout.gridDelegate(
                         columns: groupDisplay.columns,
                         variant: stackVariant,
+                        forGroupStacks: true,
                       ),
                       itemCount: visible.length,
                       itemBuilder: (context, i) {
@@ -213,7 +251,7 @@ class _CollectionsScreenState extends ConsumerState<CollectionsScreen> {
                               context: context,
                               ref: ref,
                               group: g,
-                              mangaThumbnails: const {},
+                              mangaThumbnails: _mangaThumbnails,
                               onOpenBook: (book) =>
                                   openBookFromCollection(context, book.id),
                               onOpenManga: (manga) {
@@ -264,19 +302,18 @@ class _CollectionsScreenState extends ConsumerState<CollectionsScreen> {
       } else {
         final manga = mangasById[m.itemId];
         if (manga == null) continue;
-        ImageProvider? image;
-        final custom = manga.customCoverPath;
-        if (custom != null && custom.isNotEmpty && File(custom).existsSync()) {
-          image = FileImage(File(custom));
-        } else if (manga.imageUrl != null && manga.imageUrl!.isNotEmpty) {
-          image = cachedCover(manga.imageUrl!);
-        }
+        final headers =
+            ref.watch(sourceImageHeadersProvider(manga.sourceId)).value;
         slots.add(
           GroupCoverSlot(
             title: manga.name,
             memberKey: m.memberKey,
             readingOrder: m.readingOrder,
-            image: image,
+            image: mangaCoverProvider(
+              manga,
+              localThumbPath: _mangaThumbnails[manga.id],
+              headers: headers,
+            ),
             badge: library.isNovelManga(manga)
                 ? 'Novel'
                 : (library.extensionNames[manga.sourceId] ?? manga.sourceId),

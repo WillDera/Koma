@@ -39,16 +39,25 @@ abstract class ExtensionService {
   /// Combined detail + chapter fetch. Default runs sequentially so sources
   /// that share one network path (or forbid concurrent refresh) do not race.
   /// Implementations may override for a single round-trip (e.g. Keiyoushi).
+  ///
+  /// When [timeout] is set, it applies to the fetch itself (not queue wait
+  /// inside a serialized host such as the JS runtime).
   Future<({MManga? manga, List<MChapter> chapters})> getMangaDetail(
     MSource source,
     String url, {
     String? memo,
     String? title,
+    Duration? timeout,
   }) async {
-    final manga = await getDetail(source, url, memo: memo, title: title);
-    final chapters =
-        await getChapterList(source, url, memo: memo, title: title);
-    return (manga: manga, chapters: chapters);
+    Future<({MManga? manga, List<MChapter> chapters})> run() async {
+      final manga = await getDetail(source, url, memo: memo, title: title);
+      final chapters =
+          await getChapterList(source, url, memo: memo, title: title);
+      return (manga: manga, chapters: chapters);
+    }
+
+    if (timeout == null) return run();
+    return run().timeout(timeout);
   }
 
   Future<List<MPages>> getPageList(MSource source, MChapter chapter);

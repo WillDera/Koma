@@ -1,5 +1,3 @@
-import 'dart:math' as math;
-
 import 'package:flutter/material.dart';
 
 import '../theme/app_theme.dart';
@@ -7,7 +5,7 @@ import '../theme/tokens/app_spacing.dart';
 import 'animated_press.dart';
 import 'library_book_card.dart';
 
-/// Cover descriptors for the fan stack (resolved by the caller).
+/// Cover descriptors for the group collage (resolved by the caller).
 class GroupCoverSlot {
   const GroupCoverSlot({
     required this.title,
@@ -22,14 +20,17 @@ class GroupCoverSlot {
   final ImageProvider? image;
   final int? readingOrder;
 
-  /// Optional source / type pill on the front cover (respects badge settings).
+  /// Optional source / type pill on the collage (respects badge settings).
   final String? badge;
 }
 
-/// Fanned stack of covers used as a single library card for a group.
+/// Composite cover art for a library group — first 1–3 member covers.
 ///
-/// Honors [variant] (grid / list / compact / overlay / coverOnly) and
-/// [minimalChrome] the same way catalog cards do.
+/// - 1 title → full cover
+/// - 2 titles → vertical panels side by side
+/// - 3 titles → H layout (large left, two stacked on the right)
+///
+/// Honors [variant] / [minimalChrome] like other catalog cards.
 class LibraryGroupStackCard extends StatelessWidget {
   const LibraryGroupStackCard({
     super.key,
@@ -39,7 +40,7 @@ class LibraryGroupStackCard extends StatelessWidget {
     required this.onTap,
     this.onLongPress,
     this.memberCount = 0,
-    this.maxVisible = 4,
+    this.maxVisible = 3,
     this.enableHero = true,
     this.listLayout = false,
     this.variant = LibraryCardVariant.grid,
@@ -90,12 +91,10 @@ class LibraryGroupStackCard extends StatelessWidget {
               SizedBox(
                 width: 88,
                 height: 110,
-                child: _FanStack(
+                child: _GroupCollage(
                   groupId: groupId,
                   covers: visible,
                   colors: c,
-                  width: 88,
-                  height: 110,
                   enableHero: enableHero,
                   showReadingOrder: _showBadges,
                   sourceBadge: _showSource ? frontBadge : null,
@@ -164,19 +163,13 @@ class LibraryGroupStackCard extends StatelessWidget {
       decoration: TextDecoration.none,
     );
 
-    final fan = LayoutBuilder(
-      builder: (context, constraints) {
-        return _FanStack(
-          groupId: groupId,
-          covers: visible,
-          colors: c,
-          width: constraints.maxWidth,
-          height: constraints.maxHeight,
-          enableHero: enableHero,
-          showReadingOrder: _showBadges,
-          sourceBadge: _showSource ? frontBadge : null,
-        );
-      },
+    final collage = _GroupCollage(
+      groupId: groupId,
+      covers: visible,
+      colors: c,
+      enableHero: enableHero,
+      showReadingOrder: _showBadges,
+      sourceBadge: _showSource ? frontBadge : null,
     );
 
     return AnimatedPress(
@@ -185,10 +178,9 @@ class LibraryGroupStackCard extends StatelessWidget {
       scaleDown: 0.97,
       child: _overlayTitle
           ? Stack(
-              clipBehavior: Clip.none,
               fit: StackFit.expand,
               children: [
-                fan,
+                collage,
                 if (_showTitle)
                   Positioned(
                     left: 0,
@@ -244,7 +236,7 @@ class LibraryGroupStackCard extends StatelessWidget {
           : Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Expanded(child: fan),
+                Expanded(child: collage),
                 if (_showTitle) ...[
                   SizedBox(
                     height: variant == LibraryCardVariant.compact ? 4 : 6,
@@ -276,13 +268,12 @@ class LibraryGroupStackCard extends StatelessWidget {
   }
 }
 
-class _FanStack extends StatelessWidget {
-  const _FanStack({
+/// Composite cover from 1–3 [GroupCoverSlot]s.
+class _GroupCollage extends StatelessWidget {
+  const _GroupCollage({
     required this.groupId,
     required this.covers,
     required this.colors,
-    required this.width,
-    required this.height,
     required this.enableHero,
     required this.showReadingOrder,
     this.sourceBadge,
@@ -291,175 +282,98 @@ class _FanStack extends StatelessWidget {
   final int groupId;
   final List<GroupCoverSlot> covers;
   final KomaColors colors;
-  final double width;
-  final double height;
   final bool enableHero;
   final bool showReadingOrder;
   final String? sourceBadge;
 
+  static const _gap = 1.5;
+
   @override
   Widget build(BuildContext context) {
-    if (covers.isEmpty) {
-      return ClipRRect(
-        borderRadius: AppSpacing.brMd,
-        child: ColoredBox(
-          color: colors.surfaceMuted,
-          child: Center(
-            child: Icon(Icons.layers_outlined, color: colors.textTertiary),
-          ),
-        ),
-      );
-    }
+    final body = ClipRRect(
+      borderRadius: AppSpacing.brMd,
+      child: ColoredBox(
+        color: colors.surfaceMuted,
+        child: covers.isEmpty
+            ? Center(
+                child: Icon(Icons.layers_outlined, color: colors.textTertiary),
+              )
+            : Stack(
+                fit: StackFit.expand,
+                children: [
+                  _layout(),
+                  if (showReadingOrder &&
+                      covers.first.readingOrder != null)
+                    Positioned(
+                      top: 6,
+                      left: 6,
+                      child: ReadingOrderPill(order: covers.first.readingOrder!),
+                    ),
+                  if (sourceBadge != null && sourceBadge!.isNotEmpty)
+                    Positioned(
+                      top: 6,
+                      right: 6,
+                      child: _SourcePill(label: sourceBadge!),
+                    ),
+                ],
+              ),
+      ),
+    );
 
-    final n = covers.length;
-    // Front cover matches other rail covers (full tile width × 2:3 height).
-    // Rear covers fan out and may paint past the card bounds.
-    final coverW = width;
-    final coverH = math.min(height, coverW / AppSpacing.coverAspectRatio);
-    final spread = math.min(coverW * 0.14, 18.0);
-
-    return Stack(
-      clipBehavior: Clip.none,
-      alignment: Alignment.bottomLeft,
-      children: [
-        for (var i = n - 1; i >= 0; i--)
-          _FanCover(
-            groupId: groupId,
-            cover: covers[i],
-            index: i,
-            total: n,
-            coverW: coverW,
-            coverH: coverH,
-            spread: spread,
-            colors: colors,
-            enableHero: enableHero,
-            showReadingOrder: showReadingOrder,
-            sourceBadge: i == 0 ? sourceBadge : null,
-          ),
-      ],
+    if (!enableHero || covers.isEmpty) return body;
+    return Hero(
+      tag: LibraryGroupStackCard.coverHeroTag(groupId, covers.first.memberKey),
+      createRectTween: (begin, end) =>
+          MaterialRectArcTween(begin: begin, end: end),
+      child: Material(type: MaterialType.transparency, child: body),
     );
   }
-}
 
-class _FanCover extends StatelessWidget {
-  const _FanCover({
-    required this.groupId,
-    required this.cover,
-    required this.index,
-    required this.total,
-    required this.coverW,
-    required this.coverH,
-    required this.spread,
-    required this.colors,
-    required this.enableHero,
-    required this.showReadingOrder,
-    this.sourceBadge,
-  });
-
-  final int groupId;
-  final GroupCoverSlot cover;
-  final int index;
-  final int total;
-  final double coverW;
-  final double coverH;
-  final double spread;
-  final KomaColors colors;
-  final bool enableHero;
-  final bool showReadingOrder;
-  final String? sourceBadge;
-
-  @override
-  Widget build(BuildContext context) {
-    final t = total <= 1 ? 0.0 : index / (total - 1);
-    final dx = spread * index;
-    final dy = 5.0 * index;
-    final angle = (0.02 + 0.07 * t) * (index == 0 ? 0.15 : 1.0);
-    final scale = 1.0 - 0.04 * index;
-
-    final face = DecoratedBox(
-      decoration: BoxDecoration(
-        borderRadius: AppSpacing.brMd,
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.28 - 0.04 * index),
-            blurRadius: 10 + index * 2.5,
-            offset: Offset(1.5 * index, 3.0 + index * 1.5),
-          ),
+  Widget _layout() {
+    final n = covers.length;
+    if (n == 1) {
+      return _panel(covers[0]);
+    }
+    if (n == 2) {
+      // Two vertical panels side by side.
+      return Row(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Expanded(child: _panel(covers[0])),
+          const SizedBox(width: _gap),
+          Expanded(child: _panel(covers[1])),
         ],
-      ),
-      child: ClipRRect(
-        borderRadius: AppSpacing.brMd,
-        child: SizedBox(
-          width: coverW,
-          height: coverH,
-          child: Stack(
-            fit: StackFit.expand,
+      );
+    }
+    // H layout: large left, two stacked on the right.
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Expanded(flex: 5, child: _panel(covers[0])),
+        const SizedBox(width: _gap),
+        Expanded(
+          flex: 4,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              _coverFace(cover),
-              if (index == 0 &&
-                  showReadingOrder &&
-                  cover.readingOrder != null)
-                Positioned(
-                  top: 6,
-                  left: 6,
-                  child: ReadingOrderPill(order: cover.readingOrder!),
-                ),
-              if (index == 0 &&
-                  sourceBadge != null &&
-                  sourceBadge!.isNotEmpty &&
-                  !(showReadingOrder && cover.readingOrder != null))
-                Positioned(
-                  top: 6,
-                  left: 6,
-                  child: _SourcePill(label: sourceBadge!),
-                ),
-              if (index == 0 &&
-                  sourceBadge != null &&
-                  sourceBadge!.isNotEmpty &&
-                  showReadingOrder &&
-                  cover.readingOrder != null)
-                Positioned(
-                  top: 6,
-                  right: 6,
-                  child: _SourcePill(label: sourceBadge!),
-                ),
+              Expanded(child: _panel(covers[1])),
+              const SizedBox(height: _gap),
+              Expanded(child: _panel(covers[2])),
             ],
           ),
         ),
-      ),
-    );
-
-    final heroChild = enableHero
-        ? Hero(
-            tag: LibraryGroupStackCard.coverHeroTag(groupId, cover.memberKey),
-            createRectTween: (begin, end) =>
-                MaterialRectArcTween(begin: begin, end: end),
-            child: Material(type: MaterialType.transparency, child: face),
-          )
-        : face;
-
-    return Positioned(
-      left: dx,
-      bottom: dy,
-      width: coverW,
-      height: coverH,
-      child: Transform.rotate(
-        angle: angle,
-        alignment: Alignment.bottomLeft,
-        child: Transform.scale(
-          scale: scale,
-          alignment: Alignment.bottomLeft,
-          child: heroChild,
-        ),
-      ),
+      ],
     );
   }
 
-  Widget _coverFace(GroupCoverSlot cover) {
+  Widget _panel(GroupCoverSlot cover) {
     if (cover.image != null) {
       return Image(
         image: cover.image!,
         fit: BoxFit.cover,
+        width: double.infinity,
+        height: double.infinity,
+        alignment: Alignment.center,
         errorBuilder: (_, _, _) => _placeholder(cover.title),
       );
     }
@@ -482,7 +396,7 @@ class _FanCover extends StatelessWidget {
           letters,
           style: TextStyle(
             color: colors.textSecondary,
-            fontSize: 22,
+            fontSize: 18,
             fontWeight: FontWeight.w600,
             decoration: TextDecoration.none,
           ),

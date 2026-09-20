@@ -241,21 +241,15 @@ class MergeMangaUseCase {
     );
   }
 
-  /// Exact (case-insensitive) or substring match after stripping punctuation.
+  /// Full title match after case-insensitive punctuation normalize.
+  ///
+  /// No substring / token-overlap matching — shared words like "Absolute"
+  /// and a year must not link unrelated series.
   static bool titlesLookCompatible(String a, String b) {
     final na = _normTitle(a);
     final nb = _normTitle(b);
     if (na.isEmpty || nb.isEmpty) return false;
-    if (na == nb) return true;
-    if (na.contains(nb) || nb.contains(na)) return true;
-    // Token overlap: at least half of the shorter title's tokens appear in the longer.
-    final ta = na.split(RegExp(r'\s+')).where((t) => t.length > 1).toSet();
-    final tb = nb.split(RegExp(r'\s+')).where((t) => t.length > 1).toSet();
-    if (ta.isEmpty || tb.isEmpty) return false;
-    final shorter = ta.length <= tb.length ? ta : tb;
-    final longer = ta.length <= tb.length ? tb : ta;
-    final hits = shorter.where(longer.contains).length;
-    return hits >= (shorter.length + 1) ~/ 2;
+    return na == nb;
   }
 
   static String _normTitle(String s) {

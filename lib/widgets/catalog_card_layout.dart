@@ -35,6 +35,13 @@ abstract final class CatalogCardLayout {
     return 14;
   }
 
+  /// Extra room between fanned group stacks (Collections / library grids).
+  static double groupMainAxisSpacing(LibraryCardVariant variant) =>
+      mainAxisSpacing(variant) + 10;
+
+  static double groupCrossAxisSpacing(LibraryCardVariant variant) =>
+      crossAxisSpacing(variant) + 10;
+
   static double childAspectRatio(LibraryCardVariant variant) {
     final v = gridVariant(variant);
     if (v == LibraryCardVariant.overlay ||
@@ -49,11 +56,16 @@ abstract final class CatalogCardLayout {
   static SliverGridDelegateWithFixedCrossAxisCount gridDelegate({
     required int columns,
     required LibraryCardVariant variant,
+    bool forGroupStacks = false,
   }) {
     return SliverGridDelegateWithFixedCrossAxisCount(
       crossAxisCount: columns.clamp(1, 6),
-      mainAxisSpacing: mainAxisSpacing(variant),
-      crossAxisSpacing: crossAxisSpacing(variant),
+      mainAxisSpacing: forGroupStacks
+          ? groupMainAxisSpacing(variant)
+          : mainAxisSpacing(variant),
+      crossAxisSpacing: forGroupStacks
+          ? groupCrossAxisSpacing(variant)
+          : crossAxisSpacing(variant),
       childAspectRatio: childAspectRatio(variant),
     );
   }

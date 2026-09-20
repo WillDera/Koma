@@ -61,24 +61,22 @@ Future<void> _pollLibraryAndNotify() async {
     await NotificationService.instance.init(requestPermission: false);
     await NotificationService.instance.notifyNewChapters(report);
 
-    // Auto-queue newly discovered chapters (Mihon LibraryUpdateJob parity).
-    if (await LibraryUpdatePrefs.isDownloadNewEnabled()) {
-      await keiyoushi.init();
-      final mgr = DownloadManager(
-        keiyoushi: keiyoushi,
-        extensionService: dispatch,
-        repositories: repos,
-      );
-      await mgr.restore(autoStart: false);
-      await enqueueNewChaptersFromUpdate(
-        manager: mgr,
-        report: report,
-        downloadNewOverride: true,
-        autoStart: false,
-      );
-      if (mgr.queue.any((d) => d.status == DownloadState.queue)) {
-        await mgr.scheduleBackgroundIfNeeded();
-      }
+    // Auto-queue newly discovered chapters (group rules + global download-new).
+    await keiyoushi.init();
+    final mgr = DownloadManager(
+      keiyoushi: keiyoushi,
+      extensionService: dispatch,
+      repositories: repos,
+    );
+    await mgr.restore(autoStart: false);
+    await enqueueNewChaptersFromUpdate(
+      manager: mgr,
+      report: report,
+      repositories: repos,
+      autoStart: false,
+    );
+    if (mgr.queue.any((d) => d.status == DownloadState.queue)) {
+      await mgr.scheduleBackgroundIfNeeded();
     }
   }
 }

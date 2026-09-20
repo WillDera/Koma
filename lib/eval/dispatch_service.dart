@@ -79,8 +79,15 @@ class ExtensionDispatchService implements ExtensionService {
     String url, {
     String? memo,
     String? title,
+    Duration? timeout,
   }) =>
-      _resolve(source).getMangaDetail(source, url, memo: memo, title: title);
+      _resolve(source).getMangaDetail(
+        source,
+        url,
+        memo: memo,
+        title: title,
+        timeout: timeout,
+      );
 
   @override
   Future<List<MPages>> getPageList(MSource source, MChapter chapter) =>

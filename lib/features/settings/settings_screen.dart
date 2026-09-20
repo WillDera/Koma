@@ -26,6 +26,7 @@ import '../../core/services/download_prefs.dart';
 import '../../core/services/http/http_prefs.dart';
 import '../../core/services/http/m_client.dart';
 import '../../core/services/library_update_prefs.dart';
+import '../../core/services/group_download_rules.dart';
 import '../../core/services/local_cbz_prefs.dart';
 import '../../core/services/local_cbz_scanner.dart';
 import '../../core/services/annas_archive_prefs.dart';
@@ -1604,6 +1605,103 @@ class _BookMetadataSectionState extends ConsumerState<_BookMetadataSection> {
 }
 
 // ─── Library update category filters ───────────────────────────────────
+/// Per-group auto-download overrides (near library update prefs).
+class _GroupDownloadRulesSection extends ConsumerStatefulWidget {
+  const _GroupDownloadRulesSection();
+
+  @override
+  ConsumerState<_GroupDownloadRulesSection> createState() =>
+      _GroupDownloadRulesSectionState();
+}
+
+class _GroupDownloadRulesSectionState
+    extends ConsumerState<_GroupDownloadRulesSection> {
+  Map<int, GroupDownloadRule> _rules = const {};
+  bool _loaded = false;
+
+  @override
+  void initState() {
+    super.initState();
+    GroupDownloadRules.load().then((r) {
+      if (mounted) {
+        setState(() {
+          _rules = r;
+          _loaded = true;
+        });
+      }
+    });
+  }
+
+  Future<void> _setRule(int groupId, GroupDownloadRule rule) async {
+    final next = Map<int, GroupDownloadRule>.from(_rules);
+    if (rule == GroupDownloadRule.inherit) {
+      next.remove(groupId);
+    } else {
+      next[groupId] = rule;
+    }
+    await GroupDownloadRules.save(next);
+    if (mounted) setState(() => _rules = next);
+  }
+
+  String _label(GroupDownloadRule rule) => switch (rule) {
+        GroupDownloadRule.inherit => 'Inherit',
+        GroupDownloadRule.always => 'Always',
+        GroupDownloadRule.never => 'Never',
+        GroupDownloadRule.unreadOnly => 'Unread only',
+      };
+
+  @override
+  Widget build(BuildContext context) {
+    final groups = ref.watch(libraryProvider).groups;
+    if (!_loaded || groups.isEmpty) return const SizedBox.shrink();
+    final c = context.colors;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
+          child: Text(
+            'GROUP DOWNLOAD RULES',
+            style: TextStyle(
+              color: c.textTertiary,
+              fontSize: 11,
+              fontWeight: FontWeight.w600,
+              letterSpacing: 0.8,
+            ),
+          ),
+        ),
+        for (final group in groups)
+          SettingsRow(
+            icon: Icons.layers_outlined,
+            title: group.name,
+            subtitle: 'Auto-download when library finds new chapters',
+            trailing: PopupMenuButton<GroupDownloadRule>(
+              initialValue: _rules[group.id] ?? GroupDownloadRule.inherit,
+              onSelected: (v) => _setRule(group.id, v),
+              itemBuilder: (_) => [
+                for (final r in GroupDownloadRule.values)
+                  PopupMenuItem(value: r, child: Text(_label(r))),
+              ],
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      _label(_rules[group.id] ?? GroupDownloadRule.inherit),
+                      style: TextStyle(color: c.textSecondary, fontSize: 13),
+                    ),
+                    Icon(Icons.keyboard_arrow_down, color: c.textSecondary),
+                  ],
+                ),
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+}
+
 class _LibraryCategoryFilterRow extends ConsumerStatefulWidget {
   const _LibraryCategoryFilterRow();
 
@@ -1898,6 +1996,7 @@ class _LibraryUpdateSection extends ConsumerWidget {
           prefKey: LibraryUpdatePrefs.keyDownloadNew,
           defaultValue: LibraryUpdatePrefs.defaultDownloadNew,
         ),
+        const _GroupDownloadRulesSection(),
         _LibraryCategoryFilterRow(),
         SettingsRow(
           icon: Icons.refresh,
@@ -2068,7 +2167,8 @@ class _StorageSectionState extends ConsumerState<_StorageSection> {
           '(like /storage/emulated/0/koma) need All files access.\n\n'
           'Local manga uses a folder of CBZ files (one series folder → one '
           'title with many chapters), not a single zip. Point this at the '
-          'parent of series folders, or at a series folder itself.',
+          'parent of series folders, or at a series folder itself. When a '
+          'folder is set, Koma auto-watches it and rescans quietly on changes.',
       children: [
         SettingsRow(
           icon: Icons.folder_outlined,
@@ -2093,7 +2193,9 @@ class _StorageSectionState extends ConsumerState<_StorageSection> {
         SettingsRow(
           icon: Icons.folder_zip_outlined,
           title: 'Local manga folder',
-          subtitle: _cbzFolder ?? 'Not set — import CBZ/CBR series',
+          subtitle: _cbzFolder == null
+              ? 'Not set — import CBZ/CBR series'
+              : '$_cbzFolder · auto-watch on',
           trailing: _pickingCbz
               ? const SizedBox(
                   width: 18,
@@ -2825,7 +2927,8 @@ Future<Source?> _sourceDialog(BuildContext context, Source? existing) async {
   var tag = existing?.tag ?? 'libgen';
   final c = context.colors;
 
-  return StashDialog.show<Source>(
+  try {
+    return await StashDialog.show<Source>(
     context,
     title: existing == null ? 'Add source' : 'Edit source',
     contentWidget: StatefulBuilder(
@@ -2920,6 +3023,14 @@ Future<Source?> _sourceDialog(BuildContext context, Source? existing) async {
       ),
     ],
   );
+  } finally {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      nameCtrl.dispose();
+      urlCtrl.dispose();
+      langCtrl.dispose();
+      extCtrl.dispose();
+    });
+  }
 }
 
 class _SourceRow extends StatelessWidget {

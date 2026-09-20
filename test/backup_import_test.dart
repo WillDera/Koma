@@ -259,8 +259,8 @@ void main() {
     });
   });
 
-  group('Koma JSON backup v5', () {
-    test('round-trips settings, JS source, and manga source_name', () async {
+  group('Koma JSON backup v6', () {
+    test('round-trips settings, JS source, source prefs, and manga source_name', () async {
       SharedPreferences.setMockInitialValues({
         'theme_mode': 1,
         'font_size': 19.0,
@@ -297,7 +297,8 @@ void main() {
 
       final json = await ExportService(repos).exportToJson();
       final data = jsonDecode(json) as Map<String, dynamic>;
-      expect(data['version'], 5);
+      expect(data['version'], 6);
+      expect(data['source_prefs'], isA<List>());
       expect(data['settings']['theme_mode'], 1);
       expect((data['extensions'] as List).single['apk_path'], '');
       expect((data['extensions'] as List).single['source_code'], contains('NovelBuddy'));

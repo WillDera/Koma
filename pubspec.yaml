@@ -1,7 +1,7 @@
 name: koma
 description: "A hybrid reader + knowledge snippet manager."
 publish_to: 'none'
-version: 2.64.0+405
+version: 2.65.0+406
 
 environment:
   sdk: ^3.12.2
@@ -89,6 +89,10 @@ dependencies:
   local_auth: ^2.3.0
   flutter_web_auth_2: ^4.1.0
   flutter_svg: ^2.2.0
+  # Continue home-screen widget bridge. Pin <0.9 — newer home_widget pulls
+  # Glance 1.3-alpha (compileSdk 37 / AGP 9.1); we force Glance 1.1.1 in
+  # android/build.gradle.kts and use RemoteViews only.
+  home_widget: ">=0.8.0 <0.9.0"
 dev_dependencies:
   flutter_test:
     sdk: flutter

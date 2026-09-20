@@ -11,6 +11,7 @@ import '../../isar/collections/track_preference.dart';
 import '../../repositories/repositories.dart';
 import '../../repositories/track_repository.dart';
 import 'base_tracker.dart';
+import 'track_date_utils.dart';
 
 /// MyAnimeList PKCE OAuth (redirect `koma://mal-auth`).
 ///
@@ -308,12 +309,106 @@ class MyAnimeListTracker extends BaseTracker {
     return track;
   }
 
+  static String _toMalStatus(TrackStatus status) => switch (status) {
+        TrackStatus.reading => 'reading',
+        TrackStatus.completed => 'completed',
+        TrackStatus.onHold => 'on_hold',
+        TrackStatus.dropped => 'dropped',
+        TrackStatus.planToRead => 'plan_to_read',
+        TrackStatus.reReading => 'reading',
+      };
+
+  @override
+  Future<void> updateListEntry(
+    Track track, {
+    bool? private,
+    int? startedReadingDate,
+    int? finishedReadingDate,
+    TrackStatus? status,
+  }) async {
+    // MAL manga list has no is_private — store privacy locally only.
+    if (private != null) track.private = private;
+    String? startDate;
+    String? finishDate;
+    if (startedReadingDate != null) {
+      if (startedReadingDate == TrackDateUtils.clearSentinel) {
+        track.startedReadingDate = null;
+        startDate = '';
+      } else {
+        track.startedReadingDate = startedReadingDate;
+        startDate = TrackDateUtils.toMalDate(startedReadingDate);
+      }
+    }
+    if (finishedReadingDate != null) {
+      if (finishedReadingDate == TrackDateUtils.clearSentinel) {
+        track.finishedReadingDate = null;
+        finishDate = '';
+      } else {
+        track.finishedReadingDate = finishedReadingDate;
+        finishDate = TrackDateUtils.toMalDate(finishedReadingDate);
+      }
+    }
+    if (status != null) track.status = status;
+
+    final token = await _accessToken();
+    final mediaId = track.mediaId;
+    if (token != null && mediaId != null) {
+      final body = <String, String>{
+        if (status != null) 'status': _toMalStatus(status),
+        'start_date': ?startDate,
+        'finish_date': ?finishDate,
+      };
+      if (body.isNotEmpty) {
+        final res = await http.put(
+          Uri.parse('$_api/manga/$mediaId/my_list_status'),
+          headers: {
+            'Authorization': 'Bearer $token',
+            'Content-Type': 'application/x-www-form-urlencoded',
+          },
+          body: body,
+        );
+        if (res.statusCode < 200 || res.statusCode >= 300) {
+          throw StateError(
+            'MAL list update failed (${res.statusCode}): ${res.body}',
+          );
+        }
+      }
+    }
+    await tracks.upsertTrack(track);
+  }
+
   @override
   Future<void> updateProgress(Track track, int lastChapterRead) async {
     final token = await _accessToken();
     if (token == null) return;
     final mediaId = track.mediaId;
     if (mediaId == null) return;
+
+    final prev = track.lastChapterRead ?? 0;
+    String? startDate;
+    String? finishDate;
+    var malStatus = 'reading';
+    var trackStatus = TrackStatus.reading;
+
+    if (prev == 0 &&
+        lastChapterRead > 0 &&
+        track.startedReadingDate == null) {
+      final today = TrackDateUtils.todayEpochMs();
+      track.startedReadingDate = today;
+      startDate = TrackDateUtils.toMalDate(today);
+    }
+
+    final total = track.totalChapter ?? 0;
+    final completed = total > 0 && lastChapterRead >= total;
+    if (completed) {
+      malStatus = 'completed';
+      trackStatus = TrackStatus.completed;
+      if (track.finishedReadingDate == null) {
+        final today = TrackDateUtils.todayEpochMs();
+        track.finishedReadingDate = today;
+        finishDate = TrackDateUtils.toMalDate(today);
+      }
+    }
 
     await http.put(
       Uri.parse('$_api/manga/$mediaId/my_list_status'),
@@ -322,12 +417,14 @@ class MyAnimeListTracker extends BaseTracker {
         'Content-Type': 'application/x-www-form-urlencoded',
       },
       body: {
-        'status': 'reading',
+        'status': malStatus,
         'num_chapters_read': '$lastChapterRead',
+        'start_date': ?startDate,
+        'finish_date': ?finishDate,
       },
     );
     track.lastChapterRead = lastChapterRead;
-    track.status = TrackStatus.reading;
+    track.status = trackStatus;
     await tracks.upsertTrack(track);
   }
 

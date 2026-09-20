@@ -9,12 +9,27 @@ allprojects {
 // AGP 8.11 rejects `package=""` in plugin AndroidManifest.xml. Pub-cache on CI
 // is fresh every run, so patch before any subproject is configured — the
 // older plugins.withId hook ran too late for :flutter_native_splash.
+// Also bump home_widget's hardcoded JVM 1.8 → 17 (Kotlin 2.4 inline needs it).
 gradle.beforeProject {
     val manifest = project.projectDir.resolve("src/main/AndroidManifest.xml")
-    if (!manifest.isFile) return@beforeProject
-    val text = manifest.readText()
-    if (!text.contains(Regex("""\spackage="""))) return@beforeProject
-    manifest.writeText(text.replace(Regex("""\s+package="[^"]+""""), ""))
+    if (manifest.isFile) {
+        val text = manifest.readText()
+        if (text.contains(Regex("""\spackage="""))) {
+            manifest.writeText(text.replace(Regex("""\s+package="[^"]+""""), ""))
+        }
+    }
+    if (project.name == "home_widget") {
+        val buildGradle = project.projectDir.resolve("build.gradle")
+        if (buildGradle.isFile) {
+            val text = buildGradle.readText()
+            val patched = text
+                .replace("JavaVersion.VERSION_1_8", "JavaVersion.VERSION_17")
+                .replace("jvmTarget = \"1.8\"", "jvmTarget = \"17\"")
+            if (patched != text) {
+                buildGradle.writeText(patched)
+            }
+        }
+    }
 }
 
 val newBuildDir: Directory =
@@ -29,6 +44,23 @@ subprojects {
 }
 subprojects {
     project.evaluationDependsOn(":app")
+}
+
+// home_widget depends on androidx.glance:1.+ which resolves to 1.3.0-alpha02
+// (needs compileSdk 37 + AGP 9.1). Our RemoteViews Continue widget does not
+// use Glance UI — pin the last stable that works with AGP 8.11 / SDK 36.
+subprojects {
+    configurations.configureEach {
+        resolutionStrategy.eachDependency {
+            if (requested.group == "androidx.glance") {
+                useVersion("1.1.1")
+                because(
+                    "Avoid glance 1.3.0-alpha (compileSdk 37 / AGP 9.1); " +
+                        "Koma widgets use RemoteViews via home_widget",
+                )
+            }
+        }
+    }
 }
 
 // Older Flutter plugins still use buildscript { classpath "kotlin-gradle-plugin" }

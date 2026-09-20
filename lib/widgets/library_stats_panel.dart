@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../core/models/manga.dart';
 import '../core/models/reading_stat.dart';
 import '../core/providers.dart';
+import '../core/services/reading_goals_prefs.dart';
 import '../theme/app_theme.dart';
 import '../theme/tokens/app_spacing.dart';
 import 'reading_calendar_sheet.dart';
@@ -43,6 +44,8 @@ class _LibraryStatsPanelState extends ConsumerState<LibraryStatsPanel> {
   int _monthReadingMinutes = 0;
   List<int> _minutesPerDay = List.filled(7, 0);
   int _streak = 0;
+  int _dailyGoal = ReadingGoalsPrefs.defaultDailyMinutesGoal;
+  int _weeklyGoal = ReadingGoalsPrefs.defaultWeeklyDaysGoal;
   bool _loading = true;
   bool _started = false;
 
@@ -68,12 +71,16 @@ class _LibraryStatsPanelState extends ConsumerState<LibraryStatsPanel> {
       statsSvc.getWeeklyStreak(),
       statsSvc.getStats(DateTime(2000, 1, 1), now),
       statsSvc.getStats(monthStart, now),
+      ReadingGoalsPrefs.dailyMinutesGoal(),
+      ReadingGoalsPrefs.weeklyDaysGoal(),
     ]);
     if (!mounted) return;
 
     final mangas = results[4] as List<Manga>;
     final allStats = results[6] as List<ReadingStat>;
     final monthStats = results[7] as List<ReadingStat>;
+    final dailyGoal = results[8] as int;
+    final weeklyGoal = results[9] as int;
 
     final mangaGenres = <String, int>{};
     var chaptersRead = 0;
@@ -110,7 +117,73 @@ class _LibraryStatsPanelState extends ConsumerState<LibraryStatsPanel> {
           results[5] as ({List<int> minutesPerDay, int currentStreak});
       _minutesPerDay = streak.minutesPerDay;
       _streak = streak.currentStreak;
+      _dailyGoal = dailyGoal;
+      _weeklyGoal = weeklyGoal;
       _loading = false;
+    });
+  }
+
+  Future<void> _editGoals() async {
+    final dailyCtrl = TextEditingController(text: '$_dailyGoal');
+    final weeklyCtrl = TextEditingController(text: '$_weeklyGoal');
+    final result = await showDialog<(int, int)>(
+      context: context,
+      builder: (ctx) {
+        final c = ctx.colors;
+        return AlertDialog(
+          backgroundColor: c.surface,
+          title: Text('Reading goals', style: TextStyle(color: c.textPrimary)),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller: dailyCtrl,
+                keyboardType: TextInputType.number,
+                decoration: InputDecoration(
+                  labelText: 'Daily minutes',
+                  labelStyle: TextStyle(color: c.textSecondary),
+                ),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: weeklyCtrl,
+                keyboardType: TextInputType.number,
+                decoration: InputDecoration(
+                  labelText: 'Weekly days',
+                  labelStyle: TextStyle(color: c.textSecondary),
+                ),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: Text('Cancel', style: TextStyle(color: c.textTertiary)),
+            ),
+            TextButton(
+              onPressed: () {
+                final d = int.tryParse(dailyCtrl.text.trim()) ?? _dailyGoal;
+                final w = int.tryParse(weeklyCtrl.text.trim()) ?? _weeklyGoal;
+                Navigator.pop(ctx, (d.clamp(1, 24 * 60), w.clamp(1, 7)));
+              },
+              child: Text('Save', style: TextStyle(color: c.accent)),
+            ),
+          ],
+        );
+      },
+    );
+    // Dialog / IME may still rebuild for a frame after pop.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      dailyCtrl.dispose();
+      weeklyCtrl.dispose();
+    });
+    if (result == null || !mounted) return;
+    await ReadingGoalsPrefs.setDailyMinutesGoal(result.$1);
+    await ReadingGoalsPrefs.setWeeklyDaysGoal(result.$2);
+    if (!mounted) return;
+    setState(() {
+      _dailyGoal = result.$1;
+      _weeklyGoal = result.$2;
     });
   }
 
@@ -132,6 +205,15 @@ class _LibraryStatsPanelState extends ConsumerState<LibraryStatsPanel> {
       );
     }
 
+    final minutesToday =
+        _minutesPerDay.isEmpty ? 0 : _minutesPerDay.last;
+    final daysWithReading =
+        _minutesPerDay.where((m) => m > 0).length;
+    final dailyProgress = ReadingGoalsPrefs.dailyProgress(
+      minutesToday,
+      goal: _dailyGoal,
+    ).clamp(0.0, 1.0);
+
     final body = Column(
       mainAxisSize: MainAxisSize.min,
       children: [
@@ -139,6 +221,67 @@ class _LibraryStatsPanelState extends ConsumerState<LibraryStatsPanel> {
           minutesPerDay: _minutesPerDay,
           currentStreak: _streak,
           onTap: _openCalendar,
+        ),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+          child: Material(
+            color: context.colors.surfaceMuted,
+            borderRadius: AppSpacing.brXl,
+            child: InkWell(
+              borderRadius: AppSpacing.brXl,
+              onTap: _editGoals,
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(18, 14, 18, 14),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            'Daily goal · $minutesToday / $_dailyGoal min',
+                            style: TextStyle(
+                              color: context.colors.textPrimary,
+                              fontSize: 14,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ),
+                        Text(
+                          ReadingGoalsPrefs.streakMet(daysWithReading, _weeklyGoal)
+                              ? 'Week met'
+                              : '$daysWithReading / $_weeklyGoal days',
+                          style: TextStyle(
+                            color: context.colors.textSecondary,
+                            fontSize: 12,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 10),
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(6),
+                      child: LinearProgressIndicator(
+                        value: dailyProgress,
+                        minHeight: 8,
+                        backgroundColor:
+                            context.colors.border.withValues(alpha: 0.4),
+                        color: context.colors.accent,
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      'Tap to edit goals',
+                      style: TextStyle(
+                        color: context.colors.textTertiary,
+                        fontSize: 11,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
         ),
         const SizedBox(height: 8),
         _StatsReadingTimeRow(

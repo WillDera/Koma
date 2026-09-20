@@ -5,6 +5,7 @@ import '../../core/isar/collections/track.dart';
 import '../../core/providers.dart';
 import '../../core/repositories/track_repository.dart';
 import '../../core/services/trackers/base_tracker.dart';
+import '../../core/services/trackers/track_date_utils.dart';
 import '../../core/services/trackers/track_enrichment.dart';
 import '../../theme/app_theme.dart';
 import '../../theme/tokens/app_spacing.dart';
@@ -458,6 +459,8 @@ class _TrackManageSheetState extends State<_TrackManageSheet> {
   bool _savingScore = false;
   bool _savingReview = false;
   bool _postingComment = false;
+  bool _savingListEntry = false;
+  late bool _private;
   int? _myReviewId;
   List<TrackerComment> _comments = const [];
   bool _loadingComments = false;
@@ -468,6 +471,8 @@ class _TrackManageSheetState extends State<_TrackManageSheet> {
 
   bool get _isAnilist => widget.track.syncId == TrackIds.anilist;
   bool get _isMal => widget.track.syncId == TrackIds.mal;
+  bool get _showPrivateToggle => _isAnilist || _isMal;
+  bool get _showDates => _isAnilist || _isMal;
 
   double get _scoreMax => _isAnilist ? 100 : 10;
   int get _scoreDivisions => _isAnilist ? 100 : 10;
@@ -475,6 +480,7 @@ class _TrackManageSheetState extends State<_TrackManageSheet> {
   @override
   void initState() {
     super.initState();
+    _private = widget.track.private;
     final raw = (widget.track.score ?? 0).toDouble();
     if (_isAnilist) {
       _score = raw.clamp(0, 100);
@@ -543,6 +549,87 @@ class _TrackManageSheetState extends State<_TrackManageSheet> {
       widget.onError('Score update failed: $e');
     } finally {
       if (mounted) setState(() => _savingScore = false);
+    }
+  }
+
+  Future<void> _setPrivate(bool value) async {
+    if (_savingListEntry) return;
+    final previous = _private;
+    setState(() {
+      _private = value;
+      _savingListEntry = true;
+    });
+    try {
+      await widget.tracker.updateListEntry(widget.track, private: value);
+      await widget.onChanged();
+      if (!mounted) return;
+      widget.onSnack(
+        _isMal
+            ? (value ? 'Marked private in Koma' : 'Unmarked private in Koma')
+            : (value ? 'List entry is private' : 'List entry is public'),
+      );
+    } catch (e) {
+      if (mounted) setState(() => _private = previous);
+      widget.onError('Privacy update failed: $e');
+    } finally {
+      if (mounted) setState(() => _savingListEntry = false);
+    }
+  }
+
+  Future<void> _pickDate({required bool started}) async {
+    if (_savingListEntry) return;
+    final current = started
+        ? widget.track.startedReadingDate
+        : widget.track.finishedReadingDate;
+    final initial = current != null && current > 0
+        ? DateTime.fromMillisecondsSinceEpoch(current)
+        : DateTime.now();
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: initial,
+      firstDate: DateTime(1970),
+      lastDate: DateTime.now().add(const Duration(days: 365)),
+    );
+    if (picked == null || !mounted) return;
+    final epoch = DateTime(picked.year, picked.month, picked.day)
+        .millisecondsSinceEpoch;
+    setState(() => _savingListEntry = true);
+    try {
+      await widget.tracker.updateListEntry(
+        widget.track,
+        startedReadingDate: started ? epoch : null,
+        finishedReadingDate: started ? null : epoch,
+      );
+      await widget.onChanged();
+      if (!mounted) return;
+      setState(() {});
+      widget.onSnack(started ? 'Start date updated' : 'Finish date updated');
+    } catch (e) {
+      widget.onError('Date update failed: $e');
+    } finally {
+      if (mounted) setState(() => _savingListEntry = false);
+    }
+  }
+
+  Future<void> _clearDate({required bool started}) async {
+    if (_savingListEntry) return;
+    setState(() => _savingListEntry = true);
+    try {
+      await widget.tracker.updateListEntry(
+        widget.track,
+        startedReadingDate:
+            started ? TrackDateUtils.clearSentinel : null,
+        finishedReadingDate:
+            started ? null : TrackDateUtils.clearSentinel,
+      );
+      await widget.onChanged();
+      if (!mounted) return;
+      setState(() {});
+      widget.onSnack(started ? 'Start date cleared' : 'Finish date cleared');
+    } catch (e) {
+      widget.onError('Date clear failed: $e');
+    } finally {
+      if (mounted) setState(() => _savingListEntry = false);
     }
   }
 
@@ -668,6 +755,73 @@ class _TrackManageSheetState extends State<_TrackManageSheet> {
                   '${(widget.track.totalChapter ?? 0) > 0 ? ' / ${widget.track.totalChapter}' : ''}',
                   style: TextStyle(color: c.textSecondary, fontSize: 13),
                 ),
+                if (_showPrivateToggle || _showDates) ...[
+                  const SizedBox(height: AppSpacing.lg),
+                  if (_showPrivateToggle)
+                    SwitchListTile(
+                      contentPadding: EdgeInsets.zero,
+                      title: const Text('Private list entry'),
+                      subtitle: _isMal
+                          ? Text(
+                              'Stored in Koma only',
+                              style: TextStyle(
+                                color: c.textSecondary,
+                                fontSize: 12,
+                              ),
+                            )
+                          : null,
+                      value: _private,
+                      onChanged: _savingListEntry ? null : _setPrivate,
+                    ),
+                  if (_showDates) ...[
+                    ListTile(
+                      contentPadding: EdgeInsets.zero,
+                      title: const Text('Started'),
+                      subtitle: Text(
+                        TrackDateUtils.formatDisplay(
+                          widget.track.startedReadingDate,
+                        ),
+                        style: TextStyle(color: c.textSecondary),
+                      ),
+                      onTap: _savingListEntry
+                          ? null
+                          : () => _pickDate(started: true),
+                      trailing: widget.track.startedReadingDate != null &&
+                              widget.track.startedReadingDate! > 0
+                          ? IconButton(
+                              tooltip: 'Clear',
+                              icon: const Icon(Icons.clear),
+                              onPressed: _savingListEntry
+                                  ? null
+                                  : () => _clearDate(started: true),
+                            )
+                          : null,
+                    ),
+                    ListTile(
+                      contentPadding: EdgeInsets.zero,
+                      title: const Text('Finished'),
+                      subtitle: Text(
+                        TrackDateUtils.formatDisplay(
+                          widget.track.finishedReadingDate,
+                        ),
+                        style: TextStyle(color: c.textSecondary),
+                      ),
+                      onTap: _savingListEntry
+                          ? null
+                          : () => _pickDate(started: false),
+                      trailing: widget.track.finishedReadingDate != null &&
+                              widget.track.finishedReadingDate! > 0
+                          ? IconButton(
+                              tooltip: 'Clear',
+                              icon: const Icon(Icons.clear),
+                              onPressed: _savingListEntry
+                                  ? null
+                                  : () => _clearDate(started: false),
+                            )
+                          : null,
+                    ),
+                  ],
+                ],
                 if (_isMal || _isAnilist) ...[
                   const SizedBox(height: AppSpacing.lg),
                   Text(

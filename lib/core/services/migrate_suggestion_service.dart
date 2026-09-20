@@ -10,7 +10,6 @@ import '../models/manga_chapter.dart';
 import '../repositories/repositories.dart';
 import '../utils/chapter_recognition.dart';
 import 'local_cbz_source.dart';
-import 'merge_manga_use_case.dart';
 
 /// A better catalogue hit for an in-library title (more / newer chapters).
 class MigrateSuggestion {
@@ -106,7 +105,7 @@ class MigrateSuggestionService {
   static const _concurrency = 4;
   static const _minExtraChapters = 3;
   static const _cacheTtl = Duration(hours: 12);
-  static const _prefsCachePrefix = 'migrate_suggest_cache_v1_';
+  static const _prefsCachePrefix = 'migrate_suggest_cache_v2_';
   static const _prefsDismissPrefix = 'migrate_suggest_dismiss_v1_';
 
   /// Returns a suggestion when another source looks meaningfully more complete.
@@ -299,9 +298,9 @@ class MigrateSuggestionService {
     final nq = _normTitle(query);
     final nh = _normTitle(hit);
     if (nq.isEmpty || nh.isEmpty) return 0;
+    // Full-name match only (case-insensitive). Prefix / token overlap would
+    // falsely link "Absolute Wonder Woman (2024-)" with "Absolute Batman (2024-)".
     if (nq == nh) return 100;
-    if (nh.startsWith(nq) || nq.startsWith(nh)) return 85;
-    if (MergeMangaUseCase.titlesLookCompatible(query, hit)) return 60;
     return 0;
   }
 
@@ -315,15 +314,18 @@ class MigrateSuggestionService {
   }
 
   static _ChapterStats _stats(String title, List<MangaChapter> chapters) {
+    // Count unique major chapters (1.1 / 1.2 / 1-en → one). Parse from the
+    // chapter name so source indexes don't split language variants apart.
+    final majors = <int>{};
     double? maxChapter;
     for (final c in chapters) {
-      final n = c.isRecognizedNumber
-          ? c.chapterNumber
-          : ChapterRecognition.parseChapterNumber(title, c.name, c.chapterNumber);
+      final n = ChapterRecognition.parseFromName(title, c.name);
       if (!ChapterRecognition.isRecognized(n)) continue;
+      majors.add(n.floor());
       if (maxChapter == null || n > maxChapter) maxChapter = n;
     }
-    return _ChapterStats(count: chapters.length, maxChapter: maxChapter);
+    final count = majors.isNotEmpty ? majors.length : chapters.length;
+    return _ChapterStats(count: count, maxChapter: maxChapter);
   }
 
   static bool _isBetter({

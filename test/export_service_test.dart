@@ -8,10 +8,14 @@ import 'package:koma/core/models/manga_chapter.dart';
 import 'package:koma/core/models/snippet.dart';
 import 'package:koma/core/repositories/repositories.dart';
 import 'package:koma/core/services/export_service.dart';
+import 'package:koma/core/services/source_pref_store.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import 'helpers/test_database.dart';
 
 void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
+
   group('Model JSON round-trip', () {
     test('Book toJson/fromJson preserves fields', () {
       final book = Book(
@@ -90,7 +94,9 @@ void main() {
     late ExportService svc;
 
     setUp(() async {
+      SharedPreferences.setMockInitialValues({});
       repos = await createTestRepositories();
+      SourcePrefStore.bind(repos.isar);
       svc = ExportService(repos);
     });
 
@@ -207,8 +213,9 @@ void main() {
 
       final jsonStr = await svc.exportToJson();
       final parsed = jsonDecode(jsonStr) as Map<String, dynamic>;
-      expect(parsed['version'], 4);
+      expect(parsed['version'], 6);
       expect(parsed['manga'], isNotEmpty);
+      expect(parsed['source_prefs'], isA<List>());
 
       repos.isar.close();
       repos = await createTestRepositories();

@@ -227,20 +227,24 @@ class KeiyoushiService {
     String? description,
     String? genre,
     int? status,
+    Duration timeout = const Duration(seconds: 60),
   }) async {
-    final res = await _post({
-      'method': 'getMangaUpdate',
-      'sourceId': sourceId,
-      'url': url,
-      'memo': ?memo,
-      'title': ?title,
-      'thumbnail_url': ?thumbnailUrl,
-      'author': ?author,
-      'artist': ?artist,
-      'description': ?description,
-      'genre': ?genre,
-      'status': ?status,
-    });
+    final res = await _post(
+      {
+        'method': 'getMangaUpdate',
+        'sourceId': sourceId,
+        'url': url,
+        'memo': ?memo,
+        'title': ?title,
+        'thumbnail_url': ?thumbnailUrl,
+        'author': ?author,
+        'artist': ?artist,
+        'description': ?description,
+        'genre': ?genre,
+        'status': ?status,
+      },
+      timeout: timeout,
+    );
     if (res is Map && res.containsKey('error')) {
       throw Exception(res['error']);
     }

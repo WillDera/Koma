@@ -36,4 +36,45 @@ void main() {
       -1.0,
     );
   });
+
+  test('sub-chapters and language variants share a major number', () {
+    expect(
+      ChapterRecognition.majorFromName('Title', 'Chapter 1.1'),
+      1,
+    );
+    expect(
+      ChapterRecognition.majorFromName('Title', 'Chapter 1.2'),
+      1,
+    );
+    expect(
+      ChapterRecognition.majorFromName('Title', 'Chapter 1-english'),
+      1,
+    );
+    expect(
+      ChapterRecognition.majorFromName('Title', 'Chapter 1-spanish'),
+      1,
+    );
+    expect(
+      ChapterRecognition.majorFromName('Title', 'Ch. 12.5'),
+      12,
+    );
+  });
+
+  test('parseFromName ignores misleading source indexes', () {
+    // Source may number language variants 1, 2, 3 — name still says ch.1.
+    expect(
+      ChapterRecognition.parseFromName('Title', 'Chapter 1 - English'),
+      1.0,
+    );
+    expect(
+      ChapterRecognition.majorChapterNumber(
+        ChapterRecognition.parseChapterNumber('Title', 'Ch. 1.5', 99),
+      ),
+      99, // trusted source number when provided
+    );
+    expect(
+      ChapterRecognition.majorFromName('Title', 'Ch. 1.5'),
+      1,
+    );
+  });
 }

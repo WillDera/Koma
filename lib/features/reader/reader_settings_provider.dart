@@ -45,6 +45,7 @@ class ReaderSettingsNotifier extends Notifier<ReaderSettings> {
   void setBrightness(double v) => update(state.copyWith(brightness: v));
   void setContrast(double v) => update(state.copyWith(contrast: v));
   void setSaturation(double v) => update(state.copyWith(saturation: v));
+  void setInvertColors(bool v) => update(state.copyWith(invertColors: v));
   void setTint(Color? c, double o) =>
       update(state.copyWith(tintColor: c, tintOpacity: o));
   void setSepiaPanels(bool v) => update(state.copyWith(sepiaPanels: v));
@@ -61,6 +62,7 @@ extension CopyWithReaderSettings on ReaderSettings {
   ReaderSettings copyWithBrightness(double v) => copyWith(brightness: v);
   ReaderSettings copyWithContrast(double v) => copyWith(contrast: v);
   ReaderSettings copyWithSaturation(double v) => copyWith(saturation: v);
+  ReaderSettings copyWithInvertColors(bool v) => copyWith(invertColors: v);
   ReaderSettings copyWithTint(Color? c, double o) =>
       copyWith(tintColor: c, tintOpacity: o);
 }

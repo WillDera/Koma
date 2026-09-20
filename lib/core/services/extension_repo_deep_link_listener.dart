@@ -12,6 +12,7 @@ import '../../widgets/dialog_sheet.dart';
 import '../../widgets/toast.dart';
 import '../models/extension_repo.dart';
 import '../providers.dart';
+import 'continue_widget_service.dart';
 
 /// Handles `mangayomi://add-repo`, `koma://add-repo`, `tachiyomi://add-repo`,
 /// and `mihon://add-repo|extension-store` so Install buttons on sites like
@@ -55,6 +56,11 @@ class ExtensionRepoDeepLinkListener {
     final host = uri.host.toLowerCase();
     if (uri.scheme.toLowerCase() == 'koma' &&
         (host == 'anilist-auth' || host == 'mal-auth')) {
+      return;
+    }
+
+    if (uri.scheme.toLowerCase() == 'koma' && host == 'continue') {
+      await ContinueWidgetService.openContinue();
       return;
     }
 

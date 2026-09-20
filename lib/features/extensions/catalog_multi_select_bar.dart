@@ -38,6 +38,8 @@ class _CatalogMultiSelectBarState extends ConsumerState<CatalogMultiSelectBar> {
           'Added ${result.added} title${result.added == 1 ? '' : 's'}',
         if (result.alreadyInLibrary > 0)
           '${result.alreadyInLibrary} already in library',
+        if (result.timedOut > 0)
+          '${result.timedOut} skipped (slow)',
         if (result.failed > 0) '${result.failed} failed',
       ];
       StashToast.show(

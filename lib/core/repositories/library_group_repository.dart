@@ -90,6 +90,61 @@ class LibraryGroupRepository {
     });
   }
 
+  /// Group ids that contain this manga (at most one today — unique memberKey).
+  Future<List<int>> groupIdsForManga(int mangaId) async {
+    final key = LibraryGroupMemberInfo.keyForManga(mangaId);
+    final row = await _isar.libraryGroupMembers
+        .where()
+        .memberKeyEqualTo(key)
+        .findFirst();
+    if (row == null) return const [];
+    return [row.groupId];
+  }
+
+  /// Adds [memberKeys] to an existing group. Moves them out of any other
+  /// group first. Keys already in [groupId] are ignored.
+  Future<void> addMembers(int groupId, List<String> memberKeys) async {
+    final unique = memberKeys.toSet().toList();
+    if (unique.isEmpty) return;
+    for (final key in unique) {
+      if (LibraryGroupMemberInfo.parseKey(key) == null) {
+        throw ArgumentError('Invalid member key: $key');
+      }
+    }
+
+    await _isar.writeTxn(() async {
+      final g = await _isar.libraryGroups.get(groupId);
+      if (g == null) {
+        throw ArgumentError('Group not found');
+      }
+      final existing = await _isar.libraryGroupMembers
+          .filter()
+          .groupIdEqualTo(groupId)
+          .findAll();
+      final existingKeys = {for (final m in existing) m.memberKey};
+      final toAdd = [
+        for (final k in unique)
+          if (!existingKeys.contains(k)) k,
+      ];
+      if (toAdd.isEmpty) return;
+
+      await _detachKeys(toAdd);
+      for (final key in toAdd) {
+        final parsed = LibraryGroupMemberInfo.parseKey(key)!;
+        await _isar.libraryGroupMembers.put(
+          i.LibraryGroupMember(
+            groupId: groupId,
+            kind: parsed.$1,
+            itemId: parsed.$2,
+            memberKey: key,
+            readingOrder: null,
+          ),
+        );
+      }
+      await _touchGroup(groupId);
+    });
+  }
+
   Future<void> dissolveGroup(int groupId) async {
     await _isar.writeTxn(() async {
       await _deleteGroupTxn(groupId);

@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 
+import '../models/manga.dart';
 import 'cached_network.dart';
 import 'custom_extended_image_provider.dart';
 
@@ -41,4 +42,23 @@ ImageProvider cachedCover(
     );
   }
   return coverProvider(url, headers: headers);
+}
+
+/// Prefer custom cover → cached thumbnail → [Manga.imageUrl] (local or remote).
+ImageProvider? mangaCoverProvider(
+  Manga manga, {
+  String? localThumbPath,
+  Map<String, String>? headers,
+}) {
+  final custom = manga.customCoverPath?.trim();
+  if (custom != null && custom.isNotEmpty && File(custom).existsSync()) {
+    return FileImage(File(custom));
+  }
+  final thumb = localThumbPath?.trim();
+  if (thumb != null && thumb.isNotEmpty && File(thumb).existsSync()) {
+    return FileImage(File(thumb));
+  }
+  final url = manga.imageUrl?.trim();
+  if (url == null || url.isEmpty) return null;
+  return cachedCover(url, headers: headers);
 }

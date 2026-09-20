@@ -124,7 +124,11 @@ var extention = new DefaultExtension();
     };
   }
 
-  Future<T> _extensionCallAsync<T>(MSource source, String call) {
+  Future<T> _extensionCallAsync<T>(
+    MSource source,
+    String call, {
+    Duration callTimeout = const Duration(seconds: 60),
+  }) {
     return _serialized(() async {
       await _init(source);
       final runtime = _runtime!;
@@ -134,7 +138,7 @@ var extention = new DefaultExtension();
       final promised = await runtime
           .handlePromise(evaled)
           .timeout(
-            const Duration(seconds: 60),
+            callTimeout,
             onTimeout: () => throw TimeoutException(
               'JS call timed out: $call (${source.name})',
             ),
@@ -327,10 +331,12 @@ var extention = new DefaultExtension();
     String url, {
     String? memo,
     String? title,
+    Duration? timeout,
   }) async {
     final raw = await _extensionCallAsync(
       source,
       'getDetail(${jsonEncode(url)})',
+      callTimeout: timeout ?? const Duration(seconds: 60),
     );
     if (raw is! Map) {
       return (manga: null, chapters: <MChapter>[]);

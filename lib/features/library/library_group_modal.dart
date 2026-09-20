@@ -1,4 +1,3 @@
-import 'dart:io';
 import 'dart:ui';
 
 import 'package:flutter/material.dart';
@@ -173,6 +172,81 @@ class _LibraryGroupModalState extends ConsumerState<_LibraryGroupModal> {
     return members;
   }
 
+  Future<void> _memberActions(LibraryGroupMemberInfo member) async {
+    final c = context.colors;
+    final title = () {
+      final group = _findGroup();
+      if (group == null) return 'Title';
+      final provider = ref.read(libraryProvider);
+      if (member.isBook) {
+        for (final b in provider.books) {
+          if (b.id == member.itemId) return b.title;
+        }
+      } else {
+        for (final m in provider.mangas) {
+          if (m.id == member.itemId) return m.name;
+        }
+      }
+      return 'Title';
+    }();
+
+    final action = await showModalBottomSheet<String>(
+      context: context,
+      backgroundColor: c.bgElevated,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 16, 20, 8),
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: Text(
+                  title,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: c.textPrimary,
+                    fontSize: 16,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+            ),
+            ListTile(
+              leading: Icon(Icons.format_list_numbered, color: c.textSecondary),
+              title: Text(
+                'Reading order',
+                style: TextStyle(color: c.textPrimary),
+              ),
+              onTap: () => Navigator.pop(ctx, 'order'),
+            ),
+            ListTile(
+              leading: Icon(Icons.remove_circle_outline, color: c.accent),
+              title: Text(
+                'Remove from group',
+                style: TextStyle(color: c.textPrimary),
+              ),
+              onTap: () => Navigator.pop(ctx, 'remove'),
+            ),
+            const SizedBox(height: 8),
+          ],
+        ),
+      ),
+    );
+    if (action == null || !mounted) return;
+    if (action == 'order') {
+      await _setOrder(member);
+    } else if (action == 'remove') {
+      await ref
+          .read(libraryProvider.notifier)
+          .removeFromGroup(member.memberKey);
+    }
+  }
+
   Future<void> _setOrder(LibraryGroupMemberInfo member) async {
     final result = await showDialog<Object>(
       context: context,
@@ -192,6 +266,52 @@ class _LibraryGroupModalState extends ConsumerState<_LibraryGroupModal> {
         await notifier.setGroupReadingOrder(member.memberKey, n);
       }
     }
+  }
+
+  Future<void> _addTitles() async {
+    final group = _findGroup();
+    if (group == null) return;
+    final provider = ref.read(libraryProvider);
+    final inGroup = {for (final m in group.members) m.memberKey};
+    final candidates = <({String key, String title, String subtitle})>[
+      for (final b in provider.books)
+        if (!inGroup.contains(LibraryGroupMemberInfo.keyForBook(b.id)))
+          (
+            key: LibraryGroupMemberInfo.keyForBook(b.id),
+            title: b.title,
+            subtitle: b.author?.isNotEmpty == true ? b.author! : 'Book',
+          ),
+      for (final m in provider.mangas)
+        if (!inGroup.contains(LibraryGroupMemberInfo.keyForManga(m.id)))
+          (
+            key: LibraryGroupMemberInfo.keyForManga(m.id),
+            title: m.name,
+            subtitle: m.author?.isNotEmpty == true
+                ? m.author!
+                : (m.artist ?? 'Manga'),
+          ),
+    ];
+    candidates.sort(
+      (a, b) => a.title.toLowerCase().compareTo(b.title.toLowerCase()),
+    );
+    if (candidates.isEmpty) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Every library title is already here')),
+      );
+      return;
+    }
+
+    final picked = await showModalBottomSheet<Set<String>>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) => _AddTitlesSheet(candidates: candidates),
+    );
+    if (picked == null || picked.isEmpty || !mounted) return;
+    await ref
+        .read(libraryProvider.notifier)
+        .addMembersToGroup(widget.groupId, picked.toList());
   }
 
   @override
@@ -284,6 +404,7 @@ class _LibraryGroupModalState extends ConsumerState<_LibraryGroupModal> {
                                   }
                                 }),
                                 onOpenLayout: _showDisplaySheet,
+                                onAddTitles: _addTitles,
                                 onToggleReorder: () => setState(() {
                                   _reorderMode = !_reorderMode;
                                   if (_reorderMode) {
@@ -312,7 +433,7 @@ class _LibraryGroupModalState extends ConsumerState<_LibraryGroupModal> {
                                     ? 'Drag to set reading order'
                                     : _editingName
                                         ? 'Edit the name, then tap the check'
-                                        : 'Tap the title to rename · long-press a cover for reading order',
+                                        : 'Tap the title to rename · long-press a cover to reorder or remove',
                                 style: TextStyle(
                                   color: c.textSecondary.withValues(
                                     alpha: 0.9,
@@ -390,7 +511,7 @@ class _LibraryGroupModalState extends ConsumerState<_LibraryGroupModal> {
                                           }
                                         },
                                         onLongPress: () =>
-                                            _setOrder(member),
+                                            _memberActions(member),
                                       );
                                     },
                                   ),
@@ -486,6 +607,7 @@ class _HeaderBar extends StatelessWidget {
     required this.onCommitName,
     required this.onSortChanged,
     required this.onOpenLayout,
+    required this.onAddTitles,
     required this.onToggleReorder,
     required this.onDissolve,
     required this.onClose,
@@ -501,6 +623,7 @@ class _HeaderBar extends StatelessWidget {
   final VoidCallback onCommitName;
   final ValueChanged<_GroupMemberSort> onSortChanged;
   final VoidCallback onOpenLayout;
+  final VoidCallback onAddTitles;
   final VoidCallback onToggleReorder;
   final VoidCallback onDissolve;
   final VoidCallback onClose;
@@ -573,6 +696,11 @@ class _HeaderBar extends StatelessWidget {
                     child: const Text('Author'),
                   ),
                 ],
+              ),
+              IconButton(
+                icon: Icon(Icons.playlist_add_outlined, color: colors.accent),
+                tooltip: 'Add titles',
+                onPressed: onAddTitles,
               ),
               IconButton(
                 icon: Icon(Icons.grid_view_rounded, color: colors.textSecondary),
@@ -691,6 +819,13 @@ class _MemberTile extends ConsumerWidget {
         : null;
     final showTitle = display == GroupDisplayMode.overlay;
 
+    final mangaImage = manga == null
+        ? null
+        : mangaCoverProvider(
+            manga!,
+            localThumbPath: localThumb,
+            headers: headers,
+          );
     final cover = ClipRRect(
       borderRadius: AppSpacing.brMd,
       child: book != null
@@ -699,15 +834,9 @@ class _MemberTile extends ConsumerWidget {
               variant: BookCoverVariant.grid,
               expand: true,
             )
-          : localThumb != null
-          ? Image.file(
-              File(localThumb!),
-              fit: BoxFit.cover,
-              errorBuilder: (_, _, _) => ColoredBox(color: c.surfaceMuted),
-            )
-          : manga?.imageUrl != null && manga!.imageUrl!.isNotEmpty
+          : mangaImage != null
           ? Image(
-              image: cachedCover(manga!.imageUrl!, headers: headers),
+              image: mangaImage,
               fit: BoxFit.cover,
               errorBuilder: (_, _, _) => ColoredBox(color: c.surfaceMuted),
             )
@@ -902,6 +1031,141 @@ class _GroupDisplaySheetState extends State<_GroupDisplaySheet> {
               ),
             ],
           ),
+        ),
+      ),
+    );
+  }
+}
+
+class _AddTitlesSheet extends StatefulWidget {
+  const _AddTitlesSheet({required this.candidates});
+
+  final List<({String key, String title, String subtitle})> candidates;
+
+  @override
+  State<_AddTitlesSheet> createState() => _AddTitlesSheetState();
+}
+
+class _AddTitlesSheetState extends State<_AddTitlesSheet> {
+  final Set<String> _selected = {};
+  String _query = '';
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.colors;
+    final q = _query.trim().toLowerCase();
+    final filtered = [
+      for (final item in widget.candidates)
+        if (q.isEmpty ||
+            item.title.toLowerCase().contains(q) ||
+            item.subtitle.toLowerCase().contains(q))
+          item,
+    ];
+    final height = MediaQuery.sizeOf(context).height * 0.72;
+    return Container(
+      height: height,
+      decoration: BoxDecoration(
+        color: c.bgElevated,
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      child: SafeArea(
+        top: false,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Center(
+              child: Container(
+                margin: const EdgeInsets.only(top: 10, bottom: 8),
+                width: 36,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: c.border,
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 4, 12, 8),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      'Add titles',
+                      style: TextStyle(
+                        color: c.textPrimary,
+                        fontSize: 17,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                  TextButton(
+                    onPressed: _selected.isEmpty
+                        ? null
+                        : () => Navigator.pop(context, _selected),
+                    child: Text(
+                      _selected.isEmpty
+                          ? 'Add'
+                          : 'Add (${_selected.length})',
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+              child: TextField(
+                autofocus: true,
+                onChanged: (v) => setState(() => _query = v),
+                decoration: const InputDecoration(
+                  hintText: 'Search library…',
+                  prefixIcon: Icon(Icons.search, size: 20),
+                  isDense: true,
+                ),
+              ),
+            ),
+            Expanded(
+              child: filtered.isEmpty
+                  ? Center(
+                      child: Text(
+                        'No matching titles',
+                        style: TextStyle(color: c.textTertiary),
+                      ),
+                    )
+                  : ListView.builder(
+                      itemCount: filtered.length,
+                      itemBuilder: (ctx, i) {
+                        final item = filtered[i];
+                        final on = _selected.contains(item.key);
+                        return CheckboxListTile(
+                          value: on,
+                          onChanged: (v) => setState(() {
+                            if (v == true) {
+                              _selected.add(item.key);
+                            } else {
+                              _selected.remove(item.key);
+                            }
+                          }),
+                          title: Text(
+                            item.title,
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(color: c.textPrimary),
+                          ),
+                          subtitle: Text(
+                            item.subtitle,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              color: c.textTertiary,
+                              fontSize: 12,
+                            ),
+                          ),
+                          controlAffinity: ListTileControlAffinity.leading,
+                        );
+                      },
+                    ),
+            ),
+          ],
         ),
       ),
     );

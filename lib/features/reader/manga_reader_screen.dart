@@ -19,6 +19,7 @@ import '../../core/models/manga_page.dart';
 import '../../core/providers.dart';
 import '../../core/repositories/repositories.dart';
 import '../../core/services/chapter_auto_delete.dart';
+import '../../core/services/continue_widget_service.dart';
 import '../../core/services/download/download_manager.dart';
 import '../../core/services/download_prefs.dart';
 import '../../core/services/extension_manager.dart';
@@ -27,6 +28,7 @@ import '../../core/services/keiyoushi_service.dart';
 import '../../core/services/local_cbz_pages.dart';
 import '../../core/services/local_cbz_source.dart';
 import '../../core/services/media_export_service.dart';
+import '../../core/utils/chapter_language.dart';
 import '../../core/services/security_prefs.dart';
 import '../../core/services/stats_service.dart';
 import '../../core/services/trackers/track_chapter_use_case.dart';
@@ -598,31 +600,15 @@ class _MangaReaderScreenState extends ConsumerState<MangaReaderScreen>
   }
 
   /// Finds the current chapter's position in reading order and returns the
-  /// chapter at [position + 1], or null if this is the last chapter.
-  /// Same pattern as mangayomi's getNextChapter().
+  /// next chapter, staying on the same language when parallel translations
+  /// exist (e.g. Ch.1 English → Ch.2 English, skipping Ch.1 Spanish).
   MangaChapter? _findNextChapter(MangaChapter ch) {
-    final list = _readingOrderChapters;
-    for (int i = 0; i < list.length; i++) {
-      if (list[i].url == ch.url) {
-        if (i + 1 < list.length) return list[i + 1];
-        return null;
-      }
-    }
-    return null;
+    return ChapterLanguage.next(_readingOrderChapters, ch);
   }
 
-  /// Finds the current chapter's position in reading order and returns the
-  /// chapter at [position - 1], or null if this is the first chapter.
-  /// Same pattern as mangayomi's getPrevChapter().
+  /// Finds the previous chapter in reading order, same-language aware.
   MangaChapter? _findPrevChapter(MangaChapter ch) {
-    final list = _readingOrderChapters;
-    for (int i = 0; i < list.length; i++) {
-      if (list[i].url == ch.url) {
-        if (i - 1 >= 0) return list[i - 1];
-        return null;
-      }
-    }
-    return null;
+    return ChapterLanguage.previous(_readingOrderChapters, ch);
   }
 
   Future<void> _loadSettings() async {
@@ -1035,6 +1021,9 @@ class _MangaReaderScreenState extends ConsumerState<MangaReaderScreen>
     // RouteAware.didPopNext from this root-level reader route).
     if (mounted) {
       ref.read(historyRevisionProvider.notifier).bump();
+      unawaited(
+        ContinueWidgetService.updateFromRepos(ref.read(repositoriesProvider)),
+      );
     }
   }
 
@@ -1531,6 +1520,7 @@ class _MangaReaderScreenState extends ConsumerState<MangaReaderScreen>
                     brightness: _settings.brightness,
                     contrast: _settings.contrast,
                     saturation: _settings.saturation,
+                    invertColors: _settings.invertColors,
                     tint: _settings.tintColor,
                     tintOpacity: _settings.tintOpacity,
                     paperMultiply: sepiaOnPanels ? AppColors.sepiaBg : null,

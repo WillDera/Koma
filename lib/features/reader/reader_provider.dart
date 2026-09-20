@@ -6,6 +6,7 @@ import '../../core/models/book.dart';
 import '../../core/models/chapter.dart';
 import '../../core/providers.dart';
 import '../../core/services/koma_package_store.dart';
+import '../../core/services/continue_widget_service.dart';
 import '../../core/services/security_prefs.dart';
 import '../../features/reader/html/kir_model.dart';
 import '../../features/reader/scene/scene_chrome.dart';
@@ -270,6 +271,9 @@ class ReaderNotifier extends Notifier<ReaderState> {
     );
     // Bump the history revision so the History tab refreshes in real time.
     ref.read(historyRevisionProvider.notifier).bump();
+    unawaited(
+      ContinueWidgetService.updateFromRepos(ref.read(repositoriesProvider)),
+    );
   }
 
   void _startReadingTimer() {

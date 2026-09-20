@@ -257,6 +257,7 @@ class MigrateMangaUseCase {
         onTarget.libraryId ??= track.libraryId;
         onTarget.startedReadingDate ??= track.startedReadingDate;
         onTarget.finishedReadingDate ??= track.finishedReadingDate;
+        if (track.private) onTarget.private = true;
         await _repos.tracks.upsertTrack(onTarget);
         final oldId = track.id;
         if (oldId != null) await _repos.tracks.deleteTrack(oldId);
@@ -337,28 +338,52 @@ class MigrateMangaUseCase {
   }) async {
     final prev = await _manga.getMangaChapters(current.id);
     final next = await _manga.getMangaChapters(targetId);
+    final target = await _manga.getMangaById(targetId);
+    final targetTitle = target?.name ?? current.name;
 
-    double? maxChapterRead;
+    // Highest major chapter the user has finished on the old source.
+    // Sub-chapters (1.1, 1-en) share a major with 1, so progress carries
+    // across scanlation / part splits after migrate.
+    int? maxMajorRead;
+    final readByMajor = <int, MangaChapter>{};
     for (final c in prev) {
-      if (!c.isRead || !c.isRecognizedNumber) continue;
-      if (maxChapterRead == null || c.chapterNumber > maxChapterRead) {
-        maxChapterRead = c.chapterNumber;
+      if (!c.isRead) continue;
+      final n = ChapterRecognition.parseFromName(current.name, c.name);
+      final major = ChapterRecognition.majorChapterNumber(n);
+      if (major == null) continue;
+      if (maxMajorRead == null || major > maxMajorRead) {
+        maxMajorRead = major;
+      }
+      final existing = readByMajor[major];
+      if (existing == null || c.chapterNumber >= existing.chapterNumber) {
+        readByMajor[major] = c;
       }
     }
 
     final updates = <MangaChapter>[];
     for (var mangaChapter in next) {
-      if (!mangaChapter.isRecognizedNumber) {
-        updates.add(mangaChapter);
-        continue;
-      }
+      final n = ChapterRecognition.parseFromName(targetTitle, mangaChapter.name);
+      final major = ChapterRecognition.majorChapterNumber(n);
 
+      // Prefer an exact float match among previous chapters, else same major.
       MangaChapter? prevChapter;
-      for (final c in prev) {
-        if (c.isRecognizedNumber &&
-            c.chapterNumber == mangaChapter.chapterNumber) {
-          prevChapter = c;
-          break;
+      if (ChapterRecognition.isRecognized(n)) {
+        for (final c in prev) {
+          final pn = ChapterRecognition.parseFromName(current.name, c.name);
+          if (pn == n) {
+            prevChapter = c;
+            break;
+          }
+        }
+      }
+      prevChapter ??= major != null ? readByMajor[major] : null;
+      if (prevChapter == null && major != null) {
+        for (final c in prev) {
+          final pn = ChapterRecognition.parseFromName(current.name, c.name);
+          if (ChapterRecognition.majorChapterNumber(pn) == major) {
+            prevChapter = c;
+            break;
+          }
         }
       }
 
@@ -370,16 +395,26 @@ class MigrateMangaUseCase {
           scrollPosition: prevChapter.scrollPosition,
           isOpened: prevChapter.isOpened || mangaChapter.isOpened,
           readAt: prevChapter.readAt ?? mangaChapter.readAt,
+          isRead: prevChapter.isRead || mangaChapter.isRead,
         );
       }
 
-      if (maxChapterRead != null &&
-          mangaChapter.chapterNumber <= maxChapterRead) {
+      if (maxMajorRead != null &&
+          major != null &&
+          major <= maxMajorRead) {
         mangaChapter = mangaChapter.copyWith(
           isRead: true,
           readAt: mangaChapter.readAt ?? DateTime.now(),
         );
       }
+
+      // Keep stored recognition in sync with the name-based parse when we
+      // resolved a number (helps future migrate / track).
+      if (ChapterRecognition.isRecognized(n) &&
+          mangaChapter.chapterNumber != n) {
+        mangaChapter = mangaChapter.copyWith(chapterNumber: n);
+      }
+
       updates.add(mangaChapter);
     }
 

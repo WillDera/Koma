@@ -1,12 +1,18 @@
+import 'dart:async';
+import 'dart:io';
+
 import 'package:collection/collection.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:share_plus/share_plus.dart';
 
 import '../../core/models/bookmark.dart';
 import '../../core/models/snippet.dart';
 import '../../core/models/snippet_collection.dart';
 import '../../core/providers.dart';
+import '../../core/services/app_storage.dart';
+import '../../core/services/snippet_export_service.dart';
 import '../../router/router.dart';
 import '../../theme/app_icons.dart';
 import '../../theme/app_theme.dart';
@@ -411,6 +417,21 @@ class _SnippetsScreenState extends ConsumerState<SnippetsScreen> {
       subtitle: '$count snippet${count == 1 ? '' : 's'}',
       showBackButton: context.canPop(),
       actions: [
+        PopupMenuButton<String>(
+          tooltip: 'Export',
+          icon: Icon(
+            Icons.ios_share_outlined,
+            color: context.colors.textSecondary,
+            size: 20,
+          ),
+          onSelected: (v) => unawaited(_exportSnippets(v, p)),
+          itemBuilder: (_) => const [
+            PopupMenuItem(value: 'md', child: Text('Markdown')),
+            PopupMenuItem(value: 'csv', child: Text('CSV')),
+            PopupMenuItem(value: 'anki', child: Text('Anki')),
+          ],
+        ),
+        const SizedBox(width: 4),
         IconButtonRound(
           icon: Icons.checklist_rtl_rounded,
           size: 36,
@@ -421,6 +442,85 @@ class _SnippetsScreenState extends ConsumerState<SnippetsScreen> {
         ),
       ],
     );
+  }
+
+  Future<void> _exportSnippets(String format, SnippetsState p) async {
+    final filtered = _applyLocalFilters(p.snippets);
+    final List<Snippet> items;
+    if (p.selectionMode && p.selectedIds.isNotEmpty) {
+      items = [
+        for (final s in filtered)
+          if (p.selectedIds.contains(s.id)) s,
+      ];
+    } else {
+      items = filtered;
+    }
+    if (items.isEmpty) {
+      if (!mounted) return;
+      StashToast.show(
+        context,
+        message: 'No snippets to export',
+        icon: Icons.info_outline,
+      );
+      return;
+    }
+
+    final svc = const SnippetExportService();
+    final String body;
+    final String ext;
+    final String mime;
+    final String subject;
+    switch (format) {
+      case 'csv':
+        body = svc.exportCsv(items);
+        ext = 'csv';
+        mime = 'text/csv';
+        subject = 'Koma snippets CSV';
+      case 'anki':
+        body = svc.exportAnkiTsv(items);
+        ext = 'tsv';
+        mime = 'text/tab-separated-values';
+        subject = 'Koma snippets Anki';
+      default:
+        body = svc.exportMarkdown(items);
+        ext = 'md';
+        mime = 'text/markdown';
+        subject = 'Koma snippets Markdown';
+    }
+
+    try {
+      final stamp = DateTime.now()
+          .toIso8601String()
+          .replaceAll(':', '-')
+          .split('.')
+          .first;
+      final fileName = 'koma_snippets_$stamp.$ext';
+      final dir = Directory('${(await AppStorage.documents()).path}/exports');
+      if (!await dir.exists()) await dir.create(recursive: true);
+      final file = File('${dir.path}/$fileName');
+      await file.writeAsString(body);
+      await SharePlus.instance.share(
+        ShareParams(
+          files: [XFile(file.path, mimeType: mime)],
+          subject: subject,
+        ),
+      );
+      if (mounted) {
+        StashToast.show(
+          context,
+          message: 'Snippets ready to share',
+          icon: Icons.check,
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        StashToast.show(
+          context,
+          message: 'Export failed: $e',
+          icon: Icons.error_outline,
+        );
+      }
+    }
   }
 
   Widget _loading() {
@@ -693,11 +793,14 @@ class _SnippetsScreenState extends ConsumerState<SnippetsScreen> {
                 'pink': '#FFD4DC',
                 'green': '#C8E6C9',
               };
-              if (confirmed == true &&
-                  nameController.text.trim().isNotEmpty) {
+              final name = nameController.text.trim();
+              WidgetsBinding.instance.addPostFrameCallback((_) {
+                nameController.dispose();
+              });
+              if (confirmed == true && name.isNotEmpty) {
                 final hex = keyToHex[selectedColor] ?? '#FFE8A8';
                 final id = await sn.createCollection(
-                  nameController.text.trim(),
+                  name,
                   color: hex,
                 );
                 if (context.mounted) {

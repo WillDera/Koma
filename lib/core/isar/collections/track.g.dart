@@ -39,32 +39,33 @@ const TrackSchema = CollectionSchema(
       type: IsarType.string,
     ),
     r'mediaId': PropertySchema(id: 5, name: r'mediaId', type: IsarType.long),
-    r'score': PropertySchema(id: 6, name: r'score', type: IsarType.long),
+    r'private': PropertySchema(id: 6, name: r'private', type: IsarType.bool),
+    r'score': PropertySchema(id: 7, name: r'score', type: IsarType.long),
     r'startedReadingDate': PropertySchema(
-      id: 7,
+      id: 8,
       name: r'startedReadingDate',
       type: IsarType.long,
     ),
     r'status': PropertySchema(
-      id: 8,
+      id: 9,
       name: r'status',
       type: IsarType.byte,
       enumMap: _TrackstatusEnumValueMap,
     ),
-    r'syncId': PropertySchema(id: 9, name: r'syncId', type: IsarType.long),
-    r'title': PropertySchema(id: 10, name: r'title', type: IsarType.string),
+    r'syncId': PropertySchema(id: 10, name: r'syncId', type: IsarType.long),
+    r'title': PropertySchema(id: 11, name: r'title', type: IsarType.string),
     r'totalChapter': PropertySchema(
-      id: 11,
+      id: 12,
       name: r'totalChapter',
       type: IsarType.long,
     ),
     r'trackingUrl': PropertySchema(
-      id: 12,
+      id: 13,
       name: r'trackingUrl',
       type: IsarType.string,
     ),
     r'updatedAt': PropertySchema(
-      id: 13,
+      id: 14,
       name: r'updatedAt',
       type: IsarType.long,
     ),
@@ -151,14 +152,15 @@ void _trackSerialize(
   writer.writeLong(offsets[3], object.mangaId);
   writer.writeString(offsets[4], object.mediaDetailsJson);
   writer.writeLong(offsets[5], object.mediaId);
-  writer.writeLong(offsets[6], object.score);
-  writer.writeLong(offsets[7], object.startedReadingDate);
-  writer.writeByte(offsets[8], object.status.index);
-  writer.writeLong(offsets[9], object.syncId);
-  writer.writeString(offsets[10], object.title);
-  writer.writeLong(offsets[11], object.totalChapter);
-  writer.writeString(offsets[12], object.trackingUrl);
-  writer.writeLong(offsets[13], object.updatedAt);
+  writer.writeBool(offsets[6], object.private);
+  writer.writeLong(offsets[7], object.score);
+  writer.writeLong(offsets[8], object.startedReadingDate);
+  writer.writeByte(offsets[9], object.status.index);
+  writer.writeLong(offsets[10], object.syncId);
+  writer.writeString(offsets[11], object.title);
+  writer.writeLong(offsets[12], object.totalChapter);
+  writer.writeString(offsets[13], object.trackingUrl);
+  writer.writeLong(offsets[14], object.updatedAt);
 }
 
 Track _trackDeserialize(
@@ -175,16 +177,17 @@ Track _trackDeserialize(
     mangaId: reader.readLongOrNull(offsets[3]),
     mediaDetailsJson: reader.readStringOrNull(offsets[4]),
     mediaId: reader.readLongOrNull(offsets[5]),
-    score: reader.readLongOrNull(offsets[6]),
-    startedReadingDate: reader.readLongOrNull(offsets[7]),
+    private: reader.readBoolOrNull(offsets[6]) ?? false,
+    score: reader.readLongOrNull(offsets[7]),
+    startedReadingDate: reader.readLongOrNull(offsets[8]),
     status:
-        _TrackstatusValueEnumMap[reader.readByteOrNull(offsets[8])] ??
+        _TrackstatusValueEnumMap[reader.readByteOrNull(offsets[9])] ??
         TrackStatus.reading,
-    syncId: reader.readLongOrNull(offsets[9]),
-    title: reader.readStringOrNull(offsets[10]),
-    totalChapter: reader.readLongOrNull(offsets[11]),
-    trackingUrl: reader.readStringOrNull(offsets[12]),
-    updatedAt: reader.readLongOrNull(offsets[13]),
+    syncId: reader.readLongOrNull(offsets[10]),
+    title: reader.readStringOrNull(offsets[11]),
+    totalChapter: reader.readLongOrNull(offsets[12]),
+    trackingUrl: reader.readStringOrNull(offsets[13]),
+    updatedAt: reader.readLongOrNull(offsets[14]),
   );
   return object;
 }
@@ -209,22 +212,24 @@ P _trackDeserializeProp<P>(
     case 5:
       return (reader.readLongOrNull(offset)) as P;
     case 6:
-      return (reader.readLongOrNull(offset)) as P;
+      return (reader.readBoolOrNull(offset) ?? false) as P;
     case 7:
       return (reader.readLongOrNull(offset)) as P;
     case 8:
+      return (reader.readLongOrNull(offset)) as P;
+    case 9:
       return (_TrackstatusValueEnumMap[reader.readByteOrNull(offset)] ??
               TrackStatus.reading)
           as P;
-    case 9:
-      return (reader.readLongOrNull(offset)) as P;
     case 10:
-      return (reader.readStringOrNull(offset)) as P;
-    case 11:
       return (reader.readLongOrNull(offset)) as P;
-    case 12:
+    case 11:
       return (reader.readStringOrNull(offset)) as P;
+    case 12:
+      return (reader.readLongOrNull(offset)) as P;
     case 13:
+      return (reader.readStringOrNull(offset)) as P;
+    case 14:
       return (reader.readLongOrNull(offset)) as P;
     default:
       throw IsarError('Unknown property with id $propertyId');
@@ -1209,6 +1214,14 @@ extension TrackQueryFilter on QueryBuilder<Track, Track, QFilterCondition> {
     });
   }
 
+  QueryBuilder<Track, Track, QAfterFilterCondition> privateEqualTo(bool value) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.equalTo(property: r'private', value: value),
+      );
+    });
+  }
+
   QueryBuilder<Track, Track, QAfterFilterCondition> scoreIsNull() {
     return QueryBuilder.apply(this, (query) {
       return query.addFilterCondition(
@@ -2040,6 +2053,18 @@ extension TrackQuerySortBy on QueryBuilder<Track, Track, QSortBy> {
     });
   }
 
+  QueryBuilder<Track, Track, QAfterSortBy> sortByPrivate() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'private', Sort.asc);
+    });
+  }
+
+  QueryBuilder<Track, Track, QAfterSortBy> sortByPrivateDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'private', Sort.desc);
+    });
+  }
+
   QueryBuilder<Track, Track, QAfterSortBy> sortByScore() {
     return QueryBuilder.apply(this, (query) {
       return query.addSortBy(r'score', Sort.asc);
@@ -2222,6 +2247,18 @@ extension TrackQuerySortThenBy on QueryBuilder<Track, Track, QSortThenBy> {
     });
   }
 
+  QueryBuilder<Track, Track, QAfterSortBy> thenByPrivate() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'private', Sort.asc);
+    });
+  }
+
+  QueryBuilder<Track, Track, QAfterSortBy> thenByPrivateDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'private', Sort.desc);
+    });
+  }
+
   QueryBuilder<Track, Track, QAfterSortBy> thenByScore() {
     return QueryBuilder.apply(this, (query) {
       return query.addSortBy(r'score', Sort.asc);
@@ -2361,6 +2398,12 @@ extension TrackQueryWhereDistinct on QueryBuilder<Track, Track, QDistinct> {
     });
   }
 
+  QueryBuilder<Track, Track, QDistinct> distinctByPrivate() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addDistinctBy(r'private');
+    });
+  }
+
   QueryBuilder<Track, Track, QDistinct> distinctByScore() {
     return QueryBuilder.apply(this, (query) {
       return query.addDistinctBy(r'score');
@@ -2454,6 +2497,12 @@ extension TrackQueryProperty on QueryBuilder<Track, Track, QQueryProperty> {
   QueryBuilder<Track, int?, QQueryOperations> mediaIdProperty() {
     return QueryBuilder.apply(this, (query) {
       return query.addPropertyName(r'mediaId');
+    });
+  }
+
+  QueryBuilder<Track, bool, QQueryOperations> privateProperty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addPropertyName(r'private');
     });
   }
 

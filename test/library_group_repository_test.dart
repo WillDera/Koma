@@ -70,6 +70,31 @@ void main() {
     expect(byKey['b:2'], 3);
   });
 
+  test('addMembers appends without dissolving', () async {
+    final repos = await createTestRepositories();
+    addTearDown(() => repos.isar.close());
+
+    final id = await repos.groups.createGroup(
+      name: 'Growing',
+      memberKeys: ['b:1', 'b:2'],
+    );
+    await repos.groups.addMembers(id, ['m:9', 'b:1']);
+    final g = (await repos.groups.getAllGroups()).single;
+    expect(g.members.map((m) => m.memberKey).toSet(), {'b:1', 'b:2', 'm:9'});
+  });
+
+  test('groupIdsForManga returns owning group', () async {
+    final repos = await createTestRepositories();
+    addTearDown(() => repos.isar.close());
+
+    final id = await repos.groups.createGroup(
+      name: 'Comics',
+      memberKeys: ['m:10', 'm:11'],
+    );
+    expect(await repos.groups.groupIdsForManga(10), [id]);
+    expect(await repos.groups.groupIdsForManga(99), isEmpty);
+  });
+
   test('parseKey helpers', () {
     expect(LibraryGroupMemberInfo.parseKey('b:12'), ('book', 12));
     expect(LibraryGroupMemberInfo.parseKey('m:9'), ('manga', 9));
