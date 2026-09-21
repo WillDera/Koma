@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'core/services/app_lock_service.dart';
 import 'core/services/security_prefs.dart';
+import 'core/services/session_memory.dart';
 import 'router/router.dart';
 import 'theme/theme_provider.dart';
 import 'widgets/app_lock_overlay.dart';
@@ -33,11 +34,19 @@ class _KomaAppState extends ConsumerState<KomaApp> with WidgetsBindingObserver {
   }
 
   @override
+  void didHaveMemoryPressure() {
+    SessionMemory.purgeImageCache();
+  }
+
+  @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     // Do not lock on [inactive]: biometric / credential sheets put the app
     // inactive and would immediately re-lock (or fight the enable toggle).
     if (state == AppLifecycleState.paused ||
         state == AppLifecycleState.hidden) {
+      // Release live bitmaps while backgrounded so IndexedStack tabs don't
+      // pin decoded covers for the whole session.
+      SessionMemory.trimAfterFrame();
       if (AppLockService.authInProgress) return;
       if (ref.read(appLockEnabledProvider)) {
         ref.read(appUnlockedProvider.notifier).lock();
@@ -86,7 +95,7 @@ class _KomaAppState extends ConsumerState<KomaApp> with WidgetsBindingObserver {
             return Stack(
               fit: StackFit.expand,
               children: [
-                if (child != null) child,
+                ?child,
                 if (lockOn && !unlocked) const AppLockOverlay(),
               ],
             );

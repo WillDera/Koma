@@ -1,5 +1,3 @@
-import 'dart:ui';
-
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -11,7 +9,7 @@ import 'icon_button_round.dart';
 import 'library_stats_panel.dart';
 import 'reading_calendar_sheet.dart';
 
-/// Long-press You → floating stats popup (blurred backdrop, not a sheet).
+/// Long-press You → floating stats popup (scrim backdrop, not a sheet).
 Future<void> showStatsPopup(BuildContext context) {
   return showGeneralDialog<void>(
     context: context,
@@ -28,7 +26,8 @@ Future<void> showStatsPopup(BuildContext context) {
         curve: AppMotion.decelerate,
         reverseCurve: AppMotion.accelerate,
       );
-      final blur = Tween<double>(begin: 0, end: 18).animate(curved);
+      // Scrim only during the transition — BackdropFilter over the live
+      // IndexedStack shell was a common raster hitch when opening stats.
       return AnimatedBuilder(
         animation: curved,
         builder: (context, _) {
@@ -38,14 +37,8 @@ Future<void> showStatsPopup(BuildContext context) {
               GestureDetector(
                 onTap: () => Navigator.of(context).maybePop(),
                 behavior: HitTestBehavior.opaque,
-                child: BackdropFilter(
-                  filter: ImageFilter.blur(
-                    sigmaX: blur.value,
-                    sigmaY: blur.value,
-                  ),
-                  child: ColoredBox(
-                    color: Colors.black.withValues(alpha: 0.38 * curved.value),
-                  ),
+                child: ColoredBox(
+                  color: Colors.black.withValues(alpha: 0.45 * curved.value),
                 ),
               ),
               FadeTransition(

@@ -391,7 +391,8 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> with RouteAware {
                     ),
                   ),
                   SliverList(
-                    delegate: SliverChildBuilderDelegate((context, i) {
+                    delegate: SliverChildBuilderDelegate(
+                      (context, i) {
                       final entry = section.value[i];
                       final index = (staggerBase[section.key] ?? 0) + i;
                       return StaggeredFadeScale(
@@ -410,7 +411,10 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> with RouteAware {
                           },
                         ),
                       );
-                    }, childCount: section.value.length),
+                    },
+                      childCount: section.value.length,
+                      addAutomaticKeepAlives: false,
+                    ),
                   ),
                 ],
               const SliverToBoxAdapter(child: SizedBox(height: 100)),

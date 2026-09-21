@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:flutter_qjs/flutter_qjs.dart';
 import 'package:http/http.dart' as http;
@@ -112,12 +113,32 @@ Future<void> injectHttpBridge(
   runtime.evaluate(mangayomiClientCode);
 }
 
+/// Soft ceiling for a single JS-extension HTTP body. Oversized responses
+/// (huge chapter HTML dumps) are aborted so one title cannot OOM the Dart
+/// heap during library updates.
+const kMaxJsHttpBodyBytes = 8 * 1024 * 1024;
+
 InterceptedClient _client(List args, String sourceId) {
   final reqcopyWith = args.length > 1 ? args[1] as Map? : null;
   return MClient.init(
     sourceId: sourceId,
     reqcopyWith: reqcopyWith?.map((k, v) => MapEntry(k.toString(), v)),
   );
+}
+
+Future<String> _readBodyCapped(http.ByteStream stream, String url) async {
+  final builder = BytesBuilder(copy: false);
+  var total = 0;
+  await for (final chunk in stream) {
+    total += chunk.length;
+    if (total > kMaxJsHttpBodyBytes) {
+      throw StateError(
+        'HTTP response exceeds $kMaxJsHttpBodyBytes bytes ($url)',
+      );
+    }
+    builder.add(chunk);
+  }
+  return utf8.decode(builder.takeBytes(), allowMalformed: true);
 }
 
 Future<String> _toHttpResponse(
@@ -137,46 +158,35 @@ Future<String> _toHttpResponse(
             : (args[4] as Map?)?.map((k, v) => MapEntry(k.toString(), v))
       : null;
 
+  final request = http.Request(method, Uri.parse(url));
+  if (headers != null) request.headers.addAll(headers);
+
   if ((headers?[HttpHeaders.contentTypeHeader]?.contains('application/json') ??
       false)) {
-    final request = http.Request(method, Uri.parse(url));
-    request.headers.addAll(headers ?? {});
     request.body = json.encode(body);
-    final streamed = await client.send(request);
-    final bodyStr = await streamed.stream.bytesToString();
-    return jsonEncode({
-      'body': bodyStr,
-      'headers': streamed.headers,
-      'isRedirect': streamed.isRedirect,
-      'persistentConnection': streamed.persistentConnection,
-      'reasonPhrase': streamed.reasonPhrase,
-      'statusCode': streamed.statusCode,
-      'request': {
-        'method': streamed.request?.method,
-        'url': streamed.request?.url.toString(),
-      },
-    });
+  } else if (body != null) {
+    if (body is String) {
+      request.body = body;
+    } else if (body is List) {
+      request.bodyBytes = body.cast<int>();
+    } else if (body is Map) {
+      request.bodyFields =
+          body.map((k, v) => MapEntry(k.toString(), v.toString()));
+    }
   }
 
-  final future = switch (method) {
-    'HEAD' => client.head(Uri.parse(url), headers: headers),
-    'GET' => client.get(Uri.parse(url), headers: headers),
-    'POST' => client.post(Uri.parse(url), headers: headers, body: body),
-    'PUT' => client.put(Uri.parse(url), headers: headers, body: body),
-    'DELETE' => client.delete(Uri.parse(url), headers: headers, body: body),
-    _ => client.patch(Uri.parse(url), headers: headers, body: body),
-  };
-  final response = await future;
+  final streamed = await client.send(request);
+  final bodyStr = await _readBodyCapped(streamed.stream, url);
   return jsonEncode({
-    'body': response.body,
-    'headers': response.headers,
-    'isRedirect': response.isRedirect,
-    'persistentConnection': response.persistentConnection,
-    'reasonPhrase': response.reasonPhrase,
-    'statusCode': response.statusCode,
+    'body': bodyStr,
+    'headers': streamed.headers,
+    'isRedirect': streamed.isRedirect,
+    'persistentConnection': streamed.persistentConnection,
+    'reasonPhrase': streamed.reasonPhrase,
+    'statusCode': streamed.statusCode,
     'request': {
-      'method': response.request?.method,
-      'url': response.request?.url.toString(),
+      'method': streamed.request?.method,
+      'url': streamed.request?.url.toString(),
     },
   });
 }

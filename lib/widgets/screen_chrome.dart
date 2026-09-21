@@ -87,8 +87,13 @@ class _StaggeredEntranceState extends State<StaggeredEntrance>
   }
 }
 
-/// AnymeX-style fade + scale entrance with a capped stagger delay.
-class StaggeredFadeScale extends StatefulWidget {
+/// Fade entrance with a capped stagger delay.
+///
+/// Prefer this for short static lists (settings rows, hero blocks). Do **not**
+/// wrap every cell of a long scrolling list for indices that will animate —
+/// only the first [maxStaggerIndex] items get a ticker; the rest return
+/// [child] with zero animation overhead.
+class StaggeredFadeScale extends StatelessWidget {
   const StaggeredFadeScale({
     super.key,
     required this.child,
@@ -106,14 +111,45 @@ class StaggeredFadeScale extends StatefulWidget {
   final int delayStepMs;
   final int maxDelayMs;
 
-  /// Cap for list stagger indices (AnymeX-style; avoids long delay waves).
+  /// Cap for list stagger indices (short lists only; see class doc).
   static const int maxStaggerIndex = 8;
 
   @override
-  State<StaggeredFadeScale> createState() => _StaggeredFadeScaleState();
+  Widget build(BuildContext context) {
+    if (index > maxStaggerIndex || MediaQuery.disableAnimationsOf(context)) {
+      return child;
+    }
+    return _StaggeredFadeScaleAnimator(
+      index: index,
+      duration: duration,
+      delayStepMs: delayStepMs,
+      maxDelayMs: maxDelayMs,
+      child: child,
+    );
+  }
 }
 
-class _StaggeredFadeScaleState extends State<StaggeredFadeScale>
+class _StaggeredFadeScaleAnimator extends StatefulWidget {
+  const _StaggeredFadeScaleAnimator({
+    required this.child,
+    required this.index,
+    required this.duration,
+    required this.delayStepMs,
+    required this.maxDelayMs,
+  });
+
+  final Widget child;
+  final int index;
+  final Duration duration;
+  final int delayStepMs;
+  final int maxDelayMs;
+
+  @override
+  State<_StaggeredFadeScaleAnimator> createState() =>
+      _StaggeredFadeScaleAnimatorState();
+}
+
+class _StaggeredFadeScaleAnimatorState extends State<_StaggeredFadeScaleAnimator>
     with SingleTickerProviderStateMixin {
   late final AnimationController _controller;
   late final Animation<double> _fade;
@@ -146,9 +182,7 @@ class _StaggeredFadeScaleState extends State<StaggeredFadeScale>
 
   @override
   Widget build(BuildContext context) {
-    if (MediaQuery.disableAnimationsOf(context) || _done) {
-      return widget.child;
-    }
+    if (_done) return widget.child;
     // Fade only — ScaleTransition kept a transform layer on every list cell
     // during entrance and was a common raster hitch while scrolling.
     return FadeTransition(opacity: _fade, child: widget.child);

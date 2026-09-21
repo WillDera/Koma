@@ -236,6 +236,20 @@ class MangaRepository {
     return rows.map(_chapterToModel).toList(growable: false);
   }
 
+  /// Chapter URLs only — used by library updates to skip materializing
+  /// hundreds of already-known chapters from a remote list.
+  Future<Set<String>> getMangaChapterUrls(int mangaId) async {
+    final urls = await _isar.mangaChapters
+        .where()
+        .mangaIdEqualTo(mangaId)
+        .urlProperty()
+        .findAll();
+    return {
+      for (final u in urls)
+        if (u.trim().isNotEmpty) u.trim(),
+    };
+  }
+
   Future<MangaChapter?> getMangaChapterByUrl(int mangaId, String url) async {
     final row = await _isar.mangaChapters
         .where()

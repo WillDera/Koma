@@ -47,7 +47,6 @@ import '../../widgets/dialog_sheet.dart';
 import '../../widgets/icon_button_round.dart';
 import '../../widgets/new_chapter_badge.dart';
 import '../../widgets/page_transitions.dart';
-import '../../widgets/screen_chrome.dart';
 import '../../widgets/toast.dart';
 import '../../widgets/tracker_brand_icon.dart';
 import '../library/cbz_export_flow.dart';
@@ -3320,16 +3319,15 @@ class _MangaDetailScreenState extends ConsumerState<MangaDetailScreen> {
                     : SliverPadding(
                         padding: const EdgeInsets.only(bottom: 24),
                         sliver: SliverList.builder(
+                          // Chapter rows are cheap; keep-alives + entrance
+                          // tickers on hundreds of cells made long novels
+                          // hitch after scrolling (and stuck around in RAM).
+                          addAutomaticKeepAlives: false,
                           itemCount: filteredChapters.length,
                           itemBuilder: (context, index) {
                             final ch = filteredChapters[index];
                             final url = ch['url'] as String? ?? '';
-                            return StaggeredFadeScale(
-                              index: index.clamp(
-                                0,
-                                StaggeredFadeScale.maxStaggerIndex,
-                              ),
-                              child: _buildChapterItem(
+                            return _buildChapterItem(
                                 ch: ch,
                                 c: c,
                                 downloadProgress: detail.downloadProgress,
@@ -3453,8 +3451,7 @@ class _MangaDetailScreenState extends ConsumerState<MangaDetailScreen> {
                                     _confirmDeleteSingleChapter(ch),
                                 onBookmarkTap: (ch) =>
                                     _toggleChapterBookmark(ch),
-                              ),
-                            );
+                              );
                           },
                         ),
                       ),

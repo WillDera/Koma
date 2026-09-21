@@ -80,6 +80,11 @@ final _memoryCache = _LRUCache<String, Uint8List>(
   sizeOf: (data) => data.length,
 );
 
+/// Clears the in-memory encoded cover/page byte LRU (disk cache untouched).
+void clearEncodedImageMemoryCache() {
+  _memoryCache.clear();
+}
+
 /// Cache metadata for LRU eviction.
 class _CacheMetadata {
   final String path;

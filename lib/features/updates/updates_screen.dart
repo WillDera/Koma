@@ -221,7 +221,8 @@ class UpdatesScreen extends ConsumerWidget {
                     ),
                   ),
                   SliverList(
-                    delegate: SliverChildBuilderDelegate((context, i) {
+                    delegate: SliverChildBuilderDelegate(
+                      (context, i) {
                       final row = section.value[i];
                       return StaggeredFadeScale(
                         index: i,
@@ -230,7 +231,10 @@ class UpdatesScreen extends ConsumerWidget {
                           newCount: row.count,
                         ),
                       );
-                    }, childCount: section.value.length),
+                    },
+                      childCount: section.value.length,
+                      addAutomaticKeepAlives: false,
+                    ),
                   ),
                 ],
               const SliverToBoxAdapter(child: SizedBox(height: 100)),

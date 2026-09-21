@@ -373,6 +373,7 @@ class _DetailBody extends ConsumerWidget {
           SliverPadding(
             padding: const EdgeInsets.symmetric(horizontal: AppSpacing.xl),
             sliver: SliverList.builder(
+              addAutomaticKeepAlives: false,
               itemCount: chapters.length,
               itemBuilder: (context, index) {
                 final chapter = chapters[index];

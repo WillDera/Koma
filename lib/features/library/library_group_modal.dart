@@ -1,5 +1,3 @@
-import 'dart:ui';
-
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -365,14 +363,13 @@ class _LibraryGroupModalState extends ConsumerState<_LibraryGroupModal> {
               child: Stack(
                 fit: StackFit.expand,
                 children: [
-                  // Visual blur only — dismiss is handled by the outer detector.
+                  // Scrim during open — full-screen BackdropFilter over the
+                  // IndexedStack shell hitchs the route animation on mid devices.
                   IgnorePointer(
-                    child: BackdropFilter(
-                      filter: ImageFilter.blur(
-                        sigmaX: widget.reducedMotion ? 0 : 22,
-                        sigmaY: widget.reducedMotion ? 0 : 22,
+                    child: ColoredBox(
+                      color: Colors.black.withValues(
+                        alpha: widget.reducedMotion ? 0.45 : 0.45 * t.clamp(0.0, 1.0),
                       ),
-                      child: const ColoredBox(color: Colors.transparent),
                     ),
                   ),
                   SafeArea(

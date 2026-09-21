@@ -121,12 +121,16 @@ class LibraryUpdateService {
         );
         if (raw.isEmpty) continue;
 
-        final incoming = <MangaChapter>[];
+        // Only materialize chapters we do not already have — novels with
+        // hundreds of chapters were OOMing when every poll rebuilt the full
+        // local model list just to discover zero new rows.
+        final existingUrls = await _repos.manga.getMangaChapterUrls(manga.id);
+        final fresh = <MangaChapter>[];
         for (var i = 0; i < raw.length; i++) {
           final ch = raw[i];
           final url = ch.url.trim();
-          if (url.isEmpty) continue;
-          incoming.add(
+          if (url.isEmpty || existingUrls.contains(url)) continue;
+          fresh.add(
             MangaChapter.withRecognition(
               id: 0,
               mangaId: manga.id,
@@ -141,19 +145,25 @@ class LibraryUpdateService {
             ),
           );
         }
-        if (incoming.isEmpty) continue;
+        if (fresh.isEmpty) continue;
 
-        final added = await _repos.manga.mergeNewChapters(manga.id, incoming);
-        if (added.isNotEmpty) {
-          newByManga[manga.id] = added.length;
-          updatedNames.add(manga.name);
-          // Prefer the resolved source id so auto-download hits the live
-          // extension the same way the chapter list did.
-          final resolved = manga.copyWith(sourceId: sourceId);
-          additions.add(
-            LibraryUpdateAddition(manga: resolved, chapters: added),
-          );
-        }
+        final now = DateTime.now().millisecondsSinceEpoch;
+        final toInsert = [
+          for (final c in fresh)
+            c.copyWith(
+              dateFetch: c.dateFetch > 0 ? c.dateFetch : now,
+              isOpened: false,
+            ),
+        ];
+        await _repos.manga.insertMangaChapters(manga.id, toInsert);
+        newByManga[manga.id] = toInsert.length;
+        updatedNames.add(manga.name);
+        // Prefer the resolved source id so auto-download hits the live
+        // extension the same way the chapter list did.
+        final resolved = manga.copyWith(sourceId: sourceId);
+        additions.add(
+          LibraryUpdateAddition(manga: resolved, chapters: toInsert),
+        );
       } catch (_) {
         // One manga (or one unavailable source) failing shouldn't block the
         // rest of the library (mangayomi pattern).

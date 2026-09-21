@@ -31,6 +31,9 @@ class JsExtensionService implements ExtensionService {
   JavascriptRuntime? _runtime;
   String? _boundSourceKey;
 
+  /// True when the bound extension overrides [getChapterList] (not the stub).
+  bool _hasGetChapterList = false;
+
   /// Serialize calls on the active runtime (QuickJS is not re-entrant).
   Future<void> _chain = Future.value();
 
@@ -66,6 +69,7 @@ class JsExtensionService implements ExtensionService {
     } catch (_) {}
     _runtime = null;
     _boundSourceKey = null;
+    _hasGetChapterList = false;
 
     await hydrateJsPrefsCache();
 
@@ -89,6 +93,27 @@ var extention = new DefaultExtension();
 
     _runtime = runtime;
     _boundSourceKey = key;
+    // Most Mangayomi JS sources only implement getDetail (chapters embedded).
+    // Probing the stub throws an unhandled QuickJS rejection and wastes a
+    // full round-trip before the getDetail fallback — detect once per bind.
+    _hasGetChapterList = _methodIsOverridden(runtime, 'getChapterList');
+  }
+
+  /// Whether [extention.name] is a real override, not the MProvider stub.
+  static bool _methodIsOverridden(JavascriptRuntime runtime, String name) {
+    try {
+      final res = runtime.evaluate(
+        'JSON.stringify((() => {'
+        '  const fn = extention.$name;'
+        '  if (typeof fn !== "function") return false;'
+        '  const src = Function.prototype.toString.call(fn);'
+        '  return src.indexOf("$name not implemented") === -1;'
+        '})())',
+      );
+      return res.stringResult == 'true';
+    } catch (_) {
+      return false;
+    }
   }
 
   Map<String, dynamic> _sourceToJsJson(MSource source) {
@@ -131,27 +156,36 @@ var extention = new DefaultExtension();
   }) {
     return _serialized(() async {
       await _init(source);
-      final runtime = _runtime!;
-      final evaled = await runtime.evaluateAsync(
-        'jsonStringify(() => extention.$call)',
-      );
-      final promised = await runtime
-          .handlePromise(evaled)
-          .timeout(
-            callTimeout,
-            onTimeout: () => throw TimeoutException(
-              'JS call timed out: $call (${source.name})',
-            ),
-          );
-      if (promised.isError) {
-        throw StateError('JS error in $call: ${promised.stringResult}');
-      }
-      final raw = promised.stringResult;
-      if (raw.isEmpty) {
-        throw StateError('JS call returned empty: $call (${source.name})');
-      }
-      return jsonDecode(raw) as T;
+      return _callOnBoundRuntime<T>(call, callTimeout: callTimeout);
     });
+  }
+
+  /// Evaluate an extension call on the already-bound runtime (inside
+  /// [_serialized] after [_init]).
+  Future<T> _callOnBoundRuntime<T>(
+    String call, {
+    Duration callTimeout = const Duration(seconds: 60),
+  }) async {
+    final runtime = _runtime!;
+    final evaled = await runtime.evaluateAsync(
+      'jsonStringify(() => extention.$call)',
+    );
+    final promised = await runtime
+        .handlePromise(evaled)
+        .timeout(
+          callTimeout,
+          onTimeout: () => throw TimeoutException(
+            'JS call timed out: $call',
+          ),
+        );
+    if (promised.isError) {
+      throw StateError('JS error in $call: ${promised.stringResult}');
+    }
+    final raw = promised.stringResult;
+    if (raw.isEmpty) {
+      throw StateError('JS call returned empty: $call');
+    }
+    return jsonDecode(raw) as T;
   }
 
   T _extensionCallSync<T>(String call, T def) {
@@ -299,30 +333,37 @@ var extention = new DefaultExtension();
     String? memo,
     String? title,
   }) async {
-    // Prefer an explicit getChapterList when the extension implements it
-    // (lighter library Updates). Fall back to getDetail.chapters — Mangayomi
-    // JS sources typically only ship getDetail.
-    try {
-      final raw = await _extensionCallAsync(
-        source,
-        'getChapterList(${jsonEncode(url)})',
-      );
-      if (raw is List) return _parseChapters(raw);
-      if (raw is Map) {
-        final map = Map<String, dynamic>.from(raw);
-        final chapters = map['chapters'] ?? map['episodes'];
-        if (chapters != null) return _parseChapters(chapters);
+    // Prefer an explicit getChapterList when the extension overrides it
+    // (lighter library Updates). Otherwise go straight to getDetail.chapters —
+    // calling the MProvider stub throws an unhandled QuickJS rejection and
+    // doubles memory before the fallback.
+    return _serialized(() async {
+      await _init(source);
+      if (_hasGetChapterList) {
+        try {
+          final raw = await _callOnBoundRuntime(
+            'getChapterList(${jsonEncode(url)})',
+          );
+          if (raw is List) {
+            final chapters = _parseChapters(raw);
+            if (chapters.isNotEmpty) return chapters;
+          } else if (raw is Map) {
+            final map = Map<String, dynamic>.from(raw);
+            final chapters =
+                _parseChapters(map['chapters'] ?? map['episodes']);
+            if (chapters.isNotEmpty) return chapters;
+          }
+        } catch (_) {
+          // Broken override → getDetail path below.
+        }
       }
-    } catch (_) {
-      // Unimplemented / throw → getDetail path below.
-    }
-    final raw = await _extensionCallAsync(
-      source,
-      'getDetail(${jsonEncode(url)})',
-    );
-    if (raw is! Map) return [];
-    final map = Map<String, dynamic>.from(raw);
-    return _parseChapters(map['chapters'] ?? map['episodes']);
+      final raw = await _callOnBoundRuntime(
+        'getDetail(${jsonEncode(url)})',
+      );
+      if (raw is! Map) return [];
+      final map = Map<String, dynamic>.from(raw);
+      return _parseChapters(map['chapters'] ?? map['episodes']);
+    });
   }
 
   @override

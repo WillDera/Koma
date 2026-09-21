@@ -237,112 +237,132 @@ class _SnippetsScreenState extends ConsumerState<SnippetsScreen> {
 
     final books = _uniqueBooks(p.allSnippets);
 
-    return ListView(
+    return CustomScrollView(
       controller: _scrollCtrl,
-      padding: EdgeInsets.zero,
       physics: const AlwaysScrollableScrollPhysics(),
-      children: [
-        const OneHandSpacer(),
-        _buildHeader(p, count: items.length),
-        _buildTabBar(),
+      slivers: [
+        const SliverToBoxAdapter(child: OneHandSpacer()),
+        SliverToBoxAdapter(child: _buildHeader(p, count: items.length)),
+        SliverToBoxAdapter(child: _buildTabBar()),
         if (!p.selectionMode) ...[
-          Padding(
-            padding: const EdgeInsets.fromLTRB(20, 4, 20, 10),
-            child: TextField(
-              controller: _searchCtrl,
-              onChanged: (v) => setState(() => _searchQuery = v),
-              onSubmitted: (_) => FocusScope.of(context).unfocus(),
-              textInputAction: TextInputAction.search,
-              decoration: InputDecoration(
-                hintText: 'Search snippets...',
-                prefixIcon: const Icon(Icons.search, size: 18),
-                suffixIcon: _searchQuery.isNotEmpty
-                    ? IconButton(
-                        icon: const Icon(Icons.clear, size: 18),
-                        onPressed: () {
-                          _searchCtrl.clear();
-                          setState(() => _searchQuery = '');
-                          FocusScope.of(context).unfocus();
-                        },
-                      )
-                    : null,
-              ),
-            ),
-          ),
-          _BookFilterChips(
-            books: books,
-            selectedKey: _filterBookKey,
-            onSelected: (key) => setState(() => _filterBookKey = key),
-          ),
-          _CollectionFilterBar(
-            collections: p.collections,
-            selectedId: p.filterCollectionId,
-            onSelected: ref.read(snippetsProvider.notifier).setFilterCollection,
-          ),
-          if (p.allTags.isNotEmpty)
-            TagFilterBar(
-              tags: p.allTags,
-              selected: p.filterTag,
-              onChanged: ref.read(snippetsProvider.notifier).setFilterTag,
-            ),
-        ],
-        if (items.isEmpty)
-          SizedBox(
-            height: 200,
-            child: EmptyState(
-              icon: AppIcons.note,
-              title: hasFilter ? 'No matching snippets' : 'No snippets yet',
-              subtitle: hasFilter
-                  ? 'Try a different filter or clear search.'
-                  : 'Highlight text while reading, or tap + to create one.',
-            ),
-          )
-        else ...[
-          SectionLabel(title: _sectionTitle(p), meta: '${items.length}'),
-          ...items.indexed.map(
-            (entry) => Padding(
-              padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
-              child: StaggeredFadeScale(
-                index: entry.$1 + 1,
-                child: SnippetCard(
-                  snippet: entry.$2,
-                  selected:
-                      p.selectionMode && p.selectedIds.contains(entry.$2.id),
-                  selectionMode: p.selectionMode,
-                  onTap: () {
-                    if (p.selectionMode) {
-                      ref
-                          .read(snippetsProvider.notifier)
-                          .toggleSelection(entry.$2.id);
-                    } else {
-                      _editSnippet(context, entry.$2, p);
-                    }
-                  },
-                  onLongPress: () {
-                    if (!p.selectionMode) {
-                      ref
-                          .read(snippetsProvider.notifier)
-                          .toggleSelection(entry.$2.id);
-                    }
-                  },
-                  onOpenSource: entry.$2.bookId != null
-                      ? () => _openBookReader(
-                          context,
-                          entry.$2.bookId!,
-                          chapterId: entry.$2.chapterId,
-                          scrollOffset: entry.$2.scrollPosition,
-                          startOffset: entry.$2.startOffset,
-                          endOffset: entry.$2.endOffset,
+          SliverToBoxAdapter(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(20, 4, 20, 10),
+              child: TextField(
+                controller: _searchCtrl,
+                onChanged: (v) => setState(() => _searchQuery = v),
+                onSubmitted: (_) => FocusScope.of(context).unfocus(),
+                textInputAction: TextInputAction.search,
+                decoration: InputDecoration(
+                  hintText: 'Search snippets...',
+                  prefixIcon: const Icon(Icons.search, size: 18),
+                  suffixIcon: _searchQuery.isNotEmpty
+                      ? IconButton(
+                          icon: const Icon(Icons.clear, size: 18),
+                          onPressed: () {
+                            _searchCtrl.clear();
+                            setState(() => _searchQuery = '');
+                            FocusScope.of(context).unfocus();
+                          },
                         )
-                      : entry.$2.isNovelBacked
-                      ? () => _openNovelReader(context, entry.$2)
                       : null,
                 ),
               ),
             ),
           ),
+          SliverToBoxAdapter(
+            child: _BookFilterChips(
+              books: books,
+              selectedKey: _filterBookKey,
+              onSelected: (key) => setState(() => _filterBookKey = key),
+            ),
+          ),
+          SliverToBoxAdapter(
+            child: _CollectionFilterBar(
+              collections: p.collections,
+              selectedId: p.filterCollectionId,
+              onSelected:
+                  ref.read(snippetsProvider.notifier).setFilterCollection,
+            ),
+          ),
+          if (p.allTags.isNotEmpty)
+            SliverToBoxAdapter(
+              child: TagFilterBar(
+                tags: p.allTags,
+                selected: p.filterTag,
+                onChanged: ref.read(snippetsProvider.notifier).setFilterTag,
+              ),
+            ),
         ],
-        const SizedBox(height: 100),
+        if (items.isEmpty)
+          SliverToBoxAdapter(
+            child: SizedBox(
+              height: 200,
+              child: EmptyState(
+                icon: AppIcons.note,
+                title: hasFilter ? 'No matching snippets' : 'No snippets yet',
+                subtitle: hasFilter
+                    ? 'Try a different filter or clear search.'
+                    : 'Highlight text while reading, or tap + to create one.',
+              ),
+            ),
+          )
+        else ...[
+          SliverToBoxAdapter(
+            child: SectionLabel(title: _sectionTitle(p), meta: '${items.length}'),
+          ),
+          SliverPadding(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 0),
+            sliver: SliverList.builder(
+              addAutomaticKeepAlives: false,
+              itemCount: items.length,
+              itemBuilder: (context, i) {
+                final snippet = items[i];
+                return Padding(
+                  padding: const EdgeInsets.only(bottom: 12),
+                  child: StaggeredFadeScale(
+                    index: i + 1,
+                    child: SnippetCard(
+                      snippet: snippet,
+                      selected:
+                          p.selectionMode && p.selectedIds.contains(snippet.id),
+                      selectionMode: p.selectionMode,
+                      onTap: () {
+                        if (p.selectionMode) {
+                          ref
+                              .read(snippetsProvider.notifier)
+                              .toggleSelection(snippet.id);
+                        } else {
+                          _editSnippet(context, snippet, p);
+                        }
+                      },
+                      onLongPress: () {
+                        if (!p.selectionMode) {
+                          ref
+                              .read(snippetsProvider.notifier)
+                              .toggleSelection(snippet.id);
+                        }
+                      },
+                      onOpenSource: snippet.bookId != null
+                          ? () => _openBookReader(
+                              context,
+                              snippet.bookId!,
+                              chapterId: snippet.chapterId,
+                              scrollOffset: snippet.scrollPosition,
+                              startOffset: snippet.startOffset,
+                              endOffset: snippet.endOffset,
+                            )
+                          : snippet.isNovelBacked
+                          ? () => _openNovelReader(context, snippet)
+                          : null,
+                    ),
+                  ),
+                );
+              },
+            ),
+          ),
+        ],
+        const SliverToBoxAdapter(child: SizedBox(height: 100)),
       ],
     );
   }
