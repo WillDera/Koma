@@ -849,10 +849,11 @@ class DalvikServer(
                 }
                 "getPageList" -> {
                     val url = root.str("url") ?: return errorJson("missing url")
+                    val mangaUrl = root.str("mangaUrl")
                     withLoadedExtension(root.str("sourceId"), data) { src ->
                         val chapter = SChapter.create().apply {
                             this.url = url
-                            memo = root.memo()
+                            memo = root.memo().ensureMangaId(mangaUrl, url)
                         }
                         // Mihon reader/downloader call getImageUrl when Page.imageUrl
                         // is empty — many sources put a viewer HTML URL in Page.url
@@ -1052,6 +1053,21 @@ class DalvikServer(
         else -> JsonObject.EMPTY
     }
 
+    /**
+     * Universal mangaId hydration for sources that stash catalogue ids in chapter
+     * memo (AllManga/mkissa and similar). Derives from [mangaUrl] or [chapterUrl]
+     * path segments when memo is missing the key — not source-specific.
+     */
+    private fun JsonObject.ensureMangaId(mangaUrl: String?, chapterUrl: String): JsonObject {
+        val existing = (this["mangaId"] as? JsonPrimitive)?.content?.trim()
+        if (!existing.isNullOrEmpty()) return this
+        val id = ChapterMemoIds.extract(mangaUrl) ?: ChapterMemoIds.extract(chapterUrl)
+            ?: return this
+        return JsonObject(toMutableMap().apply {
+            put("mangaId", JsonPrimitive(id))
+        })
+    }
+
     private fun errorJson(message: String): String = json.encodeToString(buildJsonObject {
         put("error", message)
         put("code", 500)
@@ -1141,7 +1157,7 @@ class DalvikServer(
                                 if (it.isBlank()) JsonObject.EMPTY
                                 else runCatching { json.parseToJsonElement(it).jsonObject }
                                     .getOrDefault(JsonObject.EMPTY)
-                            }
+                            }.ensureMangaId(mangaUrl, chapterUrl)
                         }
                         // Always re-fetch page list so we know the expected
                         // count — never treat a non-empty directory as done.

@@ -33,6 +33,7 @@ import '../../core/services/trackers/tracker_media_details.dart';
 import '../../eval/dispatch_service.dart';
 import '../../eval/models/m_chapter.dart';
 import '../../core/services/source_webview_bridge.dart';
+import '../../core/utils/chapter_memo.dart';
 import '../../core/utils/chapter_recognition.dart';
 import '../../core/utils/image_cache.dart';
 import '../../core/utils/image_headers.dart';
@@ -47,8 +48,12 @@ import '../../widgets/dialog_sheet.dart';
 import '../../widgets/icon_button_round.dart';
 import '../../widgets/new_chapter_badge.dart';
 import '../../widgets/page_transitions.dart';
+import '../../widgets/recommendations_rail.dart';
 import '../../widgets/toast.dart';
 import '../../widgets/tracker_brand_icon.dart';
+import '../../core/recommendations/recommendation_providers.dart';
+import 'package:recommendation_engine/recommendation_engine.dart'
+    show RecommendationContentKind;
 import '../library/cbz_export_flow.dart';
 import 'manga_detail_providers.dart';
 import 'migrate_search_screen.dart';
@@ -768,7 +773,7 @@ class _MangaDetailScreenState extends ConsumerState<MangaDetailScreen> {
   /// After the write, [mangaDetailStreamProvider] and
   /// [mangaChaptersStreamProvider] re-emit automatically — the UI updates
   /// reactively via [_syncManga] / [_syncChapters].
-  Future<void> _refreshFromSource({int? gen}) async {
+  Future<void> _refreshFromSource({int? gen, bool force = false}) async {
     final expectedGen = gen ?? _loadGen;
     if (LocalCbzSource.isLocal(widget.sourceId)) {
       if (mounted && expectedGen == _loadGen && _isCurrentBinding) {
@@ -781,8 +786,8 @@ class _MangaDetailScreenState extends ConsumerState<MangaDetailScreen> {
     }
     // Mirrors mangayomi's updateMangaDetailProvider: if chapters already
     // exist in Isar (cached), skip the network fetch. The Isar reactive
-    // streams already have the data.
-    if (_mangaId != null) {
+    // streams already have the data. Pull-to-refresh passes [force].
+    if (!force && _mangaId != null) {
       final repos = ref.read(repositoriesProvider);
       final existing = await repos.manga.getMangaChapters(_mangaId!);
       if (existing.isNotEmpty) {
@@ -936,6 +941,12 @@ class _MangaDetailScreenState extends ConsumerState<MangaDetailScreen> {
         sourceNum,
       );
       final existing = existingByUrl[url];
+      final enrichedMemo = enrichChapterMemo(
+        chapterMemo: ch['memo'] as String? ?? existing?.memo,
+        mangaUrl: manga.url,
+        mangaMemo: manga.memo,
+        chapterUrl: url,
+      );
       if (existing != null) {
         merged.add(
           existing.copyWith(
@@ -944,7 +955,7 @@ class _MangaDetailScreenState extends ConsumerState<MangaDetailScreen> {
             dateUpload: asInt(ch['date_upload']) ?? existing.dateUpload,
             index: i,
             chapterNumber: recognized,
-            memo: ch['memo'] as String? ?? existing.memo,
+            memo: enrichedMemo ?? existing.memo,
           ),
         );
       } else {
@@ -959,7 +970,7 @@ class _MangaDetailScreenState extends ConsumerState<MangaDetailScreen> {
             dateUpload: asIntOr(ch['date_upload']),
             index: i,
             sourceChapterNumber: sourceNum,
-            memo: ch['memo'] as String?,
+            memo: enrichedMemo,
           ),
         );
       }
@@ -2867,6 +2878,25 @@ class _MangaDetailScreenState extends ConsumerState<MangaDetailScreen> {
     final selectedOnly = showBulkBar ? _selectedChapters() : const <Map<String, dynamic>>[];
     final singleSelected = selectedOnly.length == 1 ? selectedOnly.first : null;
 
+    final mangaTitle = (detail.details?['title'] as String?)?.trim().isNotEmpty ==
+            true
+        ? (detail.details!['title'] as String).trim()
+        : widget.title.trim();
+    final mangaAuthor = (detail.details?['author'] as String?)?.trim();
+    final mangaRecs = mangaTitle.isEmpty
+        ? null
+        : ref.watch(
+            recommendationsForSeedProvider(
+              RecommendationSeedKey(
+                title: mangaTitle,
+                author: mangaAuthor,
+                kind: RecommendationContentKind.manga,
+                id: _mangaId != null ? 'manga:$_mangaId' : null,
+              ),
+            ),
+          );
+    final mangaRecItems = mangaRecs?.asData?.value.items ?? const [];
+
     final scaffold = Scaffold(
       backgroundColor: c.bg,
       bottomNavigationBar: _KenjiDetailButtonGroup(
@@ -2886,8 +2916,11 @@ class _MangaDetailScreenState extends ConsumerState<MangaDetailScreen> {
             : () => _markPreviousAsRead(singleSelected, filteredChapters),
       ),
       body: detail.details != null
-          ? CustomScrollView(
-              slivers: [
+          ? RefreshIndicator(
+              onRefresh: () => _refreshFromSource(force: true),
+              child: CustomScrollView(
+                physics: const AlwaysScrollableScrollPhysics(),
+                slivers: [
                 SliverToBoxAdapter(
                   child: _Header(
                     details: detail.details!,
@@ -3009,6 +3042,13 @@ class _MangaDetailScreenState extends ConsumerState<MangaDetailScreen> {
                   ),
                 ),
                 const SliverToBoxAdapter(child: SizedBox(height: 8)),
+                if (mangaRecItems.isNotEmpty)
+                  SliverToBoxAdapter(
+                    child: RecommendationsRail(
+                      items: mangaRecItems,
+                      title: 'More like this',
+                    ),
+                  ),
                 if (_inLibrary && _libraryDuplicate != null)
                   // Keep duplicate hint high in the scroll so it isn't lost
                   // under chapter chrome.
@@ -3456,6 +3496,7 @@ class _MangaDetailScreenState extends ConsumerState<MangaDetailScreen> {
                         ),
                       ),
               ],
+            ),
             )
           : detail.loading
           ? const Center(child: CircularProgressIndicator())

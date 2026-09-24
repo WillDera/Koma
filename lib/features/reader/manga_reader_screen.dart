@@ -29,6 +29,7 @@ import '../../core/services/local_cbz_pages.dart';
 import '../../core/services/local_cbz_source.dart';
 import '../../core/services/media_export_service.dart';
 import '../../core/utils/chapter_language.dart';
+import '../../core/utils/chapter_memo.dart';
 import '../../core/services/security_prefs.dart';
 import '../../core/services/stats_service.dart';
 import '../../core/services/trackers/track_chapter_use_case.dart';
@@ -438,7 +439,11 @@ class _MangaReaderScreenState extends ConsumerState<MangaReaderScreen>
       MChapter(
         url: chapter.url,
         name: chapter.name,
-        memo: chapter.memo,
+        memo: enrichChapterMemo(
+          chapterMemo: chapter.memo,
+          mangaUrl: widget.mangaUrl,
+          chapterUrl: chapter.url,
+        ),
       ),
     );
     if (!_isLive(session)) return const [];

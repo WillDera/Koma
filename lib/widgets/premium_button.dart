@@ -59,6 +59,7 @@ class PremiumButton extends StatelessWidget {
         : (size == PremiumButtonSize.lg ? AppSpacing.brMd : AppSpacing.brMd);
 
     final child = Container(
+      width: expand ? double.infinity : null,
       padding: EdgeInsets.symmetric(horizontal: hPad, vertical: vPad),
       decoration: BoxDecoration(
         color: bg,

@@ -1,7 +1,7 @@
 name: koma
 description: "A hybrid reader + knowledge snippet manager."
 publish_to: 'none'
-version: 2.65.1+407
+version: 2.66.0+408
 
 environment:
   sdk: ^3.12.2
@@ -71,6 +71,10 @@ dependencies:
   metadata_engine:
     path: rust_builder
   flutter_rust_bridge: 2.12.0
+  # Public stub; private builds override via pubspec_overrides.yaml
+  # (see pubspec_overrides.yaml.example) + --dart-define=KOMA_RECS=true.
+  recommendation_engine:
+    path: packages/recommendation_engine
 
   extended_image_library: ^5.0.1
   http_client_helper: ^3.0.0

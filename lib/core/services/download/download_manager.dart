@@ -16,6 +16,7 @@ import '../download_prefs.dart';
 import '../keiyoushi_service.dart';
 import '../notification_service.dart';
 import '../novel_html_content_service.dart';
+import '../../utils/chapter_memo.dart';
 import 'chapter_download.dart';
 import 'download_store.dart';
 
@@ -152,9 +153,13 @@ class DownloadManager extends ChangeNotifier {
           chapterMemo = coerceMemoJson(existing?.memo) ?? '';
         }
       }
-      if (!_chapterMemoLooksReady(chapterMemo) && !mangaUrl.contains('/')) {
-        chapterMemo = jsonEncode({'mangaId': mangaUrl});
-      }
+      chapterMemo = enrichChapterMemo(
+            chapterMemo: chapterMemo,
+            mangaUrl: mangaUrl,
+            mangaMemo: mangaMemoJson,
+            chapterUrl: url,
+          ) ??
+          chapterMemo;
       added.add(
         ChapterDownload(
           sourceId: sourceId,
@@ -564,7 +569,13 @@ class DownloadManager extends ChangeNotifier {
       MChapter(
         url: download.chapterUrl,
         name: download.chapterName,
-        memo: download.chapterMemo.isNotEmpty ? download.chapterMemo : null,
+        memo: enrichChapterMemo(
+          chapterMemo:
+              download.chapterMemo.isNotEmpty ? download.chapterMemo : null,
+          mangaUrl: download.mangaUrl,
+          mangaMemo: download.mangaMemo,
+          chapterUrl: download.chapterUrl,
+        ),
       ),
     );
     final pages = [
@@ -662,9 +673,14 @@ class DownloadManager extends ChangeNotifier {
 
   Future<void> _ensureChapterMemo(ChapterDownload download) async {
     await _hydrateChapterMemo(download);
-    if (_chapterMemoLooksReady(download.chapterMemo)) return;
-    if (!download.mangaUrl.contains('/')) {
-      download.chapterMemo = jsonEncode({'mangaId': download.mangaUrl});
+    final enriched = enrichChapterMemo(
+      chapterMemo: download.chapterMemo,
+      mangaUrl: download.mangaUrl,
+      mangaMemo: download.mangaMemo,
+      chapterUrl: download.chapterUrl,
+    );
+    if (enriched != null && enriched != download.chapterMemo) {
+      download.chapterMemo = enriched;
       await _persist();
       notifyListeners();
     }

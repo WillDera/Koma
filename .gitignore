@@ -33,6 +33,11 @@ migrate_working_dir/
 /build/
 /coverage/
 
+# Private recommendation_engine path/git override (see *.example).
+pubspec_overrides.yaml
+# Real engine checkout — never commit (public tree keeps packages/recommendation_engine stub).
+/packages/recommendation_engine_private/
+
 # Symbolication related
 app.*.symbols
 

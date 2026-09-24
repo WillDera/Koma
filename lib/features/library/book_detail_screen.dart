@@ -20,8 +20,12 @@ import '../../widgets/book_cover.dart';
 import '../../widgets/dialog_sheet.dart';
 import '../../widgets/premium_button.dart';
 import '../../widgets/progress_ring.dart';
+import '../../widgets/recommendations_rail.dart';
 import '../../widgets/screen_chrome.dart';
 import '../../widgets/toast.dart';
+import '../../core/recommendations/recommendation_providers.dart';
+import 'package:recommendation_engine/recommendation_engine.dart'
+    show RecommendationContentKind;
 import 'book_detail_providers.dart';
 import 'ebook_export_flow.dart';
 
@@ -198,6 +202,19 @@ class _DetailBody extends ConsumerWidget {
     final currentPosition = chapters.isEmpty
         ? 'No saved chapter'
         : 'Chapter ${book.currentChapterIndex.clamp(0, chapters.length - 1) + 1} of ${chapters.length}';
+    final bookRecs = ref.watch(
+      recommendationsForSeedProvider(
+        RecommendationSeedKey(
+          title: book.title,
+          author: book.author,
+          kind: RecommendationContentKind.ebook,
+          id: 'book:${book.id}',
+          progress: book.progress,
+          finished: book.progress >= 0.98,
+        ),
+      ),
+    );
+    final bookRecItems = bookRecs.asData?.value.items ?? const [];
 
     return CustomScrollView(
       slivers: [
@@ -396,6 +413,13 @@ class _DetailBody extends ConsumerWidget {
                   ),
                 );
               },
+            ),
+          ),
+        if (bookRecItems.isNotEmpty)
+          SliverToBoxAdapter(
+            child: RecommendationsRail(
+              items: bookRecItems,
+              title: 'More like this',
             ),
           ),
         const SliverToBoxAdapter(child: SizedBox(height: AppSpacing.xxxxl)),

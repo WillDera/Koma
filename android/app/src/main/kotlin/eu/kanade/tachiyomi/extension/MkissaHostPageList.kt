@@ -50,6 +50,7 @@ object MkissaHostPageList {
 
     suspend fun fetch(source: HttpSource, chapter: SChapter): List<Page> {
         val mangaId = chapter.memo["mangaId"].asString()
+            ?: ChapterMemoIds.extract(chapter.url)
             ?: throw Exception("Refresh Chapter List")
         val base = source.baseUrl.trimEnd('/')
         val mangaUrl = "$base/manga/$mangaId"

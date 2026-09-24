@@ -366,6 +366,7 @@ class KeiyoushiService {
     required String sourceId,
     required String url,
     String? memo,
+    String? mangaUrl,
   }) async {
     // Allow time for AllManga WebView page capture (and optional CF solve elsewhere).
     final res = await _post({
@@ -373,6 +374,7 @@ class KeiyoushiService {
       'sourceId': sourceId,
       'url': url,
       'memo': ?memo,
+      if (mangaUrl != null && mangaUrl.isNotEmpty) 'mangaUrl': mangaUrl,
     }, timeout: const Duration(seconds: 90));
     if (res is Map && res['error'] != null) {
       throw Exception(res['error'].toString());

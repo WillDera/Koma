@@ -1,0 +1,18 @@
+# Private recommendation engine override (not committed).
+#
+# Public repo keeps a stub at packages/recommendation_engine (empty results).
+# Your machine / release CI uses the real engine without publishing its source:
+#
+#   git clone <private-url> packages/recommendation_engine_private
+#   cp pubspec_overrides.yaml.example pubspec_overrides.yaml
+#   flutter pub get
+#
+# Mirror koma's other dependency_overrides from pubspec.yaml here too
+# (pubspec_overrides can replace the overrides map depending on tooling).
+
+dependency_overrides:
+  archive: ^4.0.7
+  hooks: ^2.0.2
+  native_toolchain_c: ^0.19.2
+  recommendation_engine:
+    path: packages/recommendation_engine_private

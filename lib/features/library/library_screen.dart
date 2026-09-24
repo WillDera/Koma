@@ -20,7 +20,6 @@ import '../../core/services/cache_service.dart';
 import '../../core/services/ebook_media_store.dart';
 import '../../core/services/ebook_service.dart';
 import '../../core/services/group_display_prefs.dart';
-import '../../core/services/hidden_titles_prefs.dart';
 import '../../core/services/koma_package_store.dart';
 import '../../core/services/local_cbz_prefs.dart';
 import '../../core/services/local_cbz_scanner.dart';
@@ -35,7 +34,6 @@ import '../../core/services/web_scraper_service.dart';
 import '../../core/utils/benchmark_logger.dart';
 import '../../core/utils/image_cache.dart';
 import '../../core/utils/image_headers.dart';
-import '../../features/reader/reader_settings_sheet.dart';
 import '../../router/book_navigation.dart';
 import '../../router/router.dart';
 import '../../router/shell.dart';
@@ -58,9 +56,11 @@ import '../../widgets/media_rail.dart';
 import '../../widgets/new_chapter_badge.dart';
 import '../../widgets/one_hand_spacer.dart';
 import '../../widgets/premium_button.dart';
+import '../../widgets/library_hub_ring.dart';
 import '../../widgets/screen_chrome.dart';
 import '../../widgets/catalog_cover_card.dart';
-import '../../core/repositories/manga_repository.dart' show InProgressManga;
+import '../../core/recommendations/library_hub_providers.dart';
+import '../../core/recommendations/library_hub_models.dart';
 import 'ebook_export_flow.dart';
 import 'hidden_library_screen.dart';
 import 'library_group_modal.dart';
@@ -87,7 +87,6 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> with RouteAware {
   };
   int? _selectedCategoryId;
   final Map<int, String?> _mangaThumbnails = {};
-  List<_ContinueItem> _continueItems = const [];
   final LocalSourceWatcher _localWatcher = LocalSourceWatcher();
   bool _localScanBusy = false;
 
@@ -131,38 +130,11 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> with RouteAware {
   Future<void> _loadContinue() async {
     try {
       final repos = ref.read(repositoriesProvider);
-      final results = await Future.wait([
-        repos.books.getInProgressBooks(),
-        repos.manga.getInProgressManga(),
-        HiddenTitlesPrefs.hiddenBookIds(),
-      ]);
-      if (!mounted) return;
-      final hiddenBooks = results[2] as Set<int>;
-      final books = [
-        for (final b in results[0] as List<Book>)
-          if (!hiddenBooks.contains(b.id)) b,
-      ];
-      // Drop manga that were removed from the library (row may still exist
-      // with chapter history until the user clears history / deletes).
-      // Also drop secret-shelf (hidden) titles.
-      final mangas = (results[1] as List<InProgressManga>)
-          .where(
-            (m) =>
-                m.manga.inLibrary &&
-                !ViewerFlags.isHidden(m.manga.viewerFlags),
-          )
-          .toList(growable: false);
-      final epoch = DateTime.fromMillisecondsSinceEpoch(0);
-      final merged = <_ContinueItem>[
-        for (final b in books)
-          _ContinueItem.book(b, b.updatedAt),
-        for (final m in mangas)
-          _ContinueItem.manga(m, m.lastReadAt ?? epoch),
-      ]..sort((a, b) => b.lastReadAt.compareTo(a.lastReadAt));
-      setState(() => _continueItems = merged);
       unawaited(ContinueWidgetService.updateFromRepos(repos));
+      ref.invalidate(libraryHubContinueProvider);
+      ref.invalidate(libraryHubRankedProvider);
     } catch (_) {
-      // Continue rail is best-effort.
+      // Continue / hub refresh is best-effort.
     }
   }
 
@@ -589,56 +561,68 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> with RouteAware {
       if (seen.add(g.id)) uniqueGroups.add(g);
     }
 
-    final continueCount = _continueItems.length;
     final slivers = <Widget>[];
 
-    if (continueCount > 0) {
+    final continueAsync = ref.watch(libraryHubContinueProvider);
+    final rankedAsync = ref.watch(libraryHubRankedProvider);
+    final exploreAsync = ref.watch(libraryHubExploreProvider);
+    final salt = hubCoverSalt();
+
+    // Shelf always from the same lists the rails use — never wait on the
+    // recommendation engine for covers / View more to work.
+    final shelfEntries = hubShelfFromLibrary(
+      books: provider.books,
+      mangas: provider.mangas,
+    );
+    final continueEntries = () {
+      final fromAsync = continueAsync.asData?.value;
+      if (fromAsync != null && fromAsync.isNotEmpty) return fromAsync;
+      final fromBooks = hubContinueFromBooks(provider.books);
+      if (fromBooks.isNotEmpty) return fromBooks;
+      // Soft fallback: recent shelf so Continue isn't dead with a full library.
+      return shelfEntries.take(8).toList(growable: false);
+    }();
+    final rankedEntries = rankedAsync.asData?.value;
+    final libraryEntries =
+        (rankedEntries != null && rankedEntries.isNotEmpty)
+            ? rankedEntries
+            : shelfEntries;
+    final exploreFace = exploreAsync.asData?.value ??
+        LibraryHubSnapshot.faceFor(
+          LibraryHubKind.exploration,
+          const [],
+          salt: salt,
+        );
+
+    if (shelfEntries.isNotEmpty ||
+        continueEntries.isNotEmpty ||
+        !exploreFace.isEmpty ||
+        continueAsync.isLoading ||
+        rankedAsync.isLoading ||
+        exploreAsync.isLoading) {
+      final snapshot = LibraryHubSnapshot(
+        faces: [
+          LibraryHubSnapshot.faceFor(
+            LibraryHubKind.continueReading,
+            continueEntries,
+            salt: salt,
+          ),
+          LibraryHubSnapshot.faceFor(
+            LibraryHubKind.libraryRecommended,
+            libraryEntries,
+            salt: salt,
+          ),
+          exploreFace,
+        ],
+      );
       slivers.add(
         SliverToBoxAdapter(
-          child: MediaRail(
-            title: 'Continue reading',
-            subtitle: '$continueCount in progress',
-            height: 200,
-            itemCount: continueCount,
-            itemBuilder: (context, i) {
-              final item = _continueItems[i];
-              final book = item.book;
-              if (book != null) {
-                return MediaRailCover(
-                  width: 118,
-                  child: StaggeredFadeScale(
-                    index: i,
-                    child: CatalogCoverCard(
-                      minimalChrome: provider.minimalCards,
-                      title: book.title,
-                      subtitle: '${(book.progress * 100).round()}% · Resume',
-                      imageProvider: _bookCoverProvider(book),
-                      variant: LibraryCardVariant.grid,
-                      onTap: () => openBookFromCollection(context, book.id),
-                    ),
-                  ),
-                );
-              }
-              final row = item.manga!;
-              final manga = row.manga;
-              final isNovel = provider.isNovelManga(manga);
-              return MediaRailCover(
-                width: 118,
-                child: StaggeredFadeScale(
-                  index: i,
-                  child: CatalogCoverCard(
-                      minimalChrome: provider.minimalCards,
-                    title: manga.name,
-                    subtitle: '${(row.progress * 100).round()}% · Resume',
-                    imageProvider: _mangaCoverProvider(manga),
-                    imageUrl: manga.imageUrl,
-                    formatBadge: isNovel ? 'Novel' : null,
-                    variant: LibraryCardVariant.grid,
-                    onTap: () => _openManga(context, manga),
-                  ),
-                ),
-              );
-            },
+          child: LibraryHubRing(
+            snapshot: snapshot,
+            mangaThumbnails: _mangaThumbnails,
+            minimalChrome: provider.minimalCards,
+            loading: (continueAsync.isLoading && continueAsync.asData == null) ||
+                (rankedAsync.isLoading && rankedAsync.asData == null),
           ),
         ),
       );
@@ -2023,25 +2007,6 @@ enum _LibrarySort { alphabetical, author, progress }
 enum _LibraryFilter { unread, newlyAdded }
 
 enum _FilterMode { none, include, exclude }
-
-/// Unified Continue reading entry — books and manga sorted by [lastReadAt].
-class _ContinueItem {
-  const _ContinueItem._({
-    required this.lastReadAt,
-    this.book,
-    this.manga,
-  });
-
-  factory _ContinueItem.book(Book book, DateTime lastReadAt) =>
-      _ContinueItem._(lastReadAt: lastReadAt, book: book);
-
-  factory _ContinueItem.manga(InProgressManga manga, DateTime lastReadAt) =>
-      _ContinueItem._(lastReadAt: lastReadAt, manga: manga);
-
-  final DateTime lastReadAt;
-  final Book? book;
-  final InProgressManga? manga;
-}
 
 /// Owns its [TextEditingController] so cancel/create don't dispose it while
 /// the dialog route is still animating out.
