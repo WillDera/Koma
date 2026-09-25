@@ -1356,10 +1356,12 @@ packages:
   recommendation_engine:
     dependency: "direct main"
     description:
-      path: "packages/recommendation_engine_private"
-      relative: true
-    source: path
-    version: "0.3.0"
+      path: "."
+      ref: master
+      resolved-ref: b39302868f4322a8bdbc4ef3e8db25aa2bc75282
+      url: "https://github.com/just-nibble/recommendation-engine.git"
+    source: git
+    version: "0.2.0"
   record_use:
     dependency: transitive
     description:

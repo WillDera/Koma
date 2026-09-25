@@ -5,8 +5,8 @@ import '../providers.dart';
 import 'koma_catalog_source.dart';
 import 'koma_metadata_enricher.dart';
 
-/// Real engine when `pubspec_overrides.yaml` points at the private package;
-/// stub otherwise (always empty results).
+/// Fetches [just-nibble/recommendation-engine](https://github.com/just-nibble/recommendation-engine)
+/// (public git dependency — same package in CI and local builds).
 final recommendationServiceProvider = Provider<RecommendationService>((ref) {
   final repos = ref.watch(repositoriesProvider);
   return RecommendationService(
@@ -135,7 +135,7 @@ final libraryRecommendationsProvider =
     RecommendationRequest(
       seeds: seeds,
       limit: 8,
-      scope: RecommendationCandidateScope.libraryAndDiscover,
+      scope: RecommendationCandidateScope.libraryAndMetadata,
     ),
   );
 });
@@ -148,7 +148,7 @@ final recommendationsForSeedProvider = FutureProvider.autoDispose
     RecommendationRequest(
       seeds: [key.toSeed()],
       limit: 6,
-      scope: RecommendationCandidateScope.libraryAndDiscover,
+      scope: RecommendationCandidateScope.libraryAndMetadata,
     ),
   );
 });

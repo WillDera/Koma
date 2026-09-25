@@ -284,17 +284,17 @@ final libraryHubExploreProvider =
           RecommendationRequest(
             seeds: seeds,
             limit: 12,
-            scope: RecommendationCandidateScope.libraryAndDiscover,
+            scope: RecommendationCandidateScope.libraryAndMetadata,
           ),
         )
         .timeout(const Duration(seconds: 16));
 
     var items = [
       for (final i in exploreResult.items)
-        if (!i.inLibrary) entryOf(i),
+        if (recommendationIdIsDiscover(i.id)) entryOf(i),
     ];
 
-    // Direct Discover pass when the engine ranked only library rows (or none).
+    // Host Discover pass — public engine 0.2 does not pass genreHints.
     if (items.isEmpty) {
       final hints = <String>{
         for (final s in seeds)
@@ -315,31 +315,26 @@ final libraryHubExploreProvider =
           extensions: ref.read(extensionManagerProvider),
           dispatch: ref.read(extensionServiceProvider),
         );
-        final external = await catalog.listCandidates(
-          scope: RecommendationCandidateScope.libraryAndDiscover,
+        final external = await catalog.discoverMangaCandidates(
           genreHints: hints.take(5).toList(growable: false),
           softLimit: 40,
         );
         items = [
           for (final c in external)
-            if (!c.inLibrary)
-              LibraryHubEntry(
+            LibraryHubEntry(
+              title: c.title,
+              subtitle: c.sourceLabel.isNotEmpty ? c.sourceLabel : c.author,
+              coverPathOrUrl: c.coverPathOrUrl,
+              recommendation: RecommendationItem(
                 title: c.title,
-                subtitle: c.sourceLabel.isNotEmpty ? c.sourceLabel : c.author,
+                author: c.author,
+                kind: c.kind,
+                score: 0,
+                id: c.id,
                 coverPathOrUrl: c.coverPathOrUrl,
-                recommendation: RecommendationItem(
-                  title: c.title,
-                  author: c.author,
-                  kind: c.kind,
-                  score: 0,
-                  id: c.id,
-                  coverPathOrUrl: c.coverPathOrUrl,
-                  sourceLabel: c.sourceLabel,
-                  sourceId: c.sourceId,
-                  sourceUrl: c.sourceUrl,
-                  inLibrary: false,
-                ),
+                sourceLabel: c.sourceLabel,
               ),
+            ),
         ];
       }
     }

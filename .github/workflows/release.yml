@@ -97,7 +97,14 @@ jobs:
           android.builtInKotlin=false
           EOF
 
-      - run: flutter pub get
+      # Public recommendation_engine (git). Confirm the dep resolves before build.
+      - name: Resolve recommendation_engine
+        run: |
+          set -euo pipefail
+          git ls-remote --heads \
+            https://github.com/just-nibble/recommendation-engine.git master
+          flutter pub get
+          dart pub deps | grep -E 'recommendation_engine'
 
       # koma-core (KRE) runs prost-build; cargokit compiles it during the APK.
       - name: Install protoc

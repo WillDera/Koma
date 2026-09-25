@@ -8,7 +8,11 @@ import '../models/manga.dart';
 import '../repositories/repositories.dart';
 import '../services/extension_manager.dart';
 
-/// Maps Koma library + optional Discover / extension hits into [CatalogItem]s.
+/// Maps Koma library (+ optional Discover search) into [CatalogItem]s.
+///
+/// Matches [recommendation_engine] 0.2.x ([just-nibble/recommendation-engine](
+/// https://github.com/just-nibble/recommendation-engine)). Discover hits use
+/// `ext:…` ids; library rows use `book:` / `manga:`.
 class KomaCatalogSource implements CatalogSource {
   KomaCatalogSource(
     this._repos, {
@@ -91,8 +95,6 @@ class KomaCatalogSource implements CatalogSource {
     Set<RecommendationContentKind>? kinds,
     RecommendationCandidateScope scope =
         RecommendationCandidateScope.libraryOnly,
-    List<String> genreHints = const [],
-    int softLimit = 80,
   }) async {
     final out = <CatalogItem>[];
     final wantEbook =
@@ -100,40 +102,46 @@ class KomaCatalogSource implements CatalogSource {
     final wantManga =
         kinds == null || kinds.contains(RecommendationContentKind.manga);
 
-    final libraryTitles = <String>{};
-
     if (wantEbook) {
       final books = await _repos.books.getBooks();
       for (final b in books) {
         out.add(_fromBook(b, await _bookGenres(b)));
-        libraryTitles.add(_norm(b.title));
       }
     }
     if (wantManga) {
       final mangas = await _repos.manga.getMangasInLibrary();
       for (final m in mangas) {
         out.add(_fromManga(m));
-        libraryTitles.add(_norm(m.name));
       }
     }
 
-    if (wantManga &&
-        scopeWantsExternal(scope) &&
-        genreHints.isNotEmpty &&
-        extensions != null &&
-        dispatch != null) {
-      final external = await _discoverMangaCandidates(
-        genreHints: genreHints,
-        libraryTitles: libraryTitles,
-        remaining: (softLimit - out.length).clamp(0, softLimit),
-      );
-      out.addAll(external);
-    }
-
-    if (out.length > softLimit) {
-      return out.sublist(0, softLimit);
-    }
+    // Public engine 0.2 does not pass genreHints. Keep library (+ metadata
+    // scope still returns library here); Explore uses [discoverMangaCandidates].
     return out;
+  }
+
+  /// Host-owned Discover search (extension catalogue). Used by the hub Explore
+  /// face because the public engine does not yet pass genre hints into
+  /// [listCandidates].
+  Future<List<CatalogItem>> discoverMangaCandidates({
+    required List<String> genreHints,
+    int softLimit = 40,
+  }) async {
+    if (genreHints.isEmpty ||
+        extensions == null ||
+        dispatch == null ||
+        softLimit <= 0) {
+      return const [];
+    }
+    final libraryTitles = <String>{
+      for (final m in await _repos.manga.getMangasInLibrary()) _norm(m.name),
+      for (final b in await _repos.books.getBooks()) _norm(b.title),
+    };
+    return _discoverMangaCandidates(
+      genreHints: genreHints,
+      libraryTitles: libraryTitles,
+      remaining: softLimit,
+    );
   }
 
   Future<List<CatalogItem>> _discoverMangaCandidates({
@@ -161,7 +169,6 @@ class KomaCatalogSource implements CatalogSource {
     if (sources.isEmpty) return const [];
 
     final picked = sources.take(maxDiscoverSources).toList();
-    // Prefer the strongest consensus genres as search queries.
     final queries = genreHints.take(2).toList();
     if (queries.isEmpty) return const [];
 
@@ -183,13 +190,11 @@ class KomaCatalogSource implements CatalogSource {
       final batches = await Future.wait(futures);
       for (final batch in batches) {
         for (final item in batch) {
-          final key = '${item.sourceId}|${_norm(item.title)}';
+          final key = '${item.sourceLabel}|${_norm(item.title)}';
           if (!seen.add(key)) continue;
           if (libraryTitles.contains(_norm(item.title))) continue;
           out.add(item);
-          if (out.length >= remaining) {
-            return out;
-          }
+          if (out.length >= remaining) return out;
         }
       }
     }
@@ -226,15 +231,11 @@ class KomaCatalogSource implements CatalogSource {
             ]),
             coverPathOrUrl: manga.thumbnailUrl,
             sourceLabel: source.name,
-            inLibrary: false,
-            sourceId: source.sourceId,
-            sourceUrl: url,
           ),
         );
       }
       return hits;
     } catch (_) {
-      // Best-effort Discover; one source failure must not fail recommend().
       return const [];
     }
   }
@@ -270,7 +271,6 @@ class KomaCatalogSource implements CatalogSource {
         finished: book.progress >= 0.98,
         coverPathOrUrl: book.coverPath,
         sourceLabel: 'library',
-        inLibrary: true,
       );
 
   CatalogItem _fromManga(Manga manga) => CatalogItem(
@@ -283,9 +283,6 @@ class KomaCatalogSource implements CatalogSource {
         finished: manga.readingStatus == 2,
         coverPathOrUrl: manga.customCoverPath ?? manga.imageUrl,
         sourceLabel: 'library',
-        inLibrary: true,
-        sourceId: manga.sourceId,
-        sourceUrl: manga.url,
       );
 
   static String _norm(String s) =>
@@ -316,3 +313,12 @@ String extensionCatalogId(String sourceId, String url) =>
     url: Uri.decodeComponent(rest.substring(idx + 1)),
   );
 }
+
+/// Library rows use `book:` / `manga:` ids; Discover uses `ext:`.
+bool recommendationIdIsLibrary(String? id) {
+  if (id == null || id.isEmpty) return true;
+  return id.startsWith('book:') || id.startsWith('manga:');
+}
+
+bool recommendationIdIsDiscover(String? id) =>
+    id != null && id.startsWith('ext:');

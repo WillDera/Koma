@@ -44,26 +44,6 @@ Future<void> openRecommendationItem(
     }
   }
 
-  final sourceId = item.sourceId;
-  final sourceUrl = item.sourceUrl;
-  if (sourceId != null &&
-      sourceId.isNotEmpty &&
-      sourceUrl != null &&
-      sourceUrl.isNotEmpty) {
-    if (!context.mounted) return;
-    context.pushNamed(
-      Routes.mangaDetail,
-      extra: (
-        sourceId: sourceId,
-        url: sourceUrl,
-        title: item.title,
-        manga: null,
-        memo: null,
-      ) as MangaDetailArgs,
-    );
-    return;
-  }
-
   if (id != null) {
     final parsed = parseExtensionCatalogId(id);
     if (parsed != null && context.mounted) {

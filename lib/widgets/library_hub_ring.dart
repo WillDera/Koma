@@ -10,6 +10,7 @@ import '../core/models/manga_chapter.dart';
 import '../core/providers.dart';
 import '../core/recommendations/library_hub_models.dart';
 import '../core/recommendations/library_hub_providers.dart';
+import '../core/recommendations/koma_catalog_source.dart';
 import '../core/recommendations/recommendation_navigation.dart';
 import '../core/utils/chapter_recognition.dart';
 import '../core/utils/cached_network.dart';
@@ -653,7 +654,7 @@ Future<void> openLibraryHubRead(
 
   final rec = entry.recommendation;
   if (rec != null) {
-    if (rec.inLibrary) {
+    if (recommendationIdIsLibrary(rec.id)) {
       final id = rec.id;
       if (id != null && id.startsWith('book:')) {
         final bookId = int.tryParse(id.substring(5));

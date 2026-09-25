@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:recommendation_engine/recommendation_engine.dart';
 
+import '../core/recommendations/koma_catalog_source.dart';
 import '../core/recommendations/recommendation_navigation.dart';
 import 'catalog_cover_card.dart';
 import 'library_book_card.dart' show LibraryCardVariant;
@@ -48,7 +49,7 @@ class RecommendationsRail extends ConsumerWidget {
               subtitle: item.reason ?? item.author,
               imageProvider: _coverProvider(item.coverPathOrUrl),
               imageUrl: _remoteUrl(item.coverPathOrUrl),
-              formatBadge: !item.inLibrary
+              formatBadge: recommendationIdIsDiscover(item.id)
                   ? (item.sourceLabel ?? 'Discover')
                   : (item.kind == RecommendationContentKind.ebook
                       ? 'Book'
