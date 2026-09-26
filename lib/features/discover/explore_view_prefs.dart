@@ -33,3 +33,25 @@ final exploreCompactMangaRailsProvider =
     NotifierProvider<ExploreCompactMangaRailsNotifier, bool>(
       ExploreCompactMangaRailsNotifier.new,
     );
+
+/// Recent Explore search strings. Source recommendations use these only after
+/// the user's taste genres have already been fetched.
+const kExploreRecentSearchesKey = 'explore_recent_searches';
+
+Future<List<String>> loadExploreRecentSearches() async {
+  final prefs = await SharedPreferences.getInstance();
+  return prefs.getStringList(kExploreRecentSearchesKey) ?? const [];
+}
+
+Future<void> rememberExploreSearch(String query) async {
+  final q = query.trim();
+  if (q.isEmpty) return;
+  final prefs = await SharedPreferences.getInstance();
+  final prev = prefs.getStringList(kExploreRecentSearchesKey) ?? const [];
+  final next = [
+    q,
+    for (final e in prev)
+      if (e.toLowerCase() != q.toLowerCase()) e,
+  ].take(5).toList();
+  await prefs.setStringList(kExploreRecentSearchesKey, next);
+}

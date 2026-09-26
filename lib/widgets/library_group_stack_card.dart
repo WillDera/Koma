@@ -98,6 +98,7 @@ class LibraryGroupStackCard extends StatelessWidget {
                   enableHero: enableHero,
                   showReadingOrder: _showBadges,
                   sourceBadge: _showSource ? frontBadge : null,
+                  borderRadius: const BorderRadius.all(Radius.circular(3)),
                 ),
               ),
               const SizedBox(width: 14),
@@ -277,6 +278,7 @@ class _GroupCollage extends StatelessWidget {
     required this.enableHero,
     required this.showReadingOrder,
     this.sourceBadge,
+    this.borderRadius,
   });
 
   final int groupId;
@@ -285,13 +287,14 @@ class _GroupCollage extends StatelessWidget {
   final bool enableHero;
   final bool showReadingOrder;
   final String? sourceBadge;
+  final BorderRadius? borderRadius;
 
   static const _gap = 1.5;
 
   @override
   Widget build(BuildContext context) {
     final body = ClipRRect(
-      borderRadius: AppSpacing.brMd,
+      borderRadius: borderRadius ?? AppSpacing.brMd,
       child: ColoredBox(
         color: colors.surfaceMuted,
         child: covers.isEmpty

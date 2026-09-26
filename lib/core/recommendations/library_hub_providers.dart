@@ -1,3 +1,6 @@
+import 'dart:async';
+import 'dart:convert';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:recommendation_engine/recommendation_engine.dart';
@@ -8,6 +11,8 @@ import '../models/manga.dart';
 import '../providers.dart';
 import '../repositories/repositories.dart';
 import '../services/hidden_titles_prefs.dart';
+import '../services/user_profile.dart';
+import '../../features/discover/explore_view_prefs.dart';
 import '../../features/reader/reader_settings_sheet.dart' show ViewerFlags;
 import 'library_hub_models.dart';
 import 'koma_catalog_source.dart';
@@ -251,117 +256,266 @@ final libraryHubRankedProvider =
   }
 });
 
-/// Extension / Discover exploration face (may take longer; soft-fail).
-final libraryHubExploreProvider =
-    FutureProvider.autoDispose<LibraryHubFace>((ref) async {
-  final repos = ref.watch(repositoriesProvider);
-  final engine = ref.watch(recommendationServiceProvider);
-  final salt = hubCoverSalt();
-  try {
-    final seeds = await _hubSeeds(repos);
-    if (seeds.isEmpty) {
+const _kExploreCache = 'hub_explore_extension_cache_v1';
+
+/// Extension / Discover exploration face.
+///
+/// Cached on disk so relaunch does not hit sources again. More pages append
+/// as the user scrolls View more. Queries prefer the profile genre list
+/// ("Your tastes").
+class LibraryHubExplore extends AsyncNotifier<LibraryHubFace> {
+  int _nextPage = 2;
+  bool _busy = false;
+  bool _hasMore = true;
+
+  @override
+  Future<LibraryHubFace> build() async {
+    final tastes = ref.watch(
+      userProfileProvider.select((p) => p.preferredGenres.join('\u0001')),
+    );
+    final genres = tastes.isEmpty ? const <String>[] : tastes.split('\u0001');
+    final cached = await _ExploreDisk.load();
+    if (cached != null &&
+        cached.items.isNotEmpty &&
+        _sameGenres(cached.genres, genres)) {
+      _nextPage = cached.nextPage;
+      _hasMore = true;
       return LibraryHubSnapshot.faceFor(
         LibraryHubKind.exploration,
-        const [],
-        salt: salt,
+        cached.items,
+        salt: hubCoverSalt(),
       );
     }
-    final mangasById = {
-      for (final m in await repos.manga.getMangasInLibrary()) m.id: m,
-    };
-    final booksById = {
-      for (final b in await repos.books.getBooks()) b.id: b,
-    };
-
-    LibraryHubEntry entryOf(RecommendationItem i) => _entryFromRec(
-          i,
-          mangasById: mangasById,
-          booksById: booksById,
-        );
-
-    final exploreResult = await engine
-        .recommend(
-          RecommendationRequest(
-            seeds: seeds,
-            limit: 12,
-            scope: RecommendationCandidateScope.libraryAndMetadata,
-          ),
-        )
-        .timeout(const Duration(seconds: 16));
-
-    var items = [
-      for (final i in exploreResult.items)
-        if (recommendationIdIsDiscover(i.id)) entryOf(i),
-    ];
-
-    // Host Discover pass — public engine 0.2 does not pass genreHints.
-    if (items.isEmpty) {
-      final hints = <String>{
-        for (final s in seeds)
-          for (final g in s.genres)
-            if (g.trim().isNotEmpty) g.trim(),
-      };
-      if (hints.isEmpty) {
-        for (final s in seeds) {
-          final parts = s.title.trim().split(RegExp(r'\s+'));
-          if (parts.isNotEmpty && parts.first.length >= 3) {
-            hints.add(parts.first);
-          }
-        }
-      }
-      if (hints.isNotEmpty) {
-        final catalog = KomaCatalogSource(
-          repos,
-          extensions: ref.read(extensionManagerProvider),
-          dispatch: ref.read(extensionServiceProvider),
-        );
-        final external = await catalog.discoverMangaCandidates(
-          genreHints: hints.take(5).toList(growable: false),
-          softLimit: 40,
-        );
-        items = [
-          for (final c in external)
-            LibraryHubEntry(
-              title: c.title,
-              subtitle: c.sourceLabel.isNotEmpty ? c.sourceLabel : c.author,
-              coverPathOrUrl: c.coverPathOrUrl,
-              recommendation: RecommendationItem(
-                title: c.title,
-                author: c.author,
-                kind: c.kind,
-                score: 0,
-                id: c.id,
-                coverPathOrUrl: c.coverPathOrUrl,
-                sourceLabel: c.sourceLabel,
-              ),
-            ),
-        ];
-      }
+    final items = genres.isEmpty
+        ? await _fetchQueries(
+            (await loadExploreRecentSearches()).take(1).toList(),
+            page: 1,
+            exclude: const {},
+          )
+        : await _fetch(genres, page: 1, exclude: const {});
+    _nextPage = 2;
+    _hasMore = items.isNotEmpty;
+    await _ExploreDisk.save(genres, items, nextPage: _nextPage);
+    final searches = await loadExploreRecentSearches();
+    if (searches.isNotEmpty) {
+      // Taste (or the first page) is already visible. Search terms append after.
+      unawaited(_appendSearchTerms(items, searches, genres));
     }
-
-    if (kDebugMode) {
-      debugPrint(
-        'libraryHubExplore: ${items.length} items '
-        'diag=${exploreResult.diagnostics.join(",")}',
-      );
-    }
-
     return LibraryHubSnapshot.faceFor(
       LibraryHubKind.exploration,
       items,
-      salt: salt,
-    );
-  } catch (e, st) {
-    if (kDebugMode) {
-      debugPrint('libraryHubExploreProvider failed: $e\n$st');
-    }
-    return LibraryHubSnapshot.faceFor(
-      LibraryHubKind.exploration,
-      const [],
-      salt: salt,
+      salt: hubCoverSalt(),
     );
   }
-});
+
+  Future<void> _appendSearchTerms(
+    List<LibraryHubEntry> base,
+    List<String> searches,
+    List<String> genres,
+  ) async {
+    final exclude = {
+      for (final e in base)
+        if (e.recommendation?.id != null) e.recommendation!.id!,
+    };
+    final more = await _fetchQueries(
+      searches,
+      page: 1,
+      exclude: exclude,
+    );
+    if (!ref.mounted || more.isEmpty) return;
+    final merged = [...base, ...more];
+    _nextPage = 2;
+    await _ExploreDisk.save(genres, merged, nextPage: _nextPage);
+    state = AsyncData(
+      LibraryHubSnapshot.faceFor(
+        LibraryHubKind.exploration,
+        merged,
+        salt: hubCoverSalt(),
+      ),
+    );
+  }
+
+  /// Next catalogue page. No-op while a page is in flight or the feed is exhausted.
+  Future<void> loadMore() async {
+    if (_busy || !_hasMore) return;
+    final current = state.asData?.value;
+    if (current == null) return;
+    _busy = true;
+    try {
+      final tastes = ref.read(userProfileProvider).preferredGenres;
+      final exclude = {
+        for (final e in current.entries)
+          if (e.recommendation?.id != null) e.recommendation!.id!,
+      };
+      final more = await _fetch(
+        tastes,
+        page: _nextPage,
+        exclude: exclude,
+      );
+      if (more.isEmpty) {
+        _hasMore = false;
+        return;
+      }
+      _nextPage += 1;
+      final merged = [...current.entries, ...more];
+      await _ExploreDisk.save(tastes, merged, nextPage: _nextPage);
+      state = AsyncData(
+        LibraryHubSnapshot.faceFor(
+          LibraryHubKind.exploration,
+          merged,
+          salt: hubCoverSalt(),
+        ),
+      );
+    } finally {
+      _busy = false;
+    }
+  }
+
+  Future<List<LibraryHubEntry>> _fetch(
+    List<String> tastes, {
+    required int page,
+    required Set<String> exclude,
+  }) {
+    final hints = [
+      for (final g in tastes)
+        if (g.trim().isNotEmpty) g.trim(),
+    ];
+    // First paint uses the top taste only. Extra queries wait for a later page.
+    return _fetchQueries(
+      hints.isEmpty ? const [] : [hints.first],
+      page: page,
+      exclude: exclude,
+    );
+  }
+
+  Future<List<LibraryHubEntry>> _fetchQueries(
+    List<String> queries, {
+    required int page,
+    required Set<String> exclude,
+  }) async {
+    if (queries.isEmpty) return const [];
+    final repos = ref.read(repositoriesProvider);
+    try {
+      final catalog = KomaCatalogSource(
+        repos,
+        extensions: ref.read(extensionManagerProvider),
+        dispatch: ref.read(extensionServiceProvider),
+      );
+      final external = await catalog.discoverMangaCandidates(
+        genreHints: queries,
+        softLimit: 12,
+        page: page,
+        excludeIds: exclude,
+      );
+      return [
+        for (final c in external)
+          LibraryHubEntry(
+            title: c.title,
+            subtitle: c.sourceLabel.isNotEmpty ? c.sourceLabel : c.author,
+            coverPathOrUrl: c.coverPathOrUrl,
+            recommendation: RecommendationItem(
+              title: c.title,
+              author: c.author,
+              kind: c.kind,
+              score: 0,
+              id: c.id,
+              coverPathOrUrl: c.coverPathOrUrl,
+              sourceLabel: c.sourceLabel,
+            ),
+          ),
+      ];
+    } catch (e, st) {
+      if (kDebugMode) debugPrint('libraryHubExplore fetch failed: $e\n$st');
+      return const [];
+    }
+  }
+
+  bool _sameGenres(List<String> a, List<String> b) {
+    if (a.length != b.length) return false;
+    for (var i = 0; i < a.length; i++) {
+      if (a[i] != b[i]) return false;
+    }
+    return true;
+  }
+}
+
+final libraryHubExploreProvider =
+    AsyncNotifierProvider<LibraryHubExplore, LibraryHubFace>(
+  LibraryHubExplore.new,
+);
+
+class _ExploreDisk {
+  static Future<({List<String> genres, int nextPage, List<LibraryHubEntry> items})?>
+      load() async {
+    final prefs = await SharedPreferences.getInstance();
+    final raw = prefs.getString(_kExploreCache);
+    if (raw == null || raw.isEmpty) return null;
+    try {
+      final decoded = jsonDecode(raw);
+      if (decoded is! Map) return null;
+      final genres = [
+        for (final g in (decoded['genres'] as List?) ?? const []) '$g',
+      ];
+      final nextPage = (decoded['nextPage'] as num?)?.toInt() ?? 2;
+      final items = <LibraryHubEntry>[];
+      for (final row in (decoded['items'] as List?) ?? const []) {
+        if (row is! Map) continue;
+        final title = '${row['title'] ?? ''}'.trim();
+        if (title.isEmpty) continue;
+        final kindName = '${row['kind'] ?? 'manga'}';
+        final kind = kindName == 'ebook'
+            ? RecommendationContentKind.ebook
+            : RecommendationContentKind.manga;
+        final cover = row['cover'] as String?;
+        final subtitle = row['subtitle'] as String?;
+        items.add(
+          LibraryHubEntry(
+            title: title,
+            subtitle: subtitle,
+            coverPathOrUrl: cover,
+            recommendation: RecommendationItem(
+              title: title,
+              author: row['author'] as String?,
+              kind: kind,
+              score: 0,
+              id: row['id'] as String?,
+              coverPathOrUrl: cover,
+              sourceLabel: row['source'] as String?,
+            ),
+          ),
+        );
+      }
+      return (genres: genres, nextPage: nextPage, items: items);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  static Future<void> save(
+    List<String> genres,
+    List<LibraryHubEntry> items, {
+    required int nextPage,
+  }) async {
+    final prefs = await SharedPreferences.getInstance();
+    final payload = {
+      'genres': genres,
+      'nextPage': nextPage,
+      'items': [
+        for (final e in items)
+          {
+            'title': e.title,
+            'subtitle': e.subtitle,
+            'cover': e.coverPathOrUrl,
+            'id': e.recommendation?.id,
+            'author': e.recommendation?.author,
+            'source': e.recommendation?.sourceLabel,
+            'kind': e.recommendation?.kind.name ?? 'manga',
+          },
+      ],
+    };
+    await prefs.setString(_kExploreCache, jsonEncode(payload));
+  }
+}
 
 const kLibraryHubAnglePref = 'library_hub_angle';
 

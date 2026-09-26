@@ -169,6 +169,20 @@ class LibraryBookCard extends StatelessWidget {
               ),
               const SizedBox(width: 12),
             ],
+            ClipRRect(
+              borderRadius: const BorderRadius.all(Radius.circular(3)),
+              child: SizedBox(
+                width: 48,
+                height: 68,
+                child: BookCover(
+                  book: book,
+                  variant: BookCoverVariant.compact,
+                  expand: true,
+                  borderRadius: const BorderRadius.all(Radius.circular(3)),
+                ),
+              ),
+            ),
+            const SizedBox(width: 12),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,

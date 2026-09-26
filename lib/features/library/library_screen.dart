@@ -3151,7 +3151,7 @@ class _MangaLibraryRow extends ConsumerWidget {
               Stack(
                 children: [
                   ClipRRect(
-                    borderRadius: AppSpacing.brMd,
+                    borderRadius: const BorderRadius.all(Radius.circular(3)),
                     child: localImagePath != null
                         ? Image.file(
                             File(localImagePath!),

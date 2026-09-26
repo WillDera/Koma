@@ -1,5 +1,6 @@
 import 'dart:io';
 import 'dart:math' as math;
+import 'dart:ui';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -18,6 +19,7 @@ import '../core/utils/image_cache.dart';
 import '../core/utils/image_headers.dart';
 import '../router/book_navigation.dart';
 import '../router/router.dart';
+import '../router/shell.dart';
 import '../theme/app_theme.dart';
 import '../theme/tokens/app_motion.dart';
 import '../theme/tokens/app_spacing.dart';
@@ -51,8 +53,6 @@ class _LibraryHubRingState extends ConsumerState<LibraryHubRing>
   /// Radians; 0 = face 0 in front.
   double _angle = 0;
   double _dragStartAngle = 0;
-  double _pointerStartX = 0;
-  double _lastPointerX = 0;
   double _lastPointerAtMs = 0;
   double _velocity = 0; // rad / ms
   bool _dragMoved = false;
@@ -192,6 +192,7 @@ class _LibraryHubRingState extends ConsumerState<LibraryHubRing>
     // Hide orbit and present peel cards in the same frame so the side
     // cards appear to detach rather than leave ghost copies behind.
     setState(() => _orbitSuppressed = true);
+    ref.read(shellBottomBarHiddenProvider.notifier).set(true);
     try {
       await showLibraryHubExpand(
         context,
@@ -208,10 +209,12 @@ class _LibraryHubRingState extends ConsumerState<LibraryHubRing>
         // Restore orbit as soon as dismiss starts — no peel-in on close.
         onDismissStart: () {
           if (mounted) setState(() => _orbitSuppressed = false);
+          ref.read(shellBottomBarHiddenProvider.notifier).set(false);
         },
       );
     } finally {
       if (mounted) setState(() => _orbitSuppressed = false);
+      ref.read(shellBottomBarHiddenProvider.notifier).set(false);
     }
   }
 
@@ -316,35 +319,33 @@ class _LibraryHubRingState extends ConsumerState<LibraryHubRing>
         // buttons). Front card opens the cover title's details.
         SizedBox(
           height: _cardH + 24,
-          child: Listener(
+          child: GestureDetector(
+            // Horizontal-only so a vertical flick scrolls the library or
+            // pulls to refresh instead of nudging the ring.
             behavior: HitTestBehavior.opaque,
-            onPointerDown: (e) {
+            onHorizontalDragStart: (d) {
               _settle.stop();
               _settleAnim = null;
-              _pointerStartX = e.position.dx;
-              _lastPointerX = e.position.dx;
               _lastPointerAtMs =
                   DateTime.now().millisecondsSinceEpoch.toDouble();
               _dragStartAngle = _angle;
               _velocity = 0;
               _dragMoved = false;
             },
-            onPointerMove: (e) {
+            onHorizontalDragUpdate: (d) {
               final now = DateTime.now().millisecondsSinceEpoch.toDouble();
-              final dx = e.position.dx - _pointerStartX;
+              final dx = d.primaryDelta ?? 0;
               final dt = (now - _lastPointerAtMs).clamp(1, 64);
-              final dFinger = e.position.dx - _lastPointerX;
-              // Finger → radians; smoothed velocity for fling snap.
-              final instant = (dFinger / _radius) / dt;
+              final instant = (dx / _radius) / dt;
               _velocity = _velocity * 0.65 + instant * 0.35;
-              _lastPointerX = e.position.dx;
               _lastPointerAtMs = now;
-              if (dx.abs() > 8) _dragMoved = true;
+              if ((_angle - _dragStartAngle).abs() > 0.04 || dx.abs() > 12) {
+                _dragMoved = true;
+              }
               if (!_dragMoved) return;
-              // Positive dx (finger right) → rotate so left card comes forward.
-              setState(() => _angle = _dragStartAngle + dx / _radius);
+              setState(() => _angle += dx / _radius);
             },
-            onPointerUp: (_) {
+            onHorizontalDragEnd: (_) {
               if (_dragMoved) {
                 _snapToNearest(velocityRadPerMs: _velocity);
                 _suppressCardTap = true;
@@ -352,7 +353,7 @@ class _LibraryHubRingState extends ConsumerState<LibraryHubRing>
               _dragMoved = false;
               _velocity = 0;
             },
-            onPointerCancel: (_) {
+            onHorizontalDragCancel: () {
               if (_dragMoved) {
                 _snapToNearest(velocityRadPerMs: _velocity);
                 _suppressCardTap = true;
@@ -1001,8 +1002,6 @@ class _HubExpandPage extends ConsumerStatefulWidget {
 }
 
 class _HubExpandPageState extends ConsumerState<_HubExpandPage> {
-  static const _fg = Colors.white;
-  static const _fgMuted = Color(0xB3FFFFFF);
   static const _fallbackCardW = 168.0;
   static const _fallbackCardH = 260.0;
 
@@ -1139,15 +1138,25 @@ class _HubExpandPageState extends ConsumerState<_HubExpandPage> {
         final closing = animation.status == AnimationStatus.reverse ||
             _dismissNotified;
         final side = breakAway.value;
+        final c = context.colors;
+        final explore = widget.face.kind == LibraryHubKind.exploration
+            ? ref.watch(libraryHubExploreProvider).asData?.value
+            : null;
+        final entries = explore?.entries ?? widget.face.entries;
         return Stack(
           fit: StackFit.expand,
           children: [
-            ColoredBox(
-              color: Color.lerp(
-                Colors.transparent,
-                const Color(0xF2000000),
-                barrier.value,
-              )!,
+            // 50% blur of the library behind — no dark scrim.
+            Positioned.fill(
+              child: IgnorePointer(
+                child: BackdropFilter(
+                  filter: ImageFilter.blur(
+                    sigmaX: 14 * barrier.value,
+                    sigmaY: 14 * barrier.value,
+                  ),
+                  child: const SizedBox.expand(),
+                ),
+              ),
             ),
             // Peel only on open. On close the real orbit is already restored.
             if (!closing) ...[
@@ -1171,6 +1180,7 @@ class _HubExpandPageState extends ConsumerState<_HubExpandPage> {
             Opacity(
               opacity: fadeIn.value,
               child: SafeArea(
+                bottom: false,
                 child: Material(
                   color: Colors.transparent,
                   child: Padding(
@@ -1190,7 +1200,7 @@ class _HubExpandPageState extends ConsumerState<_HubExpandPage> {
                                 _notifyDismissStart();
                                 Navigator.of(context).maybePop();
                               },
-                              icon: const Icon(Icons.close, color: _fg),
+                              icon: Icon(Icons.close, color: c.textPrimary),
                             ),
                             Expanded(
                               child: Text(
@@ -1199,14 +1209,14 @@ class _HubExpandPageState extends ConsumerState<_HubExpandPage> {
                                     .textTheme
                                     .titleLarge
                                     ?.copyWith(
-                                      color: _fg,
+                                      color: c.textPrimary,
                                       fontWeight: FontWeight.w700,
                                     ),
                               ),
                             ),
                             TextButton(
                               onPressed: () {
-                                if (widget.face.isEmpty) {
+                                if (entries.isEmpty) {
                                   StashToast.show(
                                     context,
                                     message: 'Nothing to read yet',
@@ -1218,8 +1228,8 @@ class _HubExpandPageState extends ConsumerState<_HubExpandPage> {
                                 widget.onRead();
                               },
                               style: TextButton.styleFrom(
-                                foregroundColor: _fg,
-                                backgroundColor: Colors.white24,
+                                foregroundColor: c.textPrimary,
+                                backgroundColor: c.surfaceMuted,
                                 padding: const EdgeInsets.symmetric(
                                   horizontal: 14,
                                   vertical: 8,
@@ -1237,8 +1247,8 @@ class _HubExpandPageState extends ConsumerState<_HubExpandPage> {
                             ),
                             child: Text(
                               widget.face.subtitle,
-                              style: const TextStyle(
-                                color: _fgMuted,
+                              style: TextStyle(
+                                color: c.textSecondary,
                                 fontSize: 13,
                               ),
                             ),
@@ -1250,16 +1260,34 @@ class _HubExpandPageState extends ConsumerState<_HubExpandPage> {
                               final variant = CatalogCardLayout.gridVariant(
                                 library.cardVariant,
                               );
-                              return GridView.builder(
-                                padding: const EdgeInsets.only(bottom: 24),
+                              return NotificationListener<ScrollNotification>(
+                                onNotification: (n) {
+                                  if (widget.face.kind !=
+                                      LibraryHubKind.exploration) {
+                                    return false;
+                                  }
+                                  final m = n.metrics;
+                                  if (m.maxScrollExtent <= 0) return false;
+                                  if (m.pixels > m.maxScrollExtent - 480) {
+                                    ref
+                                        .read(libraryHubExploreProvider.notifier)
+                                        .loadMore();
+                                  }
+                                  return false;
+                                },
+                                child: GridView.builder(
+                                padding: EdgeInsets.only(
+                                  bottom: 24 +
+                                      MediaQuery.paddingOf(context).bottom,
+                                ),
                                 gridDelegate:
                                     CatalogCardLayout.gridDelegate(
                                   columns: library.gridColumns,
                                   variant: variant,
                                 ),
-                                itemCount: widget.face.entries.length,
+                                itemCount: entries.length,
                                 itemBuilder: (context, i) {
-                                  final e = widget.face.entries[i];
+                                  final e = entries[i];
                                   final image = _entryCover(e);
                                   final url = hubCoverUrl(e);
                                   return StaggeredFadeScale(
@@ -1284,6 +1312,7 @@ class _HubExpandPageState extends ConsumerState<_HubExpandPage> {
                                     ),
                                   );
                                 },
+                              ),
                               );
                             },
                           ),

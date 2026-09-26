@@ -10,6 +10,7 @@ import '../../core/models/book.dart';
 import '../../core/models/manga.dart';
 import '../../core/models/source.dart';
 import '../../core/providers.dart';
+import 'explore_view_prefs.dart';
 import '../../core/services/local_manga_recs_service.dart';
 import '../../core/services/personalized_catalog_picks_service.dart';
 import '../../core/services/discover_metadata_cache.dart';
@@ -343,6 +344,7 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
     // Manga: progressive Global Search (per-source Loading → Success/Error).
     // Do not await — UI watches [globalSearchProvider].
     ref.read(globalSearchProvider.notifier).search(q);
+    unawaited(rememberExploreSearch(q));
 
     // Books stay independent so LibGen timeouts never block manga rows.
     final books = await _svc().search(q).then<List<SourceSearchResult>>(

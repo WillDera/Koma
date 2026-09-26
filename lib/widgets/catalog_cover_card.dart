@@ -506,7 +506,7 @@ class CatalogCoverCard extends StatelessWidget {
                   width: 48,
                   height: 64,
                   child: ClipRRect(
-                    borderRadius: BorderRadius.circular(6),
+                    borderRadius: const BorderRadius.all(Radius.circular(3)),
                     child: _coverImage(c),
                   ),
                 ),

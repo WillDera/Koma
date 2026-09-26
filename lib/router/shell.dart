@@ -34,6 +34,21 @@ class ShellBackInterceptor extends Notifier<bool> {
 final shellBackInterceptorProvider =
     NotifierProvider<ShellBackInterceptor, bool>(ShellBackInterceptor.new);
 
+/// True while a full-screen overlay (For You → View more) should push the
+/// pill nav off the bottom of the screen.
+class ShellBottomBarHidden extends Notifier<bool> {
+  @override
+  bool build() => false;
+
+  void set(bool value) {
+    if (state == value) return;
+    state = value;
+  }
+}
+
+final shellBottomBarHiddenProvider =
+    NotifierProvider<ShellBottomBarHidden, bool>(ShellBottomBarHidden.new);
+
 /// The bottom-nav shell. Wraps go_router's [StatefulNavigationShell]
 /// (an IndexedStack of the five tab branches, each with its own Navigator
 /// and preserved state) and renders the [AppBottomNav] under it.
@@ -103,6 +118,7 @@ class MainShell extends ConsumerWidget {
     final tabConsumesBack = ref.watch(shellBackInterceptorProvider);
     final leftHanded = ref.watch(themeProvider).handMode == HandMode.left;
     final satellite = ref.watch(libraryNavSatelliteProvider);
+    final hideBottomBar = ref.watch(shellBottomBarHiddenProvider);
     final c = context.colors;
     return AppUpdateGate(
       child: PopScope(
@@ -164,20 +180,25 @@ class MainShell extends ConsumerWidget {
               Expanded(child: navigationShell),
             ],
           ),
-          bottomNavigationBar: AppBottomNav(
-            items: _navItems,
-            currentIndex: navigationShell.currentIndex,
-            onTap: _onTap,
-            onLongPress: (index) {
-              if (!_navItems[index].profileTab) return;
-              showStatsPopup(context);
-            },
-            profileInitials: initials,
-            profileImage: profileImage,
-            satelliteLeading: leftHanded,
-            satellite: onLibrary && satellite.hasAny
-                ? _LibraryNavSatelliteCluster(satellite: satellite)
-                : null,
+          bottomNavigationBar: AnimatedSlide(
+            offset: hideBottomBar ? const Offset(0, 1.6) : Offset.zero,
+            duration: const Duration(milliseconds: 480),
+            curve: Curves.easeInOutCubic,
+            child: AppBottomNav(
+              items: _navItems,
+              currentIndex: navigationShell.currentIndex,
+              onTap: _onTap,
+              onLongPress: (index) {
+                if (!_navItems[index].profileTab) return;
+                showStatsPopup(context);
+              },
+              profileInitials: initials,
+              profileImage: profileImage,
+              satelliteLeading: leftHanded,
+              satellite: onLibrary && satellite.hasAny
+                  ? _LibraryNavSatelliteCluster(satellite: satellite)
+                  : null,
+            ),
           ),
           drawer: NavDrawer(
             currentIndex: navigationShell.currentIndex,

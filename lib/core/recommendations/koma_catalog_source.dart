@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:recommendation_engine/recommendation_engine.dart';
 
 import '../../eval/dispatch_service.dart';
@@ -18,9 +20,9 @@ class KomaCatalogSource implements CatalogSource {
     this._repos, {
     this.extensions,
     this.dispatch,
-    this.maxDiscoverSources = 4,
+    this.maxDiscoverSources = 3,
     this.perSourceHitCap = 6,
-    this.discoverSearchTimeout = const Duration(seconds: 8),
+    this.discoverSearchTimeout = const Duration(seconds: 3),
   });
 
   final Repositories _repos;
@@ -125,7 +127,9 @@ class KomaCatalogSource implements CatalogSource {
   /// [listCandidates].
   Future<List<CatalogItem>> discoverMangaCandidates({
     required List<String> genreHints,
-    int softLimit = 40,
+    int softLimit = 24,
+    int page = 1,
+    Set<String> excludeIds = const {},
   }) async {
     if (genreHints.isEmpty ||
         extensions == null ||
@@ -141,6 +145,8 @@ class KomaCatalogSource implements CatalogSource {
       genreHints: genreHints,
       libraryTitles: libraryTitles,
       remaining: softLimit,
+      page: page < 1 ? 1 : page,
+      excludeIds: excludeIds,
     );
   }
 
@@ -148,6 +154,8 @@ class KomaCatalogSource implements CatalogSource {
     required List<String> genreHints,
     required Set<String> libraryTitles,
     required int remaining,
+    required int page,
+    required Set<String> excludeIds,
   }) async {
     if (remaining <= 0) return const [];
     final extensions = this.extensions!;
@@ -169,36 +177,77 @@ class KomaCatalogSource implements CatalogSource {
     if (sources.isEmpty) return const [];
 
     final picked = sources.take(maxDiscoverSources).toList();
-    final queries = genreHints.take(2).toList();
-    if (queries.isEmpty) return const [];
+    // One query so the first results don't wait on a second round of sources.
+    final query = genreHints
+        .map((g) => g.trim())
+        .firstWhere((g) => g.isNotEmpty, orElse: () => '');
+    if (query.isEmpty) return const [];
 
+    final futures = [
+      for (final src in picked)
+        _searchOneSource(
+          dispatch: dispatch,
+          source: src,
+          query: query,
+          genreHints: genreHints,
+          libraryTitles: libraryTitles,
+          page: page,
+          excludeIds: excludeIds,
+        ),
+    ];
+    return _firstReady(
+      futures,
+      libraryTitles: libraryTitles,
+      excludeIds: excludeIds,
+      limit: remaining,
+    );
+  }
+
+  /// Returns as soon as enough hits are in, without waiting out the slowest source.
+  Future<List<CatalogItem>> _firstReady(
+    List<Future<List<CatalogItem>>> futures, {
+    required Set<String> libraryTitles,
+    required Set<String> excludeIds,
+    required int limit,
+  }) async {
+    if (futures.isEmpty || limit <= 0) return const [];
     final out = <CatalogItem>[];
     final seen = <String>{};
+    final done = Completer<List<CatalogItem>>();
+    var finished = 0;
 
-    for (final query in queries) {
-      if (out.length >= remaining) break;
-      final futures = <Future<List<CatalogItem>>>[
-        for (final src in picked)
-          _searchOneSource(
-            dispatch: dispatch,
-            source: src,
-            query: query,
-            genreHints: genreHints,
-            libraryTitles: libraryTitles,
-          ),
-      ];
-      final batches = await Future.wait(futures);
-      for (final batch in batches) {
-        for (final item in batch) {
-          final key = '${item.sourceLabel}|${_norm(item.title)}';
-          if (!seen.add(key)) continue;
-          if (libraryTitles.contains(_norm(item.title))) continue;
-          out.add(item);
-          if (out.length >= remaining) return out;
-        }
+    void consider(List<CatalogItem> batch) {
+      for (final item in batch) {
+        if (out.length >= limit) break;
+        if (excludeIds.contains(item.id)) continue;
+        final key = '${item.sourceLabel}|${_norm(item.title)}';
+        if (!seen.add(key)) continue;
+        if (libraryTitles.contains(_norm(item.title))) continue;
+        out.add(item);
+      }
+      if (!done.isCompleted &&
+          (out.length >= limit || finished >= futures.length)) {
+        done.complete(List<CatalogItem>.from(out));
       }
     }
-    return out;
+
+    for (final future in futures) {
+      future.then(
+        (batch) {
+          finished++;
+          consider(batch);
+        },
+        onError: (Object _) {
+          finished++;
+          consider(const []);
+        },
+      );
+    }
+
+    return done.future.timeout(
+      discoverSearchTimeout + const Duration(milliseconds: 400),
+      onTimeout: () => List<CatalogItem>.from(out),
+    );
   }
 
   Future<List<CatalogItem>> _searchOneSource({
@@ -207,21 +256,25 @@ class KomaCatalogSource implements CatalogSource {
     required String query,
     required List<String> genreHints,
     required Set<String> libraryTitles,
+    required int page,
+    required Set<String> excludeIds,
   }) async {
     try {
-      final page = await dispatch
-          .search(MSource.fromExtensionSource(source), 1, query)
+      final pageResult = await dispatch
+          .search(MSource.fromExtensionSource(source), page, query)
           .timeout(discoverSearchTimeout);
       final hits = <CatalogItem>[];
-      for (final manga in page.list.take(perSourceHitCap)) {
+      for (final manga in pageResult.list.take(perSourceHitCap)) {
         final title = manga.title.trim();
         if (title.isEmpty) continue;
         if (libraryTitles.contains(_norm(title))) continue;
         final url = manga.url.trim();
         if (url.isEmpty) continue;
+        final id = extensionCatalogId(source.sourceId, url);
+        if (excludeIds.contains(id)) continue;
         hits.add(
           CatalogItem(
-            id: extensionCatalogId(source.sourceId, url),
+            id: id,
             title: title,
             author: manga.author,
             kind: RecommendationContentKind.manga,
