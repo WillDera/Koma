@@ -32,11 +32,10 @@ repo index URL. The Pages deploy workflow also rewrites absolute URLs.
 Browse, Popular, search, tags, artists, circles and Random all work against
 `https://api.hdoujin.org`.
 
-**Page images are capped at 250–350px.** HDoujin serves full-resolution pages
-only from `/books/data/{id}/{key}/...` behind a Cloudflare Turnstile clearance
-token, which returns `403` to a plain extension. This source reads the public
-thumbnail tier instead, so pages look soft in the reader. Everything else —
-titles, covers, tags, page counts, dates — is complete.
+**Full-resolution pages** are requested from `/books/data/…?crt=` when the
+in-app WebView already holds HDoujin's Turnstile clearance token
+(`localStorage.clearance`). Without that token the public thumbnail tier
+(250–350px WebP) is used, because the data endpoint returns HTTP 400.
 
 Other notes:
 
@@ -45,11 +44,12 @@ Other notes:
 - The API allows ~5 requests per 2–5 seconds. The extension serialises every
   call behind a queue and waits out the window when the rate limit is hit.
 - Popular is capped at 1000 entries (13 pages); page 14 is a hard `400`.
-- The `Browse` filter set to `Random` returns a single random gallery. Filters
-  do not apply to it — HDoujin has no randomised equivalent of `/books`.
-- Tag, Artist and Circle terms are fuzzy and AND-ed together, matching the
-  site's own search box. HDoujin's exact-anchor syntax (`tag:^term$`) is only
-  populated for a handful of tags and cannot be combined with the
+- The `Random` filter set to `On` returns a single random gallery. Other
+  filters do not apply to it — HDoujin has no randomised equivalent of `/books`.
+- `Artist`, `Tag`, and `Circle` are text filters. `Popular Tags` is a checkbox
+  list: ticking a tag includes it (`tag:name`). Terms are fuzzy and AND-ed,
+  matching the site's own search box. Exact-anchor syntax (`tag:^term$`) is
+  only populated for a handful of tags and cannot be combined with the
   Include/Exclude namespace facets, so it is deliberately not used.
 - `Include Tags` / `Exclude Tags` map to HDoujin's Male / Female / Mixed /
   Other namespace facets and render as a combined Ignore / Include / Exclude

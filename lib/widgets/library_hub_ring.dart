@@ -285,7 +285,52 @@ class _LibraryHubRingState extends ConsumerState<LibraryHubRing>
         return da.compareTo(db);
       });
 
-    return Column(
+    return GestureDetector(
+      // The whole For you block owns the pointer. Vertical drags are eaten
+      // so the library list cannot scroll or pull-to-refresh from here.
+      behavior: HitTestBehavior.opaque,
+      onHorizontalDragStart: (d) {
+        _settle.stop();
+        _settleAnim = null;
+        _lastPointerAtMs = DateTime.now().millisecondsSinceEpoch.toDouble();
+        _dragStartAngle = _angle;
+        _velocity = 0;
+        _dragMoved = false;
+      },
+      onHorizontalDragUpdate: (d) {
+        final now = DateTime.now().millisecondsSinceEpoch.toDouble();
+        final dx = d.primaryDelta ?? 0;
+        final dt = (now - _lastPointerAtMs).clamp(1, 64);
+        final instant = (dx / _radius) / dt;
+        _velocity = _velocity * 0.65 + instant * 0.35;
+        _lastPointerAtMs = now;
+        if ((_angle - _dragStartAngle).abs() > 0.02) _dragMoved = true;
+        setState(() => _angle += dx / _radius);
+      },
+      onHorizontalDragEnd: (_) {
+        if (_dragMoved) {
+          _snapToNearest(velocityRadPerMs: _velocity);
+          _suppressCardTap = true;
+        } else {
+          setState(() => _angle = _dragStartAngle);
+        }
+        _dragMoved = false;
+        _velocity = 0;
+      },
+      onHorizontalDragCancel: () {
+        if (_dragMoved) {
+          _snapToNearest(velocityRadPerMs: _velocity);
+          _suppressCardTap = true;
+        } else {
+          setState(() => _angle = _dragStartAngle);
+        }
+        _dragMoved = false;
+        _velocity = 0;
+      },
+      onVerticalDragStart: (_) {},
+      onVerticalDragUpdate: (_) {},
+      onVerticalDragEnd: (_) {},
+      child: Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         Padding(
@@ -315,76 +360,31 @@ class _LibraryHubRingState extends ConsumerState<LibraryHubRing>
             ],
           ),
         ),
-        // Listener for swipe (doesn't compete with InkWell taps on cards /
-        // buttons). Front card opens the cover title's details.
         SizedBox(
           height: _cardH + 24,
-          child: GestureDetector(
-            // Horizontal-only so a vertical flick scrolls the library or
-            // pulls to refresh instead of nudging the ring.
-            behavior: HitTestBehavior.opaque,
-            onHorizontalDragStart: (d) {
-              _settle.stop();
-              _settleAnim = null;
-              _lastPointerAtMs =
-                  DateTime.now().millisecondsSinceEpoch.toDouble();
-              _dragStartAngle = _angle;
-              _velocity = 0;
-              _dragMoved = false;
-            },
-            onHorizontalDragUpdate: (d) {
-              final now = DateTime.now().millisecondsSinceEpoch.toDouble();
-              final dx = d.primaryDelta ?? 0;
-              final dt = (now - _lastPointerAtMs).clamp(1, 64);
-              final instant = (dx / _radius) / dt;
-              _velocity = _velocity * 0.65 + instant * 0.35;
-              _lastPointerAtMs = now;
-              if ((_angle - _dragStartAngle).abs() > 0.04 || dx.abs() > 12) {
-                _dragMoved = true;
-              }
-              if (!_dragMoved) return;
-              setState(() => _angle += dx / _radius);
-            },
-            onHorizontalDragEnd: (_) {
-              if (_dragMoved) {
-                _snapToNearest(velocityRadPerMs: _velocity);
-                _suppressCardTap = true;
-              }
-              _dragMoved = false;
-              _velocity = 0;
-            },
-            onHorizontalDragCancel: () {
-              if (_dragMoved) {
-                _snapToNearest(velocityRadPerMs: _velocity);
-                _suppressCardTap = true;
-              }
-              _dragMoved = false;
-              _velocity = 0;
-            },
-            child: ClipRect(
-              child: Stack(
-                key: _orbitStackKey,
-                alignment: Alignment.center,
-                children: [
-                  if (!_orbitSuppressed)
-                    for (final i in order)
-                      _orbitFace(
-                        face: faces[i],
-                        localAngle: _angle - i * _step,
-                        isFront: i == front,
-                        cover: _coverImage(faces[i].coverEntry),
-                        onTap: i == front
-                            ? () {
-                                if (_suppressCardTap) {
-                                  _suppressCardTap = false;
-                                  return;
-                                }
-                                _onOpenCover(frontFace);
+          child: ClipRect(
+            child: Stack(
+              key: _orbitStackKey,
+              alignment: Alignment.center,
+              children: [
+                if (!_orbitSuppressed)
+                  for (final i in order)
+                    _orbitFace(
+                      face: faces[i],
+                      localAngle: _angle - i * _step,
+                      isFront: i == front,
+                      cover: _coverImage(faces[i].coverEntry),
+                      onTap: i == front
+                          ? () {
+                              if (_suppressCardTap) {
+                                _suppressCardTap = false;
+                                return;
                               }
-                            : null,
-                      ),
-                ],
-              ),
+                              _onOpenCover(frontFace);
+                            }
+                          : null,
+                    ),
+              ],
             ),
           ),
         ),
@@ -425,6 +425,7 @@ class _LibraryHubRingState extends ConsumerState<LibraryHubRing>
           ),
         ),
       ],
+      ),
     );
   }
 

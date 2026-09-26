@@ -18,11 +18,11 @@
  *   page 14 returns HTTP 400. /books paginates to ~2473 pages and returns an
  *   empty `entries` array past the end rather than an error.
  *
- * Page image limitation: HDoujin only serves full-resolution pages from
- * /books/data/{id}/{key}/... behind a Cloudflare Turnstile clearance token
- * (`crt`), which returns 403 to a plain extension. This source therefore reads
- * the public thumbnail tier, 250-350px wide WebP from erocdn.net. Everything
- * else (browse, popular, search, tags, artists, random, metadata) is complete.
+ * Page images: full-resolution files live at
+ * /books/data/{id}/{key}/{pageId}/{pageKey}/{index}?crt=… and require the
+ * site's Turnstile clearance token (localStorage "clearance"). When that
+ * token is already in the in-app WebView profile, pages use it. Otherwise
+ * the public thumbnail tier (250–350px WebP) is used.
  *
  * Tag matching: the site's own exact-anchor syntax ("tag:^term$") is only
  * populated for a handful of tags and cannot be combined with the
@@ -37,7 +37,7 @@ const mangayomiSources = [
     "baseUrl": "https://hdoujin.org",
     "apiUrl": "https://api.hdoujin.org",
     "iconUrl": "https://hdoujin.org/icon.jpg",
-    "version": "1.0.0",
+    "version": "1.0.1",
     "itemType": 0,
     "sourceCodeLanguage": 1,
     "hasCloudflare": false,
@@ -157,9 +157,35 @@ const POPULAR_TAGS = [
   "beauty mark",
 ];
 
-/* ------------------------------------------------------------------ *
- * Request queue — serialises every API call and honours the rate limit.
- * ------------------------------------------------------------------ */
+/* One clearance lookup per session. Empty means the WebView has not solved Turnstile. */
+let _crtToken = null;
+let _crtAttempted = false;
+
+async function _readClearanceToken() {
+  if (_crtToken) return _crtToken;
+  if (_crtAttempted) return "";
+  _crtAttempted = true;
+  if (typeof evaluateJavascriptViaWebview !== "function") return "";
+  try {
+    const script =
+      "(function(){function send(v){try{window.flutter_inappwebview.callHandler('setResponse', v||'');}catch(e){}}" +
+      "var n=0;var t=setInterval(function(){var v='';try{v=localStorage.getItem('clearance')||'';}catch(e){}" +
+      "n++;if(v||n>=5){clearInterval(t);send(v);}},800);})();";
+    const token = await evaluateJavascriptViaWebview(
+      "https://hdoujin.org/",
+      {
+        Referer: "https://hdoujin.org/",
+        Origin: "https://hdoujin.org",
+      },
+      [script],
+    );
+    if (typeof token === "string" && token.length > 8) {
+      _crtToken = token;
+      return token;
+    }
+  } catch (e) {}
+  return "";
+}
 
 let _queue = Promise.resolve();
 let _lastCallAt = 0;
@@ -553,7 +579,9 @@ class DefaultExtension extends MProvider {
     const list = Array.isArray(filters) ? filters : [];
     const p = page > 0 ? page : 1;
 
-    if (this._selectValue(list, "Browse") === 1) return await this._randomPage();
+    if (this._selectValue(list, "Random") === 1 || this._selectValue(list, "Browse") === 1) {
+      return await this._randomPage();
+    }
 
     const params = { page: p };
 
@@ -627,13 +655,66 @@ class DefaultExtension extends MProvider {
     return [this._mapChapter(parts.id + "/" + parts.key, detail)];
   }
 
-  /// Public thumbnail tier only — see the header note on resolution.
-  async getPageList(url) {
-    const parts = this._readIdKey(url);
-    if (!parts.id || !parts.key) {
-      throw new Error("HDoujin: bad gallery url " + url);
+  async _postJson(path) {
+    const url = this._api() + path;
+    const client = new Client();
+    const res = await _enqueue(async () => {
+      const r = await client.post(url, this.getHeaders(url), "");
+      await this._rateGate(r);
+      return r;
+    });
+    const code = res.statusCode;
+    if (code < 200 || code >= 300) {
+      throw new Error("HDoujin HTTP " + code + " for " + path);
     }
-    const detail = await this._fetchDetail(parts.id, parts.key);
+    const body =
+      typeof res.body === "string" ? JSON.parse(res.body) : res.body;
+    return body || {};
+  }
+
+  /// Full pages from /books/data/... when a clearance token is available.
+  async _fullPages(id, key, crt) {
+    const extra = await this._postJson(
+      "/books/detail/" +
+        encodeURIComponent(id) +
+        "/" +
+        encodeURIComponent(key) +
+        "?crt=" +
+        encodeURIComponent(crt),
+    );
+    const data = extra && Array.isArray(extra.data) ? extra.data : null;
+    if (!data || !data.length) return [];
+    const headers = {
+      Referer: this.source.baseUrl + "/",
+      Origin: this.source.baseUrl,
+    };
+    const pages = [];
+    for (let i = 0; i < data.length; i++) {
+      const page = data[i];
+      if (!page || page.id === undefined || !page.key) continue;
+      pages.push({
+        index: pages.length,
+        url:
+          this._api() +
+          "/books/data/" +
+          encodeURIComponent(id) +
+          "/" +
+          encodeURIComponent(key) +
+          "/" +
+          encodeURIComponent(page.id) +
+          "/" +
+          encodeURIComponent(page.key) +
+          "/" +
+          i +
+          "?crt=" +
+          encodeURIComponent(crt),
+        headers,
+      });
+    }
+    return pages;
+  }
+
+  _thumbPages(detail) {
     const thumbs = detail.thumbnails || {};
     const base = thumbs.base || "";
     const entries = Array.isArray(thumbs.entries) ? thumbs.entries : [];
@@ -644,8 +725,31 @@ class DefaultExtension extends MProvider {
       pages.push({
         index: i,
         url: path.charAt(0) === "/" ? base + path : path,
+        headers: {
+          Referer: this.source.baseUrl + "/",
+          Origin: this.source.baseUrl,
+        },
       });
     }
+    return pages;
+  }
+
+  async getPageList(url) {
+    const parts = this._readIdKey(url);
+    if (!parts.id || !parts.key) {
+      throw new Error("HDoujin: bad gallery url " + url);
+    }
+    const detail = await this._fetchDetail(parts.id, parts.key);
+    const crt = await _readClearanceToken();
+    if (crt) {
+      try {
+        const full = await this._fullPages(parts.id, parts.key, crt);
+        if (full.length) return full;
+      } catch (e) {
+        _crtToken = null;
+      }
+    }
+    const pages = this._thumbPages(detail);
     if (!pages.length) throw new Error("HDoujin: gallery has no pages");
     return pages;
   }
@@ -659,9 +763,9 @@ class DefaultExtension extends MProvider {
     ];
     return [
       { type: "header", name: "Browse Mode", type_name: "HeaderFilter" },
-      this._selectFilter("Browse", [
-        ["Default", 0],
-        ["Random", 1],
+      this._selectFilter("Random", [
+        ["Off", 0],
+        ["On", 1],
       ]),
       this._selectFilter("Content", [
         ["All", 0],

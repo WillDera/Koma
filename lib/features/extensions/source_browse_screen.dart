@@ -884,6 +884,27 @@ class _FilterSheetState extends State<_FilterSheet> {
 
   /// Group names consumed by a paired TriState UI (skip when iterating).
   late final Set<String> _pairedGroupNames;
+  final Map<String, TextEditingController> _textControllers = {};
+
+  @override
+  void dispose() {
+    for (final c in _textControllers.values) {
+      c.dispose();
+    }
+    super.dispose();
+  }
+
+  TextEditingController _textController(Filter f) {
+    return _textControllers.putIfAbsent(f.name, () {
+      final controller = TextEditingController(
+        text: _values[f.name] as String? ?? '',
+      );
+      controller.addListener(() {
+        _values[f.name] = controller.text;
+      });
+      return controller;
+    });
+  }
 
   @override
   void initState() {
@@ -913,8 +934,6 @@ class _FilterSheetState extends State<_FilterSheet> {
         include.add(g);
       } else if (n.contains('exclude')) {
         exclude.add(g);
-      } else if (n.contains('tag') || n.contains('genre')) {
-        other.add(g);
       }
     }
 
@@ -1167,6 +1186,7 @@ class _FilterSheetState extends State<_FilterSheet> {
       case FilterType.separator:
         return const Divider(height: 24);
       case FilterType.text:
+        final controller = _textController(f);
         return Padding(
           padding: const EdgeInsets.symmetric(vertical: 6),
           child: TextField(
@@ -1180,10 +1200,7 @@ class _FilterSheetState extends State<_FilterSheet> {
                 vertical: 10,
               ),
             ),
-            controller: TextEditingController(
-              text: values[f.name] as String? ?? '',
-            ),
-            onChanged: (v) => setState(() => values[f.name] = v),
+            controller: controller,
           ),
         );
       case FilterType.check:

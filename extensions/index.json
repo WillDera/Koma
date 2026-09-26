@@ -22,7 +22,7 @@
       "baseUrl": "https://hdoujin.org",
       "apiUrl": "https://api.hdoujin.org",
       "iconUrl": "https://hdoujin.org/icon.jpg",
-      "version": "1.0.0",
+      "version": "1.0.1",
       "itemType": 0,
       "sourceCodeLanguage": 1,
       "sourceCodeUrl": "hdoujin.js",
