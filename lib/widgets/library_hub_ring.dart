@@ -57,6 +57,7 @@ class _LibraryHubRingState extends ConsumerState<LibraryHubRing>
   double _velocity = 0; // rad / ms
   bool _dragMoved = false;
   bool _suppressCardTap = false;
+  double _pendingDx = 0;
   /// Hide orbit cards while the expand overlay owns the peel animation so we
   /// don't show ghost duplicates behind the barrier.
   bool _orbitSuppressed = false;
@@ -93,12 +94,17 @@ class _LibraryHubRingState extends ConsumerState<LibraryHubRing>
   }
 
   void _snapToNearest({double velocityRadPerMs = 0}) {
-    // Bias snap in the fling direction when the user released with speed.
-    var target = (_angle / _step).round() * _step;
-    if (velocityRadPerMs.abs() > 0.0015) {
-      final dir = velocityRadPerMs.isNegative ? -1.0 : 1.0;
-      final projected = _angle + dir * _step * 0.35;
-      target = (projected / _step).round() * _step;
+    // Snap back to the card that was centered when the finger went down,
+    // unless the drag actually travelled toward the next face.
+    final dragged = _angle - _dragStartAngle;
+    var target = (_dragStartAngle / _step).round() * _step;
+    if (dragged.abs() > _step * 0.28) {
+      target = (_angle / _step).round() * _step;
+      if (velocityRadPerMs.abs() > 0.002) {
+        final dir = dragged.isNegative ? -1.0 : 1.0;
+        final projected = _angle + dir * _step * 0.2;
+        target = (projected / _step).round() * _step;
+      }
     }
 
     final begin = _angle;
@@ -294,6 +300,7 @@ class _LibraryHubRingState extends ConsumerState<LibraryHubRing>
         _settleAnim = null;
         _lastPointerAtMs = DateTime.now().millisecondsSinceEpoch.toDouble();
         _dragStartAngle = _angle;
+        _pendingDx = 0;
         _velocity = 0;
         _dragMoved = false;
       },
@@ -304,27 +311,29 @@ class _LibraryHubRingState extends ConsumerState<LibraryHubRing>
         final instant = (dx / _radius) / dt;
         _velocity = _velocity * 0.65 + instant * 0.35;
         _lastPointerAtMs = now;
-        if ((_angle - _dragStartAngle).abs() > 0.02) _dragMoved = true;
-        setState(() => _angle += dx / _radius);
+        _pendingDx += dx;
+        // A tap can win the drag arena with a few pixels. Don't move the
+        // ring until the finger has clearly travelled.
+        if (_pendingDx.abs() < 48) return;
+        _dragMoved = true;
+        setState(() => _angle = _dragStartAngle + _pendingDx / _radius);
       },
       onHorizontalDragEnd: (_) {
         if (_dragMoved) {
           _snapToNearest(velocityRadPerMs: _velocity);
           _suppressCardTap = true;
-        } else {
-          setState(() => _angle = _dragStartAngle);
         }
         _dragMoved = false;
+        _pendingDx = 0;
         _velocity = 0;
       },
       onHorizontalDragCancel: () {
         if (_dragMoved) {
-          _snapToNearest(velocityRadPerMs: _velocity);
+          _snapToNearest(velocityRadPerMs: 0);
           _suppressCardTap = true;
-        } else {
-          setState(() => _angle = _dragStartAngle);
         }
         _dragMoved = false;
+        _pendingDx = 0;
         _velocity = 0;
       },
       onVerticalDragStart: (_) {},
@@ -1225,7 +1234,6 @@ class _HubExpandPageState extends ConsumerState<_HubExpandPage> {
                                   );
                                   return;
                                 }
-                                _notifyDismissStart();
                                 widget.onRead();
                               },
                               style: TextButton.styleFrom(
@@ -1306,10 +1314,7 @@ class _HubExpandPageState extends ConsumerState<_HubExpandPage> {
                                           ? url
                                           : null,
                                       variant: variant,
-                                      onTap: () {
-                                        _notifyDismissStart();
-                                        widget.onOpenEntry(e);
-                                      },
+                                      onTap: () => widget.onOpenEntry(e),
                                     ),
                                   );
                                 },
