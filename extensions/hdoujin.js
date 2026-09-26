@@ -18,11 +18,10 @@
  *   page 14 returns HTTP 400. /books paginates to ~2473 pages and returns an
  *   empty `entries` array past the end rather than an error.
  *
- * Page images: full-resolution files live at
- * /books/data/{id}/{key}/{pageId}/{pageKey}/{index}?crt=… and require the
- * site's Turnstile clearance token (localStorage "clearance"). When that
- * token is already in the in-app WebView profile, pages use it. Otherwise
- * the public thumbnail tier (250–350px WebP) is used.
+ * Page images: the public detail payload only lists 250–350px thumbnails.
+ * Full files come from /books/data after POST /books/detail?crt=, where crt
+ * is issued by auth.hdoujin.org/clearance. The reader prefers 1920px, then
+ * 1280px. Thumbnails are only used when that token cannot be obtained.
  *
  * Tag matching: the site's own exact-anchor syntax ("tag:^term$") is only
  * populated for a handful of tags and cannot be combined with the
@@ -37,7 +36,7 @@ const mangayomiSources = [
     "baseUrl": "https://hdoujin.org",
     "apiUrl": "https://api.hdoujin.org",
     "iconUrl": "https://hdoujin.org/icon.jpg",
-    "version": "1.0.1",
+    "version": "1.0.2",
     "itemType": 0,
     "sourceCodeLanguage": 1,
     "hasCloudflare": false,
@@ -157,7 +156,10 @@ const POPULAR_TAGS = [
   "beauty mark",
 ];
 
-/* One clearance lookup per session. Empty means the WebView has not solved Turnstile. */
+/* Full pages need the site's clearance string. Turnstile's token is exchanged
+ * at auth.hdoujin.org/clearance; the result is cached for the session. */
+const TURNSTILE_SITEKEY = "0x4AAAAAAA4d8pRpLY09lDOq";
+const AUTH_URL = "https://auth.hdoujin.org";
 let _crtToken = null;
 let _crtAttempted = false;
 
@@ -168,14 +170,30 @@ async function _readClearanceToken() {
   if (typeof evaluateJavascriptViaWebview !== "function") return "";
   try {
     const script =
-      "(function(){function send(v){try{window.flutter_inappwebview.callHandler('setResponse', v||'');}catch(e){}}" +
-      "var n=0;var t=setInterval(function(){var v='';try{v=localStorage.getItem('clearance')||'';}catch(e){}" +
-      "n++;if(v||n>=5){clearInterval(t);send(v);}},800);})();";
+      "(function(){" +
+      "function send(v){try{window.flutter_inappwebview.callHandler('setResponse',String(v||''));}catch(e){}}" +
+      "try{var saved=localStorage.getItem('clearance');if(saved){send(saved);return;}}catch(e){}" +
+      "function exchange(token){" +
+      "fetch('" + AUTH_URL + "/clearance',{method:'POST',headers:{Authorization:'Bearer '+token}})" +
+      ".then(function(r){return r.text().then(function(t){if(r.status===201&&t){try{localStorage.setItem('clearance',t);}catch(e){}send(t);}else send('');});})" +
+      ".catch(function(){send('');});" +
+      "}" +
+      "var s=document.createElement('script');" +
+      "s.src='https://challenges.cloudflare.com/turnstile/v0/api.js?onload=komaHDoujinTs&render=explicit';" +
+      "window.komaHDoujinTs=function(){" +
+      "var el=document.createElement('div');document.body.appendChild(el);" +
+      "window.turnstile.render(el,{sitekey:'" + TURNSTILE_SITEKEY + "',callback:exchange,'error-callback':function(){send('');}});" +
+      "};" +
+      "document.head.appendChild(s);" +
+      "setTimeout(function(){send('');},25000);" +
+      "})();";
     const token = await evaluateJavascriptViaWebview(
       "https://hdoujin.org/",
       {
         Referer: "https://hdoujin.org/",
         Origin: "https://hdoujin.org",
+        "User-Agent":
+          "Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36",
       },
       [script],
     );
@@ -672,7 +690,8 @@ class DefaultExtension extends MProvider {
     return body || {};
   }
 
-  /// Full pages from /books/data/... when a clearance token is available.
+  /// Full pages: extra.data is keyed by width (1920, 1280, 0). The data
+  /// response is {base, entries[{path}]} — those files are the readable size.
   async _fullPages(id, key, crt) {
     const extra = await this._postJson(
       "/books/detail/" +
@@ -682,42 +701,50 @@ class DefaultExtension extends MProvider {
         "?crt=" +
         encodeURIComponent(crt),
     );
-    const data = extra && Array.isArray(extra.data) ? extra.data : null;
-    if (!data || !data.length) return [];
-    const headers = {
-      Referer: this.source.baseUrl + "/",
-      Origin: this.source.baseUrl,
-    };
-    const pages = [];
-    for (let i = 0; i < data.length; i++) {
-      const page = data[i];
-      if (!page || page.id === undefined || !page.key) continue;
-      pages.push({
-        index: pages.length,
-        url:
-          this._api() +
-          "/books/data/" +
-          encodeURIComponent(id) +
-          "/" +
-          encodeURIComponent(key) +
-          "/" +
-          encodeURIComponent(page.id) +
-          "/" +
-          encodeURIComponent(page.key) +
-          "/" +
-          i +
-          "?crt=" +
-          encodeURIComponent(crt),
-        headers,
-      });
+    const dataMap = extra && extra.data;
+    if (!dataMap || typeof dataMap !== "object") return [];
+    let chosen = null;
+    let resolution = null;
+    for (const pref of ["1920", "1280", "0"]) {
+      const item = dataMap[pref];
+      if (item && item.id !== undefined && item.key) {
+        chosen = item;
+        resolution = pref;
+        break;
+      }
     }
-    return pages;
+    if (!chosen) {
+      const keys = Object.keys(dataMap);
+      for (let i = 0; i < keys.length; i++) {
+        const item = dataMap[keys[i]];
+        if (item && item.id !== undefined && item.key) {
+          chosen = item;
+          resolution = keys[i];
+          break;
+        }
+      }
+    }
+    if (!chosen || resolution == null) return [];
+    const pack = await this._getJson(
+      "/books/data/" +
+        encodeURIComponent(id) +
+        "/" +
+        encodeURIComponent(key) +
+        "/" +
+        encodeURIComponent(chosen.id) +
+        "/" +
+        encodeURIComponent(chosen.key) +
+        "/" +
+        encodeURIComponent(resolution),
+      { crt: crt },
+    );
+    return this._pagesFromPack(pack);
   }
 
-  _thumbPages(detail) {
-    const thumbs = detail.thumbnails || {};
-    const base = thumbs.base || "";
-    const entries = Array.isArray(thumbs.entries) ? thumbs.entries : [];
+  _pagesFromPack(pack) {
+    if (!pack) return [];
+    const base = pack.base || "";
+    const entries = Array.isArray(pack.entries) ? pack.entries : [];
     const pages = [];
     for (let i = 0; i < entries.length; i++) {
       const path = entries[i] && entries[i].path;
@@ -734,6 +761,10 @@ class DefaultExtension extends MProvider {
     return pages;
   }
 
+  _thumbPages(detail) {
+    return this._pagesFromPack(detail.thumbnails);
+  }
+
   async getPageList(url) {
     const parts = this._readIdKey(url);
     if (!parts.id || !parts.key) {
@@ -747,6 +778,7 @@ class DefaultExtension extends MProvider {
         if (full.length) return full;
       } catch (e) {
         _crtToken = null;
+        _crtAttempted = false;
       }
     }
     const pages = this._thumbPages(detail);

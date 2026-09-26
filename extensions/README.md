@@ -32,10 +32,10 @@ repo index URL. The Pages deploy workflow also rewrites absolute URLs.
 Browse, Popular, search, tags, artists, circles and Random all work against
 `https://api.hdoujin.org`.
 
-**Full-resolution pages** are requested from `/books/data/…?crt=` when the
-in-app WebView already holds HDoujin's Turnstile clearance token
-(`localStorage.clearance`). Without that token the public thumbnail tier
-(250–350px WebP) is used, because the data endpoint returns HTTP 400.
+**Full-resolution pages** come from `/books/data/{id}/{key}/{dataId}/{dataKey}/{width}`
+after the site's clearance exchange. The source asks for 1920px, then 1280px.
+The first chapter in a session can take a few seconds while that token is
+issued. Thumbnails (250–350px) are only a fallback if the token request fails.
 
 Other notes:
 
