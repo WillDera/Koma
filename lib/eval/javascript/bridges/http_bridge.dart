@@ -126,7 +126,7 @@ InterceptedClient _client(List args, String sourceId) {
   );
 }
 
-Future<String> _readBodyCapped(http.ByteStream stream, String url) async {
+Future<Uint8List> _readBodyBytes(http.ByteStream stream, String url) async {
   final builder = BytesBuilder(copy: false);
   var total = 0;
   await for (final chunk in stream) {
@@ -138,7 +138,26 @@ Future<String> _readBodyCapped(http.ByteStream stream, String url) async {
     }
     builder.add(chunk);
   }
-  return utf8.decode(builder.takeBytes(), allowMalformed: true);
+  return builder.takeBytes();
+}
+
+/// `X-Koma-Body: base64` asks for the raw response bytes, so binary indexes
+/// (for example `.nozomi`) are not corrupted by a UTF-8 decode. The flag is
+/// not forwarded to the origin.
+bool _consumeBinaryFlag(Map<String, String>? headers) {
+  if (headers == null) return false;
+  String? value;
+  final drop = <String>[];
+  headers.forEach((key, val) {
+    if (key.toLowerCase() == 'x-koma-body') {
+      value = val;
+      drop.add(key);
+    }
+  });
+  for (final key in drop) {
+    headers.remove(key);
+  }
+  return value?.toLowerCase() == 'base64';
 }
 
 Future<String> _toHttpResponse(
@@ -150,6 +169,7 @@ Future<String> _toHttpResponse(
   final headers = (args[3] as Map?)?.map(
     (k, v) => MapEntry(k.toString(), v.toString()),
   );
+  final binary = _consumeBinaryFlag(headers);
   final body = args.length >= 5
       ? args[4] is List
             ? args[4] as List
@@ -176,7 +196,10 @@ Future<String> _toHttpResponse(
   }
 
   final streamed = await client.send(request);
-  final bodyStr = await _readBodyCapped(streamed.stream, url);
+  final bytes = await _readBodyBytes(streamed.stream, url);
+  final bodyStr = binary
+      ? base64Encode(bytes)
+      : utf8.decode(bytes, allowMalformed: true);
   return jsonEncode({
     'body': bodyStr,
     'headers': streamed.headers,

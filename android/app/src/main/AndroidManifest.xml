@@ -23,7 +23,7 @@
     <application
         android:label="Koma"
         android:name=".KomaApplication"
-        android:icon="@mipmap/launcher_icon"
+        android:icon="@mipmap/ic_launcher_hon"
         android:requestLegacyExternalStorage="true"
         android:usesCleartextTraffic="true">
         <activity

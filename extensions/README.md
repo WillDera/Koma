@@ -23,6 +23,7 @@ Until Pages is enabled, the same files work from raw GitHub:
 | `index.json` / `index.min.json` | Catalog (`{ "name", "extensions": [...] }`) |
 | `novelbuddy.js` | Novel source (itemType 2) |
 | `hdoujin.js` | Doujin gallery source (itemType 0, NSFW) |
+| `hitomi.js` | Hitomi.la gallery source (itemType 0, NSFW) |
 
 `sourceCodeUrl` may be relative (`novelbuddy.js`); Koma resolves it against the
 repo index URL. The Pages deploy workflow also rewrites absolute URLs.
@@ -54,4 +55,21 @@ Other notes:
 - `Include Tags` / `Exclude Tags` map to HDoujin's Male / Female / Mixed /
   Other namespace facets and render as a combined Ignore / Include / Exclude
   list.
+
+## Hitomi
+
+English galleries from [hitomi.la](https://hitomi.la). Popular / Latest use
+`.nozomi` int32 indexes on `ltn.gold-usergeneratedcontent.net`; the HTTP bridge
+returns those as base64 (`X-Koma-Body: base64`) so the bytes stay intact.
+
+- **Popular** → today's English popular index. **Latest** → full English index.
+- **Catalog** filter (search with an empty query): Latest, Popular Today /
+  Week / Month / Year / All.
+- **Random** → shuffled page from Popular Year.
+- **Artist / Series / Tag / Character** text filters use Hitomi slugs
+  (`female:glasses`, `artist:name`, etc.). A bare search query is treated as a
+  tag; `artist:…` / `series:…` / `character:…` / `tag:…` prefixes work; a
+  numeric query opens that gallery id.
+- Reader pages prefer AVIF, then WebP, then the original file, using Hitomi's
+  `gg.js` subdomain math. List covers come from galleryblock thumbnails.
 

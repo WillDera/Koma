@@ -28,6 +28,20 @@
       "sourceCodeUrl": "hdoujin.js",
       "hasCloudflare": false,
       "isNsfw": true
+    },
+    {
+      "id": "koma.hitomi",
+      "name": "Hitomi",
+      "lang": "en",
+      "baseUrl": "https://hitomi.la",
+      "apiUrl": "https://ltn.gold-usergeneratedcontent.net",
+      "iconUrl": "https://ltn.gold-usergeneratedcontent.net/favicon-192x192.png",
+      "version": "1.0.0",
+      "itemType": 0,
+      "sourceCodeLanguage": 1,
+      "sourceCodeUrl": "hitomi.js",
+      "hasCloudflare": false,
+      "isNsfw": true
     }
   ]
 }

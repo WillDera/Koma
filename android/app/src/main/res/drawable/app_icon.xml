@@ -2,5 +2,5 @@
      resolves icons as "drawable" resources, so reference the launcher mipmap
      here (the raw png in mipmap/ cannot be referenced directly). -->
 <bitmap xmlns:android="http://schemas.android.com/apk/res/android"
-    android:src="@mipmap/launcher_icon"
+    android:src="@mipmap/ic_launcher_hon"
     android:gravity="center" />
