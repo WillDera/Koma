@@ -9,6 +9,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:crypto/crypto.dart';
+import '../../../../../../widgets/page_download_meter.dart';
 import 'coordinate_transformer.dart';
 import 'ffi_image_decoder.dart';
 import 'subsampling_image_painter.dart';
@@ -1500,14 +1501,10 @@ class _SubsamplingScaleImageViewState extends State<SubsamplingScaleImageView>
 
           // Default UI
           return switch (_loadState) {
-            LoadState.loading => Center(
-              child: _loadingProgress?.expectedTotalBytes != null
-                  ? CircularProgressIndicator(
-                      value:
-                          _loadingProgress!.cumulativeBytesLoaded /
-                          _loadingProgress!.expectedTotalBytes!,
-                    )
-                  : const CircularProgressIndicator(),
+            LoadState.loading => PageDownloadMeter(
+              cumulativeBytes:
+                  _loadingProgress?.cumulativeBytesLoaded ?? 0,
+              expectedTotalBytes: _loadingProgress?.expectedTotalBytes,
             ),
             LoadState.failed => GestureDetector(
               onTap: widget.onTap,

@@ -23,7 +23,7 @@ class NewChapterCountBadge extends StatelessWidget {
       ),
       decoration: BoxDecoration(
         color: c.accent,
-        borderRadius: BorderRadius.circular(10),
+        borderRadius: BorderRadius.circular(6),
         border: Border.all(
           color: Colors.white.withValues(alpha: 0.6),
           width: 0.8,

@@ -35,6 +35,7 @@ import '../../eval/models/m_chapter.dart';
 import '../../core/services/source_webview_bridge.dart';
 import '../../core/utils/chapter_memo.dart';
 import '../../core/utils/chapter_recognition.dart';
+import '../../core/utils/continue_chapter.dart';
 import '../../core/utils/image_cache.dart';
 import '../../core/utils/image_headers.dart';
 import '../../core/utils/json_coerce.dart';
@@ -2313,11 +2314,35 @@ class _MangaDetailScreenState extends ConsumerState<MangaDetailScreen> {
     );
   }
 
-  /// First in-progress chapter, else first unread, else first in list.
-  Map<String, dynamic>? _continueChapter(
+  /// Resume target from DB reading streak — not display-list first-unread.
+  ///
+  /// Falls back to the filtered list only when chapters are not yet persisted.
+  Future<Map<String, dynamic>?> _continueChapter(
     List<Map<String, dynamic>> chapters,
-  ) {
+  ) async {
     if (chapters.isEmpty) return null;
+    final detail = ref.read(mangaDetailProvider);
+    final mangaId = detail.mangaId;
+    if (mangaId != null) {
+      final dbChapters =
+          await ref.read(repositoriesProvider).manga.getMangaChapters(mangaId);
+      if (dbChapters.isNotEmpty) {
+        final target = continueReadTargetChapter(
+          dbChapters,
+          mangaTitle: widget.title,
+        );
+        for (final ch in chapters) {
+          if ((ch['url'] as String? ?? '') == target.url) return ch;
+        }
+        return {
+          'url': target.url,
+          'name': target.name,
+          'is_read': target.isRead,
+          'last_page_read': target.lastPageRead,
+          'scroll_position': target.scrollPosition,
+        };
+      }
+    }
     Map<String, dynamic>? inProgress;
     Map<String, dynamic>? firstUnread;
     for (final ch in chapters) {
@@ -2334,13 +2359,12 @@ class _MangaDetailScreenState extends ConsumerState<MangaDetailScreen> {
     return inProgress ?? firstUnread ?? chapters.first;
   }
 
-  bool _hasContinueProgress(List<Map<String, dynamic>> chapters) {
-    for (final ch in chapters) {
-      if (asIntOr(ch['last_page_read']) > 0) return true;
-      if (((ch['scroll_position'] as num?)?.toDouble() ?? 0) > 0) return true;
-      if (ch['is_read'] as bool? ?? false) return true;
-    }
-    return false;
+  Future<void> _openContinueReading(
+    List<Map<String, dynamic>> chapters,
+  ) async {
+    final ch = await _continueChapter(chapters);
+    if (ch == null || !mounted) return;
+    await _openChapter(ch);
   }
 
   Future<void> _openChapter(Map<String, dynamic> ch) async {
@@ -2870,9 +2894,7 @@ class _MangaDetailScreenState extends ConsumerState<MangaDetailScreen> {
       );
     }
     final releaseCycle = _releaseCycleFromChapters(detail.chapters);
-    final continueCh = _continueChapter(filteredChapters);
-    final readLabel =
-        _hasContinueProgress(filteredChapters) ? 'Continue' : 'Read';
+    final readLabel = 'Continue';
     final showBulkBar =
         _chapterSelectMode && _selectedChapterUrls.isNotEmpty;
     final selectedOnly = showBulkBar ? _selectedChapters() : const <Map<String, dynamic>>[];
@@ -2905,7 +2927,9 @@ class _MangaDetailScreenState extends ConsumerState<MangaDetailScreen> {
         markPreviousMode: singleSelected != null,
         readLabel: readLabel,
         inLibrary: _inLibrary,
-        onRead: continueCh == null ? null : () => _openChapter(continueCh),
+        onRead: filteredChapters.isEmpty
+            ? null
+            : () => _openContinueReading(filteredChapters),
         onLibrary: _inLibrary ? _removeFromLibrary : _addToLibrary,
         onDownload: detail.offlineMode ? null : _showDownloadDialog,
         onBulkMarkRead: _bulkMarkSelectedRead,

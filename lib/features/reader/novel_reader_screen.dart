@@ -381,17 +381,26 @@ class _NovelReaderScreenState extends ConsumerState<NovelReaderScreen> {
     }
   }
 
+  /// Extensions return chapters newest-first (lowest index = newest).
+  /// Reading order is the reverse: highest index → oldest chapter first.
+  List<MangaChapter> get _readingOrderChapters {
+    final sorted = List<MangaChapter>.from(_chapters)
+      ..sort((a, b) => b.index.compareTo(a.index));
+    return sorted;
+  }
+
   int get _chapterIndex {
     if (_chapterDbId == null) return -1;
-    return _chapters.indexWhere((c) => c.id == _chapterDbId);
+    return _readingOrderChapters.indexWhere((c) => c.id == _chapterDbId);
   }
 
   Future<void> _goAdjacent(int delta) async {
+    final ordered = _readingOrderChapters;
     final i = _chapterIndex;
     final next = i + delta;
-    if (i < 0 || next < 0 || next >= _chapters.length) return;
+    if (i < 0 || next < 0 || next >= ordered.length) return;
     await _flushScroll();
-    final ch = _chapters[next];
+    final ch = ordered[next];
     if (!mounted) return;
     context.pushReplacementNamed(
       Routes.novelReader,
@@ -409,7 +418,8 @@ class _NovelReaderScreenState extends ConsumerState<NovelReaderScreen> {
   }
 
   Future<void> _openChapterList() async {
-    if (_chapters.isEmpty) return;
+    final ordered = _readingOrderChapters;
+    if (ordered.isEmpty) return;
     final selected = await showModalBottomSheet<MangaChapter>(
       context: context,
       isScrollControlled: true,
@@ -420,9 +430,9 @@ class _NovelReaderScreenState extends ConsumerState<NovelReaderScreen> {
           child: SizedBox(
             height: MediaQuery.sizeOf(ctx).height * 0.6,
             child: ListView.builder(
-              itemCount: _chapters.length,
+              itemCount: ordered.length,
               itemBuilder: (_, i) {
-                final ch = _chapters[i];
+                final ch = ordered[i];
                 final active = ch.id == _chapterDbId;
                 return ListTile(
                   selected: active,
@@ -648,7 +658,7 @@ class _NovelReaderScreenState extends ConsumerState<NovelReaderScreen> {
     final pillPrefs = ref.watch(textProgressPillPrefsProvider);
     final i = _chapterIndex;
     final canPrev = i > 0;
-    final canNext = i >= 0 && i < _chapters.length - 1;
+    final canNext = i >= 0 && i < _readingOrderChapters.length - 1;
     final hasSelection =
         _selectedText != null && _selectedText!.trim().isNotEmpty;
     final showBottomBar = _chromeVisible && !hasSelection;

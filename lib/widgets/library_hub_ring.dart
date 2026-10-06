@@ -7,13 +7,12 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../core/models/manga.dart';
-import '../core/models/manga_chapter.dart';
 import '../core/providers.dart';
 import '../core/recommendations/library_hub_models.dart';
 import '../core/recommendations/library_hub_providers.dart';
 import '../core/recommendations/koma_catalog_source.dart';
 import '../core/recommendations/recommendation_navigation.dart';
-import '../core/utils/chapter_recognition.dart';
+import '../core/utils/continue_chapter.dart';
 import '../core/utils/cached_network.dart';
 import '../core/utils/image_cache.dart';
 import '../core/utils/image_headers.dart';
@@ -26,6 +25,7 @@ import '../theme/tokens/app_spacing.dart';
 import 'animated_press.dart';
 import 'catalog_card_layout.dart';
 import 'catalog_cover_card.dart';
+import 'new_chapter_badge.dart';
 import 'screen_chrome.dart';
 import 'toast.dart';
 
@@ -452,12 +452,17 @@ class _LibraryHubRingState extends ConsumerState<LibraryHubRing>
     final scale = 0.78 + 0.22 * depth;
     final opacity = 0.55 + 0.45 * depth;
     final y = (1 - depth) * 10;
+    final mangaId = face.coverEntry?.mangaRef?.id;
+    final newChapterCount = mangaId == null
+        ? 0
+        : (ref.watch(libraryProvider).newChapters[mangaId] ?? 0);
 
     Widget card = _HubSectionCard(
       face: face,
       width: _cardW,
       height: _cardH,
       cover: cover,
+      newChapterCount: newChapterCount,
     );
     if (onTap != null) {
       card = Material(
@@ -535,12 +540,14 @@ class _HubSectionCard extends StatelessWidget {
     required this.width,
     required this.height,
     this.cover,
+    this.newChapterCount = 0,
   });
 
   final LibraryHubFace face;
   final double width;
   final double height;
   final ImageProvider? cover;
+  final int newChapterCount;
 
   @override
   Widget build(BuildContext context) {
@@ -578,6 +585,12 @@ class _HubSectionCard extends StatelessWidget {
                   color: c.textTertiary,
                   size: 40,
                 ),
+              ),
+            if (newChapterCount > 0)
+              Positioned(
+                top: 8,
+                right: 8,
+                child: NewChapterCountBadge(count: newChapterCount),
               ),
             Positioned(
               left: 0,
@@ -728,157 +741,6 @@ Future<void> openLibraryHubEntry(
   }
 }
 
-/// Resume the furthest chapter in the user's real reading run.
-///
-/// Progress is clustered by chapter number so a stray open of the latest
-/// release (ch 243) cannot override having read through ch 1–17.
-MangaChapter _hubReadTargetChapter(List<MangaChapter> chapters, {String? mangaTitle}) {
-  assert(chapters.isNotEmpty);
-  final title = mangaTitle ?? '';
-
-  double numberOf(MangaChapter ch) {
-    if (ch.isRecognizedNumber && ch.chapterNumber >= 0) {
-      return ch.chapterNumber;
-    }
-    return ChapterRecognition.parseFromName(title, ch.name);
-  }
-
-  final progressed = <MangaChapter>[
-    for (final ch in chapters)
-      if (ch.isRead ||
-          ch.lastPageRead > 0 ||
-          ch.scrollPosition > 0 ||
-          ch.readAt != null)
-        ch,
-  ];
-
-  if (progressed.isEmpty) {
-    return _hubChapterOne(chapters, title);
-  }
-
-  // Sort by resolved chapter number; fall back to index for unknowns.
-  final ranked = [...progressed]..sort((a, b) {
-      final na = numberOf(a);
-      final nb = numberOf(b);
-      final aOk = ChapterRecognition.isRecognized(na);
-      final bOk = ChapterRecognition.isRecognized(nb);
-      if (aOk && bOk && na != nb) return na.compareTo(nb);
-      if (aOk && !bOk) return -1;
-      if (!aOk && bOk) return 1;
-      return a.index.compareTo(b.index);
-    });
-
-  // Longest contiguous run by chapter number — the actual reading streak.
-  // A single peeked latest chapter is a run of length 1 and loses to 1–17.
-  var bestStart = 0;
-  var bestLen = 1;
-  var runStart = 0;
-  for (var i = 1; i < ranked.length; i++) {
-    final prev = numberOf(ranked[i - 1]);
-    final cur = numberOf(ranked[i]);
-    final contiguous = ChapterRecognition.isRecognized(prev) &&
-        ChapterRecognition.isRecognized(cur) &&
-        (cur - prev) <= 1.5 &&
-        (cur - prev) >= -0.01;
-    // Also treat same-index neighbors without numbers as contiguous.
-    final indexContiguous = !ChapterRecognition.isRecognized(prev) &&
-        !ChapterRecognition.isRecognized(cur) &&
-        (ranked[i].index - ranked[i - 1].index).abs() <= 1;
-    if (contiguous || indexContiguous) {
-      final len = i - runStart + 1;
-      if (len > bestLen) {
-        bestLen = len;
-        bestStart = runStart;
-      }
-    } else {
-      runStart = i;
-      if (1 > bestLen) {
-        bestLen = 1;
-        bestStart = i;
-      }
-    }
-  }
-  final runEnd = bestStart + bestLen - 1;
-  final run = ranked.sublist(bestStart, runEnd + 1);
-
-  // Furthest chapter in the winning run (highest resolved number).
-  MangaChapter frontier = run.first;
-  var frontierNum = numberOf(frontier);
-  var anyNumbered = ChapterRecognition.isRecognized(frontierNum);
-  for (final ch in run.skip(1)) {
-    final n = numberOf(ch);
-    if (ChapterRecognition.isRecognized(n)) {
-      if (!anyNumbered || n >= frontierNum) {
-        frontier = ch;
-        frontierNum = n;
-        anyNumbered = true;
-      }
-    }
-  }
-  if (!anyNumbered) {
-    // Newest-first lists: lower index = later chapter.
-    final sample = [
-      for (final ch in chapters)
-        if (ChapterRecognition.isRecognized(numberOf(ch))) ch,
-    ]..sort((a, b) => a.index.compareTo(b.index));
-    final newestFirst = sample.length >= 2 &&
-        numberOf(sample.first) > numberOf(sample.last);
-    frontier = newestFirst
-        ? run.reduce((a, b) => a.index <= b.index ? a : b)
-        : run.reduce((a, b) => a.index >= b.index ? a : b);
-  }
-
-  // If the frontier chapter is fully read, prefer an in-progress chapter
-  // immediately after it when present.
-  if (frontier.isRead) {
-    final frontierNum = numberOf(frontier);
-    MangaChapter? next;
-    for (final ch in chapters) {
-      if (ch.isRead) continue;
-      if (ch.lastPageRead <= 0 && ch.scrollPosition <= 0) continue;
-      final n = numberOf(ch);
-      if (!ChapterRecognition.isRecognized(frontierNum) ||
-          !ChapterRecognition.isRecognized(n)) {
-        continue;
-      }
-      final gap = n - frontierNum;
-      if (gap >= -0.01 && gap <= 1.01) {
-        if (next == null || n >= numberOf(next)) next = ch;
-      }
-    }
-    if (next != null) return next;
-  }
-  return frontier;
-}
-
-MangaChapter _hubChapterOne(List<MangaChapter> chapters, String mangaTitle) {
-  MangaChapter? best;
-  var bestNum = double.infinity;
-  for (final ch in chapters) {
-    var n = ch.isRecognizedNumber && ch.chapterNumber >= 0
-        ? ch.chapterNumber
-        : ChapterRecognition.parseFromName(mangaTitle, ch.name);
-    if (!ChapterRecognition.isRecognized(n) || n <= 0) continue;
-    if (n < bestNum) {
-      bestNum = n;
-      best = ch;
-    }
-  }
-  if (best != null) return best;
-
-  // Detect newest-first vs oldest-first via recognized numbers when possible.
-  final numbered = [
-    for (final ch in chapters)
-      if (ch.isRecognizedNumber && ch.chapterNumber >= 0) ch,
-  ]..sort((a, b) => a.index.compareTo(b.index));
-  final indexFollowsNumber = numbered.length < 2 ||
-      numbered.first.chapterNumber <= numbered.last.chapterNumber;
-  if (indexFollowsNumber) {
-    return chapters.reduce((a, b) => a.index <= b.index ? a : b);
-  }
-  return chapters.reduce((a, b) => a.index >= b.index ? a : b);
-}
-
 Future<void> _openMangaContinue(
   BuildContext context,
   WidgetRef ref,
@@ -901,7 +763,7 @@ Future<void> _openMangaContinue(
     return;
   }
 
-  final target = _hubReadTargetChapter(chapters, mangaTitle: manga.name);
+  final target = continueReadTargetChapter(chapters, mangaTitle: manga.name);
 
   if (ref.read(libraryProvider).isNovelSource(manga.sourceId)) {
     context.pushNamed(
@@ -1299,6 +1161,10 @@ class _HubExpandPageState extends ConsumerState<_HubExpandPage> {
                                   final e = entries[i];
                                   final image = _entryCover(e);
                                   final url = hubCoverUrl(e);
+                                  final mangaId = e.mangaRef?.id;
+                                  final newChapterCount = mangaId == null
+                                      ? 0
+                                      : (library.newChapters[mangaId] ?? 0);
                                   return StaggeredFadeScale(
                                     index: i,
                                     duration: const Duration(milliseconds: 520),
@@ -1314,6 +1180,9 @@ class _HubExpandPageState extends ConsumerState<_HubExpandPage> {
                                           ? url
                                           : null,
                                       variant: variant,
+                                      newChapterCount: newChapterCount,
+                                      showNewChapterBadge:
+                                          library.showUnreadBadge,
                                       onTap: () => widget.onOpenEntry(e),
                                     ),
                                   );

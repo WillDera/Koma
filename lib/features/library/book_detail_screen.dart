@@ -163,7 +163,7 @@ class BookDetailScreen extends ConsumerWidget {
       bottomNavigationBar: loadedBook == null
           ? null
           : _StickyReadBar(
-              label: loadedBook.progress > 0 ? 'Continue' : 'Read',
+              label: 'Continue',
               onPressed: () => openBookReader(
                 context,
                 bookId: loadedBook.id,

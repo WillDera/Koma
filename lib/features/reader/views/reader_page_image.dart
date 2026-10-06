@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 
 import '../../../core/utils/custom_extended_image_provider.dart';
+import '../../../widgets/page_download_meter.dart';
 import '../models/page_data.dart';
 
 /// Shared image renderer for a single manga page. Used by both the paged
@@ -25,6 +26,15 @@ class ReaderPageImage extends StatelessWidget {
     this.cropBorders = false,
     this.onRetry,
   });
+
+  Widget _loadingMeter(ImageChunkEvent? progress, {required bool webtoonBox}) {
+    final meter = PageDownloadMeter(
+      cumulativeBytes: progress?.cumulativeBytesLoaded ?? 0,
+      expectedTotalBytes: progress?.expectedTotalBytes,
+    );
+    if (!webtoonBox) return meter;
+    return AspectRatio(aspectRatio: 16 / 9, child: meter);
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -56,12 +66,7 @@ class ReaderPageImage extends StatelessWidget {
         fit: BoxFit.contain,
         width: double.infinity,
         loadingBuilder: (_, child, progress) => progress != null
-            ? const AspectRatio(
-                aspectRatio: 16 / 9,
-                child: Center(
-                  child: CircularProgressIndicator(color: Colors.white54),
-                ),
-              )
+            ? _loadingMeter(progress, webtoonBox: true)
             : child,
         errorBuilder: (_, _, _) => _retryColumn(),
       );
@@ -90,9 +95,7 @@ class ReaderPageImage extends StatelessWidget {
       width: double.infinity,
       height: double.infinity,
       loadingBuilder: (_, child, progress) => progress != null
-          ? const Center(
-              child: CircularProgressIndicator(color: Colors.white54),
-            )
+          ? _loadingMeter(progress, webtoonBox: false)
           : child,
       errorBuilder: (_, _, _) => _retryColumn(),
     );
