@@ -250,6 +250,7 @@ class LibraryNotifier extends Notifier<LibraryState> {
       final mangas = await repos.manga.getMangasInLibrary();
       final categories = await repos.categories.getCategories();
       final groups = await repos.groups.getAllGroups();
+      await repos.manga.backfillRecentNewChapters();
       final newChapters = await repos.manga.countNewChaptersByManga();
       final hiddenBooks = await HiddenTitlesPrefs.hiddenBookIds();
       final visibleMangas = [

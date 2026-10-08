@@ -928,6 +928,9 @@ class _MangaDetailScreenState extends ConsumerState<MangaDetailScreen> {
         if (c.url.isNotEmpty) c.url.trim(): c,
     };
 
+    var added = 0;
+    final hadLibraryChapters = existingByUrl.isNotEmpty && manga.inLibrary;
+    final fetchedAt = DateTime.now().millisecondsSinceEpoch;
     final merged = <MangaChapter>[];
     final mangaTitle = manga.name;
     for (var i = 0; i < chapters.length; i++) {
@@ -972,12 +975,18 @@ class _MangaDetailScreenState extends ConsumerState<MangaDetailScreen> {
             index: i,
             sourceChapterNumber: sourceNum,
             memo: enrichedMemo,
+            isOpened: false,
+            dateFetch: hadLibraryChapters ? fetchedAt : 0,
           ),
         );
+        if (hadLibraryChapters) added++;
       }
     }
     await repos.manga.deleteMangaChapters(mangaId);
     await repos.manga.insertMangaChapters(mangaId, merged);
+    if (added > 0) {
+      ref.read(libraryProvider.notifier).loadBooks();
+    }
   }
 
   /// Applies manga metadata to local state during build (called from
@@ -2919,27 +2928,30 @@ class _MangaDetailScreenState extends ConsumerState<MangaDetailScreen> {
           );
     final mangaRecItems = mangaRecs?.asData?.value.items ?? const [];
 
+    final actionBar = _KenjiDetailButtonGroup(
+      c: c,
+      bulkMode: showBulkBar,
+      markPreviousMode: singleSelected != null,
+      readLabel: readLabel,
+      inLibrary: _inLibrary,
+      onRead: filteredChapters.isEmpty
+          ? null
+          : () => _openContinueReading(filteredChapters),
+      onLibrary: _inLibrary ? _removeFromLibrary : _addToLibrary,
+      onDownload: detail.offlineMode ? null : _showDownloadDialog,
+      onBulkMarkRead: _bulkMarkSelectedRead,
+      onBulkDownload: detail.offlineMode ? null : _bulkDownloadSelected,
+      onBulkDelete: _bulkDeleteSelectedDownloads,
+      onMarkPrevious: singleSelected == null
+          ? null
+          : () => _markPreviousAsRead(singleSelected, filteredChapters),
+    );
+
     final scaffold = Scaffold(
       backgroundColor: c.bg,
-      bottomNavigationBar: _KenjiDetailButtonGroup(
-        c: c,
-        bulkMode: showBulkBar,
-        markPreviousMode: singleSelected != null,
-        readLabel: readLabel,
-        inLibrary: _inLibrary,
-        onRead: filteredChapters.isEmpty
-            ? null
-            : () => _openContinueReading(filteredChapters),
-        onLibrary: _inLibrary ? _removeFromLibrary : _addToLibrary,
-        onDownload: detail.offlineMode ? null : _showDownloadDialog,
-        onBulkMarkRead: _bulkMarkSelectedRead,
-        onBulkDownload: detail.offlineMode ? null : _bulkDownloadSelected,
-        onBulkDelete: _bulkDeleteSelectedDownloads,
-        onMarkPrevious: singleSelected == null
-            ? null
-            : () => _markPreviousAsRead(singleSelected, filteredChapters),
-      ),
-      body: detail.details != null
+      body: Stack(
+        children: [
+          detail.details != null
           ? RefreshIndicator(
               onRefresh: () => _refreshFromSource(force: true),
               child: CustomScrollView(
@@ -3381,7 +3393,7 @@ class _MangaDetailScreenState extends ConsumerState<MangaDetailScreen> {
                         ),
                       )
                     : SliverPadding(
-                        padding: const EdgeInsets.only(bottom: 24),
+                        padding: const EdgeInsets.only(bottom: 120),
                         sliver: SliverList.builder(
                           // Chapter rows are cheap; keep-alives + entrance
                           // tickers on hundreds of cells made long novels
@@ -3535,6 +3547,14 @@ class _MangaDetailScreenState extends ConsumerState<MangaDetailScreen> {
               ),
             )
           : const Center(child: Text('Failed to load manga details')),
+          Positioned(
+            left: 0,
+            right: 0,
+            bottom: 0,
+            child: actionBar,
+          ),
+        ],
+      ),
     );
 
     if (!_migrating) return scaffold;
@@ -4631,13 +4651,11 @@ class _KenjiDetailButtonGroup extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final bottom = MediaQuery.of(context).padding.bottom;
-    return Material(
-      color: c.bg,
-      child: Padding(
-        padding: EdgeInsets.fromLTRB(16, 10, 16, 10 + bottom),
-        child: SizedBox(
-          height: 56,
-          child: Row(
+    return Padding(
+      padding: EdgeInsets.fromLTRB(16, 0, 16, 12 + bottom),
+      child: SizedBox(
+        height: 52,
+        child: Row(
             children: markPreviousMode
                 ? [
                     Expanded(
@@ -4756,7 +4774,6 @@ class _KenjiDetailButtonGroup extends StatelessWidget {
                       ),
                     ),
                   ],
-          ),
         ),
       ),
     );
@@ -4790,11 +4807,18 @@ class _KenjiBarButton extends StatelessWidget {
     final bg = filled ? accent : (muted ?? theme.surfaceMuted);
     final color = filled ? onAccent : (fg ?? theme.textPrimary);
     final child = Container(
-      height: 56,
+      height: 52,
       alignment: Alignment.center,
       decoration: BoxDecoration(
         color: bg,
         borderRadius: BorderRadius.circular(999),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.28),
+            blurRadius: 18,
+            offset: const Offset(0, 8),
+          ),
+        ],
       ),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.center,

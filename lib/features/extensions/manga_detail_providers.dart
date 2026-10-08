@@ -89,6 +89,7 @@ final updateMangaDetailProvider =
             if (c.url.isNotEmpty) c.url.trim(): c,
         };
 
+        var added = 0;
         final merged = <MangaChapter>[];
         for (var i = 0; i < chapters.length; i++) {
           final ch = chapters[i];
@@ -114,7 +115,8 @@ final updateMangaDetailProvider =
               ),
             );
           } else {
-            // New chapter — insert fresh (id: 0 = auto-increment)
+            // New chapter on a title that already has a chapter list.
+            final stamp = existingByUrl.isNotEmpty && manga.inLibrary;
             merged.add(
               MangaChapter(
                 id: 0,
@@ -126,8 +128,13 @@ final updateMangaDetailProvider =
                 index: i,
                 chapterNumber: recognized,
                 memo: ch.memo,
+                isOpened: false,
+                dateFetch: stamp
+                    ? DateTime.now().millisecondsSinceEpoch
+                    : 0,
               ),
             );
+            if (stamp) added++;
           }
         }
 
@@ -135,6 +142,9 @@ final updateMangaDetailProvider =
         // progress for known ones). This triggers the chapters watch stream.
         await repos.manga.deleteMangaChapters(params.mangaId);
         await repos.manga.insertMangaChapters(params.mangaId, merged);
+        if (added > 0) {
+          ref.read(libraryProvider.notifier).loadBooks();
+        }
       }
     });
 

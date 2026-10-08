@@ -8,6 +8,7 @@ import 'package:go_router/go_router.dart';
 
 import '../core/models/manga.dart';
 import '../core/providers.dart';
+import '../features/library/library_provider.dart';
 import '../core/recommendations/library_hub_models.dart';
 import '../core/recommendations/library_hub_providers.dart';
 import '../core/recommendations/koma_catalog_source.dart';
@@ -452,10 +453,10 @@ class _LibraryHubRingState extends ConsumerState<LibraryHubRing>
     final scale = 0.78 + 0.22 * depth;
     final opacity = 0.55 + 0.45 * depth;
     final y = (1 - depth) * 10;
-    final mangaId = face.coverEntry?.mangaRef?.id;
-    final newChapterCount = mangaId == null
-        ? 0
-        : (ref.watch(libraryProvider).newChapters[mangaId] ?? 0);
+    final library = ref.watch(libraryProvider);
+    final mangaId = _hubMangaId(face.coverEntry, library);
+    final newChapterCount =
+        mangaId == null ? 0 : (library.newChapters[mangaId] ?? 0);
 
     Widget card = _HubSectionCard(
       face: face,
@@ -643,6 +644,22 @@ class _HubSectionCard extends StatelessWidget {
       ),
     );
   }
+}
+
+/// Library manga id for a hub card, including recommendation rows that only
+/// carry a title.
+int? _hubMangaId(LibraryHubEntry? entry, LibraryState library) {
+  final direct = entry?.mangaRef?.id ?? 0;
+  if (direct > 0) return direct;
+  final title = entry?.title.trim().toLowerCase() ?? '';
+  if (title.isEmpty) return null;
+  for (final manga in library.mangas) {
+    if (manga.name.trim().toLowerCase() == title) return manga.id;
+  }
+  for (final manga in library.allMangas) {
+    if (manga.name.trim().toLowerCase() == title) return manga.id;
+  }
+  return null;
 }
 
 /// Opens last-read chapter / reader for a hub entry.
@@ -1161,7 +1178,7 @@ class _HubExpandPageState extends ConsumerState<_HubExpandPage> {
                                   final e = entries[i];
                                   final image = _entryCover(e);
                                   final url = hubCoverUrl(e);
-                                  final mangaId = e.mangaRef?.id;
+                                  final mangaId = _hubMangaId(e, library);
                                   final newChapterCount = mangaId == null
                                       ? 0
                                       : (library.newChapters[mangaId] ?? 0);
@@ -1181,8 +1198,7 @@ class _HubExpandPageState extends ConsumerState<_HubExpandPage> {
                                           : null,
                                       variant: variant,
                                       newChapterCount: newChapterCount,
-                                      showNewChapterBadge:
-                                          library.showUnreadBadge,
+                                      showNewChapterBadge: true,
                                       onTap: () => widget.onOpenEntry(e),
                                     ),
                                   );

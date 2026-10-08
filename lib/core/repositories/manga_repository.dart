@@ -330,6 +330,50 @@ class MangaRepository {
     return map;
   }
 
+  /// Titles already being read sometimes gained chapters without a `dateFetch`
+  /// stamp (detail refresh inserted them as ordinary rows). Stamp a short
+  /// run of unopened chapters past the furthest read/opened chapter so the
+  /// library pill can see them. A long unread backlog is left alone.
+  Future<void> backfillRecentNewChapters() async {
+    final rows = await _isar.mangaChapters.where().findAll();
+    if (rows.isEmpty) return;
+    final byManga = <int, List<i.MangaChapter>>{};
+    for (final row in rows) {
+      byManga.putIfAbsent(row.mangaId, () => []).add(row);
+    }
+    final now = DateTime.now().millisecondsSinceEpoch;
+    final dirty = <i.MangaChapter>[];
+    for (final chapters in byManga.values) {
+      double? frontier;
+      var hasProgress = false;
+      for (final ch in chapters) {
+        if (!ch.isRead && !ch.isOpened) continue;
+        hasProgress = true;
+        if (ch.chapterNumber < 0) continue;
+        frontier = frontier == null
+            ? ch.chapterNumber
+            : (ch.chapterNumber > frontier ? ch.chapterNumber : frontier);
+      }
+      if (!hasProgress || frontier == null) continue;
+      final ahead = [
+        for (final ch in chapters)
+          if (!ch.isOpened &&
+              !ch.isRead &&
+              ch.dateFetch <= 0 &&
+              ch.chapterNumber > frontier)
+            ch,
+      ];
+      if (ahead.isEmpty || ahead.length > 40) continue;
+      for (final ch in ahead) {
+        ch.dateFetch = now;
+        ch.isOpened = false;
+        dirty.add(ch);
+      }
+    }
+    if (dirty.isEmpty) return;
+    await _isar.writeTxn(() => _isar.mangaChapters.putAll(dirty));
+  }
+
   Future<void> deleteMangaChapters(int mangaId) async {
     await _isar.writeTxn(
       () => _isar.mangaChapters.where().mangaIdEqualTo(mangaId).deleteAll(),
