@@ -435,7 +435,17 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> with RouteAware {
         physics: const AlwaysScrollableScrollPhysics(),
         slivers: [
           const SliverToBoxAdapter(child: OneHandSpacer()),
-          SliverToBoxAdapter(child: _header(context, provider)),
+          if (viewingAll && provider.selectionMode)
+            SliverPersistentHeader(
+              pinned: true,
+              delegate: _PinnedSelectionHeaderDelegate(
+                background: context.colors.bg,
+                border: context.colors.border,
+                child: _header(context, provider),
+              ),
+            )
+          else
+            SliverToBoxAdapter(child: _header(context, provider)),
           if (!viewingAll)
             ..._libraryRailsSlivers(context, provider)
           else ...[
@@ -1128,7 +1138,10 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> with RouteAware {
         .where(
           (manga) => _filters.entries.every(
             (entry) =>
-                _matchesFilter(entry.value, _mangaMatches(manga, entry.key)),
+                _matchesFilter(
+                  entry.value,
+                  _mangaMatches(provider, manga, entry.key),
+                ),
           ),
         )
         .toList();
@@ -1172,7 +1185,10 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> with RouteAware {
         .where(
           (manga) => _filters.entries.every(
             (entry) =>
-                _matchesFilter(entry.value, _mangaMatches(manga, entry.key)),
+                _matchesFilter(
+                  entry.value,
+                  _mangaMatches(provider, manga, entry.key),
+                ),
           ),
         )
         .toList();
@@ -1454,13 +1470,19 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> with RouteAware {
     _LibraryFilter.newlyAdded => book.createdAt.isAfter(
       DateTime.now().subtract(const Duration(days: 7)),
     ),
+    _LibraryFilter.newChapters => false,
   };
 
-  bool _mangaMatches(Manga manga, _LibraryFilter filter) => switch (filter) {
+  bool _mangaMatches(
+    LibraryState provider,
+    Manga manga,
+    _LibraryFilter filter,
+  ) => switch (filter) {
     _LibraryFilter.unread => manga.readingStatus == 0,
     _LibraryFilter.newlyAdded => manga.createdAt.isAfter(
       DateTime.now().subtract(const Duration(days: 7)),
     ),
+    _LibraryFilter.newChapters => (provider.newChapters[manga.id] ?? 0) > 0,
   };
 
   bool _matchesFilter(_FilterMode mode, bool applies) => switch (mode) {
@@ -2008,9 +2030,57 @@ String _novelsSectionSubtitle(LibraryState provider) {
 
 enum _LibrarySort { alphabetical, author, progress }
 
-enum _LibraryFilter { unread, newlyAdded }
+enum _LibraryFilter { unread, newlyAdded, newChapters }
 
 enum _FilterMode { none, include, exclude }
+
+/// Pins the multiselect header. [LibraryHeader] in selection mode is
+/// 8 + 38 + 12 (padding, action button, padding).
+class _PinnedSelectionHeaderDelegate extends SliverPersistentHeaderDelegate {
+  _PinnedSelectionHeaderDelegate({
+    required this.child,
+    required this.background,
+    required this.border,
+  });
+
+  final Widget child;
+  final Color background;
+  final Color border;
+
+  static const double _extent = 58;
+
+  @override
+  double get minExtent => _extent;
+
+  @override
+  double get maxExtent => _extent;
+
+  @override
+  Widget build(
+    BuildContext context,
+    double shrinkOffset,
+    bool overlapsContent,
+  ) {
+    return ColoredBox(
+      color: background,
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          border: overlapsContent
+              ? Border(bottom: BorderSide(color: border))
+              : null,
+        ),
+        child: child,
+      ),
+    );
+  }
+
+  @override
+  bool shouldRebuild(covariant _PinnedSelectionHeaderDelegate oldDelegate) {
+    return oldDelegate.background != background ||
+        oldDelegate.border != border ||
+        oldDelegate.child != child;
+  }
+}
 
 /// Owns its [TextEditingController] so cancel/create don't dispose it while
 /// the dialog route is still animating out.
@@ -2165,6 +2235,12 @@ class _LibraryFilterSheet extends StatelessWidget {
               label: 'Newly added',
               mode: filters[_LibraryFilter.newlyAdded] ?? _FilterMode.none,
               onTap: () => onFilterChanged(_LibraryFilter.newlyAdded),
+            ),
+            _FilterOption(
+              icon: Icons.new_releases_outlined,
+              label: 'New chapters',
+              mode: filters[_LibraryFilter.newChapters] ?? _FilterMode.none,
+              onTap: () => onFilterChanged(_LibraryFilter.newChapters),
             ),
             if (categories.isNotEmpty) ...[
               Padding(
