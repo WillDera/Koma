@@ -1183,6 +1183,7 @@ class _HubExpandPageState extends ConsumerState<_HubExpandPage> {
                                       ? 0
                                       : (library.newChapters[mangaId] ?? 0);
                                   return StaggeredFadeScale(
+                                    scope: 'hub-view-more',
                                     index: i,
                                     duration: const Duration(milliseconds: 520),
                                     delayStepMs: 70,

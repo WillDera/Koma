@@ -89,15 +89,16 @@ class _StaggeredEntranceState extends State<StaggeredEntrance>
 
 /// Fade entrance with a capped stagger delay.
 ///
-/// Prefer this for short static lists (settings rows, hero blocks). Do **not**
-/// wrap every cell of a long scrolling list for indices that will animate —
-/// only the first [maxStaggerIndex] items get a ticker; the rest return
-/// [child] with zero animation overhead.
+/// The first time a cell at this scroll depth appears, it fades in. After
+/// that — scrolling back, or returning to the screen — it stays put. Only
+/// the first [maxStaggerIndex] items animate; deeper cells are instant so a
+/// long list does not schedule a ticker per row.
 class StaggeredFadeScale extends StatelessWidget {
   const StaggeredFadeScale({
     super.key,
     required this.child,
     required this.index,
+    this.scope,
     this.duration = const Duration(milliseconds: 420),
     this.scaleBegin = 0.88,
     this.delayStepMs = 55,
@@ -106,6 +107,10 @@ class StaggeredFadeScale extends StatelessWidget {
 
   final Widget child;
   final int index;
+
+  /// Distinguishes sibling lists that share a route (for example Books vs
+  /// Novels rails). When omitted, the route and scroll axis are used.
+  final String? scope;
   final Duration duration;
   final double scaleBegin;
   final int delayStepMs;
@@ -114,12 +119,26 @@ class StaggeredFadeScale extends StatelessWidget {
   /// Cap for list stagger indices (short lists only; see class doc).
   static const int maxStaggerIndex = 8;
 
+  /// Indices that have already played, so recycled cells and route returns
+  /// do not start another ticker.
+  static final Set<String> _played = {};
+
+  static String memoryKey(BuildContext context, int index, String? scope) {
+    if (scope != null && scope.isNotEmpty) return '$scope#$index';
+    final route = ModalRoute.of(context)?.settings.name ?? '';
+    final axis = Scrollable.maybeOf(context)?.position.axis.name ?? 'none';
+    return '$route|$axis#$index';
+  }
+
   @override
   Widget build(BuildContext context) {
     if (index > maxStaggerIndex || MediaQuery.disableAnimationsOf(context)) {
       return child;
     }
+    final key = memoryKey(context, index, scope);
+    if (_played.contains(key)) return child;
     return _StaggeredFadeScaleAnimator(
+      memoryKey: key,
       index: index,
       duration: duration,
       delayStepMs: delayStepMs,
@@ -132,6 +151,7 @@ class StaggeredFadeScale extends StatelessWidget {
 class _StaggeredFadeScaleAnimator extends StatefulWidget {
   const _StaggeredFadeScaleAnimator({
     required this.child,
+    required this.memoryKey,
     required this.index,
     required this.duration,
     required this.delayStepMs,
@@ -139,6 +159,7 @@ class _StaggeredFadeScaleAnimator extends StatefulWidget {
   });
 
   final Widget child;
+  final String memoryKey;
   final int index;
   final Duration duration;
   final int delayStepMs;
@@ -162,6 +183,7 @@ class _StaggeredFadeScaleAnimatorState extends State<_StaggeredFadeScaleAnimator
     _fade = CurvedAnimation(parent: _controller, curve: Curves.easeOut);
     _controller.addStatusListener((status) {
       if (status == AnimationStatus.completed && mounted) {
+        StaggeredFadeScale._played.add(widget.memoryKey);
         setState(() => _done = true);
       }
     });
@@ -176,6 +198,8 @@ class _StaggeredFadeScaleAnimatorState extends State<_StaggeredFadeScaleAnimator
 
   @override
   void dispose() {
+    // Scrolling the cell away counts as having passed it.
+    StaggeredFadeScale._played.add(widget.memoryKey);
     _controller.dispose();
     super.dispose();
   }

@@ -644,6 +644,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> with RouteAware {
                   CatalogCardLayout.gridVariant(provider.cardVariant);
               return MediaRailCover(
                 child: StaggeredFadeScale(
+                  scope: 'library-books',
                   index: i,
                   child: CatalogCoverCard(
                     minimalChrome: provider.minimalCards,
@@ -679,6 +680,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> with RouteAware {
                   CatalogCardLayout.gridVariant(provider.cardVariant);
               return MediaRailCover(
                 child: StaggeredFadeScale(
+                  scope: 'library-novels',
                   index: i,
                   child: CatalogCoverCard(
                     minimalChrome: provider.minimalCards,
@@ -715,6 +717,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> with RouteAware {
                   CatalogCardLayout.gridVariant(provider.cardVariant);
               return MediaRailCover(
                 child: StaggeredFadeScale(
+                  scope: 'library-manga',
                   index: i,
                   child: CatalogCoverCard(
                     minimalChrome: provider.minimalCards,
@@ -760,6 +763,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> with RouteAware {
               return MediaRailCover(
                 width: 128,
                 child: StaggeredFadeScale(
+                  scope: 'library-collections',
                   index: i,
                   child: LibraryGroupStackCard(
                     groupId: g.id,
@@ -2469,6 +2473,7 @@ class _BookShelf extends StatelessWidget {
           ),
           delegate: SliverChildBuilderDelegate(
             (ctx, i) => StaggeredFadeScale(
+              scope: 'library-book-shelf',
               index: i,
               child: _tile(ctx, i, variant),
             ),
@@ -2489,6 +2494,7 @@ class _BookShelf extends StatelessWidget {
           if (index.isOdd) return const SizedBox(height: 8);
           final i = index ~/ 2;
           return StaggeredFadeScale(
+            scope: 'library-book-shelf',
             index: i,
             child: _tile(ctx, i, LibraryCardVariant.list),
           );
@@ -2643,6 +2649,7 @@ class _MangaShelf extends StatelessWidget {
           ),
           delegate: SliverChildBuilderDelegate((ctx, i) {
             return StaggeredFadeScale(
+              scope: 'library-manga-shelf-${formatBadge ?? 'manga'}',
               index: i,
               child: _tile(ctx, i, variant),
             );
@@ -2662,6 +2669,7 @@ class _MangaShelf extends StatelessWidget {
           if (index.isOdd) return const SizedBox(height: 8);
           final i = index ~/ 2;
           return StaggeredFadeScale(
+            scope: 'library-manga-shelf-${formatBadge ?? 'manga'}',
             index: i,
             child: _tile(ctx, i, LibraryCardVariant.list),
           );
