@@ -1,11 +1,8 @@
-import 'dart:async';
-
 import 'package:dynamic_color/dynamic_color.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'core/services/app_lock_service.dart';
-import 'core/services/device_reading_mode.dart';
 import 'core/services/security_prefs.dart';
 import 'core/services/session_memory.dart';
 import 'router/router.dart';
@@ -27,10 +24,7 @@ class _KomaAppState extends ConsumerState<KomaApp> with WidgetsBindingObserver {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _syncSecureScreen();
-      _enterReadingMode(sepia: true);
-    });
+    WidgetsBinding.instance.addPostFrameCallback((_) => _syncSecureScreen());
   }
 
   @override
@@ -50,7 +44,6 @@ class _KomaAppState extends ConsumerState<KomaApp> with WidgetsBindingObserver {
     // inactive and would immediately re-lock (or fight the enable toggle).
     if (state == AppLifecycleState.paused ||
         state == AppLifecycleState.hidden) {
-      unawaited(DeviceReadingMode.disable());
       // Release live bitmaps while backgrounded so IndexedStack tabs don't
       // pin decoded covers for the whole session.
       SessionMemory.trimAfterFrame();
@@ -61,19 +54,7 @@ class _KomaAppState extends ConsumerState<KomaApp> with WidgetsBindingObserver {
     }
     if (state == AppLifecycleState.resumed) {
       _syncSecureScreen();
-      _enterReadingMode(sepia: false);
     }
-  }
-
-  /// Screen stays awake, and Android night display turns on when allowed.
-  /// Sepia is applied when Koma is opened, not again on every resume, so a
-  /// reader who turns it off during a session keeps that choice.
-  void _enterReadingMode({required bool sepia}) {
-    unawaited(DeviceReadingMode.enable());
-    if (!sepia) return;
-    final theme = ref.read(themeProvider);
-    if (theme.sepiaMode) return;
-    unawaited(ref.read(themeProvider.notifier).setSepiaMode(true));
   }
 
   Future<void> _syncSecureScreen() async {
