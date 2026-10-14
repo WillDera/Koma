@@ -12,13 +12,13 @@ import '../../eval/models/filter_list.dart';
 import '../../eval/models/m_manga.dart';
 import '../../eval/models/m_source.dart';
 import '../../theme/app_theme.dart';
-import '../../theme/tokens/app_motion.dart';
 import '../../widgets/catalog_card_layout.dart';
 import '../../widgets/catalog_cover_card.dart';
 import '../../widgets/empty_state.dart';
 import '../../widgets/horizontal_tab_swipe.dart';
 import '../../widgets/library_book_card.dart';
 import '../../theme/app_icons.dart';
+import '../../theme/tokens/app_motion.dart';
 import '../../widgets/page_transitions.dart';
 import '../../widgets/screen_chrome.dart';
 import 'catalog_multi_select.dart';
@@ -513,18 +513,7 @@ class _SourceBrowseScreenState extends ConsumerState<SourceBrowseScreen>
       final existing = await repos.manga.getMangaByKey(widget.sourceId, m.url);
       if (existing != null) {
         if (!mounted) return;
-        Navigator.push(
-          context,
-          _scaleFadeRoute(
-            MangaDetailScreen(
-              sourceId: widget.sourceId,
-              url: m.url,
-              title: m.title,
-              manga: existing,
-              memo: m.memo,
-            ),
-          ),
-        );
+        await _openDetail(existing, m);
         return;
       }
       final manga = Manga(
@@ -542,19 +531,25 @@ class _SourceBrowseScreenState extends ConsumerState<SourceBrowseScreen>
       );
       final id = await repos.manga.insertManga(manga);
       if (!mounted) return;
-      Navigator.push(
-        context,
-        _scaleFadeRoute(
-          MangaDetailScreen(
-            sourceId: widget.sourceId,
-            url: m.url,
-            title: m.title,
-            manga: manga.copyWith(id: id),
-            memo: m.memo,
-          ),
-        ),
-      );
+      await _openDetail(manga.copyWith(id: id), m);
     };
+  }
+
+  Future<void> _openDetail(Manga manga, MManga hit) {
+    // See-all is pushed on the Explore tab navigator, which keeps the pill
+    // nav on screen. Open the title on the root navigator so Continue,
+    // library, and download are not floating over that bar.
+    return Navigator.of(context, rootNavigator: true).push<void>(
+      _scaleFadeRoute(
+        MangaDetailScreen(
+          sourceId: widget.sourceId,
+          url: hit.url,
+          title: hit.title,
+          manga: manga,
+          memo: hit.memo ?? manga.memo,
+        ),
+      ),
+    );
   }
 
   Widget _catalogMangaBody({

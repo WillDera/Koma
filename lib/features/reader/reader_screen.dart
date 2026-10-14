@@ -25,6 +25,7 @@ import '../../widgets/text_selection_toolbar.dart';
 import '../../widgets/toast.dart';
 import '../../widgets/tts_controls.dart';
 import '../../widgets/tts_controls_overlay.dart';
+import 'chapter_finish.dart';
 import 'pagination/highlight_range.dart';
 import 'pagination/paginated_reader_body.dart';
 import 'pagination/reading_position.dart';
@@ -151,6 +152,10 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
   /// leftover [readerProvider] chapter (often scrolled to the end) before
   /// the snippet target is applied.
   bool _sessionReady = false;
+  bool _finishEligible = false;
+  bool _finishShowing = false;
+  bool _chapterEndReached = false;
+  int? _finishChapterId;
 
   /// Successful layout-settle frames at the snippet scroll target.
   int _snippetSeekSettleCount = 0;
@@ -491,6 +496,70 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
       _snippetSeekSettleCount = 0;
       _seekScrollForSnippetOrResume();
     }
+    final chapters = _provider?.chapters;
+    if (chapters != null && newIndex >= 0 && newIndex < chapters.length) {
+      unawaited(_armChapterFinish(chapters[newIndex]));
+    }
+  }
+
+  Future<void> _armChapterFinish(Chapter chapter) async {
+    _finishChapterId = chapter.id;
+    _finishEligible = false;
+    _finishShowing = false;
+    _chapterEndReached = false;
+    final key = ChapterFinish.bookKey(chapter.id);
+    await ChapterReadingClock.instance.switchTo(key);
+    final eligible = await ChapterFinish.prepare(
+      key: key,
+      alreadyMarkedRead: chapter.readAt != null,
+    );
+    if (!mounted || _finishChapterId != chapter.id) return;
+    _finishEligible = eligible;
+    if (_chapterEndReached) {
+      unawaited(_maybeCelebrateChapter());
+    }
+    _scheduleChapterEndCheck();
+  }
+
+  void _scheduleChapterEndCheck() {
+    Future<void>.delayed(const Duration(milliseconds: 700), () {
+      if (!mounted || !_usingScrollStyle || !_scrollController.hasClients) {
+        return;
+      }
+      final max = _scrollController.position.maxScrollExtent;
+      final pixels = _scrollController.position.pixels;
+      if (max <= 8 || pixels >= max - 80) {
+        unawaited(_maybeCelebrateChapter());
+      }
+    });
+  }
+
+  Future<void> _maybeCelebrateChapter() async {
+    final id = _finishChapterId;
+    final current = _provider?.currentChapter?.id;
+    if (id == null || current != id || _finishShowing) return;
+    _chapterEndReached = true;
+    if (!_finishEligible) return;
+    _finishEligible = false;
+    _finishShowing = true;
+    final key = ChapterFinish.bookKey(id);
+    final show = await ChapterFinish.consume(key);
+    if (!show || !mounted) {
+      _finishShowing = false;
+      return;
+    }
+    final seconds = await ChapterReadingClock.instance.total(key);
+    if (!mounted) {
+      _finishShowing = false;
+      return;
+    }
+    final number = (_provider?.currentIndex ?? 0) + 1;
+    await showChapterFinishCelebration(
+      context,
+      chapterNumber: number,
+      readingSeconds: seconds,
+    );
+    if (mounted) _finishShowing = false;
   }
 
   bool _didHandleBack = false;
@@ -579,6 +648,12 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
   void dispose() {
     _cancelUiHideTimer();
     _selectionLostTimer?.cancel();
+    final finishId = _finishChapterId;
+    if (finishId != null) {
+      unawaited(
+        ChapterReadingClock.instance.flush(ChapterFinish.bookKey(finishId)),
+      );
+    }
     if (!_didHandleBack) _provider?.stopReadingTimer();
     _ttsProvider?.removeListener(_onTtsChanged);
     _ttsProvider?.dispose();
@@ -634,6 +709,12 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
         }
       }
       _lastScrollOffset = currentOffset;
+      if (_scrollController.hasClients) {
+        final max = _scrollController.position.maxScrollExtent;
+        if (max <= 8 || currentOffset >= max - 80) {
+          unawaited(_maybeCelebrateChapter());
+        }
+      }
     }
     return false;
   }
@@ -852,6 +933,9 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
                 _noteTextProgress(
                   (charOffset / text.length).clamp(0.0, 1.0),
                 );
+                if (pageEnd != null && pageEnd >= text.length - 1) {
+                  unawaited(_maybeCelebrateChapter());
+                }
               }
             },
           ),

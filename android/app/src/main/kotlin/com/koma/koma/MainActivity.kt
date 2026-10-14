@@ -32,9 +32,47 @@ class MainActivity : FlutterFragmentActivity() {
     private var initialOpenFilePath: String? = null
     private var deepLinkChannel: MethodChannel? = null
     private var initialDeepLink: String? = null
+    private var nightDisplayBeforeReading: Boolean? = null
+
+    private fun enableDeviceReadingMode() {
+        window.addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        try {
+            val clazz = Class.forName("android.hardware.display.ColorDisplayManager")
+            val manager = getSystemService(clazz) ?: return
+            val isOn = clazz.getMethod("isNightDisplayActivated").invoke(manager) as Boolean
+            if (nightDisplayBeforeReading == null) {
+                nightDisplayBeforeReading = isOn
+            }
+            if (!isOn) {
+                clazz.getMethod("setNightDisplayActivated", Boolean::class.javaPrimitiveType)
+                    .invoke(manager, true)
+            }
+        } catch (_: Throwable) {
+            // Night display is privileged on most devices. The screen still
+            // stays awake, and the app switches to its sepia reading theme.
+        }
+    }
+
+    private fun disableDeviceReadingMode() {
+        window.clearFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        val previous = nightDisplayBeforeReading ?: return
+        nightDisplayBeforeReading = null
+        try {
+            val clazz = Class.forName("android.hardware.display.ColorDisplayManager")
+            val manager = getSystemService(clazz) ?: return
+            clazz.getMethod("setNightDisplayActivated", Boolean::class.javaPrimitiveType)
+                .invoke(manager, previous)
+        } catch (_: Throwable) {
+        }
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // Keep the display awake while Koma is in front, then release it
+        // when the activity pauses. This is the device reading session.
+        window.addFlags(
+            android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON,
+        )
         captureSearchIntent(intent)
         captureDeepLinkIntent(intent)
         captureOpenFileIntent(intent)
@@ -165,6 +203,22 @@ class MainActivity : FlutterFragmentActivity() {
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
         DalvikRuntimeManager.initialize(applicationContext)
+        MethodChannel(
+            flutterEngine.dartExecutor.binaryMessenger,
+            "com.koma.koma/reading_mode",
+        ).setMethodCallHandler { call, result ->
+            when (call.method) {
+                "enable" -> {
+                    runOnUiThread { enableDeviceReadingMode() }
+                    result.success(null)
+                }
+                "disable" -> {
+                    runOnUiThread { disableDeviceReadingMode() }
+                    result.success(null)
+                }
+                else -> result.notImplemented()
+            }
+        }
         MethodChannel(
             flutterEngine.dartExecutor.binaryMessenger,
             "com.koma.koma/secure_screen",

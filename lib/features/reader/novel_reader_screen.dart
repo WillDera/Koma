@@ -14,6 +14,7 @@ import '../../core/services/security_prefs.dart';
 import '../../core/services/trackers/track_chapter_use_case.dart';
 import '../../core/services/trackers/track_sync_feedback.dart';
 import '../../core/utils/text_extractor.dart';
+import '../../features/reader/chapter_finish.dart';
 import '../../features/reader/pagination/highlight_range.dart';
 import '../../features/reader/text_progress_pill_prefs.dart';
 import '../../features/reader/tts_provider.dart';
@@ -87,6 +88,9 @@ class _NovelReaderScreenState extends ConsumerState<NovelReaderScreen> {
   String? _selectedText;
   int? _selStart;
   late final TtsProvider _tts = TtsProvider();
+  bool _finishEligible = false;
+  bool _finishShowing = false;
+  String? _finishKey;
 
   @override
   void initState() {
@@ -112,6 +116,8 @@ class _NovelReaderScreenState extends ConsumerState<NovelReaderScreen> {
   void dispose() {
     _scrollSaveTimer?.cancel();
     _uiHideTimer?.cancel();
+    final finishKey = _finishKey;
+    if (finishKey != null) unawaited(ChapterReadingClock.instance.flush(finishKey));
     unawaited(_flushScroll());
     _scroll.removeListener(_onScrollTick);
     _scroll.dispose();
@@ -191,9 +197,35 @@ class _NovelReaderScreenState extends ConsumerState<NovelReaderScreen> {
     _lastScrollOffset = pixels;
 
     _scheduleScrollSave();
-    if (pixels >= _scroll.position.maxScrollExtent - 120) {
+    final max = _scroll.position.maxScrollExtent;
+    if (_didRestore && (max <= 8 || pixels >= max - 120)) {
       unawaited(_markReadAndSync());
+      unawaited(_maybeCelebrateChapter());
     }
+  }
+
+  Future<void> _maybeCelebrateChapter() async {
+    final key = _finishKey;
+    if (key == null || !_finishEligible || _finishShowing) return;
+    _finishEligible = false;
+    _finishShowing = true;
+    final show = await ChapterFinish.consume(key);
+    if (!show || !mounted) {
+      _finishShowing = false;
+      return;
+    }
+    final seconds = await ChapterReadingClock.instance.total(key);
+    if (!mounted) {
+      _finishShowing = false;
+      return;
+    }
+    final number = _chapterIndex < 0 ? 1 : _chapterIndex + 1;
+    await showChapterFinishCelebration(
+      context,
+      chapterNumber: number,
+      readingSeconds: seconds,
+    );
+    if (mounted) _finishShowing = false;
   }
 
   void _scheduleScrollSave() {
@@ -298,6 +330,12 @@ class _NovelReaderScreenState extends ConsumerState<NovelReaderScreen> {
         _pendingCharOffset = existing?.readingCharOffset;
         if (existing != null && !await SecurityPrefs.isIncognito()) {
           await repos.manga.markMangaChapterOpened(existing.id);
+          _finishKey = ChapterFinish.novelKey(existing.id);
+          await ChapterReadingClock.instance.switchTo(_finishKey!);
+          _finishEligible = await ChapterFinish.prepare(
+            key: _finishKey!,
+            alreadyMarkedRead: existing.isRead,
+          );
         }
         _chapters = await repos.manga.getMangaChapters(widget.mangaId!);
         if (_chapterDbId != null) {
@@ -358,6 +396,18 @@ class _NovelReaderScreenState extends ConsumerState<NovelReaderScreen> {
     });
     _lastScrollOffset = _scroll.position.pixels;
     _resetUiHideTimer();
+    _scheduleChapterEndCheck();
+  }
+
+  void _scheduleChapterEndCheck() {
+    Future<void>.delayed(const Duration(milliseconds: 700), () {
+      if (!mounted || !_scroll.hasClients || !_didRestore) return;
+      final max = _scroll.position.maxScrollExtent;
+      final pixels = _scroll.position.pixels;
+      if (max <= 8 || pixels >= max - 120) {
+        unawaited(_maybeCelebrateChapter());
+      }
+    });
   }
 
   Future<void> _markReadAndSync() async {

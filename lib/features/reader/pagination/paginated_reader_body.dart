@@ -62,6 +62,7 @@ class PaginatedReaderBody extends StatefulWidget {
     this.overrideCharOffset,
     this.onOverrideApplied,
     this.onPositionChanged,
+    this.onChapterEnd,
     this.onChapterChanged,
     this.onSelected,
     this.onSelectionCleared,
@@ -120,6 +121,9 @@ class PaginatedReaderBody extends StatefulWidget {
   })?
   onPositionChanged;
 
+  /// Fires when the visible page is the last page of its chapter.
+  final ValueChanged<int>? onChapterEnd;
+
   /// Fires when a turn crosses into a different chapter.
   final ValueChanged<int>? onChapterChanged;
 
@@ -165,6 +169,7 @@ class _PaginatedReaderBodyState extends State<PaginatedReaderBody> {
   /// Set once the first layout has resolved a resume position, so build knows
   /// whether [_position] is meaningful yet.
   bool _seeded = false;
+  int? _endToken;
 
   /// Guards against re-seeking to a chapter we ourselves just turned into.
   int _lastHostChapter = -1;
@@ -266,6 +271,7 @@ class _PaginatedReaderBodyState extends State<PaginatedReaderBody> {
       pageEnd: cursor.pageAt(step).end,
     );
     _logCurrentPageImages(cursor);
+    _notifyChapterEnd(cursor);
   }
 
   /// Prints absolute paths of every image on the page currently on screen.
@@ -501,6 +507,7 @@ class _PaginatedReaderBodyState extends State<PaginatedReaderBody> {
               cursor.offsetAt(_position);
           _position = cursor.positionForOffset(chapterIndex, offset);
           _seeded = true;
+          _notifyChapterEnd(cursor);
         }
       }
       setState(() {});
@@ -557,6 +564,7 @@ class _PaginatedReaderBodyState extends State<PaginatedReaderBody> {
         pageEnd: cursor.pageAt(_position).end,
       );
       _logCurrentPageImages(cursor);
+      _notifyChapterEnd(cursor);
       return;
     }
 
@@ -581,6 +589,16 @@ class _PaginatedReaderBodyState extends State<PaginatedReaderBody> {
       );
     }
     _logCurrentPageImages(cursor);
+    _notifyChapterEnd(cursor);
+  }
+
+  void _notifyChapterEnd(BookPageCursor cursor) {
+    final count = cursor.pageCountOf(_position.chapterIndex);
+    if (count <= 0 || _position.pageIndex < count - 1) return;
+    final token = _position.chapterIndex * 100000 + _position.pageIndex;
+    if (_endToken == token) return;
+    _endToken = token;
+    widget.onChapterEnd?.call(_position.chapterIndex);
   }
 
   void _turnSheet({required bool forward}) {
@@ -609,6 +627,7 @@ class _PaginatedReaderBodyState extends State<PaginatedReaderBody> {
       widget.onChapterChanged?.call(step.chapterIndex);
     }
     _logCurrentPageImages(cursor);
+    _notifyChapterEnd(cursor);
   }
 
   /// Whether stepping once from [pos] toward [delta] stays inside the chapter,
