@@ -51,6 +51,7 @@ class ThemeNotifier extends Notifier<ThemeState> {
   static const _keyShowNsfwExtensions = 'show_nsfw_extensions';
   static const _keyShowObsoleteExtensions = 'show_obsolete_extensions';
   static const _keyImmersiveAutoHide = 'immersive_auto_hide';
+  static const _keyChapterCelebration = 'chapter_celebration';
   static const _keyPageStyle = 'page_style';
 
   /// Full Material You schemes from [DynamicColorBuilder] (not persisted).
@@ -109,6 +110,7 @@ class ThemeNotifier extends Notifier<ThemeState> {
       showObsoleteExtensions:
           prefs.getBool(_keyShowObsoleteExtensions) ?? false,
       immersiveAutoHide: prefs.getBool(_keyImmersiveAutoHide) ?? false,
+      chapterCelebration: prefs.getBool(_keyChapterCelebration) ?? true,
       pageStyle:
           PageStyle.values[(prefs.getInt(_keyPageStyle) ?? 0).clamp(
             0,
@@ -475,6 +477,12 @@ class ThemeNotifier extends Notifier<ThemeState> {
     state = state.copyWith(immersiveAutoHide: value);
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool(_keyImmersiveAutoHide, value);
+  }
+
+  Future<void> setChapterCelebration(bool value) async {
+    state = state.copyWith(chapterCelebration: value);
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_keyChapterCelebration, value);
   }
 
   Future<void> setPageStyle(PageStyle value) async {

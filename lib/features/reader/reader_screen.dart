@@ -548,6 +548,10 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
       _finishShowing = false;
       return;
     }
+    if (!ref.read(themeProvider).chapterCelebration) {
+      _finishShowing = false;
+      return;
+    }
     final seconds = await ChapterReadingClock.instance.total(key);
     if (!mounted) {
       _finishShowing = false;

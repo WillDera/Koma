@@ -33,6 +33,7 @@ class BackupSettings {
     'show_nsfw_extensions',
     'show_obsolete_extensions',
     'immersive_auto_hide',
+    'chapter_celebration',
     'page_style',
     'security_incognito',
     'security_app_lock',

@@ -214,6 +214,10 @@ class _NovelReaderScreenState extends ConsumerState<NovelReaderScreen> {
       _finishShowing = false;
       return;
     }
+    if (!ref.read(themeProvider).chapterCelebration) {
+      _finishShowing = false;
+      return;
+    }
     final seconds = await ChapterReadingClock.instance.total(key);
     if (!mounted) {
       _finishShowing = false;

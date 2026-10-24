@@ -298,6 +298,13 @@ class _ReaderSettingsSheetState extends ConsumerState<ReaderSettingsSheet> {
           value: p.immersiveAutoHide,
           onChanged: (v) => tn.setImmersiveAutoHide(v),
         ),
+        const SizedBox(height: 16),
+        _ToggleRow(
+          title: 'Chapter celebration',
+          subtitle: 'Flame and message when you finish a chapter',
+          value: p.chapterCelebration,
+          onChanged: (v) => tn.setChapterCelebration(v),
+        ),
         const SizedBox(height: 28),
         _SectionLabel('Media controls'),
         const SizedBox(height: 12),

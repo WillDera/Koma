@@ -41,6 +41,7 @@ class ThemeState {
     this.showNsfwExtensions = false,
     this.showObsoleteExtensions = false,
     this.immersiveAutoHide = false,
+    this.chapterCelebration = true,
     this.pageStyle = PageStyle.scroll,
   });
 
@@ -90,6 +91,9 @@ class ThemeState {
   final bool showNsfwExtensions;
   final bool showObsoleteExtensions;
   final bool immersiveAutoHide;
+
+  /// Flame and congratulatory screen at the end of a novel or book chapter.
+  final bool chapterCelebration;
 
   /// How the ebook reader lays out chapter text. Defaults to [PageStyle.scroll]
   /// so existing readers are unaffected until they opt in.
@@ -261,6 +265,7 @@ class ThemeState {
     bool? showNsfwExtensions,
     bool? showObsoleteExtensions,
     bool? immersiveAutoHide,
+    bool? chapterCelebration,
     PageStyle? pageStyle,
   }) {
     return ThemeState(
@@ -301,6 +306,7 @@ class ThemeState {
       showObsoleteExtensions:
           showObsoleteExtensions ?? this.showObsoleteExtensions,
       immersiveAutoHide: immersiveAutoHide ?? this.immersiveAutoHide,
+      chapterCelebration: chapterCelebration ?? this.chapterCelebration,
       pageStyle: pageStyle ?? this.pageStyle,
     );
   }
